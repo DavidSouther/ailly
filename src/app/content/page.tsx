@@ -1,28 +1,41 @@
-import { join } from "path";
+"use client";
 
 import { Card } from "@/components/Card";
-import { addMessagesToContent, loadContent } from "@/lib/content";
-import { NodeFileSystemAdapter } from "@/lib/fs";
-import { FileSystem } from "@davidsouther/jiffies/lib/esm/fs";
+import { Content, Summary } from "@/lib/content";
 
 import ContentList from "./content_list";
 import GenerateAll from "./generate_all";
+import { useEffect, useState } from "react";
 
-const adapter = new NodeFileSystemAdapter();
-const fs = new FileSystem(adapter);
-fs.cd(join(process.cwd(), "content"));
+import { reloadContent } from "./server";
 
-export default async function ContentPage() {
-  const content = await loadContent(fs);
-  const summary = await addMessagesToContent(content);
+export default function ContentPage() {
+  const [[content, summary], setState] = useState<
+    readonly [Content[], Summary]
+  >([[], { prompts: 0, tokens: 0 }]);
+
+  const doReload = async () => {
+    const content = await reloadContent();
+    setState(content);
+  };
+
+  useEffect(() => {
+    doReload();
+  }, []);
+
   return (
-    <div className="grid" style={{ gridTemplateColumns: "2fr 1fr" }}>
+    <div className="grid" style={{gridTemplateColumns: "2fr 1fr"}}>
       <Card header="Content list">
         <ContentList contents={content} />
       </Card>
-      <Card header="Generation">
-        <GenerateAll summary={summary} />
-      </Card>
+      <div className="flex col">
+        <Card header="Reload">
+          <button onClick={doReload}>Reload</button>
+        </Card>
+        <Card header="Generation">
+          <GenerateAll summary={summary} />
+        </Card>
+      </div>
     </div>
   );
 }

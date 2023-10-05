@@ -1,4 +1,6 @@
+import NavHeader from "@/components/NavHeader";
 import type { Metadata } from "next";
+import styles from "./layout.module.css";
 
 export const metadata: Metadata = {
   title: "AIlly",
@@ -23,8 +25,9 @@ export default function RootLayout({
           src="https://unpkg.com/@davidsouther/jiffies-css/accessibility.js"
         ></script>
       </head>
-      <body style={{ padding: "0 var(--spacing-block-horizontal)" }}>
-        {children}
+      <body className={`container ${styles.body}`}>
+        <NavHeader title="AIlly" />
+        <main>{children}</main>
       </body>
     </html>
   );
