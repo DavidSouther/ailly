@@ -34,6 +34,17 @@ dog.
 
 Each file will be parsed as markdown individually.
 
+### gray matter
+
+Files named `_s.md` in a folder are "system" files, which are used to create a system prompt for AI training.
+`_s.md` files and prompt files are parsed for gray matter in the head.
+
+| Field    | Usage                                                                                                         |
+| -------- | ------------------------------------------------------------------------------------------------------------- |
+| skip     | Don't show this folder or file in the content pane, and don't generate for it or include it in training data. |
+| isolate  | Don't include the prior content in the folder in the context window.                                          |
+| training | Don't include this file or folder in fine-tuning training data.                                               |
+
 ### Sections
 
 Within a work, sections are created in two ways.

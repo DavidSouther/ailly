@@ -1,9 +1,9 @@
-# AIlly - AI Writing Ally.
+# AIlly - AI Writing Ally
 
 Load your writing.
-Train your AIlly on your voice.
+Train AIlly on your voice.
 Write your outline.
-Prompt your AIlly to continue to continue the writing.
+Prompt AIlly to continue to continue the writing.
 Edit its output, and retrain to get it even more like that.
 
 ## Running Your AIlly
