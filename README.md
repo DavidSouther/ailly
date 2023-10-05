@@ -19,3 +19,5 @@ This is powered by [Next.js](https://nextjs.org/) using App Router.
 - Visit the `/content` route
 - Prepare the project for deployment with `npm run export`
 - Good luck!
+
+## Rhymes with Hailey
