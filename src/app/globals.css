@@ -1,7 +1,10 @@
+@import url("https://fonts.googleapis.com/css2?family=Ibarra+Real+Nova:wght@400;700&family=Inter:wght@400;700&family=JetBrains+Mono&display=swap");
+
 :root {
-  --color-primary-hue: 115deg; /* Default 115deg in bundle */
+  --chroma: 0.125;
+  --color-primary-hue: 216deg; /* Default 115deg in bundle */
   --sizing: 1;
-  --font-family-base: Poppins;
-  --font-family-header: "Libre Baskerville";
-  --font-family-monospace: "JetBrains Mono";
+  --font-family-base: Inter, sans-serif;
+  --font-family-heading: "Ibarra Real Nova", var(--font-family-heading);
+  --font-family-monospace: "JetBrains Mono", monospace;
 }

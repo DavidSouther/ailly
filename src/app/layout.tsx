@@ -1,5 +1,6 @@
 import NavHeader from "@/components/NavHeader";
 import type { Metadata } from "next";
+import "./globals.css";
 import styles from "./layout.module.css";
 
 export const metadata: Metadata = {
@@ -26,7 +27,7 @@ export default function RootLayout({
         ></script>
       </head>
       <body className={`container ${styles.body}`}>
-        <NavHeader title="AIlly" />
+        <NavHeader title="Ailly" />
         <main>{children}</main>
       </body>
     </html>
