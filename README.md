@@ -1,19 +1,19 @@
-# AIlly - AI Writing Ally
+# Ailly - AI Writing Ally
 
 Load your writing.
-Train AIlly on your voice.
+Train Ailly on your voice.
 Write your outline.
-Prompt AIlly to continue to continue the writing.
+Prompt Ailly to continue to continue the writing.
 Edit its output, and retrain to get it even more like that.
 
-## Running Your AIlly
+## Running Ailly
 
 This is powered by [Next.js](https://nextjs.org/) using App Router.
 
 - Clone the repo, install dependencies, and duplicate the env file for local keys.
   - `git clone git://github.com/davidsouther/ailly.git ; cd ailly ; npm install ; cp .env .env.local`
 - Update `.env.local` with your [OpenAI API key](https://platform.openai.com/account/api-keys).
-- ## Clear out the `content/` folder, and replace it with your writing.
+- Clear out the `content/` folder, and replace it with your writing.
   - TODO: Provide content importers for email
   - TODO: Provide instructions for "best practices" creating
 - Start the project locally with `npm run dev`
