@@ -22,7 +22,7 @@ This is powered by [Next.js](https://nextjs.org/) using App Router.
   - See [Specification](./SPECIFICATION.md) for further details on how the `content` folder is organized.
   - TODO: Provide content importers for email
   - TODO: Provide instructions for "best practices" creating
-- Start the project locally with `npm run dev`
+- Start the project locally with `npm run dev --workspace packages/web`
   - Default at http://localhost:3000
 - Visit the [`/content`](http://localhost:3000/content) route.
   - Generate all prompts with the "Generate all" button.

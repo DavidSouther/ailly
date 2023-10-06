@@ -1,0 +1,34 @@
+{
+  "name": "@ailly/web",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint"
+  },
+  "dependencies": {
+    "@davidsouther/jiffies": "^2.0.6",
+    "@dqbd/tiktoken": "^1.0.7",
+    "gitignore-parser": "^0.0.2",
+    "gray-matter": "^4.0.3",
+    "marked-react": "^2.0.0",
+    "next": "13.5.4",
+    "openai": "^4.11.1",
+    "react": "^18",
+    "react-dom": "^18",
+    "remark": "^15.0.1",
+    "remark-gfm": "^4.0.0",
+    "remark-html": "^16.0.1"
+  },
+  "devDependencies": {
+    "@types/gitignore-parser": "^0.0.1",
+    "@types/node": "^20",
+    "@types/react": "^18",
+    "@types/react-dom": "^18",
+    "eslint": "^8",
+    "eslint-config-next": "13.5.4",
+    "typescript": "^5"
+  }
+}
