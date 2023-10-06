@@ -14,6 +14,12 @@ This is powered by [Next.js](https://nextjs.org/) using App Router.
   - `git clone git://github.com/davidsouther/ailly.git ; cd ailly ; npm install ; cp .env .env.local`
 - Update `.env.local` with your [OpenAI API key](https://platform.openai.com/account/api-keys).
 - Clear out the `content/` folder, and replace it with your writing.
+  - Open the `content` folder and see the example system and prompt files.
+  - Conversations are broken into two files, `<nn>p_<name>.md` and `<nn>r_<name>.md`.
+  - The `<nn>p_<name>.md` is given to the AI, and the response is written to `<nn>r_<name>.md`
+  - Files in the same folder are part of a single conversation, and kept in order by sorting based on the numeric values of `<nn>`.
+  - The `<name>` is for you to keep a file name in mind.
+  - See [Specification](./SPECIFICATION.md) for further details on how the `content` folder is organized.
   - TODO: Provide content importers for email
   - TODO: Provide instructions for "best practices" creating
 - Start the project locally with `npm run dev`
