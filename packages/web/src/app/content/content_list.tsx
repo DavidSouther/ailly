@@ -1,4 +1,4 @@
-import { Content } from "@/lib/content";
+import { Content } from "@ailly/core";
 import { GenerateContent } from "./generate_all";
 
 export default function ContentList({ contents }: { contents: Content[] }) {

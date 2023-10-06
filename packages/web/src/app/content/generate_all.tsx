@@ -1,7 +1,7 @@
 "use client";
+import { Content, Summary } from "@ailly/core";
 import { useState } from "react";
-import { generateAllAction, generateOne, tuneAction } from "@/lib/generate";
-import { Content, Summary } from "@/lib/content";
+import { generateAllAction, generateOneAction, tuneAction } from "./server";
 
 export default function GenerateAll({ summary }: { summary: Summary }) {
   const [status, setStatus] = useState<string>("Not yet run");
@@ -57,8 +57,7 @@ export function ContentSummary({ summary }: { summary: Summary }) {
 
 export function GenerateContent({ content }: { content: Content }) {
   function doGenerate() {
-    debugger;
-    generateOne(content);
+    generateOneAction(content);
   }
   return <button onClick={doGenerate}>Generate</button>;
 }

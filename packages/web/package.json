@@ -9,6 +9,7 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "@ailly/core": "^1.0.0",
     "@davidsouther/jiffies": "^2.0.6",
     "@dqbd/tiktoken": "^1.0.7",
     "gitignore-parser": "^0.0.2",

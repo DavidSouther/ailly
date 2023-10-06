@@ -1,13 +1,13 @@
 "use client";
 
 import { Card } from "@/components/Card";
-import { Content, Summary } from "@/lib/content";
 
 import ContentList from "./content_list";
 import GenerateAll from "./generate_all";
 import { useEffect, useState } from "react";
 
 import { reloadContent } from "./server";
+import { Content, Summary } from "@ailly/core";
 
 export default function ContentPage() {
   const [[content, summary], setState] = useState<
@@ -24,7 +24,7 @@ export default function ContentPage() {
   }, []);
 
   return (
-    <div className="grid" style={{gridTemplateColumns: "2fr 1fr"}}>
+    <div className="grid" style={{ gridTemplateColumns: "2fr 1fr" }}>
       <Card header="Content list">
         <ContentList contents={content} />
       </Card>

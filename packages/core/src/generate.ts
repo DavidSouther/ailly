@@ -1,7 +1,5 @@
-"use server";
-
-import { Content, addMessagesToContent, loadContent } from "@/lib/content";
-import { NodeFileSystem } from "@/lib/fs";
+import { Content, addMessagesToContent, loadContent } from "./content";
+import { NodeFileSystem } from "./fs";
 import OpenAI, { toFile } from "openai";
 import { dirname, join } from "path";
 
@@ -10,16 +8,6 @@ import { dirname, join } from "path";
 const MODEL = "gpt-4-0613";
 // const MODEL = `ft:${BASE_MODEL}:personal::${FT_MODEL}`;
 // const MODEL = "gpt-3.5-turbo-16k-0613";
-
-export async function generateAllAction() {
-  await generateAll();
-  return { message: "Generating" };
-}
-
-export async function tuneAction() {
-  await tune();
-  return { message: "Tuning" };
-}
 
 function getFs() {
   const fs = new NodeFileSystem();
