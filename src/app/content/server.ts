@@ -8,7 +8,7 @@ import { addMessagesToContent, loadContent } from "@/lib/content";
 
 const adapter = new NodeFileSystemAdapter();
 const fs = new FileSystem(adapter);
-fs.cd(join(process.cwd(), "content"));
+fs.cd(join(process.cwd(), process.env["CONTENT"] || "content"));
 
 export async function reloadContent() {
   const content = await loadContent(fs);
