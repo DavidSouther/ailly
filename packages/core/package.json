@@ -19,6 +19,6 @@
   },
   "homepage": "https://github.com/DavidSouther/ailly#readme",
   "dependencies": {
-    "@davidsouther/jiffies": "^2.0.7"
+    "@davidsouther/jiffies": "^2.1.0"
   }
 }

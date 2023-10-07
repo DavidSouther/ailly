@@ -5,5 +5,8 @@
   ],
   "devDependencies": {
     "vitest": "^0.34.6"
+  },
+  "dependencies": {
+    "redis": "^4.6.10"
   }
 }

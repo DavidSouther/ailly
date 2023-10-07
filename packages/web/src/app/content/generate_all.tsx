@@ -1,7 +1,10 @@
 "use client";
-import { Content, Summary } from "@ailly/core";
+import * as ailly from "@ailly/core";
 import { useState } from "react";
 import { generateAllAction, generateOneAction, tuneAction } from "./server";
+
+type Content = ailly.types.Content;
+type Summary = ailly.types.Summary;
 
 export default function GenerateAll({ summary }: { summary: Summary }) {
   const [status, setStatus] = useState<string>("Not yet run");

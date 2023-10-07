@@ -7,7 +7,10 @@ import GenerateAll from "./generate_all";
 import { useEffect, useState } from "react";
 
 import { reloadContent } from "./server";
-import { Content, Summary } from "@ailly/core";
+import * as ailly from "@ailly/core";
+
+type Content = ailly.types.Content;
+type Summary = ailly.types.Summary;
 
 export default function ContentPage() {
   const [[content, summary], setState] = useState<

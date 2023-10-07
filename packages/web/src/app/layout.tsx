@@ -4,7 +4,7 @@ import "./globals.css";
 import styles from "./layout.module.css";
 
 export const metadata: Metadata = {
-  title: "AIlly",
+  title: "Ailly",
   description: "AI Writing Ally - by David Souther",
 };
 

@@ -1,8 +1,8 @@
 import { FileSystem, Stats } from "@davidsouther/jiffies/lib/esm/fs";
 import matter from "gray-matter";
-import { join, normalize } from "path";
+import { join, normalize, dirname } from "path";
 import * as gitignoreParser from "gitignore-parser";
-import { Message } from "./openai";
+import { type Message } from "./plugin";
 import { isDefined } from "./util";
 
 type TODOGrayMatterData = Record<string, any>;
@@ -11,10 +11,18 @@ type TODOGrayMatterData = Record<string, any>;
 // The Content needs to keep track of where in the file system it is, so that a Prompt can write a Response.
 // It also needs the predecessor Content at the same level of the file system to build the larger context of its message pairs.
 export interface Content {
-  path: string; // The absolute path in the local file system
-  name: string; // The extracted name
-  order: number; // The extracted order
-  system: string[]; // The list of system prompts above this content
+  // The absolute path in the local file system
+  path: string;
+
+  // The extracted name from the basename
+  name: string;
+
+  // The extracted order from the basename
+  order: number;
+
+  // The list of system prompts above this content
+  system: string[];
+
   prompt: string;
   response?: string;
   predecessor?: Content;
@@ -123,6 +131,7 @@ export async function loadContent(
   system: string[] = [],
   head: TODOGrayMatterData = {}
 ): Promise<Content[]> {
+  console.debug(`Loading content from ${fs.cwd()}`);
   const sys = matter(await fs.readFile("_s.md").catch((e) => ""));
   head = { ...head, ...sys.data };
   system = [...system, sys.content];
@@ -149,5 +158,17 @@ export async function loadContent(
   }
 
   const content = [...files, ...folders];
+  console.debug(`Found ${content.length} at or below ${fs.cwd()}`);
   return content;
+}
+
+export async function writeContent(fs: FileSystem, content: Content[]) {
+  return Promise.allSettled(
+    content.map(async (c) => {
+      if (!c.response) return;
+      const dir = dirname(c.path);
+      const filename = `${c.order}r_${c.name}.md`;
+      fs.writeFile(join(dir, filename), c.response);
+    })
+  );
 }

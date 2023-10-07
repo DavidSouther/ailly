@@ -1,7 +1,11 @@
-import { Content } from "@ailly/core";
+import * as ailly from "@ailly/core";
 import { GenerateContent } from "./generate_all";
 
-export default function ContentList({ contents }: { contents: Content[] }) {
+export default function ContentList({
+  contents,
+}: {
+  contents: ailly.types.Content[];
+}) {
   return (
     <>
       {contents.map((c) => (
@@ -14,8 +18,8 @@ export default function ContentList({ contents }: { contents: Content[] }) {
   );
 }
 
-function ContentDetail({ content }: { content: Content }) {
-  const messages = content.messages ?? [];
+function ContentDetail({ content }: { content: ailly.types.Content }) {
+  const messages = content.meta?.messages ?? [];
   const [system, conversation] =
     messages.length > 0 && messages[0]?.role === "system"
       ? [messages[0], messages.slice(1)]
@@ -24,7 +28,7 @@ function ContentDetail({ content }: { content: Content }) {
   return (
     <div>
       <div>
-        Tokens {content.tokens ?? "Unknown"}{" "}
+        Tokens {content.meta?.tokens ?? "Unknown"}{" "}
         <GenerateContent content={content} />
       </div>
       {system && (
