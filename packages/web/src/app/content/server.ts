@@ -6,7 +6,7 @@ import { NodeFileSystem } from "@davidsouther/jiffies/lib/esm/fs_node";
 import { format } from "@ailly/core/src/plugin/openai";
 import { GenerateManager } from "@ailly/core/src/ailly";
 import { makeGenerateManagerOrganizer } from "./generate_manager_organizer";
-import { Content, loadContent } from "@ailly/core/src/content";
+import { Content, loadContent, writeContent } from "@ailly/core/src/content";
 
 const CONTENT_ROOT = join(process.cwd(), process.env["CONTENT"] || "content");
 const fs = new NodeFileSystem(CONTENT_ROOT);
@@ -31,13 +31,23 @@ export async function generatorStatus(
 
 async function start(content: Content[]): Promise<StartMessage> {
   const [id, manager] = await organizer.start(content);
+  console.log(`Starting new manager ID ${id} with ${content.length} messages`);
   manager.start();
+  manager.allSettled().then((promises) => {
+    let content = promises
+      .filter(
+        (p): p is PromiseFulfilledResult<Content> => p.status == "fulfilled"
+      )
+      .map((p) => p.value);
+    console.log(`Finished generating content`);
+    writeContent(fs, content);
+  });
   return { message: `Started generator on ${content.length} pieces`, id };
 }
 
 export async function generateAllAction() {
   const content = await loadContent(fs);
-  start(content);
+  return start(content);
 }
 
 export async function generateOneAction(content: Content) {

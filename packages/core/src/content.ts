@@ -167,7 +167,8 @@ export async function writeContent(fs: FileSystem, content: Content[]) {
     content.map(async (c) => {
       if (!c.response) return;
       const dir = dirname(c.path);
-      const filename = `${c.order}r_${c.name}.md`;
+      const filename = `${c.order}r_${c.name}`;
+      console.log(`Writing response for ${filename}`);
       fs.writeFile(join(dir, filename), c.response);
     })
   );

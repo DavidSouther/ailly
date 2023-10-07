@@ -1,4 +1,5 @@
 import { Content } from "./content";
+import { dirname } from "path";
 
 const DEFAULT_PLUGIN = "openai";
 
@@ -25,9 +26,8 @@ export class GenerateManager {
   }
 
   constructor(private readonly content: Content[]) {
-    // Partition Content into prompt threads
-    // TODO Ensure that `previous` content gets generated first and included in future calls.
-    this.threads = [content];
+    this.threads = partitionPrompts(content);
+    console.log(`Ready to generate ${this.threads.length} messages`);
   }
 
   start() {
@@ -62,10 +62,10 @@ export class GenerateManager {
     );
   }
 
-  async allSettled() {
-    return Promise.allSettled(
-      this.threadRunners.map((r) => r.allSettled()).flat()
-    );
+  async allSettled(): Promise<PromiseSettledResult<Content>[]> {
+    return (
+      await Promise.all(this.threadRunners.map((r) => r.allSettled()))
+    ).flat();
   }
 }
 
@@ -73,7 +73,7 @@ class PromptThread {
   finished: number = 0;
   isolated: boolean = false;
   done: boolean = false;
-  runner?: Promise<unknown>;
+  runner?: Promise<PromiseSettledResult<Content>[]>;
   // Results holds a list of errors that occurred and the index the occurred at.
   // If the thread is isolated, this can have many entries. If the thread is not
   // isolated, it will have at most one entry. In either case, if the list is
@@ -105,9 +105,10 @@ class PromptThread {
     this.runner = this.isolated ? this.runIsolated() : this.runSequence();
   }
 
-  private runIsolated() {
-    return Promise.allSettled(
-      this.content.map(async (c, i) => {
+  private runIsolated(): Promise<PromiseSettledResult<Content>[]> {
+    console.log(`Running thread for ${this.content.length} isolated prompts`);
+    const promises: Promise<Content>[] = this.content.map(
+      async (c, i): Promise<Content> => {
         try {
           c.response = await generateOne(c);
           this.finished += 1;
@@ -115,29 +116,39 @@ class PromptThread {
           console.warn("Error generating content", e);
           this.errors.push([i, e as Error]);
         }
-      })
-    ).finally(() => {
+        return c;
+      }
+    );
+
+    return Promise.allSettled(promises).finally(() => {
       this.done = true;
     });
   }
 
-  private async runSequence() {
+  private async runSequence(): Promise<PromiseSettledResult<Content>[]> {
+    console.log(
+      `Running thread for sequence of ${this.content.length} prompts`
+    );
+    const results: PromiseSettledResult<Content>[] = [];
     for (let i = 0; i < this.content.length; i++) {
       const content = this.content[i];
       try {
         content.response = await generateOne(content);
+        results.push({ status: "fulfilled", value: content } as const);
         this.finished += 1;
       } catch (e) {
         console.warn("Error generating content", e);
         this.errors.push([i, e as Error]);
+        results.push({ status: "rejected", reason: e } as const);
         break;
       }
     }
     this.done = true;
+    return results;
   }
 
-  async allSettled() {
-    return this.runner ?? Promise.resolve();
+  async allSettled(): Promise<PromiseSettledResult<Content>[]> {
+    return this.runner ?? Promise.resolve([]);
   }
 
   summary(): PromptThreadSummary {
@@ -168,9 +179,14 @@ async function generateOne(c: Content): Promise<string> {
   const plugin = (await import(`./plugin/${pluginName}`)) as Plugin;
   const model = c.meta?.head?.["plugin"] ?? plugin.DEFAULT_MODEL;
   const generated = await plugin.generate(c, model);
-  return `---\ngenerated: ${new Date().toISOString()}\ndebug: ${JSON.stringify(
-    generated.debug
-  )}\n---\n\n${generated.message}`;
+  const debug = JSON.stringify(generated.debug);
+  return [
+    "---",
+    `generated: ${new Date().toISOString()}`,
+    `debug: ${debug}`,
+    "---",
+    generated.message,
+  ].join("\n");
 }
 
 interface Plugin {
@@ -180,4 +196,59 @@ interface Plugin {
     c: Content,
     parameters: Record<string, string>
   ) => Promise<{ debug: unknown; message: string }>;
+}
+
+/*
+
+/a
+  /b.
+  /c.
+  /g
+    /h.
+/d
+  /e.
+  /f.
+
+=>
+
+/a/b.
+/a/c.
+/a/g/h.
+/d/e.
+/d/f.
+
+=> 
+
+[
+  /a/b.
+  /a/c.
+]
+[
+  /a/g/h.
+]
+[
+  /d/e.
+  /d/f.
+]
+*/
+
+export function partitionPrompts(content: Content[]): Content[][] {
+  const directories = new Map<string, Content[]>();
+  for (const c of content) {
+    const prefix = dirname(c.path);
+    const entry = directories.get(prefix) ?? [];
+    entry.push(c);
+    directories.set(prefix, entry);
+  }
+
+  for (const thread of directories.values()) {
+    thread.sort((a, b) => a.order - b.order);
+    if (!Boolean(thread.at(0)?.meta?.head?.["isolated"])) {
+      for (let i = thread.length - 1; i > 0; i--) {
+        thread[i].predecessor = thread[i - 1];
+      }
+    }
+  }
+
+  return [...directories.values()];
 }
