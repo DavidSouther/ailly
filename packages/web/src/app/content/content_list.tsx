@@ -5,7 +5,7 @@ export default function ContentList({ contents }: { contents: Content[] }) {
   return (
     <>
       {contents.map((c) => (
-        <details key={`${c.path}/${c.id}`}>
+        <details key={`${c.path}/${c.name}`}>
           <summary>{c.path.replace(process.cwd(), "")}</summary>
           <ContentDetail content={c} />
         </details>

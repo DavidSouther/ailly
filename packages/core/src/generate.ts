@@ -1,7 +1,8 @@
-import { Content, addMessagesToContent, loadContent } from "./content";
+import { Content, loadContent } from "./content";
 import { NodeFileSystem } from "./fs";
 import OpenAI, { toFile } from "openai";
 import { dirname, join } from "path";
+import { addMessagesToContent } from "./openai";
 
 // const BASE_MODEL = "gpt-3.5-turbo-0613";
 // const FT_MODEL = process.env["OPENAI_FT_MODEL"];
@@ -31,7 +32,7 @@ export async function tune() {
   const file = content
     .map((c) =>
       JSON.stringify({
-        messages: (c.messages ?? []).map(({ role, content }) => ({
+        messages: (c.meta?.messages ?? []).map(({ role, content }) => ({
           role,
           content,
         })),
@@ -67,19 +68,19 @@ async function generateClaude() {}
 async function generateOpenAi(
   c: Content
 ): Promise<{ message: string; debug: unknown }> {
-  let messages = c.messages ?? [];
+  let messages = c.meta?.messages ?? [];
   if (messages.at(-1)?.role == "assistant") {
     messages = messages.slice(0, -1);
   }
   console.log("Calling OpenAI", messages);
   const completions = await openai.chat.completions.create({
-    messages: (c.messages ?? []).map(({ role, content }) => ({
+    messages: (c.meta?.messages ?? []).map(({ role, content }) => ({
       role,
       content,
     })),
     model: MODEL,
   });
-  console.log(`Response from OpenAI for ${c.id}`, completions);
+  console.log(`Response from OpenAI for ${c.name}`, completions);
   const choice = completions.choices[0];
   return {
     message: choice.message.content ?? "",
@@ -94,7 +95,7 @@ async function generateOpenAi(
 
 export async function generateOne(c: Content): Promise<void> {
   const generated = await generateOpenAi(c);
-  const path = join(dirname(c.path), `${c.order}r_${c.id}`);
+  const path = join(dirname(c.path), `${c.order}r_${c.name}`);
   await getFs().writeFile(
     path,
     `---\ngenerated: ${new Date().toISOString()}\ndebug: ${JSON.stringify(

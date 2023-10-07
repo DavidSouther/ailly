@@ -1,33 +1,32 @@
 import { FileSystem, Stats } from "@davidsouther/jiffies/lib/esm/fs";
-import { get_encoding } from "@dqbd/tiktoken";
 import matter from "gray-matter";
 import { join, normalize } from "path";
 import * as gitignoreParser from "gitignore-parser";
+import { Message } from "./openai";
+import { isDefined } from "./util";
 
 type TODOGrayMatterData = Record<string, any>;
-const isDefined = <T>(t: T | undefined): t is T => t !== undefined;
 
-// Content is ordered on the file system using NN_id folders and nnp_id.md files.
+// Content is ordered on the file system using NN_name folders and nnp_name.md files.
 // The Content needs to keep track of where in the file system it is, so that a Prompt can write a Response.
 // It also needs the predecessor Content at the same level of the file system to build the larger context of its message pairs.
 export interface Content {
-  path: string;
-  system: string[];
-  order: number;
+  path: string; // The absolute path in the local file system
+  name: string; // The extracted name
+  order: number; // The extracted order
+  system: string[]; // The list of system prompts above this content
   prompt: string;
   response?: string;
-  id: string;
   predecessor?: Content;
-  head?: TODOGrayMatterData;
+  meta?: ContentMeta;
+}
+
+// Additional useful metadata.
+export interface ContentMeta {
+  head?: TODOGrayMatterData; // Any graymatter metadata
   messages?: Message[];
   tokens?: number;
 }
-
-const MISSING: Stats = {
-  isDirectory: () => false,
-  isFile: () => false,
-  name: "MISSING",
-};
 
 interface PartitionedDirectory {
   files: Stats[];
@@ -95,7 +94,7 @@ async function loadFile(
   const cwd = fs.cwd();
   switch (ordering.type) {
     case "prompt":
-      const { content, data } = matter(
+      const { content: prompt, data } = matter(
         await fs.readFile(join(cwd, file.name)).catch((e) => "")
       );
       const { content: response } = matter(
@@ -104,13 +103,15 @@ async function loadFile(
           .catch((e) => "")
       );
       return {
-        order: ordering.order,
-        id: ordering.id,
+        name: ordering.id,
         system,
         path: join(fs.cwd(), file.name),
-        prompt: content,
+        prompt,
         response,
-        head: { ...head, data },
+        order: ordering.order,
+        meta: {
+          head: { ...head, data },
+        },
       };
     default:
       return undefined;
@@ -147,64 +148,6 @@ export async function loadContent(
     fs.popd();
   }
 
-  return [...files, ...folders];
-}
-
-const encoding = get_encoding("cl100k_base");
-export async function addMessagesToContent(
-  contents: Content[]
-): Promise<Summary> {
-  const summary: Summary = { prompts: 0, tokens: 0 };
-  for (const content of contents) {
-    content.messages = getMessages(content);
-    content.tokens = 0;
-    for (const message of content.messages) {
-      content.tokens += message.tokens = (
-        await encoding.encode(message.content)
-      ).length;
-    }
-    summary.prompts += 1;
-    summary.tokens +=
-      content.tokens -
-      (content.messages?.at(-1)?.role == "assistant"
-        ? content.messages.at(-1)?.tokens ?? 0
-        : 0);
-  }
-  return summary;
-}
-
-export interface Message {
-  role: "system" | "user" | "assistant";
-  content: string;
-  tokens?: number;
-}
-
-export function getMessages(content: Content): Message[] {
-  const system = content.system.join("\n");
-  const history: Content[] = [];
-  while (content) {
-    history.push(content);
-    content = content.predecessor!;
-  }
-  history.reverse();
-  return [
-    { role: "system", content: system },
-    ...history
-      .map<Array<Message | undefined>>((content) => [
-        {
-          role: "user",
-          content: content.prompt,
-        },
-        content.response
-          ? { role: "assistant", content: content.response }
-          : undefined,
-      ])
-      .flat()
-      .filter(isDefined),
-  ];
-}
-
-export interface Summary {
-  tokens: number;
-  prompts: number;
+  const content = [...files, ...folders];
+  return content;
 }

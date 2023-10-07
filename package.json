@@ -2,5 +2,8 @@
   "name": "@ailly/ailly",
   "workspaces": [
     "packages/*"
-  ]
+  ],
+  "devDependencies": {
+    "vitest": "^0.34.6"
+  }
 }
