@@ -2,6 +2,7 @@
   "name": "@ailly/ailly",
   "workspaces": [
     "core",
+    "extension",
     "web"
   ]
 }

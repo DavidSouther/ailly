@@ -1,6 +1,6 @@
-import * as contentModule from "./content";
-import * as aillyModule from "./ailly";
-import * as pluginModule from "./plugin";
+import * as contentModule from "./content.js";
+import * as aillyModule from "./ailly.js";
+import * as pluginModule from "./plugin/index.js";
 
 export namespace types {
   export type Content = contentModule.Content;
@@ -11,6 +11,7 @@ export namespace types {
 
 export const content = {
   load: contentModule.loadContent,
+  write: contentModule.writeContent,
 };
 
 export const Ailly = aillyModule;

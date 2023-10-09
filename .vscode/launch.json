@@ -5,13 +5,26 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "type": "node",
+      "name": "Run Ailly Extension",
+      "type": "extensionHost",
       "request": "launch",
-      "name": "@ailly/core tests",
-      "cwd": "${workspaceFolder}/packages/core",
-      "skipFiles": ["<node_internals>/**"],
-      "runtimeArgs": ["--experimental-vm-modules"],
-      "program": "${workspaceFolder}/node_modules/jest/bin/jest.js"
+      "args": [
+        "--profile-temp",
+        "--extensionDevelopmentPath=${workspaceFolder}/extension"
+      ],
+      "outFiles": ["${workspaceFolder}/extension/out/**/*.js"],
+      "preLaunchTask": "${defaultBuildTask}"
+    },
+    {
+      "name": "Ailly Extension Tests",
+      "type": "extensionHost",
+      "request": "launch",
+      "args": [
+        "--extensionDevelopmentPath=${workspaceFolder}/extension",
+        "--extensionTestsPath=${workspaceFolder}/extension/out/test/suite/index"
+      ],
+      "outFiles": ["${workspaceFolder}/extension/out/test/**/*.js"],
+      "preLaunchTask": "${defaultBuildTask}"
     }
   ]
 }

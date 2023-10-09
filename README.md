@@ -31,3 +31,12 @@ This is powered by [Next.js](https://nextjs.org/) using App Router.
 - Good luck!
 
 ## Rhymes with Hailey
+
+## The Extension in Dev Mode
+
+1. Run `npx tsx -w -p core`
+1. Start the `Run Ailly Extension` task
+   1. Choose `tsx: watch - extension/tsconfig.json`
+1. Open a workspace folder in the Extension debug window
+1. Right Click a file or folder -> Ailly: Generate
+1. Open a file -> Cmd+P -> Ailly: Generate

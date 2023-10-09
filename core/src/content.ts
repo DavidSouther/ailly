@@ -2,8 +2,8 @@ import { FileSystem, Stats } from "@davidsouther/jiffies/lib/esm/fs";
 import matter from "gray-matter";
 import { join, normalize, dirname } from "path";
 import * as gitignoreParser from "gitignore-parser";
-import { type Message } from "./plugin";
-import { isDefined } from "./util";
+import { type Message } from "./plugin/index.js";
+import { isDefined } from "./util.js";
 
 type TODOGrayMatterData = Record<string, any>;
 

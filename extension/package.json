@@ -1,0 +1,69 @@
+{
+  "name": "ailly",
+  "displayName": "Ailly",
+  "description": "AI Writer Ally",
+  "version": "0.0.1",
+  "engines": {
+    "vscode": "^1.83.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "ailly.generate",
+        "title": "Ailly: Generate"
+      }
+    ],
+    "menus": {
+      "explorer/context": [
+        {
+          "command": "ailly.generate",
+          "group": "3_generate"
+        }
+      ]
+    },
+    "configuration": [
+      {
+        "title": "Ailly",
+        "properties": {
+          "ailly.openai-api-key": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null,
+            "description": "Your OpenAI API Key. This key WILL get billed, so be careful to not share it."
+          }
+        }
+      }
+    ]
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "pretest": "npm run compile && npm run lint",
+    "lint": "eslint src --ext ts",
+    "test": "node ./out/test/runTest.js"
+  },
+  "devDependencies": {
+    "@types/mocha": "^10.0.2",
+    "@types/node": "18.x",
+    "@types/vscode": "^1.83.0",
+    "@typescript-eslint/eslint-plugin": "^6.7.3",
+    "@typescript-eslint/parser": "^6.7.3",
+    "@vscode/test-electron": "^2.3.4",
+    "eslint": "^8.50.0",
+    "glob": "^10.3.3",
+    "mocha": "^10.2.0",
+    "typescript": "^5.2.2"
+  },
+  "dependencies": {
+    "@ailly/core": "^1.0.0",
+    "@davidsouther/jiffies": "^2.1.3"
+  }
+}

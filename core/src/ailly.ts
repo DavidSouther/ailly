@@ -1,11 +1,14 @@
-import { Content } from "./content";
+import { Content } from "./content.js";
 import { dirname } from "path";
 
 const DEFAULT_PLUGIN = "openai";
 
 // TODO make this async*
-export function generate(content: Content[]): GenerateManager {
-  const manager = new GenerateManager(content);
+export function generate(
+  content: Content[],
+  settings: Record<string, string> = {}
+): GenerateManager {
+  const manager = new GenerateManager(content, settings);
 
   return manager;
 }
@@ -18,21 +21,29 @@ export class GenerateManager {
   threads: Thread[];
   threadRunners: PromptThread[] = [];
 
-  static async from(content: Content[]): Promise<GenerateManager> {
+  static async from(
+    content: Content[],
+    settings: Record<string, string>
+  ): Promise<GenerateManager> {
     const pluginName = content.at(0)?.meta?.head?.["plugin"] ?? DEFAULT_PLUGIN;
-    const plugin = (await import(`./plugin/${pluginName}`)) as Plugin;
+    const plugin = (await import(`./plugin/${pluginName}.js`)) as Plugin;
     plugin.format(content);
-    return new GenerateManager(content);
+    return new GenerateManager(content, settings);
   }
 
-  constructor(private readonly content: Content[]) {
+  constructor(
+    private readonly content: Content[],
+    private settings: Record<string, string>
+  ) {
     this.threads = partitionPrompts(content);
     console.log(`Ready to generate ${this.threads.length} messages`);
   }
 
   start() {
     this.started = true;
-    this.threadRunners = this.threads.map(PromptThread.run);
+    this.threadRunners = this.threads.map((t) =>
+      PromptThread.run(t, this.settings)
+    );
 
     Promise.allSettled(this.threadRunners.map((t) => t.allSettled())).then(
       () => {
@@ -90,13 +101,16 @@ class PromptThread {
     return this.done && this.errors.length > 0;
   }
 
-  static run(content: Content[]) {
-    const thread = new PromptThread(content);
+  static run(content: Content[], settings: Record<string, string>) {
+    const thread = new PromptThread(content, settings);
     thread.start();
     return thread;
   }
 
-  private constructor(private readonly content: Content[]) {
+  private constructor(
+    private readonly content: Content[],
+    private settings: Record<string, string>
+  ) {
     this.content = content;
     this.isolated = Boolean(content[0]?.meta?.head?.["isolated"] ?? false);
   }
@@ -110,7 +124,7 @@ class PromptThread {
     const promises: Promise<Content>[] = this.content.map(
       async (c, i): Promise<Content> => {
         try {
-          c.response = await generateOne(c);
+          c.response = await generateOne(c, this.settings);
           this.finished += 1;
         } catch (e) {
           console.warn("Error generating content", e);
@@ -133,7 +147,7 @@ class PromptThread {
     for (let i = 0; i < this.content.length; i++) {
       const content = this.content[i];
       try {
-        content.response = await generateOne(content);
+        content.response = await generateOne(content, this.settings);
         results.push({ status: "fulfilled", value: content } as const);
         this.finished += 1;
       } catch (e) {
@@ -173,12 +187,16 @@ interface PromptThreadSummary extends PromptThreadsSummary {
   isolated: boolean;
 }
 
-async function generateOne(c: Content): Promise<string> {
+async function generateOne(
+  c: Content,
+  settings: Record<string, string>
+): Promise<string> {
   // Determine PLUGIN and MODEL, load them.
   const pluginName = c.meta?.head?.["plugin"] ?? DEFAULT_PLUGIN;
-  const plugin = (await import(`./plugin/${pluginName}`)) as Plugin;
+  const plugin = (await import(`./plugin/${pluginName}.js`)) as Plugin;
+  plugin.format([c]);
   const model = c.meta?.head?.["plugin"] ?? plugin.DEFAULT_MODEL;
-  const generated = await plugin.generate(c, model);
+  const generated = await plugin.generate(c, { ...settings, model });
   const debug = JSON.stringify(generated.debug);
   return [
     "---",

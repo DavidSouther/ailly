@@ -1,23 +1,23 @@
 import { OpenAI, toFile } from "openai";
 import { get_encoding } from "@dqbd/tiktoken";
-import { Content } from "../content";
-import { isDefined } from "../util";
-import { Message, Summary } from "./index";
+import { Content } from "../content.js";
+import { isDefined } from "../util.js";
+import { Message, Summary } from "./index.js";
 
-const MODEL = "gpt-3.5-turbo-0613";
+// const MODEL = "gpt-3.5-turbo-0613";
 // const FT_MODEL = process.env["OPENAI_FT_MODEL"];
-// const MODEL = "gpt-4-0613";
+const MODEL = "gpt-4-0613";
 // const MODEL = `ft:${BASE_MODEL}:personal::${FT_MODEL}`;
 // const MODEL = "gpt-3.5-turbo-16k-0613";
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
-
 export async function generate(
   c: Content,
-  model: string = MODEL
+  {
+    model = MODEL,
+    apiKey = process.env["OPENAI_API_KEY"] ?? "",
+  }: { model: string; apiKey: string }
 ): Promise<{ message: string; debug: unknown }> {
+  const openai = new OpenAI({ apiKey });
   let messages = c.meta?.messages ?? [];
   if (messages.length < 2) {
     throw new Error("Not enough messages");
@@ -66,16 +66,15 @@ export async function format(contents: Content[]): Promise<Summary> {
 
 const encoding = get_encoding("cl100k_base");
 async function addContentMeta(content: Content) {
-  let messages = getMessages(content);
-  let tokens = 0;
-  for (const message of messages) {
-    tokens += message.tokens = (await encoding.encode(message.content)).length;
+  content.meta ??= {};
+  content.meta.messages = getMessages(content);
+  content.meta.tokens = 0;
+  for (const message of content.meta.messages) {
+    const toks = (await encoding.encode(message.content)).length;
+    message.tokens = toks;
+    content.meta.tokens += toks;
   }
-  content.meta = {
-    messages,
-    tokens,
-  };
-  return tokens;
+  return content.meta.tokens;
 }
 
 export function getMessages(content: Content): Message[] {
@@ -103,7 +102,14 @@ export function getMessages(content: Content): Message[] {
   ];
 }
 
-export async function tune(content: Content[]) {
+export async function tune(
+  content: Content[],
+  {
+    model = MODEL,
+    apiKey = process.env["OPENAI_API_KEY"] ?? "",
+  }: { model: string; apiKey: string }
+) {
+  const openai = new OpenAI({ apiKey });
   const summary = await format(content);
 
   const file = content
