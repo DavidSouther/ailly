@@ -1,8 +1,8 @@
-import type {
-  FileSystemAdapter,
-  Stats,
+import {
+  type FileSystemAdapter,
+  type Stats,
 } from "@davidsouther/jiffies/lib/esm/fs";
-import { join, basename } from "path";
+import { basename } from "path";
 import { FileType, Uri, workspace } from "vscode";
 
 export class VSCodeFileSystemAdapter implements FileSystemAdapter {

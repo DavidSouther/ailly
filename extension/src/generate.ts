@@ -10,9 +10,6 @@ export async function generate(path: string) {
   const { FileSystem } = await eval(
     'import("@davidsouther/jiffies/lib/esm/fs.js")'
   );
-  // const { NodeFileSystem } = (await eval(
-  //   'import("@davidsouther/jiffies/lib/esm/fs_node.js")'
-  // )) as typeof fsNode;
 
   console.log(`Generating for ${path}`);
   const apiKey = await getOpenAIKey();
@@ -21,10 +18,8 @@ export async function generate(path: string) {
   }
   console.log(`apikey is ${apiKey}`);
 
-  // const fs = new NodeFileSystem(
-  //   vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? process.cwd()
-  // );
   const fs = new FileSystem(new VSCodeFileSystemAdapter());
+  // TODO: Work with multi-workspace editors
   fs.cd(vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? process.cwd());
 
   // Load content
