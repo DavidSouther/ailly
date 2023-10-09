@@ -5,6 +5,9 @@ const nextConfig = {
   experimental: { serverActions: true },
   webpack(config, _) {
     config.experiments = { asyncWebAssembly: true, layers: true };
+    config.resolve.extensionAlias = {
+      ".js": [".ts", ".tsx", ".js"],
+    };
     return config;
   },
 };
