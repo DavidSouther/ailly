@@ -23,7 +23,7 @@ export function makeGenerateManagerOrganizer(): GenerateManagerOrganizer {
 
   return {
     async start(content) {
-      let manager = await GenerateManager.from(content);
+      let manager = await GenerateManager.from(content, {});
       let id = findId(organizer);
       organizer.set(id, manager);
       return [id, manager];

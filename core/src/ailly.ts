@@ -3,6 +3,25 @@ import { dirname } from "path";
 
 const DEFAULT_PLUGIN = "openai";
 
+interface Plugin {
+  DEFAULT_MODEL: string;
+  format: (c: Content[]) => Promise<void>;
+  generate: (
+    c: Content,
+    parameters: Record<string, string>
+  ) => Promise<{ debug: unknown; message: string }>;
+}
+
+const plugins: Record<string, Plugin> = {};
+
+async function getPlugin(name: string): Promise<Plugin> {
+  if (plugins[name]) return plugins[name];
+  // List plugins explicitly
+  plugins["openai"] = (await import(`./plugin/openai.js`)) as unknown as Plugin;
+  if (!plugins[name]) throw new Error(`Unknown plugin ${name}`);
+  return plugins[name];
+}
+
 // TODO make this async*
 export function generate(
   content: Content[],
@@ -23,10 +42,10 @@ export class GenerateManager {
 
   static async from(
     content: Content[],
-    settings: Record<string, string>
+    settings: Record<string, string> = {}
   ): Promise<GenerateManager> {
     const pluginName = content.at(0)?.meta?.head?.["plugin"] ?? DEFAULT_PLUGIN;
-    const plugin = (await import(`./plugin/${pluginName}.js`)) as Plugin;
+    const plugin = await getPlugin(pluginName);
     plugin.format(content);
     return new GenerateManager(content, settings);
   }
@@ -193,7 +212,7 @@ async function generateOne(
 ): Promise<string> {
   // Determine PLUGIN and MODEL, load them.
   const pluginName = c.meta?.head?.["plugin"] ?? DEFAULT_PLUGIN;
-  const plugin = (await import(`./plugin/${pluginName}.js`)) as Plugin;
+  const plugin = await getPlugin(pluginName);
   plugin.format([c]);
   const model = c.meta?.head?.["plugin"] ?? plugin.DEFAULT_MODEL;
   const generated = await plugin.generate(c, { ...settings, model });
@@ -205,15 +224,6 @@ async function generateOne(
     "---",
     generated.message,
   ].join("\n");
-}
-
-interface Plugin {
-  DEFAULT_MODEL: string;
-  format: (c: Content[]) => Promise<void>;
-  generate: (
-    c: Content,
-    parameters: Record<string, string>
-  ) => Promise<{ debug: unknown; message: string }>;
 }
 
 /*
