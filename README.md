@@ -34,7 +34,7 @@ This is powered by [Next.js](https://nextjs.org/) using App Router.
 
 ## The Extension in Dev Mode
 
-1. Run `npx tsx -w -p core`
+1. Run `npx tsc -w -p core`
 1. Start the `Run Ailly Extension` task
    1. Choose `tsx: watch - extension/tsconfig.json`
 1. Open a workspace folder in the Extension debug window
