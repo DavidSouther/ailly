@@ -37,6 +37,11 @@ This is powered by [Next.js](https://nextjs.org/) using App Router.
 1. Run `npx tsc -w -p core`
 1. Start the `Run Ailly Extension` task
    1. Choose `tsx: watch - extension/tsconfig.json`
-1. Open a workspace folder in the Extension debug window
+1. When the new window appears, open a folder with your content.
+   - Ailly currently only works on the first folder in a [workspace](https://code.visualstudio.com/docs/editor/workspaces).
+   - In debug mode, Ailly disables other extensions and runs in a clean profile. Comment out the `"--profile-temp",` line in `launch.json` to use your current VSCode profile instead.
+   - WARNING: Ailly may prompt for your OpenAI API Key. If it does so, it will store the key in workspace settings for later access. Do not commit this key to source control!
+   - If you don't like that behavior, ensure you have `OPENAI_API_KEY` set in your environment for VSCode.
+   - Or send a PR with a better way to load the key safely.
 1. Right Click a file or folder -> Ailly: Generate
 1. Open a file -> Cmd+P -> Ailly: Generate

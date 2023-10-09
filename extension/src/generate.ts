@@ -37,19 +37,20 @@ export async function generate(path: string) {
 }
 
 async function getOpenAIKey(): Promise<string | undefined> {
-  let configuredKey = vscode.workspace.getConfiguration("ailly");
-  if (configuredKey.has("openai-api-key")) {
-    const key = configuredKey.get<string>("openai-api-key");
+  if (process.env["OPENAI_API_KEY"]) {
+    return process.env["OPENAI_API_KEY"];
+  }
+  let aillyConfig = vscode.workspace.getConfiguration("ailly");
+  if (aillyConfig.has("openai-api-key")) {
+    const key = aillyConfig.get<string>("openai-api-key");
     if (key) {
       return key;
     }
   }
-  const key =
-    process.env["OPENAI_API_KEY"] ??
-    (await vscode.window.showInputBox({
-      title: "Ailly: OpenAI API Key",
-      prompt: "API Key from OpenAI for requests",
-    }));
-  configuredKey.update("openai-api-key", key);
+  const key = await vscode.window.showInputBox({
+    title: "Ailly: OpenAI API Key",
+    prompt: "API Key from OpenAI for requests",
+  });
+  aillyConfig.update("openai-api-key", key);
   return key;
 }
