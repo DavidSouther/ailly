@@ -136,6 +136,7 @@ export async function loadContent(
   head = { ...head, ...sys.data };
   system = [...system, sys.content];
   if (head["skip"]) {
+    console.debug(`Skipping content from ${fs.cwd()} based on head of _s.md`);
     return [];
   }
   const dir = await loadDir(fs).catch((e) => defaultPartitionedDirectory());

@@ -1,8 +1,8 @@
 {
   "files": [],
   "references": [
-    { "path": "packages/core" },
+    { "path": "core" },
     // { "path": "packages/cli" },
-    { "path": "packages/web" }
+    { "path": "web" }
   ]
 }

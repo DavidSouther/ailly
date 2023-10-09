@@ -1,12 +1,7 @@
 {
   "name": "@ailly/ailly",
   "workspaces": [
-    "packages/*"
-  ],
-  "devDependencies": {
-    "vitest": "^0.34.6"
-  },
-  "dependencies": {
-    "redis": "^4.6.10"
-  }
+    "core",
+    "web"
+  ]
 }
