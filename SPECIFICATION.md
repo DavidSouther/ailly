@@ -36,8 +36,8 @@ Each file will be parsed as markdown individually.
 
 ### gray matter
 
-Files named `_s.md` in a folder are "system" files, which are used to create a system prompt for AI training.
-`_s.md` files and prompt files are parsed for gray matter in the head.
+Files named `.aillyrc` or `.aillyrc.md` in a folder are "system" files, which are used to create a system prompt for AI training.
+`.aillyrc.md` files and prompt files are parsed for gray matter in the head.
 
 | Field    | Usage                                                                                                         |
 | -------- | ------------------------------------------------------------------------------------------------------------- |
@@ -73,33 +73,33 @@ OpenAI then returns with the anticipated `assistant` message.
 
 > `message` is `{"role": "system"|"user"|"assistant", "content": "<string>"}`
 
-To separate content into prompt and response, and to be immediately obvious to authors, the letters `s` (system), `p` (prompt, `user`), and `r` (response, `assistant`) can be used immediately after the first `_` for ignored files, and the numbers, for content.
+Ailly reads files as prompts, and writes responses to `<filename>.ailly.md`.
 The rest of the filenames must be the same, to line up sessions.
 
 > The example from https://platform.openai.com/docs/guides/gpt/chat-completions-api:
 
 ```
-_s.md -> You are a helpful assistant.
-01p_who_won.md -> Who won the world series in 2020?
-01r_who_won.md -> The Los Angeles Dodgers won the world series in 2020.
-02p_where_played.md -> Where was it played?
+.aillyrc -> You are a helpful assistant.
+01_who_won.md -> Who won the world series in 2020?
+01_who_won.md.ailly.md -> The Los Angeles Dodgers won the world series in 2020.
+02_where_played.md -> Where was it played?
 ```
 
 > The example from https://platform.openai.com/docs/guides/fine-tuning/preparing-your-dataset
 
 ```
-_s.md -> Marv is a factual chatbot that is also sarcastic.
-01_capital/01p_capital.md -> What's the capital of France?
-01_capital/01r_capital.md -> Paris, as if everyone doesn't know that already.
-02_author/01p_author.md -> Who wrote 'Romeo and Juliet'?
-02_author/01r_author.md -> Oh, just some guy named William Shakespeare. Ever heard of him?
-03_distance/01p_distance.md -> How far is the Moon from Earth?
-03_distance/01r_distance.md -> Around 384,400 kilometers. Give or take a few, like that really matters.
+.aillyrc -> Marv is a factual chatbot that is also sarcastic.
+01_capital/01_capital.md -> What's the capital of France?
+01_capital/01_capital.md.ailly.md -> Paris, as if everyone doesn't know that already.
+02_author/01_author.md -> Who wrote 'Romeo and Juliet'?
+02_author/01_author.md.ailly.md -> Oh, just some guy named William Shakespeare. Ever heard of him?
+03_distance/01_distance.md -> How far is the Moon from Earth?
+03_distance/01_distance.md.ailly.md -> Around 384,400 kilometers. Give or take a few, like that really matters.
 ```
 
-When asked to generated the next file, the tool will start by walking to the root of the project making a list of `system` message from `_s` files.
-It will then include all `p` and `r` files up to this point, following the ordering rules.
-The returned generated content will get written to a file with the name of the final `p` file, replacing the `p` with an `r`.
+When asked to generated the next file, the tool will start by walking to the root of the project making a list of `system` message from `.aillyrc` files.
+It will then include all prompt and response files up to this point, following the ordering rules.
+The returned generated content will get written to a file with the name of the final file, adding `.ailly.rc` to the end.
 
 When sending fine-tuning sessions, the P/R pairs will be included in multiple instances.
 With three sections, the fine-tuning call will send ([P1, R1], [P1, R1, P2, R2], [P1, R1, P2, R2, P3, R3]), to train each of the responses in context.

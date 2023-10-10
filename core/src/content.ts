@@ -17,9 +17,6 @@ export interface Content {
   // The extracted name from the basename
   name: string;
 
-  // The extracted order from the basename
-  order: number;
-
   // The list of system prompts above this content
   system: string[];
 
@@ -31,9 +28,12 @@ export interface Content {
 
 // Additional useful metadata.
 export interface ContentMeta {
-  head?: TODOGrayMatterData; // Any graymatter metadata
   messages?: Message[];
   tokens?: number;
+  isolated?: boolean;
+  plugin?: string;
+  model?: string;
+  skip?: boolean;
 }
 
 interface PartitionedDirectory {
@@ -69,23 +69,24 @@ async function loadDir(fs: FileSystem): Promise<PartitionedDirectory> {
 }
 
 export type Ordering =
-  | { order: number; id: string; type: "prompt" | "response" }
+  | { id: string; type: "prompt" | "response" }
   | { id: string; type: "system" }
   | { type: "ignore" };
 
 function splitOrderedName(name: string): Ordering {
-  if (name.startsWith("_s")) {
-    return { type: "system", id: name.substring(2) };
+  if (name.startsWith(".aillyrc")) {
+    return { type: "system", id: name };
   }
   if (name.startsWith("_")) {
     return { type: "ignore" };
   }
-  const parts = name.match(/(\d+)([pr]?)_(.+)/);
+  const parts = name.match(/(?<i>.+)(?<r>\.ailly\.md)?/);
   if (parts) {
+    const { i, r } = parts.groups ?? {};
+    const response = r !== undefined;
     return {
-      type: parts[2] === "p" ? "prompt" : "response",
-      order: Number(parts[1]),
-      id: parts[3],
+      type: response ? "response" : "prompt",
+      id: i ?? name,
     };
   }
 
@@ -106,9 +107,7 @@ async function loadFile(
         await fs.readFile(join(cwd, file.name)).catch((e) => "")
       );
       const { content: response } = matter(
-        await fs
-          .readFile(join(cwd, `${ordering.order}r_${ordering.id}`))
-          .catch((e) => "")
+        await fs.readFile(join(cwd, `${ordering.id}.ailly.md`)).catch((e) => "")
       );
       return {
         name: ordering.id,
@@ -116,9 +115,9 @@ async function loadFile(
         path: join(fs.cwd(), file.name),
         prompt,
         response,
-        order: ordering.order,
         meta: {
-          head: { ...head, data },
+          ...head,
+          ...data,
         },
       };
     default:
@@ -126,25 +125,45 @@ async function loadFile(
   }
 }
 
+/**
+ * 1. When the file is .aillyrc.md
+ *    1. Parse it into [matter, prompt]
+ *    2. Use matter as the meta data base, and put prompt in the system messages.
+ * 2. ~When the file is `<nn>p_<name>`~
+ *    1. ~Put it in a thread~
+ *    2. ~Write the output to `<nn>r_<name>`~
+ * 3. When the file name is `<name>.<ext>` (but not `<name>.<ext>.ailly.md`)
+ *    1. Read <name>.<ext>.ailly.md as the response
+ *    1. Write the output to `<name>.<ext>.ailly.md`
+ * 4. If it is a folder
+ *    1. Find all files that are not denied by .gitignore
+ *    2. Apply the above logic.
+ * @param fs the file system abstraction
+ * @param system the system message chain
+ * @param meta current head matter & settings
+ * @returns
+ */
 export async function loadContent(
   fs: FileSystem,
   system: string[] = [],
-  head: TODOGrayMatterData = {}
+  meta: ContentMeta = {}
 ): Promise<Content[]> {
   console.debug(`Loading content from ${fs.cwd()}`);
-  const sys = matter(await fs.readFile("_s.md").catch((e) => ""));
-  head = { ...head, ...sys.data };
+  const sys = matter(await fs.readFile(".aillyrc").catch((e) => ""));
+  meta = { ...meta, ...sys.data };
   system = [...system, sys.content];
-  if (head["skip"]) {
-    console.debug(`Skipping content from ${fs.cwd()} based on head of _s.md`);
+  if (meta.skip) {
+    console.debug(
+      `Skipping content from ${fs.cwd()} based on head of .aillyrc`
+    );
     return [];
   }
   const dir = await loadDir(fs).catch((e) => defaultPartitionedDirectory());
   const files: Content[] = (
-    await Promise.all(dir.files.map((file) => loadFile(fs, file, system, head)))
+    await Promise.all(dir.files.map((file) => loadFile(fs, file, system, meta)))
   ).filter(isDefined);
-  if (!Boolean(head.isolated)) {
-    files.sort((a, b) => a.order - b.order);
+  if (!Boolean(meta.isolated)) {
+    files.sort((a, b) => a.name.localeCompare(b.name));
     for (let i = files.length - 1; i > 0; i--) {
       files[i].predecessor = files[i - 1];
     }
@@ -153,7 +172,7 @@ export async function loadContent(
   const folders: Content[] = [];
   for (const folder of dir.folders) {
     fs.pushd(folder.name);
-    let contents = await loadContent(fs, system, head);
+    let contents = await loadContent(fs, system, meta);
     folders.push(...contents);
     fs.popd();
   }
@@ -168,7 +187,7 @@ export async function writeContent(fs: FileSystem, content: Content[]) {
     content.map(async (c) => {
       if (!c.response) return;
       const dir = dirname(c.path);
-      const filename = `${c.order}r_${c.name}`;
+      const filename = `${c.name}.ailly.md`;
       console.log(`Writing response for ${filename}`);
       fs.writeFile(join(dir, filename), c.response);
     })

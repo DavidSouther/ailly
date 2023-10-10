@@ -1,25 +1,12 @@
 import { Content } from "./content.js";
 import { dirname } from "path";
+import { PLUGINS, Plugin } from "./plugin/index.js";
 
 const DEFAULT_PLUGIN = "openai";
 
-interface Plugin {
-  DEFAULT_MODEL: string;
-  format: (c: Content[]) => Promise<void>;
-  generate: (
-    c: Content,
-    parameters: Record<string, string>
-  ) => Promise<{ debug: unknown; message: string }>;
-}
-
-const plugins: Record<string, Plugin> = {};
-
-async function getPlugin(name: string): Promise<Plugin> {
-  if (plugins[name]) return plugins[name];
-  // List plugins explicitly
-  plugins["openai"] = (await import(`./plugin/openai.js`)) as unknown as Plugin;
-  if (!plugins[name]) throw new Error(`Unknown plugin ${name}`);
-  return plugins[name];
+function getPlugin(name: string): Plugin {
+  if (!PLUGINS[name]) throw new Error(`Unknown plugin ${name}`);
+  return PLUGINS[name];
 }
 
 // TODO make this async*
@@ -44,7 +31,7 @@ export class GenerateManager {
     content: Content[],
     settings: Record<string, string> = {}
   ): Promise<GenerateManager> {
-    const pluginName = content.at(0)?.meta?.head?.["plugin"] ?? DEFAULT_PLUGIN;
+    const pluginName = content.at(0)?.meta?.["plugin"] ?? DEFAULT_PLUGIN;
     const plugin = await getPlugin(pluginName);
     plugin.format(content);
     return new GenerateManager(content, settings);
@@ -131,7 +118,7 @@ class PromptThread {
     private settings: Record<string, string>
   ) {
     this.content = content;
-    this.isolated = Boolean(content[0]?.meta?.head?.["isolated"] ?? false);
+    this.isolated = Boolean(content[0]?.meta?.isolated ?? false);
   }
 
   start() {
@@ -211,10 +198,10 @@ async function generateOne(
   settings: Record<string, string>
 ): Promise<string> {
   // Determine PLUGIN and MODEL, load them.
-  const pluginName = c.meta?.head?.["plugin"] ?? DEFAULT_PLUGIN;
+  const pluginName = c.meta?.plugin ?? DEFAULT_PLUGIN;
   const plugin = await getPlugin(pluginName);
   plugin.format([c]);
-  const model = c.meta?.head?.["plugin"] ?? plugin.DEFAULT_MODEL;
+  const model = c.meta?.model ?? plugin.DEFAULT_MODEL;
   const generated = await plugin.generate(c, { ...settings, model });
   const debug = JSON.stringify(generated.debug);
   return [
@@ -270,8 +257,8 @@ export function partitionPrompts(content: Content[]): Content[][] {
   }
 
   for (const thread of directories.values()) {
-    thread.sort((a, b) => a.order - b.order);
-    if (!Boolean(thread.at(0)?.meta?.head?.["isolated"])) {
+    thread.sort((a, b) => a.name.localeCompare(b.name));
+    if (!Boolean(thread.at(0)?.meta?.["isolated"])) {
       for (let i = thread.length - 1; i > 0; i--) {
         thread[i].predecessor = thread[i - 1];
       }
