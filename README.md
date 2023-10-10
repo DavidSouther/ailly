@@ -6,6 +6,13 @@ Write your outline.
 Prompt Ailly to continue to continue the writing.
 Edit its output, and retrain to get it even more like that.
 
+## Engines
+- OpenAI
+- Bedrock
+  - Claude 2
+ 
+To choose an engine, specify `plugin: [bedrock|openai]` in an `.aillyrc`.
+
 ## Running Ailly
 
 This is powered by [Next.js](https://nextjs.org/) using App Router.

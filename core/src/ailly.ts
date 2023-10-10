@@ -31,7 +31,8 @@ export class GenerateManager {
     content: Content[],
     settings: Record<string, string> = {}
   ): Promise<GenerateManager> {
-    const pluginName = content.at(0)?.meta?.["plugin"] ?? DEFAULT_PLUGIN;
+    const meta = content.at(0)?.meta;
+    const pluginName = meta?.["plugin"] ?? DEFAULT_PLUGIN;
     const plugin = await getPlugin(pluginName);
     plugin.format(content);
     return new GenerateManager(content, settings);
@@ -198,10 +199,20 @@ async function generateOne(
   settings: Record<string, string>
 ): Promise<string> {
   // Determine PLUGIN and MODEL, load them.
-  const pluginName = c.meta?.plugin ?? DEFAULT_PLUGIN;
+  const meta = c.meta;
+  const pluginName = meta?.plugin ?? DEFAULT_PLUGIN;
   const plugin = await getPlugin(pluginName);
   plugin.format([c]);
   const model = c.meta?.model ?? plugin.DEFAULT_MODEL;
+
+  console.log(
+    `Calling ${pluginName}`,
+    meta?.messages?.map((m) => ({
+      role: m.role,
+      content: m.content.replaceAll("\n", "").substring(0, 50) + "...",
+      tokens: m.tokens,
+    }))
+  );
   const generated = await plugin.generate(c, { ...settings, model });
   const debug = JSON.stringify(generated.debug);
   return [

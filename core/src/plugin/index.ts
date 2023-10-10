@@ -1,5 +1,6 @@
 import { Content } from "../content";
 import * as openai from "./openai.js";
+import * as bedrock from "./bedrock/bedrock.js";
 
 export interface Plugin {
   DEFAULT_MODEL: string;
@@ -23,4 +24,5 @@ export interface Summary {
 
 export const PLUGINS: Record<string, Plugin> = {
   openai: openai as unknown as Plugin,
+  bedrock: bedrock as unknown as Plugin
 };
