@@ -25,14 +25,7 @@ export async function generate(
   if (messages.at(-1)?.role == "assistant") {
     messages = messages.slice(0, -1);
   }
-  console.log(
-    "Calling OpenAI",
-    messages.map((m) => ({
-      role: m.role,
-      content: m.content.replaceAll("\n", "").substring(0, 50) + "...",
-      tokens: m.tokens,
-    }))
-  );
+
   const completions = await openai.chat.completions.create({
     messages: (c.meta?.messages ?? []).map(({ role, content }) => ({
       role,

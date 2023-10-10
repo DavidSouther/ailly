@@ -9,12 +9,15 @@ export class PromptBuilder {
 
   constructor(private readonly modelName: Models) {}
 
-  build<R>(messages: Message[]): R {
+  build(messages: Message[]) {
     return this.modelBuilders[this.modelName](messages);
   }
 }
 
-export function claude(messages: Message[]) {
+export function claude(messages: Message[]): {
+  prompt: String;
+  max_tokens_to_sample: number;
+} {
   let output = "";
   let prevRole = "";
 
@@ -34,5 +37,5 @@ export function claude(messages: Message[]) {
     output += msg.content;
   });
 
-  return output + "\n\nAssistant:";
+  return { prompt: output + "\n\nAssistant:", max_tokens_to_sample: 8191 };
 }

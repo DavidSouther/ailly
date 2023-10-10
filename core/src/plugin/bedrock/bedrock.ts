@@ -5,9 +5,9 @@ import {
 import { Content } from "../../content.js";
 import { isDefined } from "../../util.js";
 import { Message, Summary } from "../index.js";
-import { PromptBuilder } from "./prompt-builder";
+import { Models, PromptBuilder } from "./prompt-builder.js";
 
-export const DEFAULT_MODEL = "anthropic.claude-v2";
+export const DEFAULT_MODEL: Models = "anthropic.claude-v2";
 
 const promptBuilder = new PromptBuilder(DEFAULT_MODEL);
 
@@ -23,24 +23,14 @@ export async function generate(
   if (messages.at(-1)?.role == "assistant") {
     messages = messages.slice(0, -1);
   }
-  console.log(
-    "Calling Bedrock",
-    messages.map((m) => ({
-      role: m.role,
-      content: m.content.replaceAll("\n", "").substring(0, 50) + "...",
-      tokens: m.tokens,
-    })),
-  );
+
+  const prompt = promptBuilder.build(messages);
   const response = await bedrock.send(
     new InvokeModelCommand({
       modelId: model,
       contentType: "application/json",
       accept: "application/json",
-      body: JSON.stringify(
-        promptBuilder.build<{ prompt: String; max_tokens_to_sample: number }>(
-          messages,
-        ),
-      ),
+      body: JSON.stringify(prompt),
     }),
   );
 
