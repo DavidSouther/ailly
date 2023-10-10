@@ -1,36 +1,39 @@
-import { BedrockRuntimeClient, InvokeModelCommand } from '@aws-sdk/client-bedrock-runtime';
+import {
+  BedrockRuntimeClient,
+  InvokeModelCommand,
+} from "@aws-sdk/client-bedrock-runtime";
 import { Content } from "../content.js";
 import { isDefined } from "../util.js";
 import { Message, Summary } from "./index.js";
 
-export const DEFAULT_MODEL = 'anthropic.claude-v2';
+export const DEFAULT_MODEL = "anthropic.claude-v2";
 
 export function buildClaude2Prompt(messages: Message[]) {
-  let output = '';
+  let output = "";
   let prevRole = "";
 
-  const roleAdjustedMsgs = messages.map(msg => ({ ...msg, role: msg.role === 'assistant' ? 'Assistant' : 'Human' }))
+  const roleAdjustedMsgs = messages.map((msg) => ({
+    ...msg,
+    role: msg.role === "assistant" ? "Assistant" : "Human",
+  }));
 
-  roleAdjustedMsgs.forEach(msg => {
+  roleAdjustedMsgs.forEach((msg) => {
     if (msg.role !== prevRole) {
-      output += '\n\n' + msg.role + ': ';
+      output += "\n\n" + msg.role + ": ";
       prevRole = msg.role;
-    }
-    else {
-      output += '\n';
+    } else {
+      output += "\n";
     }
 
     output += msg.content;
   });
 
-  return output + '\n\nAssistant:';
+  return output + "\n\nAssistant:";
 }
 
 export async function generate(
   c: Content,
-  {
-    model = DEFAULT_MODEL,
-  }: { model: string; }
+  { model = DEFAULT_MODEL }: { model: string },
 ): Promise<{ message: string; debug: unknown }> {
   const bedrock = new BedrockRuntimeClient({});
   let messages = c.meta?.messages ?? [];
@@ -46,14 +49,19 @@ export async function generate(
       role: m.role,
       content: m.content.replaceAll("\n", "").substring(0, 50) + "...",
       tokens: m.tokens,
-    }))
+    })),
   );
-  const response = await bedrock.send(new InvokeModelCommand({
-    modelId: model,
-    contentType: 'application/json',
-    accept: 'application/json',
-    body: JSON.stringify({ prompt: buildClaude2Prompt(messages), max_tokens_to_sample: 8191 })
-  }));
+  const response = await bedrock.send(
+    new InvokeModelCommand({
+      modelId: model,
+      contentType: "application/json",
+      accept: "application/json",
+      body: JSON.stringify({
+        prompt: buildClaude2Prompt(messages),
+        max_tokens_to_sample: 8191,
+      }),
+    }),
+  );
 
   const body = JSON.parse(response.body.transformToString());
 
@@ -110,6 +118,4 @@ export function getMessages(content: Content): Message[] {
   ];
 }
 
-export async function tune(
-  content: Content[],
-) { }
+export async function tune(content: Content[]) {}
