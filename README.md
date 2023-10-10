@@ -10,6 +10,8 @@ Edit its output, and retrain to get it even more like that.
 - OpenAI
 - Bedrock
   - Claude 2
+ 
+To choose an engine, specify `plugin: [bedrock|openai]` in an `.aillyrc`.
 
 ## Running Ailly
 
