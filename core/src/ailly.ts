@@ -27,12 +27,12 @@ export class GenerateManager {
   threads: Thread[];
   threadRunners: PromptThread[] = [];
 
-  static async from(
+  static from(
     content: Content[],
     settings: Record<string, string> = {}
-  ): Promise<GenerateManager> {
+  ): GenerateManager {
     const pluginName = content.at(0)?.meta?.["plugin"] ?? DEFAULT_PLUGIN;
-    const plugin = await getPlugin(pluginName);
+    const plugin = getPlugin(pluginName);
     plugin.format(content);
     return new GenerateManager(content, settings);
   }

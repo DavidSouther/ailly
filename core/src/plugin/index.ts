@@ -1,6 +1,6 @@
 import { Content } from "../content";
 import * as openai from "./openai.js";
-import * as bedrock from "./bedrock.js";
+import * as bedrock from "./bedrock/bedrock.js";
 
 export interface Plugin {
   DEFAULT_MODEL: string;

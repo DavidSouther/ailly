@@ -2,34 +2,14 @@ import {
   BedrockRuntimeClient,
   InvokeModelCommand,
 } from "@aws-sdk/client-bedrock-runtime";
-import { Content } from "../content.js";
-import { isDefined } from "../util.js";
-import { Message, Summary } from "./index.js";
+import { Content } from "../../content.js";
+import { isDefined } from "../../util.js";
+import { Message, Summary } from "../index.js";
+import { PromptBuilder } from "./prompt-builder";
 
 export const DEFAULT_MODEL = "anthropic.claude-v2";
 
-export function buildClaude2Prompt(messages: Message[]) {
-  let output = "";
-  let prevRole = "";
-
-  const roleAdjustedMsgs = messages.map((msg) => ({
-    ...msg,
-    role: msg.role === "assistant" ? "Assistant" : "Human",
-  }));
-
-  roleAdjustedMsgs.forEach((msg) => {
-    if (msg.role !== prevRole) {
-      output += "\n\n" + msg.role + ": ";
-      prevRole = msg.role;
-    } else {
-      output += "\n";
-    }
-
-    output += msg.content;
-  });
-
-  return output + "\n\nAssistant:";
-}
+const promptBuilder = new PromptBuilder(DEFAULT_MODEL);
 
 export async function generate(
   c: Content,
@@ -56,10 +36,11 @@ export async function generate(
       modelId: model,
       contentType: "application/json",
       accept: "application/json",
-      body: JSON.stringify({
-        prompt: buildClaude2Prompt(messages),
-        max_tokens_to_sample: 8191,
-      }),
+      body: JSON.stringify(
+        promptBuilder.build<{ prompt: String; max_tokens_to_sample: number }>(
+          messages,
+        ),
+      ),
     }),
   );
 
