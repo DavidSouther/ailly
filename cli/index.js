@@ -57,7 +57,10 @@ let content = await ailly.content.load(fs, [args.values.prompt ?? ""], {
   model: args.values.model,
 });
 
-const positionals = args.positionals.map(cwdNormalize);
+const positionals =
+  args.positionals.length == 0
+    ? [process.cwd()]
+    : args.positionals.map(cwdNormalize);
 content = content.filter((c) => positionals.some((p) => c.path.startsWith(p)));
 
 if (args.values.summary) {
