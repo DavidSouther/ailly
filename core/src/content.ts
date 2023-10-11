@@ -80,7 +80,7 @@ function splitOrderedName(name: string): Ordering {
   if (name.startsWith("_")) {
     return { type: "ignore" };
   }
-  const parts = name.match(/(?<i>.+)(?<r>\.ailly\.md)?/);
+  const parts = name.match(/(?<i>.+)(?<r>\.ailly)?/);
   if (parts) {
     const { i, r } = parts.groups ?? {};
     const response = r !== undefined;
@@ -107,7 +107,7 @@ async function loadFile(
         await fs.readFile(join(cwd, file.name)).catch((e) => "")
       );
       const { content: response } = matter(
-        await fs.readFile(join(cwd, `${ordering.id}.ailly.md`)).catch((e) => "")
+        await fs.readFile(join(cwd, `${ordering.id}.ailly`)).catch((e) => "")
       );
       return {
         name: ordering.id,
@@ -132,9 +132,9 @@ async function loadFile(
  * 2. ~When the file is `<nn>p_<name>`~
  *    1. ~Put it in a thread~
  *    2. ~Write the output to `<nn>r_<name>`~
- * 3. When the file name is `<name>.<ext>` (but not `<name>.<ext>.ailly.md`)
- *    1. Read <name>.<ext>.ailly.md as the response
- *    1. Write the output to `<name>.<ext>.ailly.md`
+ * 3. When the file name is `<name>.<ext>` (but not `<name>.<ext>.ailly`)
+ *    1. Read <name>.<ext>.ailly as the response
+ *    1. Write the output to `<name>.<ext>.ailly`
  * 4. If it is a folder
  *    1. Find all files that are not denied by .gitignore
  *    2. Apply the above logic.
@@ -187,7 +187,7 @@ export async function writeContent(fs: FileSystem, content: Content[]) {
     content.map(async (c) => {
       if (!c.response) return;
       const dir = dirname(c.path);
-      const filename = `${c.name}.ailly.md`;
+      const filename = `${c.name}.ailly`;
       console.log(`Writing response for ${filename}`);
       fs.writeFile(join(dir, filename), c.response);
     })
