@@ -1,16 +1,11 @@
-import * as vscode from "vscode";
-// import { FileSystem } from "@davidsouther/jiffies/lib/esm/fs";
-import { VSCodeFileSystemAdapter } from "./fs";
-import type * as AillyT from "@ailly/core";
-// import type * as fsNode from "@davidsouther/jiffies/lib/esm/fs_node";
+import vscode from "vscode";
+
+import { FileSystem } from "@davidsouther/jiffies/lib/esm/fs.js";
+import { VSCodeFileSystemAdapter } from "./fs.mjs";
+import * as Ailly from "@ailly/core";
 
 export async function generate(path: string) {
   // CommonJS <> ESM Shenanigans
-  const Ailly = (await eval('import("@ailly/core")')) as typeof AillyT;
-  const { FileSystem } = await eval(
-    'import("@davidsouther/jiffies/lib/esm/fs.js")'
-  );
-
   console.log(`Generating for ${path}`);
   const apiKey = await getOpenAIKey();
   if (!apiKey) {

@@ -1,4 +1,4 @@
-import { Content } from "../content";
+import { Content } from "../content.js";
 import * as openai from "./openai.js";
 import * as bedrock from "./bedrock/bedrock.js";
 

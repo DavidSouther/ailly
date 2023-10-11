@@ -1,8 +1,8 @@
 import { OpenAI, toFile } from "openai";
-import { get_encoding } from "@dqbd/tiktoken";
 import { Content } from "../content.js";
 import { isDefined } from "../util.js";
 import { Message, Summary } from "./index.js";
+import { encode } from "../encoding";
 
 // const MODEL = "gpt-3.5-turbo-0613";
 // const FT_MODEL = process.env["OPENAI_FT_MODEL"];
@@ -57,13 +57,12 @@ export async function format(contents: Content[]): Promise<Summary> {
   return summary;
 }
 
-const encoding = get_encoding("cl100k_base");
 async function addContentMeta(content: Content) {
   content.meta ??= {};
   content.meta.messages = getMessages(content);
   content.meta.tokens = 0;
   for (const message of content.meta.messages) {
-    const toks = (await encoding.encode(message.content)).length;
+    const toks = (await encode(message.content)).length;
     message.tokens = toks;
     content.meta.tokens += toks;
   }

@@ -1,4 +1,4 @@
-import { FileSystem, Stats } from "@davidsouther/jiffies/lib/esm/fs";
+import { FileSystem, Stats } from "@davidsouther/jiffies/lib/esm/fs.js";
 import matter from "gray-matter";
 import { join, normalize, dirname } from "path";
 import * as gitignoreParser from "gitignore-parser";

@@ -3,8 +3,8 @@ import { expect, test } from "vitest";
 import {
   FileSystem,
   ObjectFileSystemAdapter,
-} from "@davidsouther/jiffies/lib/esm/fs";
-import { loadContent } from "./content";
+} from "@davidsouther/jiffies/lib/esm/fs.js";
+import { loadContent } from "./content.js";
 
 test("it loads content", async () => {
   const testFs = new FileSystem(

@@ -1,7 +1,6 @@
 // The module 'vscode' contains the VS Code extensibility API
 // Import the module and reference it with the alias vscode in your code below
 import * as vscode from "vscode";
-import { generate } from "./generate";
 import { basename } from "path";
 
 // This method is called when your extension is activated
@@ -17,28 +16,36 @@ export function activate(context: vscode.ExtensionContext) {
   let disposable = vscode.commands.registerCommand(
     "ailly.generate",
     async (uri?: vscode.Uri, ..._args) => {
-      let path: string;
-      if (uri) {
-        path = uri.path;
-      } else {
-        path = vscode.window.activeTextEditor?.document.uri.fsPath ?? "";
-        if (!path) {
-          return;
-        }
-      }
-
       try {
-        vscode.window.showInformationMessage(
-          `Ailly generating ${basename(path)}`
-        );
-        await generate(path);
-        vscode.window.showInformationMessage(
-          `Ailly generated ${basename(path)}`
-        );
+        let path: string;
+        if (uri) {
+          path = uri.path;
+        } else {
+          path = vscode.window.activeTextEditor?.document.uri.fsPath ?? "";
+          if (!path) {
+            return;
+          }
+        }
+
+        try {
+          const { generate } = await import("./generate.mjs");
+
+          vscode.window.showInformationMessage(
+            `Ailly generating ${basename(path)}`
+          );
+          await generate(path);
+          vscode.window.showInformationMessage(
+            `Ailly generated ${basename(path)}`
+          );
+        } catch (e) {
+          vscode.window.showWarningMessage(
+            `Ailly failed to generate ${basename(path)}: ${e}`
+          );
+
+          console.error(e);
+        }
       } catch (e) {
-        vscode.window.showWarningMessage(
-          `Ailly failed to generate ${basename(path)}: ${e}`
-        );
+        console.error(e);
       }
     }
   );

@@ -1,7 +1,7 @@
 import {
   type FileSystemAdapter,
   type Stats,
-} from "@davidsouther/jiffies/lib/esm/fs";
+} from "@davidsouther/jiffies/lib/esm/fs.js";
 import { basename } from "path";
 import { FileType, Uri, workspace } from "vscode";
 
