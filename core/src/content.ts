@@ -74,24 +74,18 @@ export type Ordering =
   | { id: string; type: "system" }
   | { type: "ignore" };
 
-function splitOrderedName(name: string): Ordering {
+export function splitOrderedName(name: string): Ordering {
   if (name.startsWith(".aillyrc")) {
     return { type: "system", id: name };
   }
   if (name.startsWith("_")) {
     return { type: "ignore" };
   }
-  const parts = name.match(/(?<i>.+)(?<r>\.ailly)?/);
-  if (parts) {
-    const { i, r } = parts.groups ?? {};
-    const response = r !== undefined;
-    return {
-      type: response ? "response" : "prompt",
-      id: i ?? name,
-    };
+  if (name.endsWith(".ailly")) {
+    const id = name.replace(/\.ailly$/, "");
+    return { type: "response", id };
   }
-
-  return { type: "ignore" };
+  return { type: "prompt", id: name };
 }
 
 async function loadFile(
