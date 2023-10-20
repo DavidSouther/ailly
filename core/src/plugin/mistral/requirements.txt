@@ -1,0 +1,14 @@
+certifi==2023.7.22
+charset-normalizer==3.3.0
+ctransformers==0.2.27
+filelock==3.12.4
+fsspec==2023.9.2
+huggingface-hub==0.18.0
+idna==3.4
+packaging==23.2
+py-cpuinfo==9.0.0
+PyYAML==6.0.1
+requests==2.31.0
+tqdm==4.66.1
+typing_extensions==4.8.0
+urllib3==2.0.6
