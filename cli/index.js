@@ -51,11 +51,16 @@ function cwdNormalize(path) {
 
 const root = cwdNormalize(args.values.root);
 const fs = new NodeFileSystem(root);
-let content = await ailly.content.load(fs, [args.values.prompt ?? ""], {
+const settings = {
   isolated: args.values.isolated,
   engine: args.values.engine,
   model: args.values.model,
-});
+};
+let content = await ailly.content.load(
+  fs,
+  [args.values.prompt ?? ""],
+  settings
+);
 
 const positionals =
   args.positionals.length == 0
@@ -83,7 +88,7 @@ if (args.values.summary) {
 console.log("Generating...");
 
 // Generate
-let generator = ailly.Ailly.generate(content);
+let generator = ailly.Ailly.generate(content, settings);
 generator.start();
 await generator.allSettled();
 

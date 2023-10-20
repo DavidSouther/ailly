@@ -2,7 +2,7 @@ import { OpenAI, toFile } from "openai";
 import { Content } from "../content.js";
 import { isDefined } from "../util.js";
 import { Message, Summary } from "./index.js";
-import { encode } from "../encoding";
+import { encode } from "../encoding.js";
 
 // const MODEL = "gpt-3.5-turbo-0613";
 // const FT_MODEL = process.env["OPENAI_FT_MODEL"];
@@ -15,9 +15,10 @@ export async function generate(
   {
     model = MODEL,
     apiKey = process.env["OPENAI_API_KEY"] ?? "",
-  }: { model: string; apiKey: string }
+    baseURL,
+  }: { model: string; apiKey: string; baseURL?: string }
 ): Promise<{ message: string; debug: unknown }> {
-  const openai = new OpenAI({ apiKey });
+  const openai = new OpenAI({ apiKey, baseURL });
   let messages = c.meta?.messages ?? [];
   if (messages.length < 2) {
     throw new Error("Not enough messages");
@@ -99,9 +100,10 @@ export async function tune(
   {
     model = MODEL,
     apiKey = process.env["OPENAI_API_KEY"] ?? "",
-  }: { model: string; apiKey: string }
+    baseURL,
+  }: { model: string; apiKey: string; baseURL: string }
 ) {
-  const openai = new OpenAI({ apiKey });
+  const openai = new OpenAI({ apiKey, baseURL });
   const summary = await format(content);
 
   const file = content

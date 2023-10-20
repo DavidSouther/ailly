@@ -3,7 +3,7 @@ let encoding: any;
 export async function encode(src: string) {
   try {
     if (!get_encoding) {
-      get_encoding = await import("@dqpd/tiktoken");
+      get_encoding = await import("@dqbd/tiktoken");
     }
     if (!encoding) {
       encoding = get_encoding("cl100k_base");

@@ -1,8 +1,8 @@
-import { Content } from "./content.js";
+import { Content, ContentMeta } from "./content.js";
 import { dirname } from "path";
 import { PLUGINS, Plugin } from "./plugin/index.js";
 
-const DEFAULT_PLUGIN = "openai";
+const DEFAULT_ENGINE = "openai";
 
 function getPlugin(name: string): Plugin {
   if (!PLUGINS[name]) throw new Error(`Unknown plugin ${name}`);
@@ -29,10 +29,10 @@ export class GenerateManager {
 
   static async from(
     content: Content[],
-    settings: Record<string, string> = {}
+    settings: ContentMeta = {}
   ): Promise<GenerateManager> {
     const meta = content.at(0)?.meta;
-    const pluginName = meta?.["plugin"] ?? DEFAULT_PLUGIN;
+    const pluginName = meta?.engine ?? settings?.engine ?? DEFAULT_ENGINE;
     const plugin = await getPlugin(pluginName);
     plugin.format(content);
     return new GenerateManager(content, settings);
@@ -40,7 +40,7 @@ export class GenerateManager {
 
   constructor(
     private readonly content: Content[],
-    private settings: Record<string, string>
+    private settings: ContentMeta
   ) {
     this.threads = partitionPrompts(content);
     console.log(`Ready to generate ${this.threads.length} messages`);
@@ -108,7 +108,7 @@ class PromptThread {
     return this.done && this.errors.length > 0;
   }
 
-  static run(content: Content[], settings: Record<string, string>) {
+  static run(content: Content[], settings: ContentMeta) {
     const thread = new PromptThread(content, settings);
     thread.start();
     return thread;
@@ -116,7 +116,7 @@ class PromptThread {
 
   private constructor(
     private readonly content: Content[],
-    private settings: Record<string, string>
+    private settings: ContentMeta
   ) {
     this.content = content;
     this.isolated = Boolean(content[0]?.meta?.isolated ?? false);
@@ -194,26 +194,23 @@ interface PromptThreadSummary extends PromptThreadsSummary {
   isolated: boolean;
 }
 
-async function generateOne(
-  c: Content,
-  settings: Record<string, string>
-): Promise<string> {
+async function generateOne(c: Content, settings: ContentMeta): Promise<string> {
   // Determine PLUGIN and MODEL, load them.
   const meta = c.meta;
-  const pluginName = meta?.plugin ?? DEFAULT_PLUGIN;
-  const plugin = await getPlugin(pluginName);
-  plugin.format([c]);
-  const model = c.meta?.model ?? plugin.DEFAULT_MODEL;
+  const engineName = meta?.engine ?? settings.engine ?? DEFAULT_ENGINE;
+  const engine = await getPlugin(engineName);
+  engine.format([c]);
+  const model = c.meta?.model ?? engine.DEFAULT_MODEL;
 
   console.log(
-    `Calling ${pluginName}`,
+    `Calling ${engineName}`,
     meta?.messages?.map((m) => ({
       role: m.role,
       content: m.content.replaceAll("\n", "").substring(0, 50) + "...",
       tokens: m.tokens,
     }))
   );
-  const generated = await plugin.generate(c, { ...settings, model });
+  const generated = await engine.generate(c, { ...settings, model });
   const debug = JSON.stringify(generated.debug);
   return [
     "---",

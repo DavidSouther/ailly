@@ -1,13 +1,14 @@
-import { Content } from "../content.js";
+import { Content, ContentMeta } from "../content.js";
 import * as openai from "./openai.js";
 import * as bedrock from "./bedrock/bedrock.js";
+import * as mistral from "./mistral/mistral.js";
 
 export interface Plugin {
   DEFAULT_MODEL: string;
   format: (c: Content[]) => Promise<void>;
   generate: (
     c: Content,
-    parameters: Record<string, string>
+    parameters: ContentMeta
   ) => Promise<{ debug: unknown; message: string }>;
 }
 

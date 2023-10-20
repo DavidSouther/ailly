@@ -32,6 +32,7 @@ export interface ContentMeta {
   tokens?: number;
   isolated?: boolean;
   plugin?: string;
+  engine?: string;
   model?: string;
   skip?: boolean;
 }
