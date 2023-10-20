@@ -10,6 +10,7 @@ export interface Plugin {
     c: Content,
     parameters: ContentMeta
   ) => Promise<{ debug: unknown; message: string }>;
+  tune: (c: Content[], parameters: ContentMeta) => Promise<unknown>;
 }
 
 export interface Message {
@@ -25,5 +26,6 @@ export interface Summary {
 
 export const PLUGINS: Record<string, Plugin> = {
   openai: openai as unknown as Plugin,
-  bedrock: bedrock as unknown as Plugin
+  bedrock: bedrock as unknown as Plugin,
+  mistral: mistral as unknown as Plugin,
 };

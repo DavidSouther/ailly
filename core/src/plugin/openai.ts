@@ -104,7 +104,7 @@ export async function tune(
   }: { model: string; apiKey: string; baseURL: string }
 ) {
   const openai = new OpenAI({ apiKey, baseURL });
-  const summary = await format(content);
+  await format(content); // fill in content parts
 
   const file = content
     .map((c) =>
@@ -125,7 +125,7 @@ export async function tune(
 
   const fineTune = await openai.fineTuning.jobs.create({
     training_file: trainingFile.id,
-    model: "gpt-3.5-turbo",
+    model,
   });
 
   console.log("Started fine-tuning job", fineTune);

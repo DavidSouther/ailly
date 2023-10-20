@@ -275,3 +275,13 @@ export function partitionPrompts(content: Content[]): Content[][] {
 
   return [...directories.values()];
 }
+
+export async function tune(content: Content[], settings: ContentMeta) {
+  // Determine PLUGIN and MODEL, load them.
+  const engineName =
+    content[0]?.meta?.engine ?? settings.engine ?? DEFAULT_ENGINE;
+  const engine = await getPlugin(engineName);
+  const model =
+    content[0]?.meta?.model ?? settings.model ?? engine.DEFAULT_MODEL;
+  return engine.tune(content, { ...settings, model });
+}
