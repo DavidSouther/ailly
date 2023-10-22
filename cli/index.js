@@ -1,10 +1,31 @@
 #! /usr/bin/env node
-import { createInterface } from "readline";
+import { createInterface } from "readline/promises";
 
 import * as ailly from "@ailly/core";
-import { fs, settings, content, args } from "./args.js";
+import { makeArgs, help } from "./args.js";
+import { loadFs } from "./fs.js";
 
-async function continue_() {
+await main();
+
+async function main() {
+  const args = makeArgs(process.argv);
+
+  if (args.values["help"]) {
+    help();
+    process.exit(1);
+  }
+
+  const loaded = await loadFs(args);
+
+  await check_should_run(loaded);
+  if (settings.tune) {
+    await tune(loaded);
+  } else {
+    await generate(loaded);
+  }
+}
+
+async function check_should_run({ content }) {
   if (args.values.summary) {
     console.log(
       `Found ${content.length} items, estimated cost TODO: CALCULATE`
@@ -14,18 +35,18 @@ async function continue_() {
         input: process.stdin,
         output: process.stdout,
       });
-      const prompt =
-        (await new Promise((resolve) =>
-          rl.question("Continue with generating these prompts? (y/N) ", resolve)
-        )) ?? "N";
-      if (prompt.toUpperCase() !== "Y") {
+      const prompt = await rl.question(
+        "Continue with generating these prompts? (y/N) ",
+        resolve
+      );
+      if (!prompt.toUpperCase().startsWith("Y")) {
         process.exit(0);
       }
     }
   }
 }
 
-async function generate() {
+async function generate({ fs, content, settings }) {
   console.log("Generating...");
 
   // Generate
@@ -37,13 +58,6 @@ async function generate() {
   ailly.content.write(fs, content);
 }
 
-async function tune() {
+async function tune({ content, settings }) {
   return ailly.Ailly.tune(content, settings);
-}
-
-await continue_();
-if (settings.tune) {
-  await tune();
-} else {
-  await generate();
 }
