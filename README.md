@@ -6,14 +6,37 @@ Write your outline.
 Prompt Ailly to continue to continue the writing.
 Edit its output, and retrain to get it even more like that.
 
-## Engines
-- OpenAI
-- Bedrock
-  - Claude 2
- 
-To choose an engine, specify `plugin: [bedrock|openai]` in an `.aillyrc`.
+Rhymes with Daily.
 
-## Running Ailly
+## Engines
+
+- OpenAI `openai`
+  - [Models documented by OpenAI](https://platform.openai.com/docs/models/continuous-model-upgrades)
+- Bedrock `bedrock`
+  - [Claude 2 and available models documented by AWS](https://docs.aws.amazon.com/bedrock/latest/userguide/api-methods-list.html)
+
+To choose an engine, specify `engine: [bedrock|openai]` in an `.aillyrc` or provide `ailly --engine` on the command line.
+
+## Installing Ailly Extension
+
+- Clone the repo and install dependencies
+  - `git clone git://github.com/davidsouther/ailly.git ; cd ailly ; npm install`
+- Package the extension with `npm run package`
+- In VSCode extensions, install `./extension/ailly-0.0.1.vsix` from vsix.
+- Right click a file in content explorer and select `Ailly: Generate`
+
+## Installing ailly command line
+
+- Clone the repo and install dependencies
+  - `git clone git://github.com/davidsouther/ailly.git ; cd ailly ; npm install`
+- Compile the core module with `npx tsc -p core`
+- Install ailly cli with `npm install -g ./cli`
+- Set any environment variables for your engine
+  - `export OPENAI_API_KEY=sk-...`
+- Run ailly with `npx ailly`
+  - Optionally, expose ailly directly with `alias ailly="$(PWD)/cli/index.js`
+
+## Running Ailly Web
 
 This is powered by [Next.js](https://nextjs.org/) using App Router.
 
@@ -37,9 +60,7 @@ This is powered by [Next.js](https://nextjs.org/) using App Router.
 - Prepare the project for deployment with `npm run export`
 - Good luck!
 
-## Rhymes with Hailey
-
-## The Extension in Dev Mode
+## Running the Extension in Dev Mode
 
 1. Run `npx tsc -w -p core`
 1. Start the `Run Ailly Extension` task
