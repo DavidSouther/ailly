@@ -4,7 +4,12 @@ import {
   FileSystem,
   ObjectFileSystemAdapter,
 } from "@davidsouther/jiffies/lib/esm/fs.js";
-import { loadContent, splitOrderedName } from "./content.js";
+import {
+  Content,
+  loadContent,
+  writeContent,
+  splitOrderedName,
+} from "./content.js";
 
 test("it loads content", async () => {
   const testFs = new FileSystem(
@@ -43,4 +48,57 @@ test.each([
 ])("it splits ordered filenames: %s -> %s", (file, type) => {
   const split = splitOrderedName(file);
   expect(split.type).toBe(type);
+});
+
+test("it loads combined prompt and responses", async () => {
+  const fs = new FileSystem(
+    new ObjectFileSystemAdapter({
+      ".aillyrc": "---\nisolated: true\n---",
+      "prompt.md": "---\nprompt: prompt\n---",
+      "content.md": "---\nprompt: content\n---\nResponse",
+    })
+  );
+
+  const content = await loadContent(fs);
+  expect(content.length).toBe(2);
+  expect(content).toEqual([
+    {
+      name: "content.md",
+      path: "/content.md",
+      prompt: "content",
+      response: "Response",
+      system: [""],
+      meta: { isolated: true, combined: true },
+    },
+    {
+      name: "prompt.md",
+      path: "/prompt.md",
+      prompt: "prompt",
+      response: "",
+      system: [""],
+      meta: { isolated: true, combined: true },
+    },
+  ] as Content[]);
+});
+
+test("it writes combined prompt and responses", async () => {
+  const fs = new FileSystem(new ObjectFileSystemAdapter({}));
+
+  const content = [
+    {
+      name: "content.md",
+      path: "/content.md",
+      prompt: "content",
+      response: "Response",
+      system: [""],
+      meta: { isolated: true, combined: true },
+    },
+  ] as Content[];
+
+  await writeContent(fs, content);
+
+  expect((fs as any).adapter.fs).toEqual({
+    "/content.md":
+      "---\ncombined: true\nisolated: true\nprompt: content\n---\nResponse",
+  });
 });

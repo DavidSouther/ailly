@@ -1,5 +1,9 @@
 {
   "name": "@ailly/ailly",
+  "scripts": {
+    "prepackage": "tsc --project core",
+    "package": "npm run --workspace extension package"
+  },
   "workspaces": [
     "core",
     "extension",

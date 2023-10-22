@@ -131,7 +131,7 @@ class PromptThread {
     const promises: Promise<Content>[] = this.content.map(
       async (c, i): Promise<Content> => {
         try {
-          c.response = await generateOne(c, this.settings);
+          await generateOne(c, this.settings);
           this.finished += 1;
         } catch (e) {
           console.warn("Error generating content", e);
@@ -154,7 +154,7 @@ class PromptThread {
     for (let i = 0; i < this.content.length; i++) {
       const content = this.content[i];
       try {
-        content.response = await generateOne(content, this.settings);
+        await generateOne(content, this.settings);
         results.push({ status: "fulfilled", value: content } as const);
         this.finished += 1;
       } catch (e) {
@@ -194,7 +194,16 @@ interface PromptThreadSummary extends PromptThreadsSummary {
   isolated: boolean;
 }
 
-async function generateOne(c: Content, settings: ContentMeta): Promise<string> {
+async function generateOne(
+  c: Content,
+  settings: ContentMeta
+): Promise<Content> {
+  const no_overwrite = c.meta?.no_overwrite || settings.no_overwrite;
+  const has_response = (c.response?.length ?? 0) > 0;
+  if (no_overwrite && has_response) {
+    return c;
+  }
+
   // Determine PLUGIN and MODEL, load them.
   const meta = c.meta;
   const engineName = meta?.engine ?? settings.engine ?? DEFAULT_ENGINE;
@@ -211,14 +220,9 @@ async function generateOne(c: Content, settings: ContentMeta): Promise<string> {
     }))
   );
   const generated = await engine.generate(c, { ...settings, model });
-  const debug = JSON.stringify(generated.debug);
-  return [
-    "---",
-    `generated: ${new Date().toISOString()}`,
-    `debug: ${debug}`,
-    "---",
-    generated.message,
-  ].join("\n");
+  c.response = generated.message;
+  c.meta = { ...c.meta, debug: generated.debug };
+  return c;
 }
 
 /*

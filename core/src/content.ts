@@ -1,5 +1,6 @@
 import { FileSystem, Stats } from "@davidsouther/jiffies/lib/esm/fs.js";
 import matter from "gray-matter";
+import * as yaml from "js-yaml";
 import { join, normalize, dirname } from "path";
 import * as gitignoreParser from "gitignore-parser";
 import { type Message } from "./plugin/index.js";
@@ -30,11 +31,14 @@ export interface Content {
 export interface ContentMeta {
   messages?: Message[];
   tokens?: number;
-  isolated?: boolean;
   plugin?: string;
   engine?: string;
   model?: string;
   skip?: boolean;
+  isolated?: boolean;
+  combined?: boolean;
+  no_overwrite?: boolean;
+  debug?: unknown;
 }
 
 interface PartitionedDirectory {
@@ -98,12 +102,20 @@ async function loadFile(
   const cwd = fs.cwd();
   switch (ordering.type) {
     case "prompt":
-      const { content: prompt, data } = matter(
+      let { content: prompt, data } = matter(
         await fs.readFile(join(cwd, file.name)).catch((e) => "")
       );
-      const { content: response } = matter(
-        await fs.readFile(join(cwd, `${ordering.id}.ailly`)).catch((e) => "")
-      );
+      let response = "";
+      if (data["prompt"]) {
+        response = prompt;
+        data.combined = true;
+        prompt = data["prompt"];
+        delete data["prompt"];
+      } else {
+        response = matter(
+          await fs.readFile(join(cwd, `${ordering.id}.ailly`)).catch((e) => "")
+        ).content;
+      }
       return {
         name: ordering.id,
         system,
@@ -182,9 +194,14 @@ export async function writeContent(fs: FileSystem, content: Content[]) {
     content.map(async (c) => {
       if (!c.response) return;
       const dir = dirname(c.path);
-      const filename = `${c.name}.ailly`;
+
+      const filename = c.meta?.combined ? c.name : `${c.name}.ailly`;
       console.log(`Writing response for ${filename}`);
-      fs.writeFile(join(dir, filename), c.response);
+      const path = join(dir, c.name);
+      const meta = { ...c.meta, prompt: c.prompt };
+      const head = yaml.dump(meta, { sortKeys: true });
+      const file = `---\n${head}---\n${c.response}`;
+      fs.writeFile(path, file);
     })
   );
 }
