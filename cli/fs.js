@@ -14,6 +14,7 @@ export async function loadFs(args) {
     engine: args.values.engine,
     model: args.values.model,
     tune: args.values.tune,
+    no_overwrite: args.values["no-overwrite"],
   };
   let content = await ailly.content.load(
     fs,

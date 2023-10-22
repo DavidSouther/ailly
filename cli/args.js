@@ -43,7 +43,7 @@ export function makeArgs(argv = process.argv) {
 export function help() {
   console.log(`usage: ailly [options] [paths]
   paths:
-    Folders or files to generate responses for. If unset, uses $(PWD). 
+    Folders or files to generate responses for. If unset, uses $(PWD).
 
   options:
     -r, --root sets base folder to search for additional system prompts.
@@ -55,7 +55,7 @@ export function help() {
 
     --tune will start a new fine tuning job using the engine and model selected.
 
-    --no-overwrite will not run generation on Content with an existing Response. (NOT YET IMPLEMENTED.)
+    --no-overwrite will not run generation on Content with an existing Response.
     -s, --summary will show a pricing expectation before running and prompt for OK.
     -y, —yes will skip any prompts.
 
