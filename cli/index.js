@@ -17,15 +17,15 @@ async function main() {
 
   const loaded = await loadFs(args);
 
-  await check_should_run(loaded);
-  if (settings.tune) {
+  await check_should_run(args, loaded);
+  if (loaded.settings.tune) {
     await tune(loaded);
   } else {
     await generate(loaded);
   }
 }
 
-async function check_should_run({ content }) {
+async function check_should_run(args, { content }) {
   if (args.values.summary) {
     console.log(
       `Found ${content.length} items, estimated cost TODO: CALCULATE`
