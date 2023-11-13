@@ -31,7 +31,9 @@ export function makeArgs(argv = process.argv) {
         default: Boolean(process.env["AILLY_ISOLATED"]),
       },
       summary: { type: "boolean", default: false, short: "s" },
+      "update-db": { type: "boolean", default: false },
       tune: { type: "boolean", default: false },
+      augment: { type: "boolean", default: false },
       yes: { type: "boolean", default: false, short: "y" },
       help: { type: "boolean", short: "h", default: false },
     },
@@ -54,6 +56,8 @@ export function help() {
     -m, --model will set the model from the engine. Can be set with AILLY_MODEL environment variable. Default is gpt-4-0613. (Probably? Check the code.)
 
     --tune will start a new fine tuning job using the engine and model selected.
+    --update-db will create and update a Vectra database with the current content. When available, a local vectra db will augment retrieval data.
+    --augment will look up augmentations in the db.
 
     --no-overwrite will not run generation on Content with an existing Response.
     -s, --summary will show a pricing expectation before running and prompt for OK.

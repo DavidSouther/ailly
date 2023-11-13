@@ -9,6 +9,7 @@ import { encode } from "../encoding.js";
 const MODEL = "gpt-4-0613";
 // const MODEL = `ft:${BASE_MODEL}:personal::${FT_MODEL}`;
 // const MODEL = "gpt-3.5-turbo-16k-0613";
+const EMBEDDING_MODEL = "text-embedding-ada-002";
 
 export async function generate(
   c: Content,
@@ -78,21 +79,30 @@ export function getMessages(content: Content): Message[] {
     content = content.predecessor!;
   }
   history.reverse();
-  return [
-    { role: "system", content: system },
-    ...history
-      .map<Array<Message | undefined>>((content) => [
-        {
+  const augment = history
+    .map<Array<Message | undefined>>(
+      (c) =>
+        (c.meta?.augment || []).map<Message>(({ content }) => ({
           role: "user",
-          content: content.prompt,
-        },
-        content.response
-          ? { role: "assistant", content: content.response }
-          : undefined,
-      ])
-      .flat()
-      .filter(isDefined),
-  ];
+          content: "Background information: " + content,
+        })) ?? []
+    )
+    .flat()
+    .filter(isDefined)
+    .slice(0, 1);
+  const parts = history
+    .map<Array<Message | undefined>>((content) => [
+      {
+        role: "user",
+        content: content.prompt,
+      },
+      content.response
+        ? { role: "assistant", content: content.response }
+        : undefined,
+    ])
+    .flat()
+    .filter(isDefined);
+  return [{ role: "system", content: system }, ...augment, ...parts];
 }
 
 export async function tune(
@@ -132,4 +142,18 @@ export async function tune(
   console.log(
     `New fine tuning model should be ft:${fineTune.model}:${fineTune.organization_id}::${fineTune.id}`
   );
+}
+
+export async function vector(
+  input: string,
+  {
+    model = EMBEDDING_MODEL,
+    apiKey = process.env["OPENAI_API_KEY"] ?? "",
+    baseURL,
+  }: { model: string; apiKey: string; baseURL?: string }
+): Promise<number[]> {
+  const openai = new OpenAI({ apiKey, baseURL });
+
+  const embedding = await openai.embeddings.create({ input, model });
+  return embedding.data[0].embedding;
 }

@@ -10,10 +10,13 @@ export async function loadFs(args) {
   const root = cwdNormalize(args.values.root);
   const fs = new NodeFileSystem(root);
   const settings = {
+    root: args.values.root,
     isolated: args.values.isolated,
     engine: args.values.engine,
     model: args.values.model,
     tune: args.values.tune,
+    updateDb: args.values["update-db"],
+    augment: args.values.augment,
     no_overwrite: args.values["no-overwrite"],
   };
   let content = await ailly.content.load(

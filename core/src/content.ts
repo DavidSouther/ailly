@@ -29,6 +29,7 @@ export interface Content {
 
 // Additional useful metadata.
 export interface ContentMeta {
+  root?: string;
   messages?: Message[];
   tokens?: number;
   plugin?: string;
@@ -39,6 +40,7 @@ export interface ContentMeta {
   combined?: boolean;
   no_overwrite?: boolean;
   debug?: unknown;
+  augment?: { score: number; content: string }[];
 }
 
 interface PartitionedDirectory {
@@ -198,7 +200,8 @@ export async function writeContent(fs: FileSystem, content: Content[]) {
       const filename = c.meta?.combined ? c.name : `${c.name}.ailly`;
       console.log(`Writing response for ${filename}`);
       const path = join(dir, c.name);
-      const meta = { ...c.meta, prompt: c.prompt };
+      const { engine, model, debug, isolated } = c.meta ?? {};
+      const meta = { debug, engine, isolated, model, prompt: c.prompt };
       const head = yaml.dump(meta, { sortKeys: true });
       const file = `---\n${head}---\n${c.response}`;
       fs.writeFile(path, file);

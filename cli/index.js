@@ -18,10 +18,21 @@ async function main() {
   const loaded = await loadFs(args);
 
   await check_should_run(args, loaded);
-  if (loaded.settings.tune) {
-    await tune(loaded);
-  } else {
-    await generate(loaded);
+
+  const plugin = await ailly.Ailly.getPlugin(args.values.engine ?? "openai");
+  const rag = await ailly.Ailly.RAG.build(plugin, args.values.root);
+  switch (true) {
+    case loaded.settings.updateDb:
+      await ailly.Ailly.updateDatabase(loaded.content, rag);
+      break;
+    case loaded.settings.tune:
+      await tune(loaded);
+      break;
+    case loaded.settings.augment:
+      await ailly.Ailly.augment(loaded.content, rag);
+    default:
+      await generate(loaded, rag);
+      break;
   }
 }
 
@@ -46,11 +57,11 @@ async function check_should_run(args, { content }) {
   }
 }
 
-async function generate({ fs, content, settings }) {
+async function generate({ fs, content, settings }, rag) {
   console.log("Generating...");
 
   // Generate
-  let generator = ailly.Ailly.generate(content, settings);
+  let generator = new ailly.Ailly.GenerateManager(content, settings, rag);
   generator.start();
   await generator.allSettled();
 

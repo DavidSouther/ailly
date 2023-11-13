@@ -1,23 +1,11 @@
+import { dirname } from "node:path";
 import { Content, ContentMeta } from "./content.js";
-import { dirname } from "path";
-import { PLUGINS, Plugin } from "./plugin/index.js";
+import { getPlugin } from "./plugin/index.js";
+import { RAG } from "./rag.js";
+export { getPlugin } from "./plugin/index.js";
+export { RAG } from "./rag.js";
 
 const DEFAULT_ENGINE = "openai";
-
-function getPlugin(name: string): Plugin {
-  if (!PLUGINS[name]) throw new Error(`Unknown plugin ${name}`);
-  return PLUGINS[name];
-}
-
-// TODO make this async*
-export function generate(
-  content: Content[],
-  settings: Record<string, string> = {}
-): GenerateManager {
-  const manager = new GenerateManager(content, settings);
-
-  return manager;
-}
 
 type Thread = Content[];
 
@@ -35,12 +23,14 @@ export class GenerateManager {
     const pluginName = meta?.engine ?? settings?.engine ?? DEFAULT_ENGINE;
     const plugin = await getPlugin(pluginName);
     plugin.format(content);
-    return new GenerateManager(content, settings);
+    const rag = await RAG.build(plugin, settings.root!);
+    return new GenerateManager(content, settings, rag);
   }
 
   constructor(
     private readonly content: Content[],
-    private settings: ContentMeta
+    private settings: ContentMeta,
+    private rag: RAG
   ) {
     this.threads = partitionPrompts(content);
     console.log(`Ready to generate ${this.threads.length} messages`);
@@ -49,7 +39,7 @@ export class GenerateManager {
   start() {
     this.started = true;
     this.threadRunners = this.threads.map((t) =>
-      PromptThread.run(t, this.settings)
+      PromptThread.run(t, this.settings, this.rag)
     );
 
     Promise.allSettled(this.threadRunners.map((t) => t.allSettled())).then(
@@ -108,15 +98,16 @@ class PromptThread {
     return this.done && this.errors.length > 0;
   }
 
-  static run(content: Content[], settings: ContentMeta) {
-    const thread = new PromptThread(content, settings);
+  static run(content: Content[], settings: ContentMeta, rag: RAG) {
+    const thread = new PromptThread(content, settings, rag);
     thread.start();
     return thread;
   }
 
   private constructor(
     private readonly content: Content[],
-    private settings: ContentMeta
+    private settings: ContentMeta,
+    private rag: RAG
   ) {
     this.content = content;
     this.isolated = Boolean(content[0]?.meta?.isolated ?? false);
@@ -131,6 +122,7 @@ class PromptThread {
     const promises: Promise<Content>[] = this.content.map(
       async (c, i): Promise<Content> => {
         try {
+          await this.rag.augment(c);
           await generateOne(c, this.settings);
           this.finished += 1;
         } catch (e) {
@@ -154,6 +146,7 @@ class PromptThread {
     for (let i = 0; i < this.content.length; i++) {
       const content = this.content[i];
       try {
+        await this.rag.augment(content);
         await generateOne(content, this.settings);
         results.push({ status: "fulfilled", value: content } as const);
         this.finished += 1;
@@ -288,4 +281,52 @@ export async function tune(content: Content[], settings: ContentMeta) {
   const model =
     content[0]?.meta?.model ?? settings.model ?? engine.DEFAULT_MODEL;
   return engine.tune(content, { ...settings, model });
+}
+
+export async function updateDatabase(
+  content: Content[],
+  rag: RAG
+): Promise<void> {
+  const _content = [...content];
+  return new Promise(async (resolve, reject) => {
+    const nextPiece = async () => {
+      const piece = _content.pop()!;
+      if (!piece) {
+        return resolve();
+      }
+      try {
+        console.log(`Sending ${piece.name} (${piece.path})`);
+        await rag.add(piece);
+        console.log(`Completed ${piece.name} (${piece.path})`);
+      } catch (e) {
+        console.log(`Error on ${piece.name} (${piece.path})`);
+        console.log(e);
+      }
+      setTimeout(nextPiece, 20);
+    };
+    nextPiece();
+  });
+}
+
+export async function augment(content: Content[], rag: RAG): Promise<void> {
+  const _content = [...content];
+  return new Promise(async (resolve, reject) => {
+    const nextPiece = async () => {
+      const piece = _content.pop()!;
+      if (!piece) {
+        return resolve();
+      }
+      try {
+        console.log(`Sending ${piece.name} (${piece.path})`);
+        await rag.augment(piece);
+        console.log(`Completed ${piece.name} (${piece.path})`);
+        console.log(piece.meta?.augment);
+      } catch (e) {
+        console.log(`Error on ${piece.name} (${piece.path})`);
+        console.log(e);
+      }
+      setTimeout(nextPiece, 20);
+    };
+    nextPiece();
+  });
 }

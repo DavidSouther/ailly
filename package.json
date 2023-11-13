@@ -9,5 +9,8 @@
     "extension",
     "web",
     "cli"
-  ]
+  ],
+  "dependencies": {
+    "vectra": "^0.4.4"
+  }
 }
