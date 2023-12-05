@@ -13,7 +13,7 @@ const promptBuilder = new PromptBuilder(DEFAULT_MODEL);
 
 export async function generate(
   c: Content,
-  { model = DEFAULT_MODEL }: { model: string },
+  { model = DEFAULT_MODEL }: { model: string }
 ): Promise<{ message: string; debug: unknown }> {
   const bedrock = new BedrockRuntimeClient({});
   let messages = c.meta?.messages ?? [];
@@ -31,7 +31,7 @@ export async function generate(
       contentType: "application/json",
       accept: "application/json",
       body: JSON.stringify(prompt),
-    }),
+    })
   );
 
   const body = JSON.parse(response.body.transformToString());
@@ -90,3 +90,19 @@ export function getMessages(content: Content): Message[] {
 }
 
 export async function tune(content: Content[]) {}
+
+export async function vector(inputText: string, {}: {}): Promise<number[]> {
+  const bedrock = new BedrockRuntimeClient({});
+  const response = await bedrock.send(
+    new InvokeModelCommand({
+      body: JSON.stringify({ inputText }),
+      modelId: "amazon.titan-embed-text-v1",
+      contentType: "application/json",
+      accept: "*/*",
+    })
+  );
+
+  const nums = new Float32Array(response.body.buffer);
+
+  return [...nums];
+}
