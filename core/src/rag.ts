@@ -16,7 +16,11 @@ export class RAG {
     return rag;
   }
 
-  private constructor(readonly plugin: Plugin, path: string) {
+  static async empty(plugin: Plugin, path: string): Promise<RAG> {
+    return new NoopRAG(plugin, path);
+  }
+
+  protected constructor(readonly plugin: Plugin, path: string) {
     this.index = new LocalIndex(path);
   }
 
@@ -37,5 +41,14 @@ export class RAG {
       score,
       content: item.metadata.text as string,
     }));
+  }
+}
+
+export class NoopRAG extends RAG {
+  override add(content: Content): Promise<void> {
+    return Promise.resolve();
+  }
+  override augment(content: Content): Promise<void> {
+    return Promise.resolve();
   }
 }

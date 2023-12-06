@@ -20,7 +20,9 @@ async function main() {
   await check_should_run(args, loaded);
 
   const plugin = await ailly.Ailly.getPlugin(args.values.engine ?? "openai");
-  const rag = await ailly.Ailly.RAG.build(plugin, args.values.root);
+  const rag = await (loaded.settings.augment
+    ? ailly.Ailly.RAG.build
+    : ailly.Ailly.RAG.empty)(plugin, args.values.root);
   switch (true) {
     case loaded.settings.updateDb:
       await ailly.Ailly.updateDatabase(loaded.content, rag);
@@ -28,8 +30,6 @@ async function main() {
     case loaded.settings.tune:
       await tune(loaded);
       break;
-    case loaded.settings.augment:
-      await ailly.Ailly.augment(loaded.content, rag);
     default:
       await generate(loaded, rag);
       break;
