@@ -108,15 +108,16 @@ async function loadFile(
         await fs.readFile(join(cwd, file.name)).catch((e) => "")
       );
       let response = "";
-      if (data["prompt"]) {
+      if (data.prompt) {
         response = prompt;
         data.combined = true;
-        prompt = data["prompt"];
-        delete data["prompt"];
+        prompt = data.prompt;
+        delete data.prompt;
       } else {
         response = matter(
           await fs.readFile(join(cwd, `${ordering.id}.ailly`)).catch((e) => "")
         ).content;
+        data.combined = false;
       }
       return {
         name: ordering.id,
@@ -197,11 +198,24 @@ export async function writeContent(fs: FileSystem, content: Content[]) {
       if (!c.response) return;
       const dir = dirname(c.path);
 
-      const filename = c.meta?.combined ? c.name : `${c.name}.ailly`;
+      const combined = c.meta?.combined ?? false;
+
+      const filename = combined ? c.name : `${c.name}.ailly`;
       console.log(`Writing response for ${filename}`);
-      const path = join(dir, c.name);
+      const path = join(dir, filename);
       const { engine, model, debug, isolated } = c.meta ?? {};
-      const meta = { debug, engine, isolated, model, prompt: c.prompt };
+      const meta = {
+        debug,
+        engine,
+        isolated,
+        model,
+        combined,
+      };
+
+      if (combined) {
+        (meta as unknown as { prompt: string }).prompt = c.prompt;
+      }
+
       const head = yaml.dump(meta, { sortKeys: true });
       const file = `---\n${head}---\n${c.response}`;
       fs.writeFile(path, file);
