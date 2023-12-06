@@ -102,3 +102,61 @@ test("it writes combined prompt and responses", async () => {
       "---\ncombined: true\nisolated: true\nprompt: content\n---\nResponse",
   });
 });
+
+test("it loads separate prompt and responses", async () => {
+  const fs = new FileSystem(
+    new ObjectFileSystemAdapter({
+      ".aillyrc": "---\nisolated: true\n---",
+      "prompt.md": "prompt",
+      "content.md": "content",
+      "content.md.ailly": "Response",
+    })
+  );
+
+  const content = await loadContent(fs);
+  expect(content.length).toBe(2);
+  expect(content).toEqual([
+    {
+      name: "content.md",
+      path: "/content.md",
+      prompt: "content",
+      response: "Response",
+      system: [""],
+      meta: { isolated: true, combined: false },
+    },
+    {
+      name: "prompt.md",
+      path: "/prompt.md",
+      prompt: "prompt",
+      response: "",
+      system: [""],
+      meta: { isolated: true, combined: false },
+    },
+  ] as Content[]);
+});
+
+test("it writes separate prompt and responses", async () => {
+  const fs = new FileSystem(
+    new ObjectFileSystemAdapter({
+      "content.md": "---\ncombined: false\nisolated: true\n---\ncontent",
+    })
+  );
+
+  const content = [
+    {
+      name: "content.md",
+      path: "/",
+      prompt: "content",
+      response: "Response",
+      system: [""],
+      meta: { isolated: true, combined: false },
+    },
+  ] as Content[];
+
+  await writeContent(fs, content);
+
+  expect((fs as any).adapter.fs).toEqual({
+    "/content.md": "---\ncombined: false\nisolated: true\n---\ncontent",
+    "/content.md.ailly": "---\ncombined: false\nisolated: true\n---\nResponse",
+  });
+});
