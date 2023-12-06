@@ -14,16 +14,9 @@ Rhymes with Daily.
   - [Models documented by OpenAI](https://platform.openai.com/docs/models/continuous-model-upgrades)
 - Bedrock `bedrock`
   - [Claude 2 and available models documented by AWS](https://docs.aws.amazon.com/bedrock/latest/userguide/api-methods-list.html)
+  - Enable models in Bedrock console. Remember that models are enabled per-region - you will need to enable them for each reach you call Bedrock from.
 
-To choose an engine, specify `engine: [bedrock|openai]` in an `.aillyrc` or provide `ailly --engine` on the command line.
-
-## Installing Ailly Extension
-
-- Clone the repo and install dependencies
-  - `git clone git://github.com/davidsouther/ailly.git ; cd ailly ; npm install`
-- Package the extension with `npm run package`
-- In VSCode extensions, install `./extension/ailly-0.0.1.vsix` from vsix.
-- Right click a file in content explorer and select `Ailly: Generate`
+To choose an engine, export `AILLY_ENGINE=[bedrock|openai]` or provide `ailly --engine` on the command line.
 
 ## Installing ailly command line
 
@@ -33,8 +26,13 @@ To choose an engine, specify `engine: [bedrock|openai]` in an `.aillyrc` or prov
 - Install ailly cli with `npm install -g ./cli`
 - Set any environment variables for your engine
   - `export OPENAI_API_KEY=sk-...`
+  - `export AILLY_ENGINE=bedrock` default: openai, others depending on version.
 - Run ailly with `npx ailly`
-  - Optionally, expose ailly directly with `alias ailly="$(PWD)/cli/index.js`
+- Optionally, create an alias to run ailly
+  - Directly with `alias ailly="$(PWD)/cli/index.js`
+  - For zsh: `echo "alias ailly='$(PWD)/cli/index.js'" >> ~/.zshrc`
+  - For bash: `echo "alias ailly='$(PWD)/cli/index.js'" >> ~/.bashrc`
+  - General \*nix: `echo "alias ailly='$(PWD)/cli/index.js'" >> ~/.profile`
 
 ## Running Ailly Web
 
@@ -59,6 +57,14 @@ This is powered by [Next.js](https://nextjs.org/) using App Router.
     - The token count is an estimate and the pricing is advisory; there are no limits placed on token size during the API request.
 - Prepare the project for deployment with `npm run export`
 - Good luck!
+
+## Installing Ailly Extension
+
+- Clone the repo and install dependencies
+  - `git clone git://github.com/davidsouther/ailly.git ; cd ailly ; npm install`
+- Package the extension with `npm run package`
+- In VSCode extensions, install `./extension/ailly-0.0.1.vsix` from vsix.
+- Right click a file in content explorer and select `Ailly: Generate`
 
 ## Running the Extension in Dev Mode
 

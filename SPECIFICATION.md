@@ -81,7 +81,7 @@ The rest of the filenames must be the same, to line up sessions.
 ```
 .aillyrc -> You are a helpful assistant.
 01_who_won.md -> Who won the world series in 2020?
-01_who_won.md.ailly.md -> The Los Angeles Dodgers won the world series in 2020.
+01_who_won.md.ailly -> The Los Angeles Dodgers won the world series in 2020.
 02_where_played.md -> Where was it played?
 ```
 
@@ -90,16 +90,16 @@ The rest of the filenames must be the same, to line up sessions.
 ```
 .aillyrc -> Marv is a factual chatbot that is also sarcastic.
 01_capital/01_capital.md -> What's the capital of France?
-01_capital/01_capital.md.ailly.md -> Paris, as if everyone doesn't know that already.
+01_capital/01_capital.md.ailly -> Paris, as if everyone doesn't know that already.
 02_author/01_author.md -> Who wrote 'Romeo and Juliet'?
-02_author/01_author.md.ailly.md -> Oh, just some guy named William Shakespeare. Ever heard of him?
+02_author/01_author.md.ailly -> Oh, just some guy named William Shakespeare. Ever heard of him?
 03_distance/01_distance.md -> How far is the Moon from Earth?
-03_distance/01_distance.md.ailly.md -> Around 384,400 kilometers. Give or take a few, like that really matters.
+03_distance/01_distance.md.ailly -> Around 384,400 kilometers. Give or take a few, like that really matters.
 ```
 
 When asked to generated the next file, the tool will start by walking to the root of the project making a list of `system` message from `.aillyrc` files.
 It will then include all prompt and response files up to this point, following the ordering rules.
-The returned generated content will get written to a file with the name of the final file, adding `.ailly.rc` to the end.
+The returned generated content will get written to a file with the name of the final file, adding `.ailly` to the end.
 
 When sending fine-tuning sessions, the P/R pairs will be included in multiple instances.
 With three sections, the fine-tuning call will send ([P1, R1], [P1, R1, P2, R2], [P1, R1, P2, R2, P3, R3]), to train each of the responses in context.
@@ -112,6 +112,6 @@ With three sections, the fine-tuning call will send ([P1, R1], [P1, R1, P2, R2],
 
 > Inline, block, and reference extensions to Markdown.
 
-Run `jifdown` during build to result in static HTML (or as appropriate).
+Run `jiffdown` during build to result in static HTML (or as appropriate).
 Jiffdown references are imported as plain text, and then escaped appropriately for the output target.
 For HTML publishing, code and diagrams should be annotated for [`highlight`](https://highlightjs.org/) and [mermaid](https://mermaid.js.org/).

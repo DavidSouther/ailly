@@ -48,7 +48,7 @@ export function help() {
     Folders or files to generate responses for. If unset, uses $(PWD).
 
   options:
-    -r, --root sets base folder to search for additional system prompts.
+    -r, --root sets base folder to search for content and system prompts.
     -p, --prompt sets an initial system prompt.
     -i, --isolated will start in isolated mode, generating each file separately.  Can be overridden with 'isolated: false' in .aillyrc files, and set with AILLY_ISOLATED=true environment variable.
 
@@ -56,7 +56,7 @@ export function help() {
     -m, --model will set the model from the engine. Can be set with AILLY_MODEL environment variable. Default is gpt-4-0613. (Probably? Check the code.)
 
     --tune will start a new fine tuning job using the engine and model selected.
-    --update-db will create and update a Vectra database with the current content. When available, a local vectra db will augment retrieval data.
+    --update-db will create and update a Vectra database with the current content. When available, a local Vectra db will augment retrieval data.
     --augment will look up augmentations in the db.
 
     --no-overwrite will not run generation on Content with an existing Response.
