@@ -27,6 +27,15 @@ async function main() {
     case loaded.settings.updateDb:
       await ailly.Ailly.updateDatabase(loaded.content, rag);
       break;
+    case loaded.settings.queryDb.length > 0:
+      const results = await rag.query(loaded.settings.queryDb);
+      console.table(
+        results.map((v) => ({
+          score: v.score,
+          item: v.content.substring(0, 45).replaceAll("\n", " ") + "...",
+        }))
+      );
+      break;
     case loaded.settings.tune:
       await tune(loaded);
       break;

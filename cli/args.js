@@ -32,6 +32,7 @@ export function makeArgs(argv = process.argv) {
       },
       summary: { type: "boolean", default: false, short: "s" },
       "update-db": { type: "boolean", default: false },
+      "query-db": { type: "string", default: "" },
       tune: { type: "boolean", default: false },
       augment: { type: "boolean", default: false },
       yes: { type: "boolean", default: false, short: "y" },
