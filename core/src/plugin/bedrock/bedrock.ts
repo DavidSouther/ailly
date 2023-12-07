@@ -91,6 +91,7 @@ export function getMessages(content: Content): Message[] {
 
 export async function tune(content: Content[]) {}
 
+const td = new TextDecoder();
 export async function vector(inputText: string, {}: {}): Promise<number[]> {
   const bedrock = new BedrockRuntimeClient({});
   const response = await bedrock.send(
@@ -102,7 +103,7 @@ export async function vector(inputText: string, {}: {}): Promise<number[]> {
     })
   );
 
-  const nums = new Float32Array(response.body.buffer);
+  const body = JSON.parse(td.decode(response.body));
 
-  return [...nums];
+  return body.embedding;
 }
