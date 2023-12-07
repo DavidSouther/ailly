@@ -181,6 +181,7 @@ export async function loadContent(
 
   const folders: Content[] = [];
   for (const folder of dir.folders) {
+    if (folder.name == ".vectors") continue;
     fs.pushd(folder.name);
     let contents = await loadContent(fs, system, meta);
     folders.push(...contents);

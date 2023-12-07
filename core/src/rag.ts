@@ -29,18 +29,23 @@ export class RAG {
     const vector = await this.plugin.vector(content.prompt, {});
     await this.index.insertItem({
       vector,
-      metadata: { text },
+      metadata: { text, name: content.name, path: content.path },
     });
+  }
+
+  async query(data: string, results = 3) {
+    const vector = await this.plugin.vector(data, {});
+    const query = await this.index.queryItems(vector, results);
+    return query.map(({ score, item }) => ({
+      score,
+      content: item.metadata.text as string,
+    }));
   }
 
   async augment(content: Content) {
     content.meta = content.meta ?? {};
-    const vector = await this.plugin.vector(content.prompt, {});
-    const results = await this.index.queryItems(vector, 3);
-    content.meta.augment = results.map(({ score, item }) => ({
-      score,
-      content: item.metadata.text as string,
-    }));
+    const results = await this.query(content.prompt);
+    content.meta.augment = results;
   }
 }
 
@@ -50,5 +55,12 @@ export class NoopRAG extends RAG {
   }
   override augment(content: Content): Promise<void> {
     return Promise.resolve();
+  }
+
+  override query(
+    data: string,
+    results?: number
+  ): Promise<{ score: number; content: string }[]> {
+    return Promise.resolve([]);
   }
 }

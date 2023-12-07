@@ -16,7 +16,11 @@ export async function loadFs(args) {
     model: args.values.model,
     tune: args.values.tune,
     updateDb: args.values["update-db"],
-    augment: args.values.augment,
+    queryDb: args.values["query-db"],
+    augment:
+      args.values.augment ||
+      args.values["update-db"] ||
+      args.values["query-db"],
     no_overwrite: args.values["no-overwrite"],
   };
   let content = await ailly.content.load(
