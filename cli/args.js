@@ -37,6 +37,7 @@ export function makeArgs(argv = process.argv) {
       augment: { type: "boolean", default: false },
       yes: { type: "boolean", default: false, short: "y" },
       help: { type: "boolean", short: "h", default: false },
+      language: { type: "string", default: "" },
     },
   });
 

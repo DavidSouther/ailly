@@ -34,7 +34,7 @@ async function main() {
       break;
     case loaded.settings.queryDb.length > 0:
       const query = rag.query(loaded.settings.queryDb, (name) =>
-        name.includes("rust")
+        name.includes(args.values.language)
       );
       const results = [];
       results.push((await query.next()).value);
