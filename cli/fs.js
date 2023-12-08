@@ -23,6 +23,13 @@ export async function loadFs(args) {
       args.values["query-db"],
     no_overwrite: args.values["no-overwrite"],
   };
+
+  if ((settings.queryDb ?? "").startsWith("file://")) {
+    settings.queryDb = await fs.readFile(
+      settings.queryDb.replace(/^file:\/\//, "")
+    );
+  }
+
   let content = await ailly.content.load(
     fs,
     [args.values.prompt ?? ""],

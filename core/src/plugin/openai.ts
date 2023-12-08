@@ -1,7 +1,7 @@
 import { OpenAI, toFile } from "openai";
 import { Content } from "../content.js";
 import { isDefined } from "../util.js";
-import { Message, Summary } from "./index.js";
+import { Message, Summary, getMessages } from "./index.js";
 import { encode } from "../encoding.js";
 
 // const MODEL = "gpt-3.5-turbo-0613";
@@ -69,40 +69,6 @@ async function addContentMeta(content: Content) {
     content.meta.tokens += toks;
   }
   return content.meta.tokens;
-}
-
-export function getMessages(content: Content): Message[] {
-  const system = content.system.join("\n");
-  const history: Content[] = [];
-  while (content) {
-    history.push(content);
-    content = content.predecessor!;
-  }
-  history.reverse();
-  const augment = history
-    .map<Array<Message | undefined>>(
-      (c) =>
-        (c.meta?.augment || []).map<Message>(({ content }) => ({
-          role: "user",
-          content: "Background information: " + content,
-        })) ?? []
-    )
-    .flat()
-    .filter(isDefined)
-    .slice(0, 1);
-  const parts = history
-    .map<Array<Message | undefined>>((content) => [
-      {
-        role: "user",
-        content: content.prompt,
-      },
-      content.response
-        ? { role: "assistant", content: content.response }
-        : undefined,
-    ])
-    .flat()
-    .filter(isDefined);
-  return [{ role: "system", content: system }, ...augment, ...parts];
 }
 
 export async function tune(

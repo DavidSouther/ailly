@@ -1,7 +1,8 @@
 import { dirname } from "node:path";
 import { Content, ContentMeta } from "./content.js";
 import { getPlugin } from "./plugin/index.js";
-import { RAG } from "./rag.js";
+import { RAG, Ragger } from "./rag.js";
+import { FileSystem } from "@davidsouther/jiffies/lib/esm/fs";
 export { getPlugin } from "./plugin/index.js";
 export { RAG } from "./rag.js";
 
@@ -16,6 +17,7 @@ export class GenerateManager {
   threadRunners: PromptThread[] = [];
 
   static async from(
+    fs: FileSystem,
     content: Content[],
     settings: ContentMeta = {}
   ): Promise<GenerateManager> {
@@ -23,14 +25,14 @@ export class GenerateManager {
     const pluginName = meta?.engine ?? settings?.engine ?? DEFAULT_ENGINE;
     const plugin = await getPlugin(pluginName);
     plugin.format(content);
-    const rag = await RAG.build(plugin, settings.root!);
+    const rag = await RAG.build(plugin, settings.root!, fs);
     return new GenerateManager(content, settings, rag);
   }
 
   constructor(
     private readonly content: Content[],
     private settings: ContentMeta,
-    private rag: RAG
+    private rag: Ragger
   ) {
     this.threads = partitionPrompts(content);
     console.log(`Ready to generate ${this.threads.length} messages`);
@@ -98,7 +100,7 @@ class PromptThread {
     return this.done && this.errors.length > 0;
   }
 
-  static run(content: Content[], settings: ContentMeta, rag: RAG) {
+  static run(content: Content[], settings: ContentMeta, rag: Ragger) {
     const thread = new PromptThread(content, settings, rag);
     thread.start();
     return thread;
@@ -107,7 +109,7 @@ class PromptThread {
   private constructor(
     private readonly content: Content[],
     private settings: ContentMeta,
-    private rag: RAG
+    private rag: Ragger
   ) {
     this.content = content;
     this.isolated = Boolean(content[0]?.meta?.isolated ?? false);
@@ -122,7 +124,14 @@ class PromptThread {
     const promises: Promise<Content>[] = this.content.map(
       async (c, i): Promise<Content> => {
         try {
-          await this.rag.augment(c);
+          await this.rag.augment(
+            c,
+            () => true,
+            (() => {
+              let count = 0;
+              return () => count++ < 3;
+            })()
+          );
           await generateOne(c, this.settings);
           this.finished += 1;
         } catch (e) {
@@ -146,7 +155,14 @@ class PromptThread {
     for (let i = 0; i < this.content.length; i++) {
       const content = this.content[i];
       try {
-        await this.rag.augment(content);
+        await this.rag.augment(
+          content,
+          () => true,
+          (() => {
+            let count = 0;
+            return () => count++ < 3;
+          })()
+        );
         await generateOne(content, this.settings);
         results.push({ status: "fulfilled", value: content } as const);
         this.finished += 1;
@@ -308,7 +324,12 @@ export async function updateDatabase(
   });
 }
 
-export async function augment(content: Content[], rag: RAG): Promise<void> {
+export async function augment(
+  content: Content[],
+  rag: RAG,
+  filter: (name: string) => boolean,
+  stop: (_: { name: string; content: string; score: number }) => boolean
+): Promise<void> {
   const _content = [...content];
   return new Promise(async (resolve, reject) => {
     const nextPiece = async () => {
@@ -318,7 +339,7 @@ export async function augment(content: Content[], rag: RAG): Promise<void> {
       }
       try {
         console.log(`Sending ${piece.name} (${piece.path})`);
-        await rag.augment(piece);
+        await rag.augment(piece, filter, stop);
         console.log(`Completed ${piece.name} (${piece.path})`);
         console.log(piece.meta?.augment);
       } catch (e) {

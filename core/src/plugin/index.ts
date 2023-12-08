@@ -2,6 +2,7 @@ import { Content, ContentMeta } from "../content.js";
 import * as openai from "./openai.js";
 import * as bedrock from "./bedrock/bedrock.js";
 import * as mistral from "./mistral/mistral.js";
+import { isDefined } from "../util.js";
 
 export interface Plugin {
   DEFAULT_MODEL: string;
@@ -34,4 +35,38 @@ export const PLUGINS: Record<string, Plugin> = {
 export function getPlugin(name: string): Plugin {
   if (!PLUGINS[name]) throw new Error(`Unknown plugin ${name}`);
   return PLUGINS[name];
+}
+
+export function getMessages(content: Content): Message[] {
+  const system = content.system.join("\n");
+  const history: Content[] = [];
+  while (content) {
+    history.push(content);
+    content = content.predecessor!;
+  }
+  history.reverse();
+  const augment = history
+    .map<Array<Message | undefined>>(
+      (c) =>
+        (c.meta?.augment || []).map<Message>(({ content }) => ({
+          role: "user",
+          content: "Background information: " + content,
+        })) ?? []
+    )
+    .flat()
+    .filter(isDefined)
+    .slice(0, 1);
+  const parts = history
+    .map<Array<Message | undefined>>((content) => [
+      {
+        role: "user",
+        content: content.prompt,
+      },
+      content.response
+        ? { role: "assistant", content: content.response }
+        : undefined,
+    ])
+    .flat()
+    .filter(isDefined);
+  return [{ role: "system", content: system }, ...augment, ...parts];
 }
