@@ -41,7 +41,6 @@ export async function generate(
 }
 
 export const format = openai.format;
-export const getMessages = openai.getMessages;
 
 export async function tune(
   content: Content[],

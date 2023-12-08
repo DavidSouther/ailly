@@ -1,5 +1,6 @@
 #! /usr/bin/env node
 import { createInterface } from "readline/promises";
+import { join } from "node:path";
 
 import * as ailly from "@ailly/core";
 import { makeArgs, help } from "./args.js";
@@ -22,17 +23,28 @@ async function main() {
   const plugin = await ailly.Ailly.getPlugin(args.values.engine ?? "openai");
   const rag = await (loaded.settings.augment
     ? ailly.Ailly.RAG.build
-    : ailly.Ailly.RAG.empty)(plugin, args.values.root);
+    : ailly.Ailly.RAG.empty)(
+    plugin,
+    join(args.values.root, ".vectors"),
+    loaded.fs
+  );
   switch (true) {
     case loaded.settings.updateDb:
       await ailly.Ailly.updateDatabase(loaded.content, rag);
       break;
     case loaded.settings.queryDb.length > 0:
-      const results = await rag.query(loaded.settings.queryDb);
+      const query = rag.query(loaded.settings.queryDb, (name) =>
+        name.includes("rust")
+      );
+      const results = [];
+      results.push((await query.next()).value);
+      results.push((await query.next()).value);
+      results.push((await query.next()).value);
       console.table(
         results.map((v) => ({
           score: v.score,
-          item: v.content.substring(0, 45).replaceAll("\n", " ") + "...",
+          name: v.name,
+          item: v.content.trim().substring(0, 45).replaceAll("\n", " ") + "...",
         }))
       );
       break;

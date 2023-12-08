@@ -4,7 +4,7 @@ import {
 } from "@aws-sdk/client-bedrock-runtime";
 import { Content } from "../../content.js";
 import { isDefined } from "../../util.js";
-import { Message, Summary } from "../index.js";
+import { Message, Summary, getMessages } from "../index.js";
 import { Models, PromptBuilder } from "./prompt-builder.js";
 
 export const DEFAULT_MODEL: Models = "anthropic.claude-v2";
@@ -62,31 +62,6 @@ async function addContentMeta(content: Content) {
   content.meta ??= {};
   content.meta.messages = getMessages(content);
   content.meta.tokens = 0;
-}
-
-export function getMessages(content: Content): Message[] {
-  const system = content.system.join("\n");
-  const history: Content[] = [];
-  while (content) {
-    history.push(content);
-    content = content.predecessor!;
-  }
-  history.reverse();
-  return [
-    { role: "system", content: system },
-    ...history
-      .map<Array<Message | undefined>>((content) => [
-        {
-          role: "user",
-          content: content.prompt,
-        },
-        content.response
-          ? { role: "assistant", content: content.response }
-          : undefined,
-      ])
-      .flat()
-      .filter(isDefined),
-  ];
 }
 
 export async function tune(content: Content[]) {}
