@@ -2,6 +2,7 @@ import { FileSystem } from "@davidsouther/jiffies/lib/esm/fs";
 import { Content } from "./content";
 import { Plugin } from "./plugin";
 import { join } from "node:path";
+import { brotliDecompressSync } from "node:zlib";
 
 export interface Ragger {
   add(content: Content): Promise<void>;
@@ -45,7 +46,8 @@ export class RAG {
     this.index = {
       items: vectorDb.items.map((item) => {
         const buffer = Buffer.from(item.vector, "base64"); // Ta-da
-        const bytes = new Uint8Array(buffer);
+        const expanded = brotliDecompressSync(buffer);
+        const bytes = new Uint8Array(expanded);
         const vector = new Float32Array(bytes.buffer);
         return {
           vector,
@@ -144,33 +146,32 @@ export class NoopRAG extends RAG {
 }
 
 const STRIDE = 8;
-function f32aNorm(arr: Float32Array): number {
+export function f32aNorm(arr: Float32Array): number {
   let norm = 0;
   const remainder = arr.length % STRIDE;
   const q = arr.length - remainder;
   let i = 0;
   while (i < q) {
-    norm += arr[i + 0];
-    norm += arr[i + 1];
-    norm += arr[i + 2];
-    norm += arr[i + 3];
-    norm += arr[i + 4];
-    norm += arr[i + 5];
-    norm += arr[i + 6];
-    norm += arr[i + 7];
+    norm += arr[i + 0] * arr[i + 0];
+    norm += arr[i + 1] * arr[i + 1];
+    norm += arr[i + 2] * arr[i + 2];
+    norm += arr[i + 3] * arr[i + 3];
+    norm += arr[i + 4] * arr[i + 4];
+    norm += arr[i + 5] * arr[i + 5];
+    norm += arr[i + 6] * arr[i + 6];
+    norm += arr[i + 7] * arr[i + 7];
     i += 8;
   }
 
   while (i < arr.length) {
-    norm += arr[i];
+    norm += arr[i] * arr[i];
     i += 1;
   }
 
-  norm /= arr.length;
-  return norm;
+  return Math.sqrt(norm);
 }
 
-function similarity(
+export function similarity(
   a: Float32Array,
   an: number,
   b: Float32Array,
@@ -197,5 +198,5 @@ function similarity(
     dot += (a[i] * b[i]) / norm;
     i += 1;
   }
-  return Math.abs(dot);
+  return dot;
 }
