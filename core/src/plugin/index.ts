@@ -1,4 +1,4 @@
-import { Content, ContentMeta } from "../content.js";
+import { Content, ContentMeta } from "../content/content.js";
 import * as openai from "./openai.js";
 import * as bedrock from "./bedrock/bedrock.js";
 import * as mistral from "./mistral/mistral.js";
@@ -10,7 +10,6 @@ export interface Plugin {
     c: Content,
     parameters: ContentMeta
   ): Promise<{ debug: unknown; message: string }>;
-  tune(c: Content[], parameters: ContentMeta): Promise<unknown>;
   vector(s: string, parameters: ContentMeta): Promise<number[]>;
 }
 

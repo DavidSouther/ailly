@@ -1,5 +1,5 @@
 import { OpenAI, toFile } from "openai";
-import { Content } from "../content.js";
+import { Content } from "../content/content.js";
 import { isDefined } from "../util.js";
 import { Message, Summary } from "./index.js";
 import { encode } from "../encoding.js";

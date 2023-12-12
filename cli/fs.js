@@ -14,7 +14,6 @@ export async function loadFs(args) {
     isolated: args.values.isolated,
     engine: args.values.engine,
     model: args.values.model,
-    tune: args.values.tune,
     updateDb: args.values["update-db"],
     queryDb: args.values["query-db"],
     augment:

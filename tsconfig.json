@@ -1,9 +1,9 @@
 {
   "files": [],
   "references": [
-    // { "path": "cli" },
-    { "path": "core" },
-    { "path": "extension" },
-    { "path": "web" }
+    { "path": "cli" },
+    { "path": "core" }
+    // { "path": "extension" },
+    // { "path": "web" }
   ]
 }

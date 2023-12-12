@@ -22,7 +22,7 @@ async function main() {
   const plugin = await ailly.Ailly.getPlugin(args.values.engine ?? "openai");
   const rag = await (loaded.settings.augment
     ? ailly.Ailly.RAG.build
-    : ailly.Ailly.RAG.empty)(plugin, args.values.root);
+    : ailly.Ailly.RAG.empty)(plugin, args.values.root ?? ".");
   switch (true) {
     case loaded.settings.updateDb:
       await ailly.Ailly.updateDatabase(loaded.content, rag);
@@ -35,9 +35,6 @@ async function main() {
           item: v.content.substring(0, 45).replaceAll("\n", " ") + "...",
         }))
       );
-      break;
-    case loaded.settings.tune:
-      await tune(loaded);
       break;
     default:
       await generate(loaded, rag);
@@ -56,8 +53,7 @@ async function check_should_run(args, { content }) {
         output: process.stdout,
       });
       const prompt = await rl.question(
-        "Continue with generating these prompts? (y/N) ",
-        resolve
+        "Continue with generating these prompts? (y/N) "
       );
       if (!prompt.toUpperCase().startsWith("Y")) {
         process.exit(0);
@@ -76,8 +72,4 @@ async function generate({ fs, content, settings }, rag) {
 
   console.log("Generated!");
   ailly.content.write(fs, content);
-}
-
-async function tune({ content, settings }) {
-  return ailly.Ailly.tune(content, settings);
 }

@@ -1,4 +1,4 @@
-import * as contentModule from "./content.js";
+import * as contentModule from "./content/content.js";
 import * as aillyModule from "./ailly.js";
 import * as pluginModule from "./plugin/index.js";
 

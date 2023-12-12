@@ -1,5 +1,5 @@
 import { LocalIndex } from "vectra";
-import { Content } from "./content";
+import { Content } from "./content/content";
 import { Plugin } from "./plugin";
 import { join } from "node:path";
 

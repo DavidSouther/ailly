@@ -2,7 +2,7 @@ import {
   BedrockRuntimeClient,
   InvokeModelCommand,
 } from "@aws-sdk/client-bedrock-runtime";
-import { Content } from "../../content.js";
+import { Content } from "../../content/content.js";
 import { isDefined } from "../../util.js";
 import { Message, Summary } from "../index.js";
 import { Models, PromptBuilder } from "./prompt-builder.js";

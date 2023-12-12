@@ -1,4 +1,4 @@
-import type { Content } from "../../content.js";
+import type { Content } from "../../content/content.js";
 import * as openai from "../openai.js";
 import { spawn } from "node:child_process";
 import { normalize, join, dirname } from "node:path";

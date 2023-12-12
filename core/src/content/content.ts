@@ -3,8 +3,8 @@ import matter from "gray-matter";
 import * as yaml from "js-yaml";
 import { join, normalize, dirname } from "path";
 import * as gitignoreParser from "gitignore-parser";
-import { type Message } from "./plugin/index.js";
-import { isDefined } from "./util.js";
+import { type Message } from "../plugin/index.js";
+import { isDefined } from "../util.js";
 
 type TODOGrayMatterData = Record<string, any>;
 
@@ -31,14 +31,9 @@ export interface Content {
 export interface ContentMeta {
   root?: string;
   messages?: Message[];
-  tokens?: number;
-  plugin?: string;
-  engine?: string;
-  model?: string;
   skip?: boolean;
   isolated?: boolean;
   combined?: boolean;
-  no_overwrite?: boolean;
   debug?: unknown;
   augment?: { score: number; content: string }[];
 }
