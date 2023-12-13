@@ -1,8 +1,12 @@
 import { OpenAI, toFile } from "openai";
-import { Content } from "../content/content.js";
+import { assertExists } from "@davidsouther/jiffies/lib/esm/assert.js";
+import type { Content } from "../content/content";
+import type { PipelineSettings } from "../ailly";
+import type { Message, Summary } from "./index";
 import { isDefined } from "../util.js";
-import { Message, Summary } from "./index.js";
 import { encode } from "../encoding.js";
+
+export const name = "openai";
 
 // const MODEL = "gpt-3.5-turbo-0613";
 // const FT_MODEL = process.env["OPENAI_FT_MODEL"];
@@ -13,12 +17,13 @@ const EMBEDDING_MODEL = "text-embedding-ada-002";
 
 export async function generate(
   c: Content,
-  {
-    model = MODEL,
-    apiKey = process.env["OPENAI_API_KEY"] ?? "",
-    baseURL,
-  }: { model: string; apiKey: string; baseURL?: string }
+  { model = MODEL }: PipelineSettings
 ): Promise<{ message: string; debug: unknown }> {
+  const apiKey = assertExists(
+    process.env["OPENAI_API_KEY"],
+    "Missing OPENAI_API_KEY"
+  );
+  const baseURL = process.env["OPENAI_BASE_URL"];
   const openai = new OpenAI({ apiKey, baseURL });
   let messages = c.meta?.messages ?? [];
   if (messages.length < 2) {
@@ -62,17 +67,17 @@ export async function format(contents: Content[]): Promise<Summary> {
 async function addContentMeta(content: Content) {
   content.meta ??= {};
   content.meta.messages = getMessages(content);
-  content.meta.tokens = 0;
+  let tokens = 0;
   for (const message of content.meta.messages) {
     const toks = (await encode(message.content)).length;
     message.tokens = toks;
-    content.meta.tokens += toks;
+    tokens += toks;
   }
-  return content.meta.tokens;
+  return tokens;
 }
 
 export function getMessages(content: Content): Message[] {
-  const system = content.system.join("\n");
+  const system = (content.system ?? []).join("\n");
   const history: Content[] = [];
   while (content) {
     history.push(content);
@@ -82,7 +87,7 @@ export function getMessages(content: Content): Message[] {
   const augment = history
     .map<Array<Message | undefined>>(
       (c) =>
-        (c.meta?.augment || []).map<Message>(({ content }) => ({
+        (c.augment ?? []).map<Message>(({ content }) => ({
           role: "user",
           content: "Background information: " + content,
         })) ?? []

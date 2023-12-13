@@ -25,6 +25,10 @@ export function makeArgs(argv = process.argv) {
         short: "m",
         default: process.env["AILLY_MODEL"],
       },
+      plugin: {
+        type: "string",
+        default: process.env["AILLY_PLUGIN"] ?? "noop",
+      },
       isolated: {
         type: "boolean",
         short: "i",

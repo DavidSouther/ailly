@@ -1,36 +1,27 @@
-import { Content, ContentMeta } from "../content/content.js";
-import * as openai from "./openai.js";
-import * as bedrock from "./bedrock/bedrock.js";
-import * as mistral from "./mistral/mistral.js";
+import * as rag from "./rag.js";
+import { PipelineSettings } from "../ailly.js";
+import type { Content } from "../content/content";
+import type { Engine } from "../engine";
+
+export interface PluginBuilder {
+  (engine: Engine, settings: PipelineSettings): Promise<Plugin>;
+}
 
 export interface Plugin {
-  DEFAULT_MODEL: string;
-  format(c: Content[]): Promise<void>;
-  generate(
-    c: Content,
-    parameters: ContentMeta
-  ): Promise<{ debug: unknown; message: string }>;
-  vector(s: string, parameters: ContentMeta): Promise<number[]>;
+  augment(c: Content): Promise<void>;
+  clean(c: Content): Promise<void>;
 }
 
-export interface Message {
-  role: "system" | "user" | "assistant";
-  content: string;
-  tokens?: number;
-}
-
-export interface Summary {
-  tokens: number;
-  prompts: number;
-}
-
-export const PLUGINS: Record<string, Plugin> = {
-  openai: openai as unknown as Plugin,
-  bedrock: bedrock as unknown as Plugin,
-  mistral: mistral as unknown as Plugin,
+export const PLUGINS: Record<string, PluginBuilder> = {
+  noop: rag.RAG.empty as unknown as PluginBuilder,
+  none: rag.RAG.empty as unknown as PluginBuilder,
+  rag: rag.RAG.build as unknown as PluginBuilder,
 };
 
-export function getPlugin(name: string): Plugin {
+export function getPlugin(name: string): PluginBuilder {
+  if (name.startsWith("file://")) {
+    return require(name.replace(/^file:\/\//, ""));
+  }
   if (!PLUGINS[name]) throw new Error(`Unknown plugin ${name}`);
   return PLUGINS[name];
 }

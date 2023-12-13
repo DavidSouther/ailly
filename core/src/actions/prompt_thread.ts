@@ -1,6 +1,7 @@
-import { DEFAULT_ENGINE, getPlugin } from "../ailly";
-import { Content, ContentMeta } from "../content/content";
-import { RAG } from "../rag";
+import { PipelineSettings } from "../ailly.js";
+import type { Content } from "../content/content";
+import type { Engine } from "../engine";
+import type { Plugin } from "../plugin";
 
 export interface PromptThreadsSummary {
   totalPrompts: number;
@@ -34,16 +35,22 @@ export class PromptThread {
     return this.done && this.errors.length > 0;
   }
 
-  static run(content: Content[], settings: ContentMeta, rag: RAG) {
-    const thread = new PromptThread(content, settings, rag);
+  static run(
+    content: Content[],
+    settings: PipelineSettings,
+    engine: Engine,
+    rag: Plugin
+  ) {
+    const thread = new PromptThread(content, settings, engine, rag);
     thread.start();
     return thread;
   }
 
   private constructor(
     private readonly content: Content[],
-    private settings: ContentMeta,
-    private rag: RAG
+    private settings: PipelineSettings,
+    private engine: Engine,
+    private rag: Plugin
   ) {
     this.content = content;
     this.isolated = Boolean(content[0]?.meta?.isolated ?? false);
@@ -53,20 +60,23 @@ export class PromptThread {
     this.runner = this.isolated ? this.runIsolated() : this.runSequence();
   }
 
+  private async runOne(c: Content, i: number): Promise<Content> {
+    try {
+      await this.rag.augment(c);
+      await generateOne(c, this.settings, this.engine);
+      this.finished += 1;
+    } catch (e) {
+      console.warn("Error generating content", e);
+      this.errors.push([i, e as Error]);
+      throw e;
+    }
+    return c;
+  }
+
   private runIsolated(): Promise<PromiseSettledResult<Content>[]> {
     console.log(`Running thread for ${this.content.length} isolated prompts`);
-    const promises: Promise<Content>[] = this.content.map(
-      async (c, i): Promise<Content> => {
-        try {
-          await this.rag.augment(c);
-          await generateOne(c, this.settings);
-          this.finished += 1;
-        } catch (e) {
-          console.warn("Error generating content", e);
-          this.errors.push([i, e as Error]);
-        }
-        return c;
-      }
+    const promises: Promise<Content>[] = this.content.map(async (c, i) =>
+      this.runOne(c, i).catch((_e) => c)
     );
 
     return Promise.allSettled(promises).finally(() => {
@@ -82,15 +92,10 @@ export class PromptThread {
     for (let i = 0; i < this.content.length; i++) {
       const content = this.content[i];
       try {
-        await this.rag.augment(content);
-        await generateOne(content, this.settings);
+        await this.runOne(content, i);
         results.push({ status: "fulfilled", value: content } as const);
-        this.finished += 1;
       } catch (e) {
-        console.warn("Error generating content", e);
-        this.errors.push([i, e as Error]);
         results.push({ status: "rejected", reason: e } as const);
-        break;
       }
     }
     this.done = true;
@@ -114,31 +119,37 @@ export class PromptThread {
 
 async function generateOne(
   c: Content,
-  settings: ContentMeta
+  settings: PipelineSettings,
+  engine: Engine
 ): Promise<Content> {
-  const no_overwrite = c.meta?.no_overwrite || settings.no_overwrite;
+  const overwrite = c.meta?.skip ?? settings.overwrite;
   const has_response = (c.response?.length ?? 0) > 0;
-  if (no_overwrite && has_response) {
+
+  if (!overwrite && has_response) {
     return c;
   }
 
   // Determine PLUGIN and MODEL, load them.
   const meta = c.meta;
-  const engineName = meta?.engine ?? settings.engine ?? DEFAULT_ENGINE;
-  const engine = await getPlugin(engineName);
   engine.format([c]);
-  const model = c.meta?.model ?? engine.DEFAULT_MODEL;
 
   console.log(
-    `Calling ${engineName}`,
+    `Calling ${engine.name}`,
     meta?.messages?.map((m) => ({
       role: m.role,
       content: m.content.replaceAll("\n", "").substring(0, 50) + "...",
       tokens: m.tokens,
     }))
   );
-  const generated = await engine.generate(c, { ...settings, model });
+  const generated = await engine.generate(c, settings);
   c.response = generated.message;
-  c.meta = { ...c.meta, debug: generated.debug };
+  c.meta = {
+    ...c.meta,
+    debug: {
+      ...generated.debug,
+      engine: settings.engine,
+      model: settings.model,
+    },
+  };
   return c;
 }

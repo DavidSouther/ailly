@@ -1,40 +1,6 @@
 import { dirname } from "node:path";
 
-import { Content } from "../content/content";
-
-/*
-
-/a
-  /b.
-  /c.
-  /g
-    /h.
-/d
-  /e.
-  /f.
-
-=>
-
-/a/b.
-/a/c.
-/a/g/h.
-/d/e.
-/d/f.
-
-=> 
-
-[
-  /a/b.
-  /a/c.
-]
-[
-  /a/g/h.
-]
-[
-  /d/e.
-  /d/f.
-]
-*/
+import type { Content } from "./content";
 
 export function partitionPrompts(content: Content[]): Content[][] {
   const directories = new Map<string, Content[]>();

@@ -7,6 +7,7 @@ import { isDefined } from "../../util.js";
 import { Message, Summary } from "../index.js";
 import { Models, PromptBuilder } from "./prompt-builder.js";
 
+export const name = "bedrock";
 export const DEFAULT_MODEL: Models = "anthropic.claude-v2";
 
 const promptBuilder = new PromptBuilder(DEFAULT_MODEL);
@@ -61,11 +62,10 @@ export async function format(contents: Content[]): Promise<Summary> {
 async function addContentMeta(content: Content) {
   content.meta ??= {};
   content.meta.messages = getMessages(content);
-  content.meta.tokens = 0;
 }
 
 export function getMessages(content: Content): Message[] {
-  const system = content.system.join("\n");
+  const system = (content.system ?? []).join("\n");
   const history: Content[] = [];
   while (content) {
     history.push(content);

@@ -1,11 +1,20 @@
-import { DEFAULT_ENGINE, RAG, Thread, getPlugin } from "../ailly";
-import { Content, ContentMeta } from "../content/content";
-import { partitionPrompts } from "./partition_prompts";
+import {
+  DEFAULT_ENGINE,
+  PipelineSettings,
+  Thread,
+  getEngine,
+  getPlugin,
+} from "../ailly.js";
+import type { Content } from "../content/content";
+import type { Plugin } from "../plugin";
+import type { Engine } from "../engine";
 import {
   PromptThread,
   PromptThreadSummary,
   PromptThreadsSummary,
-} from "./prompt_thread";
+} from "./prompt_thread.js";
+
+import { partitionPrompts } from "../content/partition.js";
 
 export class GenerateManager {
   done: boolean = false;
@@ -15,20 +24,21 @@ export class GenerateManager {
 
   static async from(
     content: Content[],
-    settings: ContentMeta = {}
+    settings: PipelineSettings
   ): Promise<GenerateManager> {
-    const meta = content.at(0)?.meta;
-    const pluginName = meta?.engine ?? settings?.engine ?? DEFAULT_ENGINE;
-    const plugin = await getPlugin(pluginName);
-    plugin.format(content);
-    const rag = await RAG.build(plugin, settings.root!);
-    return new GenerateManager(content, settings, rag);
+    const engineName = settings?.engine ?? DEFAULT_ENGINE;
+    const engine = await getEngine(engineName);
+    engine.format(content);
+    const pluginBuilder = getPlugin(settings.plugin);
+    const plugin = await pluginBuilder(engine, settings);
+    return new GenerateManager(content, settings, engine, plugin);
   }
 
   constructor(
-    private readonly content: Content[],
-    private settings: ContentMeta,
-    private rag: RAG
+    content: Content[],
+    private settings: PipelineSettings,
+    private engine: Engine,
+    private rag: Plugin
   ) {
     this.threads = partitionPrompts(content);
     console.log(`Ready to generate ${this.threads.length} messages`);
@@ -37,7 +47,7 @@ export class GenerateManager {
   start() {
     this.started = true;
     this.threadRunners = this.threads.map((t) =>
-      PromptThread.run(t, this.settings, this.rag)
+      PromptThread.run(t, this.settings, this.engine, this.rag)
     );
 
     Promise.allSettled(this.threadRunners.map((t) => t.allSettled())).then(

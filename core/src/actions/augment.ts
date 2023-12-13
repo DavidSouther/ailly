@@ -1,5 +1,5 @@
-import { Content } from "../content/content";
-import { RAG } from "../rag";
+import { Content } from "../content/content.js";
+import { RAG } from "../plugin/rag.js";
 
 export async function augment(content: Content[], rag: RAG): Promise<void> {
   const _content = [...content];
@@ -13,7 +13,7 @@ export async function augment(content: Content[], rag: RAG): Promise<void> {
         console.log(`Sending ${piece.name} (${piece.path})`);
         await rag.augment(piece);
         console.log(`Completed ${piece.name} (${piece.path})`);
-        console.log(piece.meta?.augment);
+        console.log(piece.augment ?? []);
       } catch (e) {
         console.log(`Error on ${piece.name} (${piece.path})`);
         console.log(e);

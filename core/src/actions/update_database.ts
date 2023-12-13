@@ -1,5 +1,5 @@
-import { Content } from "../content/content";
-import { RAG } from "../rag";
+import { Content } from "../content/content.js";
+import { RAG } from "../plugin/rag.js";
 
 export async function updateDatabase(
   content: Content[],

@@ -16,28 +16,28 @@ async function main() {
   }
 
   const loaded = await loadFs(args);
+  const settings = ailly.Ailly.makePipelineSettings(loaded.settings);
 
   await check_should_run(args, loaded);
 
-  const plugin = await ailly.Ailly.getPlugin(args.values.engine ?? "openai");
-  const rag = await (loaded.settings.augment
-    ? ailly.Ailly.RAG.build
-    : ailly.Ailly.RAG.empty)(plugin, args.values.root ?? ".");
   switch (true) {
     case loaded.settings.updateDb:
-      await ailly.Ailly.updateDatabase(loaded.content, rag);
+      // await ailly.Ailly.updateDatabase(loaded.content, settings);
       break;
     case loaded.settings.queryDb.length > 0:
-      const results = await rag.query(loaded.settings.queryDb);
-      console.table(
-        results.map((v) => ({
-          score: v.score,
-          item: v.content.substring(0, 45).replaceAll("\n", " ") + "...",
-        }))
-      );
+      // const engine = await getEngine(loaded.settings.engine);
+      // const builder = getPlugin(loaded.settings.plugin);
+      // const rag = await builder(engine, settings);
+      // const results = await rag.query(loaded.settings.queryDb);
+      // console.table(
+      //   results.map((v) => ({
+      //     score: v.score,
+      //     item: v.content.substring(0, 45).replaceAll("\n", " ") + "...",
+      //   }))
+      // );
       break;
     default:
-      await generate(loaded, rag);
+      await generate(loaded);
       break;
   }
 }
@@ -62,11 +62,12 @@ async function check_should_run(args, { content }) {
   }
 }
 
-async function generate({ fs, content, settings }, rag) {
+async function generate({ fs, content, settings }) {
   console.log("Generating...");
 
   // Generate
-  let generator = new ailly.Ailly.GenerateManager(content, settings, rag);
+
+  let generator = await ailly.Ailly.GenerateManager.from(content, settings);
   generator.start();
   await generator.allSettled();
 
