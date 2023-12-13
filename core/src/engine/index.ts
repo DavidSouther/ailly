@@ -32,7 +32,10 @@ export const ENGINES: Record<string, Engine> = {
   mistral: mistral as unknown as Engine,
 };
 
-export function getEngine(name: string): Engine {
+export async function getEngine(name: string): Promise<Engine> {
+  if (name.startsWith("file://")) {
+    return import(name);
+  }
   if (!ENGINES[name]) throw new Error(`Unknown plugin ${name}`);
   return ENGINES[name];
 }

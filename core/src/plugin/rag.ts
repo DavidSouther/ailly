@@ -2,6 +2,7 @@ import { LocalIndex } from "vectra";
 import type { Content } from "../content/content";
 import type { Engine } from "../engine";
 import { join } from "node:path";
+import type { PipelineSettings } from "../ailly";
 
 function ragDb(path: string) {
   return join(path, ".vectors");
@@ -10,7 +11,10 @@ function ragDb(path: string) {
 export class RAG {
   index: LocalIndex;
 
-  static async build(engine: Engine, path: string): Promise<RAG> {
+  static async build(
+    engine: Engine,
+    { root: path }: PipelineSettings
+  ): Promise<RAG> {
     const rag = new RAG(engine, ragDb(path));
     if (!(await rag.index.isIndexCreated())) await rag.index.createIndex();
     return rag;

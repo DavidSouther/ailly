@@ -18,9 +18,9 @@ export const PLUGINS: Record<string, PluginBuilder> = {
   rag: rag.RAG.build as unknown as PluginBuilder,
 };
 
-export function getPlugin(name: string): PluginBuilder {
+export async function getPlugin(name: string): Promise<PluginBuilder> {
   if (name.startsWith("file://")) {
-    return require(name.replace(/^file:\/\//, ""));
+    return import(name);
   }
   if (!PLUGINS[name]) throw new Error(`Unknown plugin ${name}`);
   return PLUGINS[name];

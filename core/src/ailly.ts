@@ -22,12 +22,12 @@ export interface PipelineSettings {
   overwrite: boolean;
 }
 
-export function makePipelineSettings({
+export async function makePipelineSettings({
   root,
   paths = [],
   out = root,
   engine = DEFAULT_ENGINE,
-  model = getEngine(engine).DEFAULT_MODEL,
+  model,
   plugin = DEFAULT_PLUGIN,
   overwrite = true,
 }: {
@@ -38,7 +38,8 @@ export function makePipelineSettings({
   model?: string;
   plugin?: string;
   overwrite?: boolean;
-}): PipelineSettings {
+}): Promise<PipelineSettings> {
+  model = model ?? (await getEngine(engine)).DEFAULT_MODEL;
   return {
     root,
     paths,
