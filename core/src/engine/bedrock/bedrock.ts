@@ -17,6 +17,7 @@ export async function generate(
   { model = DEFAULT_MODEL }: { model: string }
 ): Promise<{ message: string; debug: unknown }> {
   const bedrock = new BedrockRuntimeClient({});
+
   let messages = c.meta?.messages ?? [];
   if (messages.length < 2) {
     throw new Error("Not enough messages");
@@ -72,21 +73,29 @@ export function getMessages(content: Content): Message[] {
     content = content.predecessor!;
   }
   history.reverse();
-  return [
-    { role: "system", content: system },
-    ...history
-      .map<Array<Message | undefined>>((content) => [
-        {
+  const augment = history
+    .map<Array<Message | undefined>>(
+      (c) =>
+        (c.augment ?? []).map<Message>(({ content }) => ({
           role: "user",
-          content: content.prompt,
-        },
-        content.response
-          ? { role: "assistant", content: content.response }
-          : undefined,
-      ])
-      .flat()
-      .filter(isDefined),
-  ];
+          content: "Background information: " + content,
+        })) ?? []
+    )
+    .flat()
+    .filter(isDefined);
+  const parts = history
+    .map<Array<Message | undefined>>((content) => [
+      {
+        role: "user",
+        content: content.prompt,
+      },
+      content.response
+        ? { role: "assistant", content: content.response }
+        : undefined,
+    ])
+    .flat()
+    .filter(isDefined);
+  return [{ role: "system", content: system }, ...augment, ...parts];
 }
 
 export async function tune(content: Content[]) {}
