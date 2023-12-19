@@ -6,7 +6,7 @@ import * as gitignoreParser from "gitignore-parser";
 import type { Message } from "../engine/index.js";
 import { isDefined } from "../util.js";
 
-type TODOGrayMatterData = Record<string, any>;
+type TODOGrayMatterData = Record<string, any> | ContentMeta;
 
 // Content is ordered on the file system using NN_name folders and nnp_name.md files.
 // The Content needs to keep track of where in the file system it is, so that a Prompt can write a Response.
@@ -14,7 +14,7 @@ type TODOGrayMatterData = Record<string, any>;
 export interface Content {
   // The absolute path in the local file system
   path: string;
-  outPath?: string;
+  outPath: string;
 
   // The extracted name from the basename
   name: string;
@@ -26,13 +26,14 @@ export interface Content {
   // The list of system prompts above this content
   system?: string[];
   predecessor?: Content;
-  augment?: { score: number; content: string }[];
+  augment?: { score: number; content: string; name: string }[];
   meta?: ContentMeta;
 }
 
 // Additional useful metadata.
 export interface ContentMeta {
-  // root?: string;
+  root?: string;
+  out?: string;
   messages?: Message[];
   skip?: boolean;
   isolated?: boolean;
@@ -111,15 +112,22 @@ async function loadFile(
         prompt = data.prompt;
         delete data.prompt;
       } else {
+        const responsePath = join(cwd, `${ordering.id}.ailly`).replace(
+          head.root,
+          head.out
+        );
         response = matter(
-          await fs.readFile(join(cwd, `${ordering.id}.ailly`)).catch((e) => "")
+          await fs.readFile(responsePath).catch((e) => "")
         ).content;
         data.combined = false;
       }
+      const path = join(fs.cwd(), file.name);
+      const outPath = path.replace(head.root, head.out);
       return {
         name: ordering.id,
         system,
-        path: join(fs.cwd(), file.name),
+        path,
+        outPath,
         prompt,
         response,
         meta: {
@@ -194,14 +202,28 @@ export async function writeContent(fs: FileSystem, content: Content[]) {
   return Promise.allSettled(
     content.map(async (c) => {
       if (!c.response) return;
-      const dir = dirname(c.path);
-
       const combined = c.meta?.combined ?? false;
+      if (combined && c.outPath != c.path) {
+        throw new Error(
+          `Mismatch path and output for ${c.path} vs ${c.outPath}`
+        );
+      }
+
+      const dir = dirname(c.outPath);
+      await mkdirp(fs, dir);
 
       const filename = combined ? c.name : `${c.name}.ailly`;
       console.log(`Writing response for ${filename}`);
       const path = join(dir, filename);
       const { debug, isolated } = c.meta ?? {};
+      if (c.augment) {
+        (debug as { augment: unknown[] }).augment = c.augment.map(
+          ({ score, name }) => ({
+            score,
+            name,
+          })
+        );
+      }
       // TODO: Ensure `engine` and `model` are in `debug`
       const meta = {
         debug,
@@ -215,7 +237,19 @@ export async function writeContent(fs: FileSystem, content: Content[]) {
 
       const head = yaml.dump(meta, { sortKeys: true });
       const file = `---\n${head}---\n${c.response}`;
-      fs.writeFile(path, file);
+      await fs.writeFile(path, file);
     })
   );
+}
+
+async function mkdirp(fs: FileSystem, dir: string) {
+  const parts = dir.split("/");
+  for (let i = 1; i < parts.length; i++) {
+    const path = join(...parts.slice(0, i + 1));
+    try {
+      await fs.stat(path);
+    } catch {
+      await fs.mkdir(path);
+    }
+  }
 }

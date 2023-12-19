@@ -10,6 +10,10 @@ export function makeArgs(argv = process.argv) {
         short: "r",
         default: process.cwd(),
       },
+      out: {
+        type: "string",
+        short: "o",
+      },
       prompt: { type: "string", default: "", short: "p" },
       "no-overwrite": {
         type: "boolean",
@@ -55,9 +59,12 @@ export function help() {
     -r, --root sets base folder to search for content and system prompts.
     -p, --prompt sets an initial system prompt.
     -i, --isolated will start in isolated mode, generating each file separately.  Can be overridden with 'isolated: false' in .aillyrc files, and set with AILLY_ISOLATED=true environment variable.
+    -o, --out specify an output folder to work with responses. Defaults to --root. Will load responses from and write outputs to here, using .ailly file extensions.
 
     -e, --engine will set the default engine. Can be set with AILLY_ENGINE environment variable. Default is OpenAI. (Probably? Check the code.)
     -m, --model will set the model from the engine. Can be set with AILLY_MODEL environment variable. Default is gpt-4-0613. (Probably? Check the code.)
+
+    --plugin can load a custom RAG plugin. Specify a path to import with "file://./path/to/plugin.mjs". plugin.mjs must export a single default function that meets the PluginBuilder interface in core/src/plugin/index.ts
 
     --update-db will create and update a Vectra database with the current content. When available, a local Vectra db will augment retrieval data.
     --augment will look up augmentations in the db.
