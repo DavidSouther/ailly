@@ -25,6 +25,10 @@ export function makeArgs(argv = process.argv) {
         short: "m",
         default: process.env["AILLY_MODEL"],
       },
+      plugin: {
+        type: "string",
+        default: process.env["AILLY_PLUGIN"] ?? "noop",
+      },
       isolated: {
         type: "boolean",
         short: "i",
@@ -33,7 +37,6 @@ export function makeArgs(argv = process.argv) {
       summary: { type: "boolean", default: false, short: "s" },
       "update-db": { type: "boolean", default: false },
       "query-db": { type: "string", default: "" },
-      tune: { type: "boolean", default: false },
       augment: { type: "boolean", default: false },
       yes: { type: "boolean", default: false, short: "y" },
       help: { type: "boolean", short: "h", default: false },
@@ -56,7 +59,6 @@ export function help() {
     -e, --engine will set the default engine. Can be set with AILLY_ENGINE environment variable. Default is OpenAI. (Probably? Check the code.)
     -m, --model will set the model from the engine. Can be set with AILLY_MODEL environment variable. Default is gpt-4-0613. (Probably? Check the code.)
 
-    --tune will start a new fine tuning job using the engine and model selected.
     --update-db will create and update a Vectra database with the current content. When available, a local Vectra db will augment retrieval data.
     --augment will look up augmentations in the db.
 

@@ -3,8 +3,8 @@ import matter from "gray-matter";
 import * as yaml from "js-yaml";
 import { join, normalize, dirname } from "path";
 import * as gitignoreParser from "gitignore-parser";
-import { type Message } from "./plugin/index.js";
-import { isDefined } from "./util.js";
+import type { Message } from "../engine/index.js";
+import { isDefined } from "../util.js";
 
 type TODOGrayMatterData = Record<string, any>;
 
@@ -14,33 +14,30 @@ type TODOGrayMatterData = Record<string, any>;
 export interface Content {
   // The absolute path in the local file system
   path: string;
+  outPath?: string;
 
   // The extracted name from the basename
   name: string;
 
-  // The list of system prompts above this content
-  system: string[];
-
+  // The prompt itself
   prompt: string;
   response?: string;
+
+  // The list of system prompts above this content
+  system?: string[];
   predecessor?: Content;
+  augment?: { score: number; content: string }[];
   meta?: ContentMeta;
 }
 
 // Additional useful metadata.
 export interface ContentMeta {
-  root?: string;
+  // root?: string;
   messages?: Message[];
-  tokens?: number;
-  plugin?: string;
-  engine?: string;
-  model?: string;
   skip?: boolean;
   isolated?: boolean;
   combined?: boolean;
-  no_overwrite?: boolean;
   debug?: unknown;
-  augment?: { score: number; content: string }[];
 }
 
 interface PartitionedDirectory {
@@ -204,12 +201,11 @@ export async function writeContent(fs: FileSystem, content: Content[]) {
       const filename = combined ? c.name : `${c.name}.ailly`;
       console.log(`Writing response for ${filename}`);
       const path = join(dir, filename);
-      const { engine, model, debug, isolated } = c.meta ?? {};
+      const { debug, isolated } = c.meta ?? {};
+      // TODO: Ensure `engine` and `model` are in `debug`
       const meta = {
         debug,
-        engine,
         isolated,
-        model,
         combined,
       };
 

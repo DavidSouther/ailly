@@ -2,11 +2,12 @@ import {
   BedrockRuntimeClient,
   InvokeModelCommand,
 } from "@aws-sdk/client-bedrock-runtime";
-import { Content } from "../../content.js";
+import { Content } from "../../content/content.js";
 import { isDefined } from "../../util.js";
 import { Message, Summary } from "../index.js";
 import { Models, PromptBuilder } from "./prompt-builder.js";
 
+export const name = "bedrock";
 export const DEFAULT_MODEL: Models = "anthropic.claude-v2";
 
 const promptBuilder = new PromptBuilder(DEFAULT_MODEL);
@@ -16,6 +17,7 @@ export async function generate(
   { model = DEFAULT_MODEL }: { model: string }
 ): Promise<{ message: string; debug: unknown }> {
   const bedrock = new BedrockRuntimeClient({});
+
   let messages = c.meta?.messages ?? [];
   if (messages.length < 2) {
     throw new Error("Not enough messages");
@@ -61,32 +63,39 @@ export async function format(contents: Content[]): Promise<Summary> {
 async function addContentMeta(content: Content) {
   content.meta ??= {};
   content.meta.messages = getMessages(content);
-  content.meta.tokens = 0;
 }
 
 export function getMessages(content: Content): Message[] {
-  const system = content.system.join("\n");
+  const system = (content.system ?? []).join("\n");
   const history: Content[] = [];
   while (content) {
     history.push(content);
     content = content.predecessor!;
   }
   history.reverse();
-  return [
-    { role: "system", content: system },
-    ...history
-      .map<Array<Message | undefined>>((content) => [
-        {
+  const augment = history
+    .map<Array<Message | undefined>>(
+      (c) =>
+        (c.augment ?? []).map<Message>(({ content }) => ({
           role: "user",
-          content: content.prompt,
-        },
-        content.response
-          ? { role: "assistant", content: content.response }
-          : undefined,
-      ])
-      .flat()
-      .filter(isDefined),
-  ];
+          content: "Background information: " + content,
+        })) ?? []
+    )
+    .flat()
+    .filter(isDefined);
+  const parts = history
+    .map<Array<Message | undefined>>((content) => [
+      {
+        role: "user",
+        content: content.prompt,
+      },
+      content.response
+        ? { role: "assistant", content: content.response }
+        : undefined,
+    ])
+    .flat()
+    .filter(isDefined);
+  return [{ role: "system", content: system }, ...augment, ...parts];
 }
 
 export async function tune(content: Content[]) {}

@@ -1,12 +1,15 @@
-import * as contentModule from "./content.js";
+import * as contentModule from "./content/content.js";
 import * as aillyModule from "./ailly.js";
+import * as engineModule from "./engine/index.js";
 import * as pluginModule from "./plugin/index.js";
 
 export namespace types {
   export type Content = contentModule.Content;
   export type ContentMeta = contentModule.ContentMeta;
-  export type Message = pluginModule.Message;
-  export type Summary = pluginModule.Summary;
+  export type Message = engineModule.Message;
+  export type Summary = engineModule.Summary;
+  export type Plugin = pluginModule.Plugin;
+  export type PluginBuilder = pluginModule.PluginBuilder;
 }
 
 export const content = {
