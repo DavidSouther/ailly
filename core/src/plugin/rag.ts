@@ -1,4 +1,4 @@
-import { LocalIndex } from "vectra";
+import { LocalIndex } from "vectra/lib/LocalIndex.js";
 import type { Content } from "../content/content";
 import type { Engine } from "../engine";
 import { join } from "node:path";

@@ -1,4 +1,5 @@
 import { Content } from "./content/content.js";
+export { GitignoreFs } from "./content/gitignore_fs.js";
 export { getPlugin } from "./plugin/index.js";
 import { getEngine } from "./engine/index.js";
 export { getEngine } from "./engine/index.js";

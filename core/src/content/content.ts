@@ -1,8 +1,7 @@
 import { FileSystem, Stats } from "@davidsouther/jiffies/lib/esm/fs.js";
 import matter from "gray-matter";
 import * as yaml from "js-yaml";
-import { join, normalize, dirname } from "path";
-import * as gitignoreParser from "gitignore-parser";
+import { join, dirname } from "path";
 import type { Message } from "../engine/index.js";
 import { isDefined } from "../util.js";
 
@@ -62,14 +61,9 @@ function partitionDirectory(stats: Stats[]): PartitionedDirectory {
 }
 
 async function loadDir(fs: FileSystem): Promise<PartitionedDirectory> {
-  const cwd = fs.cwd();
-  const gitignore = gitignoreParser.compile(
-    await fs.readFile(normalize(join(cwd, ".gitignore"))).catch((e) => ".git")
-  );
-  const dir = (await fs.readdir(cwd)).filter(
-    (d) => gitignore.accepts(d) && !d.endsWith(".git")
-  );
+  const dir = await fs.readdir("");
   const entries = await Promise.all(dir.map((s) => fs.stat(s)));
+  // const entries = await fs.scandir("");
   return partitionDirectory(entries);
 }
 
@@ -102,9 +96,20 @@ async function loadFile(
   const cwd = fs.cwd();
   switch (ordering.type) {
     case "prompt":
-      let { content: prompt, data } = matter(
-        await fs.readFile(join(cwd, file.name)).catch((e) => "")
-      );
+      let prompt: string = "";
+      let data: Record<string, any> = {};
+      const promptPath = join(cwd, file.name);
+      try {
+        const parsed = matter(await fs.readFile(promptPath).catch((e) => ""));
+        prompt = parsed.content;
+        data = parsed.data;
+      } catch (e) {
+        console.warn(
+          `Error reading prompt and parsing for matter`,
+          promptPath,
+          e
+        );
+      }
       let response = "";
       if (data.prompt) {
         response = prompt;
@@ -116,10 +121,18 @@ async function loadFile(
           head.root,
           head.out
         );
-        response = matter(
-          await fs.readFile(responsePath).catch((e) => "")
-        ).content;
-        data.combined = false;
+        try {
+          response = matter(
+            await fs.readFile(responsePath).catch((e) => "")
+          ).content;
+          data.combined = false;
+        } catch (e) {
+          console.warn(
+            `Error reading response and parsing for matter`,
+            responsePath,
+            e
+          );
+        }
       }
       const path = join(fs.cwd(), file.name);
       const outPath = path.replace(head.root, head.out);

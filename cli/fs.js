@@ -1,4 +1,4 @@
-import { NodeFileSystem } from "@davidsouther/jiffies/lib/esm/fs_node.js";
+import { NodeFileSystemAdapter } from "@davidsouther/jiffies/lib/esm/fs_node.js";
 import { join, normalize } from "node:path";
 import * as ailly from "@ailly/core";
 
@@ -8,7 +8,8 @@ function cwdNormalize(path) {
 
 export async function loadFs(args) {
   const root = cwdNormalize(args.values.root);
-  const fs = new NodeFileSystem(root);
+  const fs = new ailly.Ailly.GitignoreFs(new NodeFileSystemAdapter());
+  fs.cd(root);
   const settings = {
     root,
     out: cwdNormalize(args.values.out ?? root),
