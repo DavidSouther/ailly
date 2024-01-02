@@ -10,9 +10,6 @@
   "engines": {
     "node": ">=20"
   },
-  "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
-  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/DavidSouther/ailly.git"
@@ -26,6 +23,6 @@
   "homepage": "https://github.com/DavidSouther/ailly#readme",
   "dependencies": {
     "@ailly/core": "^1.0.0",
-    "@davidsouther/jiffies": "^2.1.3"
+    "@davidsouther/jiffies": "^2.1.4"
   }
 }
