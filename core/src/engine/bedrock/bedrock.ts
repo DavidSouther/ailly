@@ -78,7 +78,10 @@ export function getMessages(content: Content): Message[] {
       (c) =>
         (c.augment ?? []).map<Message>(({ content }) => ({
           role: "user",
-          content: "Background information: " + content,
+          content:
+            "Use this code block as background information for format and style, but not for functionality:\n```\n" +
+            content +
+            "\n```\n",
         })) ?? []
     )
     .flat()

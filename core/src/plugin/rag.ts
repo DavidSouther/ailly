@@ -1,4 +1,4 @@
-import { LocalIndex } from "vectra";
+import { LocalIndex } from "vectra/lib/LocalIndex.js";
 import type { Content } from "../content/content";
 import type { Engine } from "../engine";
 import { join } from "node:path";
@@ -43,6 +43,7 @@ export class RAG {
     return query.map(({ score, item }) => ({
       score,
       content: item.metadata.text as string,
+      name: "unknown",
     }));
   }
 
@@ -64,7 +65,7 @@ export class NoopRAG extends RAG {
   override query(
     data: string,
     results?: number
-  ): Promise<{ score: number; content: string }[]> {
+  ): Promise<{ score: number; content: string; name: string }[]> {
     return Promise.resolve([]);
   }
 }

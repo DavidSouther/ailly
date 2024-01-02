@@ -2,14 +2,22 @@
 import { join } from "path";
 
 import * as ailly from "@ailly/core";
-import { NodeFileSystem } from "@davidsouther/jiffies/lib/esm/fs_node";
-import { format } from "@ailly/core/src/plugin/openai";
-import { GenerateManager } from "@ailly/core/src/ailly";
+import { NodeFileSystemAdapter } from "@davidsouther/jiffies/lib/esm/fs_node";
+import { format } from "@ailly/core/src/engine/openai";
+import { GenerateManager, GitignoreFs } from "@ailly/core/src/ailly";
 import { makeGenerateManagerOrganizer } from "./generate_manager_organizer";
-import { Content, loadContent, writeContent } from "@ailly/core/src/content";
+import {
+  Content,
+  loadContent,
+  writeContent,
+} from "@ailly/core/src/content/content";
 
-const CONTENT_ROOT = join(process.cwd(), process.env["CONTENT"] || "content");
-const fs = new NodeFileSystem(CONTENT_ROOT);
+const ENV_CONTENT = process.env["CONTENT"];
+const CONTENT_ROOT = ENV_CONTENT?.startsWith("/")
+  ? ENV_CONTENT
+  : join(process.cwd(), ENV_CONTENT || "content");
+const fs = new GitignoreFs(new NodeFileSystemAdapter());
+fs.cd(CONTENT_ROOT);
 const organizer = makeGenerateManagerOrganizer();
 
 export async function reloadContent() {

@@ -16,7 +16,7 @@ async function main() {
   }
 
   const loaded = await loadFs(args);
-  const settings = ailly.Ailly.makePipelineSettings(loaded.settings);
+  // const settings = ailly.Ailly.makePipelineSettings(loaded.settings);
 
   await check_should_run(args, loaded);
 

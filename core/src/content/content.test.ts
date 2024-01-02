@@ -65,6 +65,7 @@ test("it loads combined prompt and responses", async () => {
     {
       name: "content.md",
       path: "/content.md",
+      outPath: "/content.md",
       prompt: "content",
       response: "Response",
       system: [""],
@@ -73,6 +74,7 @@ test("it loads combined prompt and responses", async () => {
     {
       name: "prompt.md",
       path: "/prompt.md",
+      outPath: "/prompt.md",
       prompt: "prompt",
       response: "",
       system: [""],
@@ -84,16 +86,17 @@ test("it loads combined prompt and responses", async () => {
 test("it writes combined prompt and responses", async () => {
   const fs = new FileSystem(new ObjectFileSystemAdapter({}));
 
-  const content = [
+  const content: Content[] = [
     {
       name: "content.md",
-      path: "/content.md",
+      path: "/",
+      outPath: "/",
       prompt: "content",
       response: "Response",
       system: [""],
       meta: { isolated: true, combined: true },
     },
-  ] as Content[];
+  ];
 
   await writeContent(fs, content);
 
@@ -119,6 +122,7 @@ test("it loads separate prompt and responses", async () => {
     {
       name: "content.md",
       path: "/content.md",
+      outPath: "/content.md",
       prompt: "content",
       response: "Response",
       system: [""],
@@ -127,10 +131,52 @@ test("it loads separate prompt and responses", async () => {
     {
       name: "prompt.md",
       path: "/prompt.md",
+      outPath: "/prompt.md",
       prompt: "prompt",
       response: "",
       system: [""],
       meta: { isolated: true, combined: false },
+    },
+  ] as Content[]);
+});
+
+test("it loads separate prompt and responses in different out directors", async () => {
+  const fs = new FileSystem(
+    new ObjectFileSystemAdapter({
+      root: {
+        ".aillyrc": "---\nisolated: true\n---",
+        "prompt.md": "prompt",
+        "content.md": "content",
+      },
+      out: {
+        "content.md.ailly": "Response",
+      },
+    })
+  );
+
+  const content = await loadContent(fs, [], {
+    root: "/root",
+    out: "/out",
+  });
+  expect(content.length).toBe(2);
+  expect(content).toEqual([
+    {
+      name: "content.md",
+      path: "/root/content.md",
+      outPath: "/out/content.md",
+      prompt: "content",
+      response: "Response",
+      system: ["", ""],
+      meta: { isolated: true, combined: false, root: "/root", out: "/out" },
+    },
+    {
+      name: "prompt.md",
+      path: "/root/prompt.md",
+      outPath: "/out/prompt.md",
+      prompt: "prompt",
+      response: "",
+      system: ["", ""],
+      meta: { isolated: true, combined: false, root: "/root", out: "/out" },
     },
   ] as Content[]);
 });
@@ -142,21 +188,52 @@ test("it writes separate prompt and responses", async () => {
     })
   );
 
-  const content = [
+  const content: Content[] = [
     {
       name: "content.md",
-      path: "/",
+      path: "/content.md",
+      outPath: "/content.md",
       prompt: "content",
       response: "Response",
       system: [""],
       meta: { isolated: true, combined: false },
     },
-  ] as Content[];
+  ];
 
   await writeContent(fs, content);
 
   expect((fs as any).adapter.fs).toEqual({
     "/content.md": "---\ncombined: false\nisolated: true\n---\ncontent",
     "/content.md.ailly": "---\ncombined: false\nisolated: true\n---\nResponse",
+  });
+});
+
+test("it writes separate prompt and responses in outPath", async () => {
+  const fs = new FileSystem(
+    new ObjectFileSystemAdapter({
+      root: {
+        "content.md": "---\ncombined: false\nisolated: true\n---\ncontent",
+      },
+    })
+  );
+
+  const content: Content[] = [
+    {
+      name: "content.md",
+      path: "/root/content.md",
+      outPath: "/out/content.md",
+      prompt: "content",
+      response: "Response",
+      system: [""],
+      meta: { isolated: true, combined: false },
+    },
+  ];
+
+  await writeContent(fs, content);
+
+  expect((fs as any).adapter.fs).toEqual({
+    "/root/content.md": "---\ncombined: false\nisolated: true\n---\ncontent",
+    "/out/content.md.ailly":
+      "---\ncombined: false\nisolated: true\n---\nResponse",
   });
 });
