@@ -12,13 +12,15 @@ export interface Plugin {
   clean(c: Content): Promise<void>;
 }
 
-export const PLUGINS: Record<string, PluginBuilder> = {
-  noop: rag.RAG.empty as unknown as PluginBuilder,
-  none: rag.RAG.empty as unknown as PluginBuilder,
-  rag: rag.RAG.build as unknown as PluginBuilder,
+export const PLUGINS: Record<string, { default: PluginBuilder }> = {
+  noop: { default: rag.RAG.empty as unknown as PluginBuilder },
+  none: { default: rag.RAG.empty as unknown as PluginBuilder },
+  rag: { default: rag.RAG.build as unknown as PluginBuilder },
 };
 
-export async function getPlugin(name: string): Promise<PluginBuilder> {
+export async function getPlugin(
+  name: string
+): Promise<{ default: PluginBuilder }> {
   if (name.startsWith("file://")) {
     return import(name);
   }

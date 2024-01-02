@@ -30,7 +30,7 @@ export class GenerateManager {
     const engine = await getEngine(engineName);
     engine.format(content);
     const pluginBuilder = await getPlugin(settings.plugin);
-    const plugin = await pluginBuilder(engine, settings);
+    const plugin = await pluginBuilder.default(engine, settings);
     return new GenerateManager(content, settings, engine, plugin);
   }
 
