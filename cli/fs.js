@@ -33,7 +33,7 @@ export async function loadFs(args) {
 
   const positionals =
     args.positionals.slice(2).length == 0
-      ? [process.cwd()]
+      ? [""]
       : args.positionals.slice(2).map(cwdNormalize);
   content = content.filter((c) =>
     positionals.some((p) => c.path.startsWith(p))

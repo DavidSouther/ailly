@@ -258,7 +258,7 @@ export async function writeContent(fs: FileSystem, content: Content[]) {
 async function mkdirp(fs: FileSystem, dir: string) {
   const parts = dir.split("/");
   for (let i = 1; i < parts.length; i++) {
-    const path = join(...parts.slice(0, i + 1));
+    const path = join("/", ...parts.slice(0, i + 1));
     try {
       await fs.stat(path);
     } catch {

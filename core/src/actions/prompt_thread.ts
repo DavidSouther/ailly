@@ -64,6 +64,7 @@ export class PromptThread {
     try {
       await this.rag.augment(c);
       await generateOne(c, this.settings, this.engine);
+      await this.rag.clean(c);
       this.finished += 1;
     } catch (e) {
       console.warn("Error generating content", e);

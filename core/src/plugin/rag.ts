@@ -52,6 +52,8 @@ export class RAG {
     const results = await this.query(content.prompt);
     content.augment = results;
   }
+
+  async clean(content: Content) {}
 }
 
 export class NoopRAG extends RAG {
