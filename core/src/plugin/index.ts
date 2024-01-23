@@ -10,6 +10,7 @@ export interface PluginBuilder {
 export interface Plugin {
   augment(c: Content): Promise<void>;
   clean(c: Content): Promise<void>;
+  update(c: Content[]): Promise<void>;
 }
 
 export const PLUGINS: Record<string, { default: PluginBuilder }> = {

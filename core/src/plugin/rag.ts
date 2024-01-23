@@ -28,13 +28,37 @@ export class RAG {
     this.index = new LocalIndex(path);
   }
 
-  async add(content: Content) {
+  protected async add(content: Content) {
     const text = content.prompt;
     const vector = await this.engine.vector(content.prompt, {});
     await this.index.insertItem({
       vector,
       metadata: { text, name: content.name, path: content.path },
     });
+  }
+
+  async update(content: Content[]) {
+    const _content = [...content];
+    await this.index.beginUpdate();
+    await new Promise<void>(async (resolve, reject) => {
+      const nextPiece = async () => {
+        const piece = _content.pop()!;
+        if (!piece) {
+          return resolve();
+        }
+        try {
+          console.log(`Sending ${piece.name} (${piece.path})`);
+          await this.add(piece);
+          console.log(`Completed ${piece.name} (${piece.path})`);
+        } catch (e) {
+          console.log(`Error on ${piece.name} (${piece.path})`);
+          console.log(e);
+        }
+        nextPiece();
+      };
+      nextPiece();
+    });
+    await this.index.endUpdate();
   }
 
   async query(data: string, results = 3) {
@@ -57,7 +81,7 @@ export class RAG {
 }
 
 export class NoopRAG extends RAG {
-  override add(content: Content): Promise<void> {
+  override update(content: Content[]): Promise<void> {
     return Promise.resolve();
   }
   override augment(content: Content): Promise<void> {

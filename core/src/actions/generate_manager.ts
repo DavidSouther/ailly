@@ -83,4 +83,8 @@ export class GenerateManager {
       await Promise.all(this.threadRunners.map((r) => r.allSettled()))
     ).flat();
   }
+
+  async updateDatabase(): Promise<void> {
+    await this.rag.update(this.threads.flat());
+  }
 }

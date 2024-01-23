@@ -16,18 +16,20 @@ async function main() {
   }
 
   const loaded = await loadFs(args);
-  // const settings = ailly.Ailly.makePipelineSettings(loaded.settings);
 
   await check_should_run(args, loaded);
 
+  const settings = await ailly.Ailly.makePipelineSettings(loaded.settings);
+  let generator = await ailly.Ailly.GenerateManager.from(loaded.content, settings);
+
   switch (true) {
     case loaded.settings.updateDb:
-      // await ailly.Ailly.updateDatabase(loaded.content, settings);
+      await generator.updateDatabase();
       break;
     case loaded.settings.queryDb.length > 0:
       // const engine = await getEngine(loaded.settings.engine);
-      // const builder = getPlugin(loaded.settings.plugin);
-      // const rag = await builder(engine, settings);
+      // const builder = await getPlugin(loaded.settings.plugin);
+      // const rag = await builder.default(engine, settings);
       // const results = await rag.query(loaded.settings.queryDb);
       // console.table(
       //   results.map((v) => ({
@@ -37,7 +39,11 @@ async function main() {
       // );
       break;
     default:
-      await generate(loaded);
+      generator.start();
+      await generator.allSettled();
+
+      console.log("Generated!");
+      ailly.content.write(loaded.fs, loaded.content);
       break;
   }
 }
@@ -60,17 +66,4 @@ async function check_should_run(args, { content }) {
       }
     }
   }
-}
-
-async function generate({ fs, content, settings }) {
-  console.log("Generating...");
-
-  // Generate
-
-  let generator = await ailly.Ailly.GenerateManager.from(content, settings);
-  generator.start();
-  await generator.allSettled();
-
-  console.log("Generated!");
-  ailly.content.write(fs, content);
 }

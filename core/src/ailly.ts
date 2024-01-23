@@ -10,7 +10,6 @@ export const DEFAULT_PLUGIN = "noop";
 
 export type Thread = Content[];
 
-export { updateDatabase } from "./actions/update_database.js";
 export { GenerateManager } from "./actions/generate_manager.js";
 
 export interface PipelineSettings {

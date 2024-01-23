@@ -1,6 +1,6 @@
 {
   "name": "@ailly/core",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -26,6 +26,8 @@
     "@aws-sdk/client-bedrock-runtime": "^3.427.0",
     "@davidsouther/jiffies": "^2.1.4",
     "@dqbd/tiktoken": "^1.0.7",
+    "gitignore-parser": "^0.0.2",
+    "gray-matter": "^4.0.3",
     "js-yaml": "^4.1.0",
     "openai": "^4.11.1",
     "vectra": "^0.4.4"
