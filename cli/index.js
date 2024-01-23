@@ -12,7 +12,7 @@ async function main() {
 
   if (args.values["help"]) {
     help();
-    process.exit(1);
+    process.exit(0);
   }
 
   const loaded = await loadFs(args);
