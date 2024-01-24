@@ -44,6 +44,7 @@ export function makeArgs(argv = process.argv) {
       augment: { type: "boolean", default: false },
       yes: { type: "boolean", default: false, short: "y" },
       help: { type: "boolean", short: "h", default: false },
+      version: { type: "boolean", default: false },
     },
   });
 
@@ -73,6 +74,7 @@ export function help() {
     -s, --summary will show a pricing expectation before running and prompt for OK.
     -y, —yes will skip any prompts.
 
+    --version will print the cli and core versions
     -h, --help will print this message and exit.
   `);
 }

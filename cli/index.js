@@ -4,6 +4,7 @@ import { createInterface } from "readline/promises";
 import * as ailly from "@ailly/core";
 import { makeArgs, help } from "./args.js";
 import { loadFs } from "./fs.js";
+import { version } from "./version.js";
 
 await main();
 
@@ -12,6 +13,11 @@ async function main() {
 
   if (args.values["help"]) {
     help();
+    process.exit(0);
+  }
+
+  if (args.values["version"]) {
+    version();
     process.exit(0);
   }
 

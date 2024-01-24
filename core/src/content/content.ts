@@ -212,47 +212,43 @@ export async function loadContent(
 }
 
 export async function writeContent(fs: FileSystem, content: Content[]) {
-  return Promise.allSettled(
-    content.map(async (c) => {
-      if (!c.response) return;
-      const combined = c.meta?.combined ?? false;
-      if (combined && c.outPath != c.path) {
-        throw new Error(
-          `Mismatch path and output for ${c.path} vs ${c.outPath}`
-        );
-      }
+  for (const c of content) {
+    if (!c.response) return;
+    const combined = c.meta?.combined ?? false;
+    if (combined && c.outPath != c.path) {
+      throw new Error(`Mismatch path and output for ${c.path} vs ${c.outPath}`);
+    }
 
-      const dir = dirname(c.outPath);
-      await mkdirp(fs, dir);
+    const dir = dirname(c.outPath);
+    await mkdirp(fs, dir);
 
-      const filename = combined ? c.name : `${c.name}.ailly`;
-      console.log(`Writing response for ${filename}`);
-      const path = join(dir, filename);
-      const { debug, isolated } = c.meta ?? {};
-      if (c.augment) {
-        (debug as { augment: unknown[] }).augment = c.augment.map(
-          ({ score, name }) => ({
-            score,
-            name,
-          })
-        );
-      }
-      // TODO: Ensure `engine` and `model` are in `debug`
-      const meta = {
-        debug,
-        isolated,
-        combined,
-      };
+    const filename = combined ? c.name : `${c.name}.ailly`;
+    console.log(`Writing response for ${filename}`);
+    const path = join(dir, filename);
+    const { debug, isolated } = c.meta ?? {};
+    if (c.augment) {
+      (debug as { augment: unknown[] }).augment = c.augment.map(
+        ({ score, name }) => ({
+          score,
+          name,
+        })
+      );
+    }
+    // TODO: Ensure `engine` and `model` are in `debug`
+    const meta = {
+      debug,
+      isolated,
+      combined,
+    };
 
-      if (combined) {
-        (meta as unknown as { prompt: string }).prompt = c.prompt;
-      }
+    if (combined) {
+      (meta as unknown as { prompt: string }).prompt = c.prompt;
+    }
 
-      const head = yaml.dump(meta, { sortKeys: true });
-      const file = `---\n${head}---\n${c.response}`;
-      await fs.writeFile(path, file);
-    })
-  );
+    const head = yaml.dump(meta, { sortKeys: true });
+    const file = `---\n${head}---\n${c.response}`;
+    await fs.writeFile(path, file);
+  }
 }
 
 async function mkdirp(fs: FileSystem, dir: string) {

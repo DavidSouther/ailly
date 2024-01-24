@@ -130,17 +130,21 @@ async function generateOne(
     return c;
   }
 
-  // Determine PLUGIN and MODEL, load them.
+  console.log(`Preparing ${c.name}`);
+
   const meta = c.meta;
   engine.format([c]);
 
   console.log(
     `Calling ${engine.name}`,
-    meta?.messages?.map((m) => ({
-      role: m.role,
-      content: m.content.replaceAll("\n", "").substring(0, 50) + "...",
-      tokens: m.tokens,
-    }))
+    meta?.messages
+      ?.map((m) => ({
+        role: m.role,
+        content: m.content.replaceAll("\n", "").substring(0, 150) + "...",
+        // tokens: m.tokens,
+      }))
+      .map(({ role, content }) => `${role}: ${content.replaceAll("\n", "\\n")}`)
+      .join("\n\t")
   );
   const generated = await engine.generate(c, settings);
   c.response = generated.message;

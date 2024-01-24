@@ -1,7 +1,8 @@
-import * as contentModule from "./content/content.js";
-import * as aillyModule from "./ailly.js";
-import * as engineModule from "./engine/index.js";
-import * as pluginModule from "./plugin/index.js";
+import pkg from "./package.json" assert { type: "json" };
+import * as contentModule from "./src/content/content.js";
+import * as aillyModule from "./src/ailly.js";
+import * as engineModule from "./src/engine/index.js";
+import * as pluginModule from "./src/plugin/index.js";
 
 export namespace types {
   export type Content = contentModule.Content;
@@ -18,3 +19,5 @@ export const content = {
 };
 
 export const Ailly = aillyModule;
+
+export const version = pkg.version;
