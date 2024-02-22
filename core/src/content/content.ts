@@ -222,7 +222,7 @@ export async function writeContent(fs: FileSystem, content: Content[]) {
     const dir = dirname(c.outPath);
     await mkdirp(fs, dir);
 
-    const filename = combined ? c.name : `${c.name}.ailly`;
+    const filename = combined ? c.name : `${c.name}.ailly.md`;
     console.log(`Writing response for ${filename}`);
     const path = join(dir, filename);
     const { debug, isolated } = c.meta ?? {};

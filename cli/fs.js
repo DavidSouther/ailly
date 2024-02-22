@@ -1,18 +1,14 @@
 import { NodeFileSystemAdapter } from "@davidsouther/jiffies/lib/esm/fs_node.js";
-import { join, normalize } from "node:path";
+import { resolve } from "node:path";
 import * as ailly from "@ailly/core";
 
-function cwdNormalize(path) {
-  return normalize(path[0] == "/" ? path : join(process.cwd(), path));
-}
-
 export async function loadFs(args) {
-  const root = cwdNormalize(args.values.root);
+  const root = resolve(args.values.root);
   const fs = new ailly.Ailly.GitignoreFs(new NodeFileSystemAdapter());
   fs.cd(root);
   const settings = {
     root,
-    out: cwdNormalize(args.values.out ?? root),
+    out: resolve(args.values.out ?? root),
     isolated: args.values.isolated,
     engine: args.values.engine,
     model: args.values.model,
@@ -34,7 +30,7 @@ export async function loadFs(args) {
   const positionals =
     args.positionals.slice(2).length == 0
       ? [""]
-      : args.positionals.slice(2).map(cwdNormalize);
+      : args.positionals.slice(2).map(resolve);
   content = content.filter((c) =>
     positionals.some((p) => c.path.startsWith(p))
   );

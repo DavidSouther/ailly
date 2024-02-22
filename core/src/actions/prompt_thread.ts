@@ -140,7 +140,7 @@ async function generateOne(
     meta?.messages
       ?.map((m) => ({
         role: m.role,
-        content: m.content.replaceAll("\n", "").substring(0, 150) + "...",
+        content: m.content.replaceAll("\n", " ").substring(0, 150) + "...",
         // tokens: m.tokens,
       }))
       .map(({ role, content }) => `${role}: ${content.replaceAll("\n", "\\n")}`)
