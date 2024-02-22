@@ -24,7 +24,7 @@
   "dependencies": {
     "@aws-sdk/client-bedrock": "^3.427.0",
     "@aws-sdk/client-bedrock-runtime": "^3.427.0",
-    "@davidsouther/jiffies": "^2.1.7",
+    "@davidsouther/jiffies": "^2.1.9",
     "@dqbd/tiktoken": "^1.0.7",
     "gitignore-parser": "^0.0.2",
     "gray-matter": "^4.0.3",

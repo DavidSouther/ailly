@@ -1,4 +1,11 @@
-import { FileSystem, Stats } from "@davidsouther/jiffies/lib/esm/fs.js";
+import {
+  FileSystem,
+  PLATFORM_PARTS,
+  PLATFORM_PARTS_WIN,
+  SEP,
+  Stats,
+  isAbsolute,
+} from "@davidsouther/jiffies/lib/esm/fs.js";
 import matter from "gray-matter";
 import * as yaml from "js-yaml";
 import { join, dirname } from "path";
@@ -211,50 +218,68 @@ export async function loadContent(
   return content;
 }
 
+async function writeSingleContent(fs: FileSystem, content: Content) {
+  if (!content.response) return;
+  const combined = content.meta?.combined ?? false;
+  if (combined && content.outPath != content.path) {
+    throw new Error(
+      `Mismatch path and output for ${content.path} vs ${content.outPath}`
+    );
+  }
+
+  const dir = dirname(content.outPath);
+  await mkdirp(fs, dir);
+
+  const filename = combined ? content.name : `${content.name}.ailly.md`;
+  console.log(`Writing response for ${filename}`);
+  const path = join(dir, filename);
+  const { debug, isolated } = content.meta ?? {};
+  if (content.augment) {
+    (debug as { augment: unknown[] }).augment = content.augment.map(
+      ({ score, name }) => ({
+        score,
+        name,
+      })
+    );
+  }
+  // TODO: Ensure `engine` and `model` are in `debug`
+  const meta = {
+    debug,
+    isolated,
+    combined,
+  };
+
+  if (combined) {
+    (meta as unknown as { prompt: string }).prompt = content.prompt;
+  }
+
+  const head = yaml.dump(meta, { sortKeys: true });
+  const file = `---\n${head}---\n${content.response}`;
+  await fs.writeFile(path, file);
+}
+
 export async function writeContent(fs: FileSystem, content: Content[]) {
   for (const c of content) {
-    if (!c.response) return;
-    const combined = c.meta?.combined ?? false;
-    if (combined && c.outPath != c.path) {
-      throw new Error(`Mismatch path and output for ${c.path} vs ${c.outPath}`);
+    try {
+      await writeSingleContent(fs, c);
+    } catch (e) {
+      console.error(`Failed to write content ${c.name}`, e);
     }
-
-    const dir = dirname(c.outPath);
-    await mkdirp(fs, dir);
-
-    const filename = combined ? c.name : `${c.name}.ailly.md`;
-    console.log(`Writing response for ${filename}`);
-    const path = join(dir, filename);
-    const { debug, isolated } = c.meta ?? {};
-    if (c.augment) {
-      (debug as { augment: unknown[] }).augment = c.augment.map(
-        ({ score, name }) => ({
-          score,
-          name,
-        })
-      );
-    }
-    // TODO: Ensure `engine` and `model` are in `debug`
-    const meta = {
-      debug,
-      isolated,
-      combined,
-    };
-
-    if (combined) {
-      (meta as unknown as { prompt: string }).prompt = c.prompt;
-    }
-
-    const head = yaml.dump(meta, { sortKeys: true });
-    const file = `---\n${head}---\n${c.response}`;
-    await fs.writeFile(path, file);
   }
 }
 
+const IS_WINDOWS = PLATFORM_PARTS == PLATFORM_PARTS_WIN;
 async function mkdirp(fs: FileSystem, dir: string) {
-  const parts = dir.split("/");
+  if (!isAbsolute(dir)) {
+    console.warn(`Cannot mkdirp on non-absolute path ${dir}`);
+    return;
+  }
+  const parts = dir.split(SEP);
   for (let i = 1; i < parts.length; i++) {
-    const path = join("/", ...parts.slice(0, i + 1));
+    let path = join(SEP, ...parts.slice(0, i + 1));
+    if (IS_WINDOWS) {
+      path = parts[0] + SEP + path;
+    }
     try {
       await fs.stat(path);
     } catch {
