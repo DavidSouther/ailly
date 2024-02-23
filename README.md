@@ -8,6 +8,13 @@ Edit its output, and retrain to get it even more like that.
 
 Rhymes with Daily.
 
+## Quickstart
+
+1. Create a folder, `content`.
+2. Create a file, `content/.aillyrc`, and put your top-level prompt instructions.
+3. Create several files, `content/01_big_point.md`, `content/02_second_point.md` etc.
+4. Run ailly using NodeJS: `npx @ailly/cli@1.1.1 --root content`
+
 ## Engines
 
 - OpenAI `openai`
