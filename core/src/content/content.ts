@@ -86,7 +86,7 @@ export function splitOrderedName(name: string): Ordering {
   if (name.startsWith("_")) {
     return { type: "ignore" };
   }
-  if (name.endsWith(".ailly")) {
+  if (name.endsWith(".ailly.md")) {
     const id = name.replace(/\.ailly$/, "");
     return { type: "response", id };
   }

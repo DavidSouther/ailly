@@ -33,27 +33,67 @@ export async function generate(
     messages = messages.slice(0, -1);
   }
 
-  const completions = await openai.chat.completions.create({
+  const body = {
     messages: (c.meta?.messages ?? []).map(({ role, content }) => ({
       role,
       content,
     })),
     model,
-  });
-  const choice = completions.choices[0];
-  console.log(`Response from OpenAI for ${c.name}`, {
-    id: completions.id,
-    finish_reason: choice.finish_reason,
-  });
-  return {
-    message: choice.message.content ?? "",
-    debug: {
-      id: completions.id,
-      model: completions.model,
-      usage: completions.usage,
-      finish: choice.finish_reason,
-    },
   };
+
+  try {
+    const completions = await callOpenAiWithRateLimit(openai, body);
+    if (!completions) {
+      throw new Error(
+        "Failed to get completions and call with rate limit did not itself error"
+      );
+    }
+
+    const choice = completions.choices[0];
+    console.log(`Response from OpenAI for ${c.name}`, {
+      id: completions.id,
+      finish_reason: choice.finish_reason,
+    });
+    return {
+      message: choice.message.content ?? "",
+      debug: {
+        id: completions.id,
+        model: completions.model,
+        usage: completions.usage,
+        finish: choice.finish_reason,
+      },
+    };
+  } catch (e) {
+    return {
+      message: "💩",
+      debug: { finish: "Failed", error: { message: (e as Error).message } },
+    };
+  }
+}
+
+async function callOpenAiWithRateLimit(
+  openai: OpenAI,
+  content: OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming
+): Promise<OpenAI.Chat.Completions.ChatCompletion | undefined> {
+  let retry = 3;
+  while (retry > 0) {
+    retry -= 1;
+    try {
+      return openai.chat.completions.create(content);
+    } catch (e: any) {
+      console.warn("Error calling openai", e.message);
+      if (retry == 0) {
+        throw new Error("Failed 3 times to call openai", { cause: e });
+      }
+      if (e.error.code == "rate_limit_exceeded") {
+        await new Promise((resolve) => {
+          const wait = Number(e.headers["retry-after-ms"]);
+          console.log(`Waiting ${wait}ms...`);
+          setTimeout(resolve, wait);
+        });
+      }
+    }
+  }
 }
 
 export async function format(contents: Content[]): Promise<Summary> {

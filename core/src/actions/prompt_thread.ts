@@ -14,6 +14,30 @@ export interface PromptThreadSummary extends PromptThreadsSummary {
   isolated: boolean;
 }
 
+export async function scheduler<T>(
+  taskQueue: Array<() => Promise<T>>,
+  limit: number = 5
+): Promise<PromiseSettledResult<T>[]> {
+  taskQueue = [...taskQueue].reverse();
+  let finished: Array<Promise<T>> = [];
+  let outstanding = new Set<Promise<T>>();
+  while (taskQueue.length >= 0) {
+    if (outstanding.size > limit) {
+      // Wait for something in outstanding to finish
+      await Promise.race([...outstanding]);
+    } else {
+      const task = taskQueue.pop();
+      if (task) {
+        const run = task();
+        finished.push(run);
+        outstanding.add(run);
+        run.finally(() => outstanding.delete(run));
+      }
+    }
+  }
+  return Promise.allSettled(finished);
+}
+
 export class PromptThread {
   finished: number = 0;
   isolated: boolean = false;
@@ -76,13 +100,9 @@ export class PromptThread {
 
   private runIsolated(): Promise<PromiseSettledResult<Content>[]> {
     console.log(`Running thread for ${this.content.length} isolated prompts`);
-    const promises: Promise<Content>[] = this.content.map(async (c, i) =>
-      this.runOne(c, i).catch((_e) => c)
-    );
-
-    return Promise.allSettled(promises).finally(() => {
-      this.done = true;
-    });
+    return scheduler(
+      this.content.map((c, i) => () => this.runOne(c, i))
+    ).finally(() => (this.done = true));
   }
 
   private async runSequence(): Promise<PromiseSettledResult<Content>[]> {
