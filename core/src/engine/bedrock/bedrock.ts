@@ -8,7 +8,7 @@ import { Message, Summary } from "../index.js";
 import { Models, PromptBuilder } from "./prompt-builder.js";
 
 export const name = "bedrock";
-export const DEFAULT_MODEL: Models = "anthropic.claude-v2";
+export const DEFAULT_MODEL = "anthropic.claude-3-sonnet-20240229-v1:0";
 
 const promptBuilder = new PromptBuilder(DEFAULT_MODEL);
 
@@ -37,12 +37,13 @@ export async function generate(
   );
 
   const body = JSON.parse(response.body.transformToString());
+  response.body = body;
 
   console.log(`Response from Bedrock for ${c.name}`, {
     finish_reason: body.stop_reason,
   });
   return {
-    message: body.completion ?? "",
+    message: body.content?.[0]?.text ?? "",
     debug: {
       id: null,
       model,
