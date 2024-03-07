@@ -1,10 +1,13 @@
 import { Message } from "..";
 
-export type Models = "anthropic.claude-v2";
+export type Models =
+  | "anthropic.claude-v2"
+  | "anthropic.claude-3-sonnet-20240229-v1:0";
 
 export class PromptBuilder {
   modelBuilders: Record<Models, (m: Message[]) => any> = {
     "anthropic.claude-v2": claude,
+    "anthropic.claude-3-sonnet-20240229-v1:0": claude3,
   };
 
   constructor(private readonly modelName: Models) {}
@@ -38,4 +41,31 @@ export function claude(messages: Message[]): {
   });
 
   return { prompt: output + "\n\nAssistant:", max_tokens_to_sample: 8191 };
+}
+
+export function claude3(messages: Message[]): {
+  messages: { role: "user" | "assistant"; content: string }[];
+  system: string;
+  max_tokens: number;
+  anthropic_version: "bedrock-2023-05-31"; //
+} {
+  let system = "";
+  const promptMessages = [];
+  for (const message of messages) {
+    switch (message.role) {
+      case "system":
+        system += message.content + "\n";
+        break;
+      case "assistant":
+      case "user":
+        promptMessages.push({ role: message.role, content: message.content });
+        break;
+    }
+  }
+  return {
+    messages: promptMessages,
+    max_tokens: 1024,
+    system,
+    anthropic_version: "bedrock-2023-05-31",
+  };
 }
