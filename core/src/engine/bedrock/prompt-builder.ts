@@ -43,25 +43,34 @@ export function claude(messages: Message[]): {
   return { prompt: output + "\n\nAssistant:", max_tokens_to_sample: 8191 };
 }
 
+export interface LLMMessage {
+  role: "user" | "assistant";
+  content: string;
+}
+
 export function claude3(messages: Message[]): {
-  messages: { role: "user" | "assistant"; content: string }[];
+  messages: LLMMessage[];
   system: string;
   max_tokens: number;
   anthropic_version: "bedrock-2023-05-31"; //
 } {
   let system = "";
-  const promptMessages = [];
-  for (const message of messages) {
+  const promptMessages: LLMMessage[] = [];
+  messages.forEach((message, i) => {
     switch (message.role) {
       case "system":
         system += message.content + "\n";
         break;
       case "assistant":
       case "user":
-        promptMessages.push({ role: message.role, content: message.content });
+        if (promptMessages[i - 1]?.role === message.role) {
+          promptMessages[i - 1].content += "\n" + message.content;
+        } else {
+          promptMessages.push({ role: message.role, content: message.content });
+        }
         break;
     }
-  }
+  });
   return {
     messages: promptMessages,
     max_tokens: 1024,
