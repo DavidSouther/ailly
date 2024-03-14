@@ -214,3 +214,25 @@ This is a bit of an experimental / trial by doing issue.
 Generally, late 2024 LLMs (Llama, Claude, ChatGPT) respond with "around" 700 words.
 Similarly, while their context sizes vary, they seem to work best with "up to" 16,000 words.
 Based on these limits, up to about 5 layers of folder depth and at most 20 files per folder generate the most reliably "good" results, but your milage will vary.
+
+## Conversational History
+
+In LLM Chatbots like ChatGPT or chains like Langchain, the history of the conversation is kept in the sequence of human, assistant interactions.
+This is typically kept in memory, or at least in an inaccessible format to the user.
+The user can only regenerate sequences, or add their next prompt at the end.
+
+Ailly removes this limitation by using your file system as the conversational history.
+The writer maintains full control over the sequence of prompts, up to and including editing the LLM's response before (re)generating the next prompt!
+This lets the writer decide how the conversation should evolve.
+By editing an LLM prompt, they can take the best of what the LLM did in some cases, and modify it in others.
+Using Ailly's filesystem based conversational history, each piece of the session can be stored in source control.
+Version tracking lets the author see how their prompts and responses have changed over time, and unlock a number of long-term process improvements that are difficult to impossible with chat interfaces.
+
+In one session, a developer was working on a long sequence of prompts to build a software project.
+While reviewing an LLM written draft of the README, the developer wanted the list of API calls to be links to the reference documentation.
+With a chat conversational history, the developer would have needed to modify the instructions for the entire prompt to encourage creating the list, rerun the generation, and hope the rest of the README came out similarly.
+Instead, with Ailly, the developer created a new file with only the list and an instruction on how to create URLs from the list items, saved it as `list.md` (with `isolated: true` in the combined head), and ran `ailly list.md`.
+The LLM followed the instructions, generated just the updated list, and the developer copied that list into the original (generated) README.md.
+In later prompts, the context window included the entire URLs, and the agent model was able to intelligently request to download their contents.
+
+To the author's knowledge, no other LLM interface provides this level of interaction with LLMs.
