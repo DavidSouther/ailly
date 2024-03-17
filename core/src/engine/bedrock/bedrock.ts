@@ -27,30 +27,37 @@ export async function generate(
   }
 
   const prompt = promptBuilder.build(messages);
-  const response = await bedrock.send(
-    new InvokeModelCommand({
-      modelId: model,
-      contentType: "application/json",
-      accept: "application/json",
-      body: JSON.stringify(prompt),
-    })
-  );
+  try {
+    const response = await bedrock.send(
+      new InvokeModelCommand({
+        modelId: model,
+        contentType: "application/json",
+        accept: "application/json",
+        body: JSON.stringify(prompt),
+      })
+    );
 
-  const body = JSON.parse(response.body.transformToString());
-  response.body = body;
+    const body = JSON.parse(response.body.transformToString());
+    response.body = body;
 
-  console.log(`Response from Bedrock for ${c.name}`, {
-    finish_reason: body.stop_reason,
-  });
-  return {
-    message: body.content?.[0]?.text ?? "",
-    debug: {
-      id: null,
-      model,
-      usage: null,
-      finish: body.stop_reason,
-    },
-  };
+    console.log(`Response from Bedrock for ${c.name}`, {
+      finish_reason: body.stop_reason,
+    });
+    return {
+      message: body.content?.[0]?.text ?? "",
+      debug: {
+        id: null,
+        model,
+        usage: null,
+        finish: body.stop_reason,
+      },
+    };
+  } catch (e) {
+    return {
+      message: "💩",
+      debug: { finish: "Failed", error: { message: (e as Error).message } },
+    };
+  }
 }
 
 export async function format(contents: Content[]): Promise<Summary> {

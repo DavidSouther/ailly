@@ -63,8 +63,8 @@ export function claude3(messages: Message[]): {
         break;
       case "assistant":
       case "user":
-        if (promptMessages[i - 1]?.role === message.role) {
-          promptMessages[i - 1].content += "\n" + message.content;
+        if (promptMessages.at(-1)?.role === message.role) {
+          promptMessages.at(-1)!.content += "\n" + message.content;
         } else {
           promptMessages.push({ role: message.role, content: message.content });
         }

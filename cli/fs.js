@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 import * as ailly from "@ailly/core";
 
 export async function loadFs(args) {
-  const root = resolve(args.values.root);
+  const root = resolve(args.values.root ?? '.');
   const fs = new ailly.Ailly.GitignoreFs(new NodeFileSystemAdapter());
   fs.cd(root);
   const settings = {
@@ -19,7 +19,7 @@ export async function loadFs(args) {
       args.values.augment ||
       args.values["update-db"] ||
       args.values["query-db"],
-    no_overwrite: args.values["no-overwrite"],
+    overwrite: !args.values["no-overwrite"],
   };
   let content = await ailly.content.load(
     fs,
@@ -30,7 +30,7 @@ export async function loadFs(args) {
   const positionals =
     args.positionals.slice(2).length == 0
       ? [""]
-      : args.positionals.slice(2).map(a => resolve(...a));
+      : args.positionals.slice(2).map(a => resolve(a));
   content = content.filter((c) =>
     positionals.some((p) => c.path.startsWith(p))
   );

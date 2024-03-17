@@ -21,7 +21,7 @@ export async function scheduler<T>(
   taskQueue = [...taskQueue].reverse();
   let finished: Array<Promise<T>> = [];
   let outstanding = new Set<Promise<T>>();
-  while (taskQueue.length >= 0) {
+  while (taskQueue.length > 0) {
     if (outstanding.size > limit) {
       // Wait for something in outstanding to finish
       await Promise.race([...outstanding]);
@@ -143,10 +143,10 @@ async function generateOne(
   settings: PipelineSettings,
   engine: Engine
 ): Promise<Content> {
-  const overwrite = c.meta?.skip ?? settings.overwrite;
   const has_response = (c.response?.length ?? 0) > 0;
 
-  if (!overwrite && has_response) {
+  if (c.meta?.skip || (!settings.overwrite && has_response)) {
+    console.log(`Skipping ${c.name}`);
     return c;
   }
 
