@@ -1,3 +1,4 @@
+import { DEFAULT_LOGGER } from "@davidsouther/jiffies/lib/esm/log.js";
 import {
   FileSystem,
   PLATFORM_PARTS,
@@ -111,10 +112,9 @@ async function loadFile(
         prompt = parsed.content;
         data = parsed.data;
       } catch (e) {
-        console.warn(
-          `Error reading prompt and parsing for matter`,
-          promptPath,
-          e
+        DEFAULT_LOGGER.warn(
+          `Error reading prompt and parsing for matter in ${promptPath}`,
+          e as Error
         );
       }
       let response = "";
@@ -134,10 +134,9 @@ async function loadFile(
           ).content;
           data.combined = false;
         } catch (e) {
-          console.warn(
-            `Error reading response and parsing for matter`,
-            responsePath,
-            e
+          DEFAULT_LOGGER.warn(
+            `Error reading response and parsing for matter in ${responsePath}`,
+            e as Error
           );
         }
       }
@@ -183,12 +182,12 @@ export async function loadContent(
   system: string[] = [],
   meta: ContentMeta = {}
 ): Promise<Content[]> {
-  console.debug(`Loading content from ${fs.cwd()}`);
+  DEFAULT_LOGGER.debug(`Loading content from ${fs.cwd()}`);
   const sys = matter(await fs.readFile(".aillyrc").catch((e) => ""));
   meta = { ...meta, ...sys.data };
   system = [...system, sys.content];
   if (meta.skip) {
-    console.debug(
+    DEFAULT_LOGGER.debug(
       `Skipping content from ${fs.cwd()} based on head of .aillyrc`
     );
     return [];
@@ -214,7 +213,7 @@ export async function loadContent(
   }
 
   const content = [...files, ...folders];
-  console.debug(`Found ${content.length} at or below ${fs.cwd()}`);
+  DEFAULT_LOGGER.debug(`Found ${content.length} at or below ${fs.cwd()}`);
   return content;
 }
 
@@ -231,7 +230,7 @@ async function writeSingleContent(fs: FileSystem, content: Content) {
   await mkdirp(fs, dir);
 
   const filename = combined ? content.name : `${content.name}.ailly.md`;
-  console.log(`Writing response for ${filename}`);
+  DEFAULT_LOGGER.info(`Writing response for ${filename}`);
   const path = join(dir, filename);
   const { debug, isolated } = content.meta ?? {};
   if (content.augment) {
@@ -263,7 +262,7 @@ export async function writeContent(fs: FileSystem, content: Content[]) {
     try {
       await writeSingleContent(fs, c);
     } catch (e) {
-      console.error(`Failed to write content ${c.name}`, e);
+      DEFAULT_LOGGER.error(`Failed to write content ${c.name}`, e as Error);
     }
   }
 }
@@ -271,7 +270,7 @@ export async function writeContent(fs: FileSystem, content: Content[]) {
 const IS_WINDOWS = PLATFORM_PARTS == PLATFORM_PARTS_WIN;
 async function mkdirp(fs: FileSystem, dir: string) {
   if (!isAbsolute(dir)) {
-    console.warn(`Cannot mkdirp on non-absolute path ${dir}`);
+    DEFAULT_LOGGER.warn(`Cannot mkdirp on non-absolute path ${dir}`);
     return;
   }
   const parts = dir.split(SEP);

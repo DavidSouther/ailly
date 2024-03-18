@@ -1,3 +1,4 @@
+import { DEFAULT_LOGGER } from "@davidsouther/jiffies/lib/esm/log.js";
 import {
   DEFAULT_ENGINE,
   PipelineSettings,
@@ -41,7 +42,7 @@ export class GenerateManager {
     private rag: Plugin
   ) {
     this.threads = partitionPrompts(content);
-    console.log(`Ready to generate ${this.threads.length} messages`);
+    DEFAULT_LOGGER.info(`Ready to generate ${this.threads.length} messages`);
   }
 
   start() {

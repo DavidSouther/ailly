@@ -1,3 +1,4 @@
+import { DEFAULT_LOGGER } from "@davidsouther/jiffies/lib/esm/log.js";
 import {
   BedrockRuntimeClient,
   InvokeModelCommand,
@@ -40,7 +41,7 @@ export async function generate(
     const body = JSON.parse(response.body.transformToString());
     response.body = body;
 
-    console.log(`Response from Bedrock for ${c.name}`, {
+    DEFAULT_LOGGER.info(`Response from Bedrock for ${c.name}`, {
       finish_reason: body.stop_reason,
     });
     return {

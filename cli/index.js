@@ -1,6 +1,7 @@
 #! /usr/bin/env node
 import { createInterface } from "readline/promises";
 
+import { DEFAULT_LOGGER } from "@davidsouther/jiffies/lib/esm/log.js"
 import * as ailly from "@ailly/core";
 import { makeArgs, help } from "./args.js";
 import { loadFs } from "./fs.js";
@@ -48,8 +49,12 @@ async function main() {
       generator.start();
       await generator.allSettled();
 
-      console.log("Generated!");
-      ailly.content.write(loaded.fs, loaded.content);
+      DEFAULT_LOGGER.info("Generated!");
+      if (loaded.content.at(-1)?.outPath == "/dev/stdout") {
+        console.log(loaded.content.at(-1)?.response);
+      } else {
+        ailly.content.write(loaded.fs, loaded.content);
+      }
       break;
   }
 }

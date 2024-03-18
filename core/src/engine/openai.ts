@@ -1,3 +1,4 @@
+import { DEFAULT_LOGGER } from "@davidsouther/jiffies/lib/esm/log.js";
 import { OpenAI, toFile } from "openai";
 import { assertExists } from "@davidsouther/jiffies/lib/esm/assert.js";
 import type { Content } from "../content/content";
@@ -50,7 +51,7 @@ export async function generate(
     }
 
     const choice = completions.choices[0];
-    console.log(`Response from OpenAI for ${c.name}`, {
+    DEFAULT_LOGGER.info(`Response from OpenAI for ${c.name}`, {
       id: completions.id,
       finish_reason: choice.finish_reason,
     });
@@ -81,14 +82,14 @@ async function callOpenAiWithRateLimit(
     try {
       return openai.chat.completions.create(content);
     } catch (e: any) {
-      console.warn("Error calling openai", e.message);
+      DEFAULT_LOGGER.warn("Error calling openai", e.message);
       if (retry == 0) {
         throw new Error("Failed 3 times to call openai", { cause: e });
       }
       if (e.error.code == "rate_limit_exceeded") {
         await new Promise((resolve) => {
           const wait = Number(e.headers["retry-after-ms"]);
-          console.log(`Waiting ${wait}ms...`);
+          DEFAULT_LOGGER.info(`Waiting ${wait}ms...`);
           setTimeout(resolve, wait);
         });
       }
@@ -176,15 +177,15 @@ export async function tune(
     purpose: "fine-tune",
   });
 
-  console.log("Created openai training file", trainingFile);
+  DEFAULT_LOGGER.info("Created openai training file", trainingFile);
 
   const fineTune = await openai.fineTuning.jobs.create({
     training_file: trainingFile.id,
     model,
   });
 
-  console.log("Started fine-tuning job", fineTune);
-  console.log(
+  DEFAULT_LOGGER.info("Started fine-tuning job", fineTune);
+  DEFAULT_LOGGER.info(
     `New fine tuning model should be ft:${fineTune.model}:${fineTune.organization_id}::${fineTune.id}`
   );
 }
