@@ -32,7 +32,7 @@ test("it loads responses", async () => {
   const testFs = new FileSystem(
     new ObjectFileSystemAdapter({
       "01_start.md": "The quick brown",
-      "01_start.md.ailly": "fox jumped",
+      "01_start.md.ailly.md": "fox jumped",
     })
   );
   const content = await loadContent(testFs);
@@ -44,7 +44,7 @@ test("it loads responses", async () => {
 
 test.each([
   ["prompt.md", "prompt"],
-  ["prompt.md.ailly", "response"],
+  ["prompt.md.ailly.md", "response"],
 ])("it splits ordered filenames: %s -> %s", (file, type) => {
   const split = splitOrderedName(file);
   expect(split.type).toBe(type);
@@ -69,7 +69,7 @@ test("it loads combined prompt and responses", async () => {
       prompt: "content",
       response: "Response",
       system: [""],
-      meta: { isolated: true, combined: true },
+      meta: { isolated: true, combined: true, root: "/" },
     },
     {
       name: "prompt.md",
@@ -78,7 +78,7 @@ test("it loads combined prompt and responses", async () => {
       prompt: "prompt",
       response: "",
       system: [""],
-      meta: { isolated: true, combined: true },
+      meta: { isolated: true, combined: true, root: "/" },
     },
   ] as Content[]);
 });
@@ -112,7 +112,7 @@ test("it loads separate prompt and responses", async () => {
       ".aillyrc": "---\nisolated: true\n---",
       "prompt.md": "prompt",
       "content.md": "content",
-      "content.md.ailly": "Response",
+      "content.md.ailly.md": "Response",
     })
   );
 
@@ -122,20 +122,20 @@ test("it loads separate prompt and responses", async () => {
     {
       name: "content.md",
       path: "/content.md",
-      outPath: "/content.md",
+      outPath: "/content.md.ailly.md",
       prompt: "content",
       response: "Response",
       system: [""],
-      meta: { isolated: true, combined: false },
+      meta: { isolated: true, combined: false, root: "/" },
     },
     {
       name: "prompt.md",
       path: "/prompt.md",
-      outPath: "/prompt.md",
+      outPath: "/prompt.md.ailly.md",
       prompt: "prompt",
       response: "",
       system: [""],
-      meta: { isolated: true, combined: false },
+      meta: { isolated: true, combined: false, root: "/" },
     },
   ] as Content[]);
 });
@@ -149,7 +149,7 @@ test("it loads separate prompt and responses in different out directors", async 
         "content.md": "content",
       },
       out: {
-        "content.md.ailly": "Response",
+        "content.md.ailly.md": "Response",
       },
     })
   );
@@ -158,12 +158,12 @@ test("it loads separate prompt and responses in different out directors", async 
     root: "/root",
     out: "/out",
   });
-  expect(content.length).toBe(2);
+  // expect(content.length).toBe(2);
   expect(content).toEqual([
     {
       name: "content.md",
       path: "/root/content.md",
-      outPath: "/out/content.md",
+      outPath: "/out/content.md.ailly.md",
       prompt: "content",
       response: "Response",
       system: ["", ""],
@@ -172,7 +172,7 @@ test("it loads separate prompt and responses in different out directors", async 
     {
       name: "prompt.md",
       path: "/root/prompt.md",
-      outPath: "/out/prompt.md",
+      outPath: "/out/prompt.md.ailly.md",
       prompt: "prompt",
       response: "",
       system: ["", ""],
@@ -204,7 +204,8 @@ test("it writes separate prompt and responses", async () => {
 
   expect((fs as any).adapter.fs).toEqual({
     "/content.md": "---\ncombined: false\nisolated: true\n---\ncontent",
-    "/content.md.ailly": "---\ncombined: false\nisolated: true\n---\nResponse",
+    "/content.md.ailly.md":
+      "---\ncombined: false\nisolated: true\n---\nResponse",
   });
 });
 
@@ -233,7 +234,23 @@ test("it writes separate prompt and responses in outPath", async () => {
 
   expect((fs as any).adapter.fs).toEqual({
     "/root/content.md": "---\ncombined: false\nisolated: true\n---\ncontent",
-    "/out/content.md.ailly":
+    "/out/content.md.ailly.md":
       "---\ncombined: false\nisolated: true\n---\nResponse",
   });
+});
+
+test("it uses templates for prompts", async () => {
+  const fs = new FileSystem(
+    new ObjectFileSystemAdapter({
+      root: {
+        "content.md": "{{output.prose}}\nBrainstorm an ad campaign.",
+      },
+    })
+  );
+
+  const content = await loadContent(fs, [], {});
+
+  expect(content[0].prompt).toEqual(
+    "Your output should be prose, with no additional formatting.\nBrainstorm an ad campaign."
+  );
 });

@@ -9,6 +9,7 @@ import {
 } from "@davidsouther/jiffies/lib/esm/fs.js";
 import matter from "gray-matter";
 import * as yaml from "js-yaml";
+import moustache from "mustache";
 import { join, dirname } from "path";
 import type { Message } from "../engine/index.js";
 import { isDefined } from "../util.js";
@@ -46,6 +47,7 @@ export interface ContentMeta {
   isolated?: boolean;
   combined?: boolean;
   debug?: unknown;
+  template?: boolean | Record<string, unknown>;
 }
 
 interface PartitionedDirectory {
@@ -104,9 +106,11 @@ async function loadFile(
   const cwd = fs.cwd();
   switch (ordering.type) {
     case "prompt":
+      head.root = head.root ?? cwd;
+      const promptPath = join(head.root, file.name);
+
       let prompt: string = "";
       let data: Record<string, any> = {};
-      const promptPath = join(cwd, file.name);
       try {
         const parsed = matter(await fs.readFile(promptPath).catch((e) => ""));
         prompt = parsed.content;
@@ -118,36 +122,47 @@ async function loadFile(
           e
         );
       }
+      const view =
+        head.template === false || data.template === false
+          ? false
+          : {
+              ...GLOBAL_TEMPLATE,
+              ...(head.template ?? {}),
+              ...(data.template ?? {}),
+            };
+      if (view !== false) {
+        prompt = moustache.render(prompt, view);
+      }
       let response = "";
+      let outPath: string;
       if (data.prompt) {
         response = prompt;
         data.combined = true;
         prompt = data.prompt;
+        outPath = promptPath;
         delete data.prompt;
       } else {
-        const responsePath = join(cwd, `${ordering.id}.ailly`).replace(
-          head.root,
-          head.out
-        );
+        outPath =
+          (head.out == undefined || head.root === head.out
+            ? promptPath
+            : promptPath.replace(head.root, head.out)) + ".ailly.md";
         try {
           response = matter(
-            await fs.readFile(responsePath).catch((e) => "")
+            await fs.readFile(outPath).catch((e) => "")
           ).content;
           data.combined = false;
         } catch (e) {
           console.warn(
             `Error reading response and parsing for matter`,
-            responsePath,
+            outPath,
             e
           );
         }
       }
-      const path = join(fs.cwd(), file.name);
-      const outPath = path.replace(head.root, head.out);
       return {
         name: ordering.id,
         system,
-        path,
+        path: promptPath,
         outPath,
         prompt,
         response,
@@ -232,7 +247,7 @@ async function writeSingleContent(fs: FileSystem, content: Content) {
   await mkdirp(fs, dir);
 
   const filename = combined ? content.name : `${content.name}.ailly.md`;
-  console.log(`Writing response for ${filename}`);
+  DEFAULT_LOGGER.info(`Writing response for ${filename}`);
   const path = join(dir, filename);
   const { debug, isolated } = content.meta ?? {};
   if (content.augment) {
@@ -288,3 +303,14 @@ async function mkdirp(fs: FileSystem, dir: string) {
     }
   }
 }
+
+const GLOBAL_TEMPLATE = {
+  output: {
+    explain: "Explain your thought process each step of the way.",
+    verbatim: "Please respond verbatim, without commentary.",
+    prose: "Your output should be prose, with no additional formatting.",
+    markdown: "Your output should use full markdown syntax.",
+    python:
+      "Your output should only contain Python code, within a markdown code fence:\n\n```py\n#<your code>\n```",
+  },
+};
