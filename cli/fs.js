@@ -1,5 +1,6 @@
 import { NodeFileSystemAdapter } from "@davidsouther/jiffies/lib/esm/fs_node.js";
-import { resolve } from "node:path";
+import { DEFAULT_LOGGER } from "@davidsouther/jiffies/lib/esm/log.js";
+import { dirname, resolve } from "node:path";
 import * as ailly from "@ailly/core";
 
 export async function loadFs(args) {
@@ -21,19 +22,26 @@ export async function loadFs(args) {
       args.values["query-db"],
     overwrite: !args.values["no-overwrite"],
   };
+  const positionals = args.positionals.slice(2).map(resolve);
+  const isPipe = positionals.length == 0 && args.values.prompt;
+  if (isPipe) {
+    DEFAULT_LOGGER.level = 100;
+  }
   let content = await ailly.content.load(
     fs,
     [args.values.prompt ?? ""],
     settings
   );
 
-  const positionals =
-    args.positionals.slice(2).length == 0
-      ? [""]
-      : args.positionals.slice(2).map(a => resolve(a));
-  content = content.filter((c) =>
-    positionals.some((p) => c.path.startsWith(p))
-  );
+  if (isPipe) {
+    content.forEach(c => { c.meta = c.meta ?? {}; c.meta.skip = true; });
+    content.push({ name: 'stdout', outPath: "/dev/stdout", path: "/dev/stdout", prompt: args.values.prompt, predecessor: content.filter(c => dirname(c.path) == root).at(-1) })
+  } else {
+    positionals.push(root);
+    content = content.filter((c) =>
+      positionals.some((p) => c.path.startsWith(p))
+    );
+  }
 
   return { fs, settings, content };
 }

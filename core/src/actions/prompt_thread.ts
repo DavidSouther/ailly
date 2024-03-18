@@ -1,3 +1,4 @@
+import { DEFAULT_LOGGER } from "@davidsouther/jiffies/lib/esm/log.js";
 import { PipelineSettings } from "../ailly.js";
 import type { Content } from "../content/content";
 import type { Engine } from "../engine";
@@ -99,14 +100,16 @@ export class PromptThread {
   }
 
   private runIsolated(): Promise<PromiseSettledResult<Content>[]> {
-    console.log(`Running thread for ${this.content.length} isolated prompts`);
+    DEFAULT_LOGGER.info(
+      `Running thread for ${this.content.length} isolated prompts`
+    );
     return scheduler(
       this.content.map((c, i) => () => this.runOne(c, i))
     ).finally(() => (this.done = true));
   }
 
   private async runSequence(): Promise<PromiseSettledResult<Content>[]> {
-    console.log(
+    DEFAULT_LOGGER.info(
       `Running thread for sequence of ${this.content.length} prompts`
     );
     const results: PromiseSettledResult<Content>[] = [];
@@ -146,16 +149,16 @@ async function generateOne(
   const has_response = (c.response?.length ?? 0) > 0;
 
   if (c.meta?.skip || (!settings.overwrite && has_response)) {
-    console.log(`Skipping ${c.name}`);
+    DEFAULT_LOGGER.info(`Skipping ${c.name}`);
     return c;
   }
 
-  console.log(`Preparing ${c.name}`);
+  DEFAULT_LOGGER.info(`Preparing ${c.name}`);
 
   const meta = c.meta;
   engine.format([c]);
 
-  console.log(
+  DEFAULT_LOGGER.info(
     `Calling ${engine.name}`,
     meta?.messages
       ?.map((m) => ({

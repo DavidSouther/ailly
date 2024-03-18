@@ -1,3 +1,4 @@
+import { DEFAULT_LOGGER } from "@davidsouther/jiffies/lib/esm/log.js";
 import { LocalIndex } from "vectra/lib/LocalIndex.js";
 import type { Content } from "../content/content";
 import type { Engine } from "../engine";
@@ -47,12 +48,12 @@ export class RAG {
           return resolve();
         }
         try {
-          console.log(`Sending ${piece.name} (${piece.path})`);
+          DEFAULT_LOGGER.info(`Sending ${piece.name} (${piece.path})`);
           await this.add(piece);
-          console.log(`Completed ${piece.name} (${piece.path})`);
+          DEFAULT_LOGGER.info(`Completed ${piece.name} (${piece.path})`);
         } catch (e) {
-          console.log(`Error on ${piece.name} (${piece.path})`);
-          console.log(e);
+          DEFAULT_LOGGER.info(`Error on ${piece.name} (${piece.path})`);
+          DEFAULT_LOGGER.info(`${e}`);
         }
         nextPiece();
       };

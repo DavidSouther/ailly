@@ -58,12 +58,12 @@ export function help() {
 
   options:
     -r, --root sets base folder to search for content and system prompts.
-    -p, --prompt sets an initial system prompt.
+    -p, --prompt sets an initial system prompt. If no paths are specified, --prompt will generate a single piece of content with the local folder as context and print the response to standard out.
     -i, --isolated will start in isolated mode, generating each file separately.  Can be overridden with 'isolated: false' in .aillyrc files, and set with AILLY_ISOLATED=true environment variable.
     -o, --out specify an output folder to work with responses. Defaults to --root. Will load responses from and write outputs to here, using .ailly file extensions.
 
     -e, --engine will set the default engine. Can be set with AILLY_ENGINE environment variable. Default is OpenAI. (Probably? Check the code.)
-    -m, --model will set the model from the engine. Can be set with AILLY_MODEL environment variable. Default is gpt-4-0613. (Probably? Check the code.)
+    -m, --model will set the model from the engine. Can be set with AILLY_MODEL environment variable. Default depends on the engine; OpenAI is gpt-4-0613, bedrock is anthropic-claude-3. (Probably? Check the code.)
 
     --plugin can load a custom RAG plugin. Specify a path to import with "file://./path/to/plugin.mjs". plugin.mjs must export a single default function that meets the PluginBuilder interface in core/src/plugin/index.ts
 

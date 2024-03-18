@@ -88,7 +88,7 @@ export class MemBackedStore extends Map<string, string> {
   // If the process ends (or the store is GCed) while compaction is in progress,
   // yeah, you'll lose data. But this is ephemeral memory data, so you shouldn't care.
   async compact(closing = false) {
-    console.debug("Compacting MemBackedStore");
+    DEFAULT_LOGGER.debug("Compacting MemBackedStore");
     this._status = "compacting";
     this.handle.close();
     try {
@@ -100,12 +100,12 @@ export class MemBackedStore extends Map<string, string> {
     this.stream = this.handle.createWriteStream();
     this.forEach((v, k) => this.write(k, v));
     this._status = closing ? "closing" : "ready";
-    console.debug(`Finished compacting, now ${this._status}`);
+    DEFAULT_LOGGER.debug(`Finished compacting, now ${this._status}`);
   }
 
   // Close the store, with default behavior of compacting first.
   async close(compact = true) {
-    console.debug("Closing MemBackedStore");
+    DEFAULT_LOGGER.debug("Closing MemBackedStore");
     if (compact) await this.compact(true);
     await new Promise<void>((resolve, reject) =>
       this.stream.close((e) => {
