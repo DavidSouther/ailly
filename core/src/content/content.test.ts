@@ -213,6 +213,7 @@ test("it loads separate prompt and responses in different out directors", async 
     root: "/root",
     out: "/out",
   });
+  expect(content.length).toBe(2);
   expect(content).toEqual([
     {
       name: "content.md",
@@ -548,4 +549,20 @@ describe("Load aillyrc", () => {
       expect(system).toEqual([]);
     });
   });
+});
+
+test("it uses templates for prompts", async () => {
+  const fs = new FileSystem(
+    new ObjectFileSystemAdapter({
+      root: {
+        "content.md": "{{output.prose}}\nBrainstorm an ad campaign.",
+      },
+    })
+  );
+
+  const content = await loadContent(fs, [], {});
+
+  expect(content[0].prompt).toEqual(
+    "Your output should be prose, with no additional formatting.\nBrainstorm an ad campaign."
+  );
 });

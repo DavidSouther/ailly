@@ -9,6 +9,7 @@ import {
 } from "@davidsouther/jiffies/lib/esm/fs.js";
 import matter from "gray-matter";
 import * as yaml from "js-yaml";
+import moustache from "mustache";
 import { join, dirname } from "path";
 import type { Message } from "../engine/index.js";
 import { isDefined } from "../util.js";
@@ -49,6 +50,7 @@ export interface ContentMeta {
   isolated?: boolean;
   combined?: boolean;
   debug?: unknown;
+  template?: boolean | Record<string, unknown>;
 }
 
 interface PartitionedDirectory {
@@ -146,6 +148,19 @@ async function loadFile(
         );
       }
     }
+
+    const view =
+      head.template === false || data.template === false
+        ? false
+        : {
+            ...GLOBAL_TEMPLATE,
+            ...(head.template ?? {}),
+            ...(data.template ?? {}),
+          };
+    if (view !== false) {
+      prompt = moustache.render(prompt, view);
+    }
+
     return {
       name: ordering.id,
       system,
@@ -320,3 +335,14 @@ async function mkdirp(fs: FileSystem, dir: string) {
     }
   }
 }
+
+const GLOBAL_TEMPLATE = {
+  output: {
+    explain: "Explain your thought process each step of the way.",
+    verbatim: "Please respond verbatim, without commentary.",
+    prose: "Your output should be prose, with no additional formatting.",
+    markdown: "Your output should use full markdown syntax.",
+    python:
+      "Your output should only contain Python code, within a markdown code fence:\n\n```py\n#<your code>\n```",
+  },
+};
