@@ -1,4 +1,4 @@
-import { ObjectFileSystemAdapter } from "@davidsouther/jiffies/lib/esm/fs";
+import { ObjectFileSystemAdapter } from "@davidsouther/jiffies/lib/esm/fs.js";
 import { GitignoreFs } from "./gitignore_fs";
 import { describe, expect, it } from "vitest";
 

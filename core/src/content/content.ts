@@ -1,4 +1,4 @@
-import { DEFAULT_LOGGER } from "@davidsouther/jiffies/lib/esm/log";
+import { DEFAULT_LOGGER } from "@davidsouther/jiffies/lib/esm/log.js";
 import {
   FileSystem,
   PLATFORM_PARTS,
