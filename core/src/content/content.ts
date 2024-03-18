@@ -1,3 +1,4 @@
+import { DEFAULT_LOGGER } from "@davidsouther/jiffies/lib/esm/log";
 import {
   FileSystem,
   PLATFORM_PARTS,
