@@ -15,7 +15,7 @@ export async function loadFs(args) {
     model: args.values.model,
     plugin: args.values.plugin,
     updateDb: args.values["update-db"],
-    queryDb: args.values["query-db"],
+    queryDb: args.values["query-db"] ?? "",
     augment:
       args.values.augment ||
       args.values["update-db"] ||
