@@ -33,7 +33,7 @@ async function main() {
     case loaded.settings.updateDb:
       await generator.updateDatabase();
       break;
-    case loaded.settings.queryDb.length > 0:
+    case loaded.settings.queryDb?.length > 0:
       // const engine = await getEngine(loaded.settings.engine);
       // const builder = await getPlugin(loaded.settings.plugin);
       // const rag = await builder.default(engine, settings);

@@ -69,7 +69,7 @@ function partitionDirectory(stats: Stats[]): PartitionedDirectory {
 }
 
 async function loadDir(fs: FileSystem): Promise<PartitionedDirectory> {
-  const dir = await fs.readdir("");
+  const dir = await fs.readdir(".");
   const entries = await Promise.all(dir.map((s) => fs.stat(s)));
   // const entries = await fs.scandir("");
   return partitionDirectory(entries);
@@ -104,9 +104,11 @@ async function loadFile(
   const cwd = fs.cwd();
   switch (ordering.type) {
     case "prompt":
+      head.root = head.root ?? cwd;
+      const promptPath = join(cwd, file.name);
+
       let prompt: string = "";
       let data: Record<string, any> = {};
-      const promptPath = join(cwd, file.name);
       try {
         const parsed = matter(await fs.readFile(promptPath).catch((e) => ""));
         prompt = parsed.content;
@@ -118,34 +120,35 @@ async function loadFile(
         );
       }
       let response = "";
+      let outPath: string;
       if (data.prompt) {
+        outPath = promptPath;
         response = prompt;
         data.combined = true;
         prompt = data.prompt;
         delete data.prompt;
       } else {
-        const responsePath = join(cwd, `${ordering.id}.ailly`).replace(
-          head.root,
-          head.out
-        );
+        outPath =
+          head.out === undefined || head.root === head.out
+            ? promptPath
+            : promptPath.replace(head.root, head.out);
+        if (!head.combined) outPath += ".ailly.md";
         try {
           response = matter(
-            await fs.readFile(responsePath).catch((e) => "")
+            await fs.readFile(outPath).catch((e) => "")
           ).content;
           data.combined = false;
         } catch (e) {
           DEFAULT_LOGGER.warn(
-            `Error reading response and parsing for matter in ${responsePath}`,
+            `Error reading response and parsing for matter in ${outPath}`,
             e as Error
           );
         }
       }
-      const path = join(fs.cwd(), file.name);
-      const outPath = path.replace(head.root, head.out);
       return {
         name: ordering.id,
         system,
-        path,
+        path: promptPath,
         outPath,
         prompt,
         response,

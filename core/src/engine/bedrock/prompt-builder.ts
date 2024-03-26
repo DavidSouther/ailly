@@ -2,12 +2,14 @@ import { Message } from "..";
 
 export type Models =
   | "anthropic.claude-v2"
-  | "anthropic.claude-3-sonnet-20240229-v1:0";
+  | "anthropic.claude-3-sonnet-20240229-v1:0"
+  | "anthropic.claude-3-haiku-20240307-v1:0";
 
 export class PromptBuilder {
   modelBuilders: Record<Models, (m: Message[]) => any> = {
     "anthropic.claude-v2": claude,
     "anthropic.claude-3-sonnet-20240229-v1:0": claude3,
+    "anthropic.claude-3-haiku-20240307-v1:0": claude3,
   };
 
   constructor(private readonly modelName: Models) {}
@@ -73,7 +75,8 @@ export function claude3(messages: Message[]): {
   });
   return {
     messages: promptMessages,
-    max_tokens: 1024,
+    // max_tokens: 1024,
+    max_tokens: 4096,
     system,
     anthropic_version: "bedrock-2023-05-31",
   };

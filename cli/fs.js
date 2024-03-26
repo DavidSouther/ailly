@@ -15,18 +15,17 @@ export async function loadFs(args) {
     model: args.values.model,
     plugin: args.values.plugin,
     updateDb: args.values["update-db"],
-    queryDb: args.values["query-db"],
+    queryDb: args.values["query-db"] ?? "",
     augment:
       args.values.augment ||
       args.values["update-db"] ||
       args.values["query-db"],
     overwrite: !args.values["no-overwrite"],
   };
-  const positionals = args.positionals.slice(2).map(resolve);
+  const positionals = args.positionals.slice(2).map(a => resolve(a));
   const isPipe = positionals.length == 0 && args.values.prompt;
-  if (isPipe) {
-    DEFAULT_LOGGER.level = 100;
-  }
+  DEFAULT_LOGGER.level = isPipe ? 100 : 0;
+
   let content = await ailly.content.load(
     fs,
     [args.values.prompt ?? ""],
@@ -37,7 +36,7 @@ export async function loadFs(args) {
     content.forEach(c => { c.meta = c.meta ?? {}; c.meta.skip = true; });
     content.push({ name: 'stdout', outPath: "/dev/stdout", path: "/dev/stdout", prompt: args.values.prompt, predecessor: content.filter(c => dirname(c.path) == root).at(-1) })
   } else {
-    positionals.push(root);
+    if (positionals.length == 0) positionals.push(root);
     content = content.filter((c) =>
       positionals.some((p) => c.path.startsWith(p))
     );
