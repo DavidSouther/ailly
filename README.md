@@ -24,6 +24,15 @@ These properties can be set in a combination of places, includeing the command l
 * **`skip`** `boolean` If true, the prompt will not be sent through the LLM (but it will be part of the context).
 * **`isolated`** `boolean` If true, the LLM inference will only include the system prompt, and not the prior context in this folder.
 
+### PLAN
+
+PLAN to use Ailly effectively. Iterate often. Provide context. Put words in Ailly's mouth.
+
+- **Prepare** a precise prompt (by writing an aillyrc system prompt, providing supporting documents, and giving individual prompt steps).
+- **Leverage** LLM models (by running Ailly on some or all parts of the context chain).
+- **Assess** the generated content (as Ailly and the LLM writes output, make sure it's on the right track).
+- **Narrow** your context (by editing Ailly's generated content to keep the conversation going where you want it to).
+
 ## Engines
 
 - OpenAI `openai`
