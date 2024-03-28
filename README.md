@@ -12,8 +12,17 @@ Rhymes with Daily.
 
 1. Create a folder, `content`.
 2. Create a file, `content/.aillyrc`, and put your top-level prompt instructions.
+   - Include system prompts, level setting expectations. etc.
 3. Create several files, `content/01_big_point.md`, `content/02_second_point.md` etc.
-4. Run ailly using NodeJS: `npx @ailly/cli@1.1.1 --root content`
+4. Run ailly using NodeJS: `npx @ailly/cli@1.2.4 --root content`
+
+### Properties
+
+These properties can be set in a combination of places, includeing the command line, .aillyrc, and greymatter. Later settings override earlier.
+
+* **`combined`** `boolean` If true, the file's body is the response and the prompt is in the greymatter key `prompt`. If false, the file's body is the prompt and the response is in `{file_name}.ailly.md`. Default false.
+* **`skip`** `boolean` If true, the prompt will not be sent through the LLM (but it will be part of the context).
+* **`isolated`** `boolean` If true, the LLM inference will only include the system prompt, and not the prior context in this folder.
 
 ## Engines
 
