@@ -7,7 +7,7 @@ export class GitignoreFs extends FileSystem {
     path = (this as unknown as { p(p: string): string }).p(path);
     const [drive, ...dirs] = this.cwd().split("/");
     const gitignores: Array<ReturnType<typeof gitignoreParser.compile>> = [];
-    for (let i = 1; i <= dirs.length; i++) {
+    for (let i = 0; i <= dirs.length; i++) {
       const gitignorePath = normalize(
         drive + SEP + join(...dirs.slice(0, i), ".gitignore")
       );
@@ -15,12 +15,14 @@ export class GitignoreFs extends FileSystem {
       const parser = gitignoreParser.compile(gitignore);
       gitignores.push(parser);
     }
-    const paths = await this.adapter.readdir(path);
+    const paths = await this.adapter.scandir(path);
     const filtered = paths.filter(
       (p) =>
-        p !== ".git" &&
-        gitignores.every((g) => g.accepts(p) && g.accepts(p + "/"))
+        p.name !== ".git" &&
+        gitignores.every((g) =>
+          p.isDirectory() ? g.accepts(p.name + "/") : g.accepts(p.name)
+        )
     );
-    return filtered;
+    return filtered.map((p) => p.name);
   }
 }
