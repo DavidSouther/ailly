@@ -1,4 +1,4 @@
-import { expect, test } from "vitest";
+import { expect, test, describe } from "vitest";
 
 import {
   FileSystem,
@@ -9,6 +9,7 @@ import {
   loadContent,
   writeContent,
   splitOrderedName,
+  loadAillyRc,
 } from "./content.js";
 import { GitignoreFs } from "./gitignore_fs";
 
@@ -40,8 +41,8 @@ test("it loads content", async () => {
       outPath: "/01_start.md.ailly.md",
       prompt: "The quick brown",
       response: "",
-      system: [""],
-      meta: { combined: false, root: "/" },
+      system: [],
+      meta: { combined: false, root: "/", parent: "root" },
     },
     {
       name: "40_part.md",
@@ -49,8 +50,8 @@ test("it loads content", async () => {
       outPath: "/20b/40_part.md.ailly.md",
       prompt: "fox jumped",
       response: "",
-      system: ["", ""],
-      meta: { combined: false, root: "/" },
+      system: [],
+      meta: { combined: false, root: "/", parent: "root" },
     },
     {
       name: "56_part.md",
@@ -58,16 +59,16 @@ test("it loads content", async () => {
       outPath: "/20b/56_part.md.ailly.md",
       prompt: "over the lazy",
       response: "",
-      system: ["", ""],
-      meta: { combined: false, root: "/" },
+      system: [],
+      meta: { combined: false, root: "/", parent: "root" },
       predecessor: {
         name: "40_part.md",
         path: "/20b/40_part.md",
         outPath: "/20b/40_part.md.ailly.md",
         prompt: "fox jumped",
         response: "",
-        system: ["", ""],
-        meta: { combined: false, root: "/" },
+        system: [],
+        meta: { combined: false, root: "/", parent: "root" },
       },
     },
     {
@@ -76,8 +77,8 @@ test("it loads content", async () => {
       outPath: "/54_a/12_section.md.ailly.md",
       prompt: "dog.",
       response: "",
-      system: ["", ""],
-      meta: { combined: false, root: "/" },
+      system: [],
+      meta: { combined: false, root: "/", parent: "root" },
     },
   ]);
 });
@@ -122,8 +123,8 @@ test("it loads combined prompt and responses", async () => {
       outPath: "/content.md",
       prompt: "content",
       response: "Response",
-      system: [""],
-      meta: { isolated: true, combined: true, root: "/" },
+      system: [],
+      meta: { isolated: true, combined: true, root: "/", parent: "root" },
     },
     {
       name: "prompt.md",
@@ -131,8 +132,8 @@ test("it loads combined prompt and responses", async () => {
       outPath: "/prompt.md",
       prompt: "prompt",
       response: "",
-      system: [""],
-      meta: { isolated: true, combined: true, root: "/" },
+      system: [],
+      meta: { isolated: true, combined: true, root: "/", parent: "root" },
     },
   ] as Content[]);
 });
@@ -179,8 +180,8 @@ test("it loads separate prompt and responses", async () => {
       outPath: "/content.md.ailly.md",
       prompt: "content",
       response: "Response",
-      system: [""],
-      meta: { isolated: true, combined: false, root: "/" },
+      system: [],
+      meta: { isolated: true, combined: false, root: "/", parent: "root" },
     },
     {
       name: "prompt.md",
@@ -188,8 +189,8 @@ test("it loads separate prompt and responses", async () => {
       outPath: "/prompt.md.ailly.md",
       prompt: "prompt",
       response: "",
-      system: [""],
-      meta: { isolated: true, combined: false, root: "/" },
+      system: [],
+      meta: { isolated: true, combined: false, root: "/", parent: "root" },
     },
   ] as Content[]);
 });
@@ -219,8 +220,14 @@ test("it loads separate prompt and responses in different out directors", async 
       outPath: "/out/content.md.ailly.md",
       prompt: "content",
       response: "Response",
-      system: ["", ""],
-      meta: { isolated: true, combined: false, root: "/root", out: "/out" },
+      system: [],
+      meta: {
+        isolated: true,
+        combined: false,
+        root: "/root",
+        out: "/out",
+        parent: "root",
+      },
     },
     {
       name: "prompt.md",
@@ -228,8 +235,14 @@ test("it loads separate prompt and responses in different out directors", async 
       outPath: "/out/prompt.md.ailly.md",
       prompt: "prompt",
       response: "",
-      system: ["", ""],
-      meta: { isolated: true, combined: false, root: "/root", out: "/out" },
+      system: [],
+      meta: {
+        isolated: true,
+        combined: false,
+        root: "/root",
+        out: "/out",
+        parent: "root",
+      },
     },
   ] as Content[]);
 });
@@ -327,8 +340,8 @@ test("it writes deep java prompts and responses", async () => {
       outPath: "/out/.gitignore.ailly.md",
       prompt: "target",
       response: "",
-      system: ["", ""],
-      meta: { combined: false, out: "/out", root: "/root" },
+      system: [],
+      meta: { combined: false, out: "/out", root: "/root", parent: "root" },
     },
     {
       name: "Main.java",
@@ -336,8 +349,8 @@ test("it writes deep java prompts and responses", async () => {
       outPath: "/out/src/com/example/Main.java.ailly.md",
       prompt: "class Main {}\n",
       response: "",
-      system: ["", "", "", "", ""],
-      meta: { combined: false, out: "/out", root: "/root" },
+      system: [],
+      meta: { combined: false, out: "/out", root: "/root", parent: "root" },
     },
   ]);
 
@@ -353,5 +366,186 @@ test("it writes deep java prompts and responses", async () => {
     "/out/.gitignore.ailly.md": "---\ncombined: false\n---\nResponse",
     "/out/src/com/example/Main.java.ailly.md":
       "---\ncombined: false\n---\nResponse",
+  });
+});
+
+describe("Load aillyrc", () => {
+  describe("parent = root (default)", () => {
+    test("at root with no .aillyrc in cwd", async () => {
+      const fs = new FileSystem(
+        new ObjectFileSystemAdapter({
+          root: {},
+        })
+      );
+      fs.cd("/root");
+
+      const [system] = await loadAillyRc(fs, [], {});
+
+      expect(system).toEqual([]);
+    });
+    test("at root with .aillyrc in cwd", async () => {
+      const fs = new FileSystem(
+        new ObjectFileSystemAdapter({
+          root: {
+            ".aillyrc": "system",
+          },
+        })
+      );
+      fs.cd("/root");
+
+      const [system] = await loadAillyRc(fs, [], {});
+
+      expect(system).toEqual(["system"]);
+    });
+
+    test("below root with no .aillyrc", async () => {
+      const fs = new FileSystem(
+        new ObjectFileSystemAdapter({
+          root: {
+            ".aillyrc": "system",
+            below: {},
+          },
+        })
+      );
+      fs.cd("/root/below");
+
+      const [system] = await loadAillyRc(fs, ["root"], {});
+
+      expect(system).toEqual(["root"]);
+    });
+
+    test("below root with .aillyrc", async () => {
+      const fs = new FileSystem(
+        new ObjectFileSystemAdapter({
+          root: {
+            ".aillyrc": "root",
+            below: {
+              ".aillyrc": "below",
+            },
+          },
+        })
+      );
+      fs.cd("/root/below");
+
+      const [system] = await loadAillyRc(fs, ["root"], {});
+
+      expect(system).toEqual(["root", "below"]);
+    });
+  });
+
+  describe("parent = always", () => {
+    test("at root with .aillyrc in cwd parent", async () => {
+      const fs = new FileSystem(
+        new ObjectFileSystemAdapter({
+          root: {
+            ".aillyrc": "root",
+            below: {
+              ".aillyrc": "below",
+            },
+          },
+        })
+      );
+      fs.cd("/root/below");
+
+      const [system] = await loadAillyRc(fs, [], { parent: "always" });
+
+      expect(system).toEqual(["root", "below"]);
+    });
+
+    test("at root with .aillyrc in cwd parent x2", async () => {
+      const fs = new FileSystem(
+        new ObjectFileSystemAdapter({
+          root: {
+            ".aillyrc": "root",
+            below: {
+              ".aillyrc": "---\nparent: always\n---\nbelow",
+              deep: {
+                ".aillyrc": "---\nparent: always\n---\ndeep",
+              },
+            },
+          },
+        })
+      );
+      fs.cd("/root/below/deep");
+
+      const [system] = await loadAillyRc(fs, [], { parent: "always" });
+
+      expect(system).toEqual(["root", "below", "deep"]);
+    });
+
+    test("at root without .aillyrc in cwd parent", async () => {
+      const fs = new FileSystem(
+        new ObjectFileSystemAdapter({
+          root: {
+            ".aillyrc": "root",
+            below: {
+              deep: {
+                ".aillyrc": "---\nparent: always\n---\ndeep",
+              },
+            },
+          },
+        })
+      );
+      fs.cd("/root/below/deep");
+
+      const [system] = await loadAillyRc(fs, [], { parent: "always" });
+
+      expect(system).toEqual(["deep"]);
+    });
+
+    test("below root with system context", async () => {
+      const fs = new FileSystem(
+        new ObjectFileSystemAdapter({
+          root: {
+            ".aillyrc": "root",
+            below: {
+              deep: {
+                ".aillyrc": "---\nparent: always\n---\ndeep",
+              },
+            },
+          },
+        })
+      );
+      fs.cd("/root/below/deep");
+
+      const [system] = await loadAillyRc(fs, ["below"], { parent: "always" });
+
+      expect(system).toEqual(["below", "deep"]);
+    });
+  });
+
+  describe("parent = never", () => {
+    test("below root with .aillyrc", async () => {
+      const fs = new FileSystem(
+        new ObjectFileSystemAdapter({
+          root: {
+            ".aillyrc": "root",
+            below: {
+              ".aillyrc": "below",
+            },
+          },
+        })
+      );
+      fs.cd("/root/below");
+
+      const [system] = await loadAillyRc(fs, ["root"], { parent: "never" });
+
+      expect(system).toEqual(["below"]);
+    });
+
+    test("below root without .aillyrc", async () => {
+      const fs = new FileSystem(
+        new ObjectFileSystemAdapter({
+          root: {
+            below: {},
+          },
+        })
+      );
+      fs.cd("/root/below");
+
+      const [system] = await loadAillyRc(fs, ["root"], { parent: "never" });
+
+      expect(system).toEqual([]);
+    });
   });
 });
