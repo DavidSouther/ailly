@@ -1,12 +1,14 @@
 # Ailly - AI Writing Ally
 
 Load your writing.
-Train Ailly on your voice.
+Guide Ailly to your voice.
 Write your outline.
 Prompt Ailly to continue to continue the writing.
-Edit its output, and retrain to get it even more like that.
+Edit its output, and get even more like that.
 
 Rhymes with Daily.
+
+Ailly's best feature is rapidly itearting on prompt engineering. By keeping your prompts in snippets on the file system, you can make very fine-grained changes to your prompt and immediately see the difference. You can also use all your normal source control tooling to track changes over time - both your changes, and what the LLM does.
 
 ## Quickstart
 
