@@ -75,7 +75,7 @@ export class PromptThread {
     private readonly content: Content[],
     private settings: PipelineSettings,
     private engine: Engine,
-    private rag: Plugin
+    private plugin: Plugin
   ) {
     this.content = content;
     this.isolated = Boolean(content[0]?.meta?.isolated ?? false);
@@ -87,9 +87,9 @@ export class PromptThread {
 
   private async runOne(c: Content, i: number): Promise<Content> {
     try {
-      await this.rag.augment(c);
+      await this.plugin.augment(c);
       await generateOne(c, this.settings, this.engine);
-      await this.rag.clean(c);
+      await this.plugin.clean(c);
       this.finished += 1;
     } catch (e) {
       DEFAULT_LOGGER.warn("Error generating content", e as Error);
