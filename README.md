@@ -49,13 +49,15 @@ To choose an engine, export `AILLY_ENGINE=[bedrock|openai]` or provide `ailly --
 ## Installing ailly command line
 
 - Clone the repo and install dependencies
-  - `git clone git://github.com/davidsouther/ailly.git ; cd ailly ; npm install`
+  - `git clone https://github.com/davidsouther/ailly.git ; cd ailly ; npm install`
 - Compile the core module with `npx tsc -p core`
 - Install ailly cli with `npm install -g ./cli`
 - Set any environment variables for your engine
   - `export OPENAI_API_KEY=sk-...`
   - `export AILLY_ENGINE=bedrock` default: openai, others depending on version.
 - Run ailly with `npx ailly`
+  - `cd content/33_dad_jokes`
+  - `npx ailly .`
 - Optionally, create an alias to run ailly
   - Directly with `alias ailly="$(PWD)/cli/index.js`
   - For zsh: `echo "alias ailly='$(PWD)/cli/index.js'" >> ~/.zshrc`
@@ -67,7 +69,7 @@ To choose an engine, export `AILLY_ENGINE=[bedrock|openai]` or provide `ailly --
 This is powered by [Next.js](https://nextjs.org/) using App Router.
 
 - Clone the repo, install dependencies, and duplicate the env file for local keys.
-  - `git clone git://github.com/davidsouther/ailly.git ; cd ailly ; npm install ; cp .env .env.local`
+  - `git clone https://github.com/davidsouther/ailly.git ; cd ailly ; npm install ; cp .env .env.local`
 - Update `.env.local` with your [OpenAI API key](https://platform.openai.com/account/api-keys).
 - Clear out the `content/` folder, and replace it with your writing.
   - Open the `content` folder and see the example system and prompt files.
@@ -89,7 +91,7 @@ This is powered by [Next.js](https://nextjs.org/) using App Router.
 ## Installing Ailly Extension
 
 - Clone the repo and install dependencies
-  - `git clone git://github.com/davidsouther/ailly.git ; cd ailly ; npm install`
+  - `git clone https://github.com/davidsouther/ailly.git ; cd ailly ; npm install`
 - Package the extension with `npm run package`
 - In VSCode extensions, install `./extension/ailly-0.0.1.vsix` from vsix.
 - Right click a file in content explorer and select `Ailly: Generate`
