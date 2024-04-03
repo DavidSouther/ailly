@@ -1,6 +1,6 @@
 {
   "name": "@ailly/cli",
-  "version": "1.2.5-rc3",
+  "version": "1.2.5-rc4",
   "description": "",
   "type": "module",
   "main": "index.js",
@@ -22,7 +22,7 @@
   },
   "homepage": "https://github.com/DavidSouther/ailly#readme",
   "dependencies": {
-    "@ailly/core": "1.2.5-rc3",
+    "@ailly/core": "1.2.5-rc4",
     "@davidsouther/jiffies": "^2.1.4"
   }
 }

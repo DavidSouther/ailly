@@ -1,6 +1,6 @@
 {
   "name": "@ailly/core",
-  "version": "1.2.5-rc3",
+  "version": "1.2.5-rc4",
   "description": "",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
