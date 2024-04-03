@@ -1,6 +1,6 @@
 import * as rag from "./rag.js";
 import { PipelineSettings } from "../ailly.js";
-import type { Content } from "../content/content";
+import type { Content, View } from "../content/content";
 import type { Engine } from "../engine";
 
 export interface PluginBuilder {
@@ -11,6 +11,7 @@ export interface Plugin {
   augment(c: Content): Promise<void>;
   clean(c: Content): Promise<void>;
   update(c: Content[]): Promise<void>;
+  view?(): View;
 }
 
 export const PLUGINS: Record<string, { default: PluginBuilder }> = {

@@ -53,7 +53,7 @@ async function main() {
       if (loaded.content.at(-1)?.outPath == "/dev/stdout") {
         console.log(loaded.content.at(-1)?.response);
       } else {
-        ailly.content.write(loaded.fs, loaded.content);
+        await ailly.content.write(loaded.fs, loaded.content);
       }
       break;
   }

@@ -33,7 +33,8 @@ export interface Content {
   response?: string;
 
   // The list of system prompts above this content
-  system?: string[];
+  system?: System[];
+  view: false | View;
   predecessor?: Content;
   augment?: { score: number; content: string; name: string }[];
   meta?: ContentMeta;
@@ -49,6 +50,15 @@ export interface ContentMeta {
   isolated?: boolean;
   combined?: boolean;
   debug?: unknown;
+  view?: false | View;
+  prompt?: string;
+}
+
+export type Value = string | number | boolean;
+export interface View extends Record<string, View | Value> {}
+export interface System {
+  content: string;
+  view: false | View;
 }
 
 interface PartitionedDirectory {
@@ -100,7 +110,7 @@ export function splitOrderedName(name: string): Ordering {
 async function loadFile(
   fs: FileSystem,
   file: Stats,
-  system: string[],
+  system: System[],
   head: TODOGrayMatterData
 ): Promise<Content | undefined> {
   const ordering = splitOrderedName(file.name);
@@ -135,22 +145,31 @@ async function loadFile(
         head.out === undefined || head.root === head.out
           ? promptPath
           : promptPath.replace(head.root, head.out);
-      if (!head.combined) outPath += AILLY_EXTENSION;
-      try {
-        response = matter(await fs.readFile(outPath).catch((e) => "")).content;
-        data.combined = false;
-      } catch (e) {
-        DEFAULT_LOGGER.warn(
-          `Error reading response and parsing for matter in ${outPath}`,
-          e as Error
-        );
+      if (!head.combined) {
+        outPath += AILLY_EXTENSION;
+        try {
+          response = matter(
+            await fs.readFile(outPath).catch((e) => "")
+          ).content;
+          data.combined = false;
+        } catch (e) {
+          DEFAULT_LOGGER.warn(
+            `Error reading response and parsing for matter in ${outPath}`,
+            e as Error
+          );
+        }
       }
     }
+
+    const view = data.view === false ? false : data.view ?? {};
+    delete data.view;
+
     return {
       name: ordering.id,
-      system,
       path: promptPath,
       outPath,
+      system,
+      view,
       prompt,
       response,
       meta: {
@@ -165,22 +184,24 @@ async function loadFile(
 
 export async function loadAillyRc(
   fs: FileSystem,
-  system: string[],
+  system: System[],
   meta: ContentMeta
-): Promise<[string[], ContentMeta]> {
+): Promise<[System[], ContentMeta]> {
+  meta.parent = meta.parent ?? "root";
   const aillyrc = await fs.readFile(".aillyrc").catch((e) => "");
   // Reset to "root" if there's no intervening .aillyrc.
   if (aillyrc === "" && meta.parent === "always") meta.parent = "root";
   const { data, content } = matter(aillyrc);
-  meta.parent = meta.parent ?? "root";
+  const view = data.view ?? {};
+  delete data.view;
   meta = { ...meta, ...data };
   switch (meta.parent) {
     case "root":
-      if (content != "") system = [...system, content];
+      if (content != "") system = [...system, { content, view }];
       break;
     case "never":
       if (content != "") {
-        system = [content];
+        system = [{ content, view }];
       } else {
         system = [];
       }
@@ -191,7 +212,7 @@ export async function loadAillyRc(
         system = [...(await loadAillyRc(fs, [], meta))[0]];
         fs.popd();
       }
-      if (content != "") system = [...system, content];
+      if (content != "") system = [...system, { content, view }];
   }
 
   return [system, meta];
@@ -214,7 +235,7 @@ export async function loadAillyRc(
  */
 export async function loadContent(
   fs: FileSystem,
-  system: string[] = [],
+  system: System[] = [],
   meta: ContentMeta = {}
 ): Promise<Content[]> {
   DEFAULT_LOGGER.debug(`Loading content from ${fs.cwd()}`);
@@ -276,14 +297,14 @@ async function writeSingleContent(fs: FileSystem, content: Content) {
     );
   }
   // TODO: Ensure `engine` and `model` are in `debug`
-  const meta = {
+  const meta: ContentMeta = {
     debug,
     isolated,
     combined,
   };
 
   if (combined) {
-    (meta as unknown as { prompt: string }).prompt = content.prompt;
+    meta.prompt = content.meta?.prompt ?? content.prompt;
   }
 
   const head = yaml.dump(meta, { sortKeys: true });

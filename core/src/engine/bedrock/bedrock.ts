@@ -3,10 +3,10 @@ import {
   BedrockRuntimeClient,
   InvokeModelCommand,
 } from "@aws-sdk/client-bedrock-runtime";
-import { Content } from "../../content/content.js";
+import { Content, View } from "../../content/content.js";
 import { isDefined } from "../../util.js";
 import { Message, Summary } from "../index.js";
-import { Models, PromptBuilder } from "./prompt-builder.js";
+import { PromptBuilder } from "./prompt-builder.js";
 
 export const name = "bedrock";
 export const DEFAULT_MODEL = "anthropic.claude-3-sonnet-20240229-v1:0";
@@ -61,6 +61,14 @@ export async function generate(
   }
 }
 
+export function view(): View {
+  return {
+    claude: {
+      long: "Prefer long, elegant, formal language.",
+    },
+  };
+}
+
 export async function format(contents: Content[]): Promise<Summary> {
   const summary: Summary = { prompts: contents.length, tokens: 0 };
   for (const content of contents) {
@@ -75,7 +83,7 @@ async function addContentMeta(content: Content) {
 }
 
 export function getMessages(content: Content): Message[] {
-  const system = (content.system ?? []).join("\n");
+  const system = (content.system ?? []).map((s) => s.content).join("\n");
   const history: Content[] = [];
   while (content) {
     history.push(content);
