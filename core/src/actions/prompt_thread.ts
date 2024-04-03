@@ -65,7 +65,7 @@ export class PromptThread {
     return this.done && this.errors.length > 0;
   }
 
-  private view: View;
+  private view: undefined | View = undefined;
 
   static run(
     content: Content[],
@@ -86,10 +86,6 @@ export class PromptThread {
   ) {
     this.content = content;
     this.isolated = Boolean(content[0]?.meta?.isolated ?? false);
-    this.view = mergeViews(
-      mergeViews(GLOBAL_VIEW, this.engine.view?.() ?? {}),
-      this.plugin.view?.() ?? {}
-    );
   }
 
   start() {
@@ -97,6 +93,12 @@ export class PromptThread {
   }
 
   private async runOne(c: Content, i: number): Promise<Content> {
+    if (this.view === undefined) {
+      this.view = mergeViews(
+        mergeViews(GLOBAL_VIEW, (await this.engine.view?.()) ?? {}),
+        (await this.plugin.view?.()) ?? {}
+      );
+    }
     try {
       await this.template(c, this.view);
       await this.plugin.augment(c);

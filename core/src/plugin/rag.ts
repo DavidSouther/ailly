@@ -1,9 +1,10 @@
+import { join } from "node:path";
 import { DEFAULT_LOGGER } from "@davidsouther/jiffies/lib/esm/log.js";
 import { LocalIndex } from "vectra/lib/LocalIndex.js";
-import type { Content } from "../content/content";
-import type { Engine } from "../engine";
-import { join } from "node:path";
-import type { PipelineSettings } from "../ailly";
+
+import type { Content } from "../content/content.js";
+import type { Engine } from "../engine/index.js";
+import type { PipelineSettings } from "../ailly.js";
 
 function ragDb(path: string) {
   return join(path, ".vectors");

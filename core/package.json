@@ -29,7 +29,8 @@
     "gray-matter": "^4.0.3",
     "js-yaml": "^4.1.0",
     "mustache": "^4.2.0",
-    "openai": "^4.11.1"
+    "openai": "^4.11.1",
+    "vectra": "^0.6.0"
   },
   "devDependencies": {
     "@types/js-yaml": "^4.0.8",

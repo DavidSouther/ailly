@@ -13,7 +13,7 @@ export interface Engine {
     parameters: PipelineSettings
   ): Promise<{ debug: D; message: string }>;
   vector(s: string, parameters: ContentMeta): Promise<number[]>;
-  view?(): View;
+  view?(): Promise<View>;
 }
 
 export interface Message {

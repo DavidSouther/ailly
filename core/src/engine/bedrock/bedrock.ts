@@ -61,7 +61,7 @@ export async function generate(
   }
 }
 
-export function view(): View {
+export async function view(): Promise<View> {
   return {
     claude: {
       long: "Prefer long, elegant, formal language.",
