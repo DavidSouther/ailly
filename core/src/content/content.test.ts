@@ -42,6 +42,7 @@ test("it loads content", async () => {
       prompt: "The quick brown",
       response: "",
       system: [],
+      view: {},
       meta: { combined: false, root: "/", parent: "root" },
     },
     {
@@ -51,6 +52,7 @@ test("it loads content", async () => {
       prompt: "fox jumped",
       response: "",
       system: [],
+      view: {},
       meta: { combined: false, root: "/", parent: "root" },
     },
     {
@@ -60,6 +62,7 @@ test("it loads content", async () => {
       prompt: "over the lazy",
       response: "",
       system: [],
+      view: {},
       meta: { combined: false, root: "/", parent: "root" },
       predecessor: {
         name: "40_part.md",
@@ -68,6 +71,7 @@ test("it loads content", async () => {
         prompt: "fox jumped",
         response: "",
         system: [],
+        view: {},
         meta: { combined: false, root: "/", parent: "root" },
       },
     },
@@ -78,6 +82,7 @@ test("it loads content", async () => {
       prompt: "dog.",
       response: "",
       system: [],
+      view: {},
       meta: { combined: false, root: "/", parent: "root" },
     },
   ]);
@@ -124,6 +129,7 @@ test("it loads combined prompt and responses", async () => {
       prompt: "content",
       response: "Response",
       system: [],
+      view: {},
       meta: { isolated: true, combined: true, root: "/", parent: "root" },
     },
     {
@@ -133,6 +139,7 @@ test("it loads combined prompt and responses", async () => {
       prompt: "prompt",
       response: "",
       system: [],
+      view: {},
       meta: { isolated: true, combined: true, root: "/", parent: "root" },
     },
   ] as Content[]);
@@ -148,7 +155,8 @@ test("it writes combined prompt and responses", async () => {
       outPath: "/",
       prompt: "content",
       response: "Response",
-      system: [""],
+      system: [],
+      view: {},
       meta: { isolated: true, combined: true },
     },
   ];
@@ -181,6 +189,7 @@ test("it loads separate prompt and responses", async () => {
       prompt: "content",
       response: "Response",
       system: [],
+      view: {},
       meta: { isolated: true, combined: false, root: "/", parent: "root" },
     },
     {
@@ -190,6 +199,7 @@ test("it loads separate prompt and responses", async () => {
       prompt: "prompt",
       response: "",
       system: [],
+      view: {},
       meta: { isolated: true, combined: false, root: "/", parent: "root" },
     },
   ] as Content[]);
@@ -222,6 +232,7 @@ test("it loads separate prompt and responses in different out directors", async 
       prompt: "content",
       response: "Response",
       system: [],
+      view: {},
       meta: {
         isolated: true,
         combined: false,
@@ -237,6 +248,7 @@ test("it loads separate prompt and responses in different out directors", async 
       prompt: "prompt",
       response: "",
       system: [],
+      view: {},
       meta: {
         isolated: true,
         combined: false,
@@ -262,7 +274,8 @@ test("it writes separate prompt and responses", async () => {
       outPath: "/content.md.ailly.md",
       prompt: "content",
       response: "Response",
-      system: [""],
+      system: [],
+      view: {},
       meta: { isolated: true, combined: false },
     },
   ];
@@ -292,7 +305,8 @@ test("it writes separate prompt and responses in outPath", async () => {
       outPath: "/out/content.md.ailly.md",
       prompt: "content",
       response: "Response",
-      system: [""],
+      system: [],
+      view: {},
       meta: { isolated: true, combined: false },
     },
   ];
@@ -342,6 +356,7 @@ test("it writes deep java prompts and responses", async () => {
       prompt: "target",
       response: "",
       system: [],
+      view: {},
       meta: { combined: false, out: "/out", root: "/root", parent: "root" },
     },
     {
@@ -351,6 +366,7 @@ test("it writes deep java prompts and responses", async () => {
       prompt: "class Main {}\n",
       response: "",
       system: [],
+      view: {},
       meta: { combined: false, out: "/out", root: "/root", parent: "root" },
     },
   ]);
@@ -382,7 +398,7 @@ describe("Load aillyrc", () => {
 
       const [system] = await loadAillyRc(fs, [], {});
 
-      expect(system).toEqual([]);
+      expect(system.map((s) => s.content)).toEqual([]);
     });
     test("at root with .aillyrc in cwd", async () => {
       const fs = new FileSystem(
@@ -396,7 +412,7 @@ describe("Load aillyrc", () => {
 
       const [system] = await loadAillyRc(fs, [], {});
 
-      expect(system).toEqual(["system"]);
+      expect(system.map((s) => s.content)).toEqual(["system"]);
     });
 
     test("below root with no .aillyrc", async () => {
@@ -410,9 +426,13 @@ describe("Load aillyrc", () => {
       );
       fs.cd("/root/below");
 
-      const [system] = await loadAillyRc(fs, ["root"], {});
+      const [system] = await loadAillyRc(
+        fs,
+        [{ content: "root", view: {} }],
+        {}
+      );
 
-      expect(system).toEqual(["root"]);
+      expect(system.map((s) => s.content)).toEqual(["root"]);
     });
 
     test("below root with .aillyrc", async () => {
@@ -428,9 +448,13 @@ describe("Load aillyrc", () => {
       );
       fs.cd("/root/below");
 
-      const [system] = await loadAillyRc(fs, ["root"], {});
+      const [system] = await loadAillyRc(
+        fs,
+        [{ content: "root", view: {} }],
+        {}
+      );
 
-      expect(system).toEqual(["root", "below"]);
+      expect(system.map((s) => s.content)).toEqual(["root", "below"]);
     });
   });
 
@@ -450,7 +474,7 @@ describe("Load aillyrc", () => {
 
       const [system] = await loadAillyRc(fs, [], { parent: "always" });
 
-      expect(system).toEqual(["root", "below"]);
+      expect(system.map((s) => s.content)).toEqual(["root", "below"]);
     });
 
     test("at root with .aillyrc in cwd parent x2", async () => {
@@ -471,7 +495,7 @@ describe("Load aillyrc", () => {
 
       const [system] = await loadAillyRc(fs, [], { parent: "always" });
 
-      expect(system).toEqual(["root", "below", "deep"]);
+      expect(system.map((s) => s.content)).toEqual(["root", "below", "deep"]);
     });
 
     test("at root without .aillyrc in cwd parent", async () => {
@@ -491,7 +515,7 @@ describe("Load aillyrc", () => {
 
       const [system] = await loadAillyRc(fs, [], { parent: "always" });
 
-      expect(system).toEqual(["deep"]);
+      expect(system.map((s) => s.content)).toEqual(["deep"]);
     });
 
     test("below root with system context", async () => {
@@ -509,9 +533,11 @@ describe("Load aillyrc", () => {
       );
       fs.cd("/root/below/deep");
 
-      const [system] = await loadAillyRc(fs, ["below"], { parent: "always" });
+      const [system] = await loadAillyRc(fs, [{ content: "below", view: {} }], {
+        parent: "always",
+      });
 
-      expect(system).toEqual(["below", "deep"]);
+      expect(system.map((s) => s.content)).toEqual(["below", "deep"]);
     });
   });
 
@@ -529,9 +555,11 @@ describe("Load aillyrc", () => {
       );
       fs.cd("/root/below");
 
-      const [system] = await loadAillyRc(fs, ["root"], { parent: "never" });
+      const [system] = await loadAillyRc(fs, [{ content: "root", view: {} }], {
+        parent: "never",
+      });
 
-      expect(system).toEqual(["below"]);
+      expect(system.map((s) => s.content)).toEqual(["below"]);
     });
 
     test("below root without .aillyrc", async () => {
@@ -544,18 +572,21 @@ describe("Load aillyrc", () => {
       );
       fs.cd("/root/below");
 
-      const [system] = await loadAillyRc(fs, ["root"], { parent: "never" });
+      const [system] = await loadAillyRc(fs, [{ content: "root", view: {} }], {
+        parent: "never",
+      });
 
-      expect(system).toEqual([]);
+      expect(system.map((s) => s.content)).toEqual([]);
     });
   });
 });
 
-test("it uses templates for prompts", async () => {
+test("it loads template views for prompts", async () => {
   const fs = new FileSystem(
     new ObjectFileSystemAdapter({
       root: {
-        "content.md": "{{output.prose}}\nBrainstorm an ad campaign.",
+        "content.md":
+          "---\nview:\n  foo: bar\n---\n{{output.prose}}\nBrainstorm an ad campaign.",
       },
     })
   );
@@ -563,6 +594,24 @@ test("it uses templates for prompts", async () => {
   const content = await loadContent(fs, [], {});
 
   expect(content[0].prompt).toEqual(
-    "Your output should be prose, with no additional formatting.\nBrainstorm an ad campaign."
+    "{{output.prose}}\nBrainstorm an ad campaign."
   );
+  expect(content[0].view).toEqual({ foo: "bar" });
+});
+
+test("it loads template views from system files", async () => {
+  const fs = new FileSystem(
+    new ObjectFileSystemAdapter({
+      ".aillyrc": "---\nview:\n  whiz: 12\n---\nprompt",
+      root: {
+        "content.md":
+          "---\nview:\n  foo: bar\n---\n{{output.prose}}\nBrainstorm an ad campaign.",
+      },
+    })
+  );
+
+  const content = await loadContent(fs, [], {});
+
+  expect(content[0].system?.[0].content).toEqual("prompt");
+  expect(content[0].system?.[0].view).toEqual({ whiz: 12 });
 });

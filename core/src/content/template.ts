@@ -1,0 +1,34 @@
+import mustache from "mustache";
+import { Content, View } from "./content.js";
+
+export function mergeViews(a: View, b: View): View {
+  return { ...structuredClone(a), ...structuredClone(b) };
+}
+
+export function mergeContentViews(c: Content, base: View) {
+  c.meta = c.meta ?? {};
+  c.meta.view = c.view;
+  c.meta.prompt = c.prompt;
+  if (c.view === false) return;
+  let view = structuredClone(base);
+  for (const s of c.system ?? []) {
+    if (s.view === false) continue;
+    view = mergeViews(view, s.view);
+    s.view = false;
+    s.content = mustache.render(s.content, view);
+  }
+  view = mergeViews(view, c.view);
+  c.prompt = mustache.render(c.prompt, view);
+  c.view = false;
+}
+
+export const GLOBAL_VIEW: View = {
+  output: {
+    explain: "Explain your thought process each step of the way.",
+    verbatim: "Please respond verbatim, without commentary.",
+    prose: "Your output should be prose, with no additional formatting.",
+    markdown: "Your output should use full markdown syntax.",
+    python:
+      "Your output should only contain Python code, within a markdown code fence:\n\n```py\n#<your code>\n```",
+  },
+};

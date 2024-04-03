@@ -1,8 +1,13 @@
 import { DEFAULT_LOGGER } from "@davidsouther/jiffies/lib/esm/log.js";
 import { PipelineSettings } from "../ailly.js";
-import type { Content } from "../content/content";
-import type { Engine } from "../engine";
-import type { Plugin } from "../plugin";
+import { View, type Content } from "../content/content.js";
+import type { Engine } from "../engine/index.js";
+import type { Plugin } from "../plugin/index.js";
+import {
+  GLOBAL_VIEW,
+  mergeContentViews,
+  mergeViews,
+} from "../content/template.js";
 
 export interface PromptThreadsSummary {
   totalPrompts: number;
@@ -60,6 +65,8 @@ export class PromptThread {
     return this.done && this.errors.length > 0;
   }
 
+  private view: View;
+
   static run(
     content: Content[],
     settings: PipelineSettings,
@@ -79,6 +86,10 @@ export class PromptThread {
   ) {
     this.content = content;
     this.isolated = Boolean(content[0]?.meta?.isolated ?? false);
+    this.view = mergeViews(
+      mergeViews(GLOBAL_VIEW, this.engine.view?.() ?? {}),
+      this.plugin.view?.() ?? {}
+    );
   }
 
   start() {
@@ -87,6 +98,7 @@ export class PromptThread {
 
   private async runOne(c: Content, i: number): Promise<Content> {
     try {
+      await this.template(c, this.view);
       await this.plugin.augment(c);
       await generateOne(c, this.settings, this.engine);
       await this.plugin.clean(c);
@@ -97,6 +109,10 @@ export class PromptThread {
       throw e;
     }
     return c;
+  }
+
+  private async template(c: Content, view: View) {
+    mergeContentViews(c, view);
   }
 
   private runIsolated(): Promise<PromiseSettledResult<Content>[]> {

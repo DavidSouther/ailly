@@ -28,13 +28,13 @@ export async function loadFs(args) {
 
   let content = await ailly.content.load(
     fs,
-    [args.values.prompt ?? ""],
+    args.values.prompt ? [{ content: args.values.prompt, view: {} }] : [],
     settings
   );
 
   if (isPipe) {
     content.forEach(c => { c.meta = c.meta ?? {}; c.meta.skip = true; });
-    content.push({ name: 'stdout', outPath: "/dev/stdout", path: "/dev/stdout", prompt: args.values.prompt, predecessor: content.filter(c => dirname(c.path) == root).at(-1) })
+    content.push({ name: 'stdout', outPath: "/dev/stdout", path: "/dev/stdout", prompt: args.values.prompt, predecessor: content.filter(c => dirname(c.path) == root).at(-1), view: {} })
   } else {
     if (positionals.length == 0) positionals.push(root);
     content = content.filter((c) =>

@@ -1,0 +1,13 @@
+---
+view:
+  project:
+    user: "You are a corporate marketing consultant."
+    overview: "The group works as an embedded team and views the clients' success as their own."
+  format:
+    ad_json: "Your output will be a JSON document with fields 'campaign_id' and 'ad_copy'."
+---
+
+{{project.user}}
+{{project.overview}}
+In this task, we are brainstorming for a corporate branding.
+The brand is a new line of seltzer.

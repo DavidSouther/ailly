@@ -1,4 +1,4 @@
-import { Content, ContentMeta } from "../content/content.js";
+import { Content, ContentMeta, View } from "../content/content.js";
 import * as openai from "./openai.js";
 import * as bedrock from "./bedrock/bedrock.js";
 import * as mistral from "./mistral/mistral.js";
@@ -13,6 +13,7 @@ export interface Engine {
     parameters: PipelineSettings
   ): Promise<{ debug: D; message: string }>;
   vector(s: string, parameters: ContentMeta): Promise<number[]>;
+  view?(): View;
 }
 
 export interface Message {

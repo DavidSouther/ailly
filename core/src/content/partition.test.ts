@@ -37,16 +37,41 @@ import { Content } from "./content";
 */
 
 test("partitioning", () => {
-  const b: Content = { name: "b", path: "/a/b", outPath: "/a/b", prompt: "" };
-  const c: Content = { name: "c", path: "/a/c", outPath: "/a/c", prompt: "" };
+  const b: Content = {
+    name: "b",
+    path: "/a/b",
+    outPath: "/a/b",
+    prompt: "",
+    view: {},
+  };
+  const c: Content = {
+    name: "c",
+    path: "/a/c",
+    outPath: "/a/c",
+    prompt: "",
+    view: {},
+  };
   const h: Content = {
     name: "h",
     path: "/a/g/h",
     outPath: "/a/g/h",
     prompt: "",
+    view: {},
   };
-  const e: Content = { name: "e", path: "/d/e", outPath: "/d/e", prompt: "" };
-  const f: Content = { name: "f", path: "/d/f", outPath: "/d/f", prompt: "" };
+  const e: Content = {
+    name: "e",
+    path: "/d/e",
+    outPath: "/d/e",
+    prompt: "",
+    view: {},
+  };
+  const f: Content = {
+    name: "f",
+    path: "/d/f",
+    outPath: "/d/f",
+    prompt: "",
+    view: {},
+  };
 
   const content: Content[] = [b, c, h, e, f];
   const actual = partitionPrompts(content);

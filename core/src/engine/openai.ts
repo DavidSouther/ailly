@@ -118,7 +118,9 @@ async function addContentMeta(content: Content) {
 }
 
 export function getMessages(content: Content): Message[] {
-  const system = (content.system ?? []).join("\n");
+  const system: string = (content.system ?? [])
+    .map((s) => s.content)
+    .join("\n");
   const history: Content[] = [];
   while (content) {
     history.push(content);
