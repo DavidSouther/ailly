@@ -65,6 +65,7 @@ export async function generate(
       },
     };
   } catch (e) {
+    console.warn(`Error from OpenAI for ${c.name}`, e);
     return {
       message: "💩",
       debug: { finish: "Failed", error: { message: (e as Error).message } },

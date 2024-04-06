@@ -184,6 +184,8 @@ async function generateOne(
         content: m.content.replaceAll("\n", " ").substring(0, 150) + "...",
         // tokens: m.tokens,
       }))
+      // Skip the last `assistant` message
+      .filter((m, i, a) => !(m.role == "assistant" && i === a.length - 1))
       .map(({ role, content }) => `${role}: ${content.replaceAll("\n", "\\n")}`)
       .join("\n\t")
   );
