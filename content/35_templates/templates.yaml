@@ -1,0 +1,3 @@
+tools:
+  clock:
+    description: A Tool that returns the current wall-time.

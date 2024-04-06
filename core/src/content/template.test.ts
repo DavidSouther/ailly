@@ -3,8 +3,8 @@ import { mergeContentViews, mergeViews } from "./template.js";
 import { Content } from "./content";
 
 test("merge views", () => {
-  const c = mergeViews({ a: "a" }, { b: "b" });
-  expect(c).toEqual({ a: "a", b: "b" });
+  const c = mergeViews({ a: "a", c: "1" }, { b: "b" }, { c: "2" });
+  expect(c).toEqual({ a: "a", b: "b", c: "2" });
 });
 
 test("merge content views", () => {

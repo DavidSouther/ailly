@@ -1,12 +1,14 @@
 import { NodeFileSystemAdapter } from "@davidsouther/jiffies/lib/esm/fs_node.js";
 import { DEFAULT_LOGGER } from "@davidsouther/jiffies/lib/esm/log.js";
 import { dirname, resolve } from "node:path";
+import * as yaml from "js-yaml";
 import * as ailly from "@ailly/core";
 
 export async function loadFs(args) {
   const root = resolve(args.values.root ?? '.');
   const fs = new ailly.Ailly.GitignoreFs(new NodeFileSystemAdapter());
   fs.cd(root);
+
   const settings = {
     root,
     out: resolve(args.values.out ?? root),
@@ -16,6 +18,7 @@ export async function loadFs(args) {
     plugin: args.values.plugin,
     updateDb: args.values["update-db"],
     queryDb: args.values["query-db"] ?? "",
+    templateView: await loadTemplateView(fs, args.values['template-view']),
     augment:
       args.values.augment ||
       args.values["update-db"] ||
@@ -43,4 +46,30 @@ export async function loadFs(args) {
   }
 
   return { fs, settings, content };
+}
+
+/**
+ * @typedef {import("@ailly/core/dist/src/content/content").View} View
+ * @typedef {import("@davidsouther/jiffies/lib/esm/fs").FileSystem} FileSystem
+ */
+
+/**
+ * Read, parse, and validate a template view.
+ * 
+ * @param {FileSystem} fs 
+ * @param {string} path
+ * @returns {Promise<View>}
+ */
+async function loadTemplateView(fs, path) {
+  if (path == "") return {};
+  try {
+    const file = await fs.readFile(path);
+    const view = yaml.load(file);
+    if (view && typeof view == "object") {
+      return /** @type View */ (/** @type unknown */ view);
+    }
+  } catch (e) {
+    console.warn(`Failed to load template-view ${path}`, e)
+  }
+  return {};
 }

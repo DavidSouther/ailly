@@ -14,7 +14,11 @@ export function makeArgs(argv = process.argv) {
         type: "string",
         short: "o",
       },
-      prompt: { type: "string", default: "", short: "p" },
+      isolated: {
+        type: "boolean",
+        short: "i",
+        default: Boolean(process.env["AILLY_ISOLATED"]),
+      },
       "no-overwrite": {
         type: "boolean",
         default: false,
@@ -33,15 +37,13 @@ export function makeArgs(argv = process.argv) {
         type: "string",
         default: process.env["AILLY_PLUGIN"] ?? "noop",
       },
-      isolated: {
-        type: "boolean",
-        short: "i",
-        default: Boolean(process.env["AILLY_ISOLATED"]),
-      },
-      summary: { type: "boolean", default: false, short: "s" },
+      "template-view": { type: "string", default: "" },
+      prompt: { type: "string", default: "", short: "p" },
       "update-db": { type: "boolean", default: false },
       "query-db": { type: "string", default: "" },
       augment: { type: "boolean", default: false },
+
+      summary: { type: "boolean", default: false, short: "s" },
       yes: { type: "boolean", default: false, short: "y" },
       help: { type: "boolean", short: "h", default: false },
       version: { type: "boolean", default: false },
@@ -66,6 +68,7 @@ export function help() {
     -m, --model will set the model from the engine. Can be set with AILLY_MODEL environment variable. Default depends on the engine; OpenAI is gpt-4-0613, bedrock is anthropic-claude-3. (Probably? Check the code.)
 
     --plugin can load a custom RAG plugin. Specify a path to import with "file://./path/to/plugin.mjs". plugin.mjs must export a single default function that meets the PluginBuilder interface in core/src/plugin/index.ts
+    --template-view loads a YAML or JSON file to use as a view for the prompt templates. This view will be merged after global, engine, and plugin views but before system and template views.
 
     --update-db will create and update a Vectra database with the current content. When available, a local Vectra db will augment retrieval data.
     --augment will look up augmentations in the db.

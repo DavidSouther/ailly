@@ -1,4 +1,4 @@
-import { Content } from "./content/content.js";
+import { Content, View } from "./content/content.js";
 export { GitignoreFs } from "./content/gitignore_fs.js";
 export { getPlugin } from "./plugin/index.js";
 import { getEngine } from "./engine/index.js";
@@ -20,6 +20,7 @@ export interface PipelineSettings {
   model: string;
   plugin: string;
   overwrite: boolean;
+  templateView: View;
 }
 
 export async function makePipelineSettings({
@@ -30,6 +31,7 @@ export async function makePipelineSettings({
   model,
   plugin = DEFAULT_PLUGIN,
   overwrite = true,
+  templateView = {},
 }: {
   root: string;
   paths?: string[];
@@ -38,6 +40,7 @@ export async function makePipelineSettings({
   model?: string;
   plugin?: string;
   overwrite?: boolean;
+  templateView?: View;
 }): Promise<PipelineSettings> {
   model = model ?? (await getEngine(engine)).DEFAULT_MODEL;
   return {
@@ -48,5 +51,6 @@ export async function makePipelineSettings({
     model,
     plugin,
     overwrite,
+    templateView,
   };
 }
