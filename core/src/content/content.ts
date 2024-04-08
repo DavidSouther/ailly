@@ -331,7 +331,7 @@ async function mkdirp(fs: FileSystem, dir: string) {
   }
   const parts = dir.split(SEP);
   for (let i = 1; i < parts.length; i++) {
-    let path = join(SEP, ...parts.slice(0, i + 1));
+    let path = join(SEP, ...parts.slice(1, i + 1));
     if (IS_WINDOWS) {
       path = parts[0] + SEP + path;
     }
