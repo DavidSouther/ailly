@@ -8,10 +8,11 @@ export function mergeViews(...views: View[]): View {
 }
 
 export function mergeContentViews(c: Content, base: View) {
+  if (c.view === false) return;
   c.meta = c.meta ?? {};
   c.meta.view = c.view;
   c.meta.prompt = c.prompt;
-  if (c.view === false) return;
+  if (c.predecessor) mergeContentViews(c.predecessor, base);
   let view = structuredClone(base);
   for (const s of c.system ?? []) {
     if (s.view === false) continue;
