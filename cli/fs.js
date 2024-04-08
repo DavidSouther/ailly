@@ -1,7 +1,8 @@
 import { NodeFileSystemAdapter } from "@davidsouther/jiffies/lib/esm/fs_node.js";
 import { DEFAULT_LOGGER } from "@davidsouther/jiffies/lib/esm/log.js";
 import { dirname, resolve } from "node:path";
-import * as yaml from "js-yaml";
+import { parse } from "yaml";
+// import * as yaml from "yaml";
 import * as ailly from "@ailly/core";
 
 /**
@@ -74,7 +75,7 @@ async function loadTemplateView(fs, path) {
   if (path == undefined) return {};
   try {
     const file = await fs.readFile(path);
-    const view = yaml.load(file);
+    const view = parse(file);
     if (view && typeof view == "object") {
       return /** @type View */ (/** @type unknown */ view);
     }
