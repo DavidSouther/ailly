@@ -26,14 +26,13 @@ async function main() {
 
   await check_should_run(args, loaded);
 
-  const settings = await ailly.Ailly.makePipelineSettings(loaded.settings);
-  let generator = await ailly.Ailly.GenerateManager.from(loaded.content, settings);
+  let generator = await ailly.Ailly.GenerateManager.from(loaded.content, loaded.settings);
 
   switch (true) {
-    case loaded.settings.updateDb:
+    case args.values["update-db"]:
       await generator.updateDatabase();
       break;
-    case loaded.settings.queryDb?.length > 0:
+    case Number(args.values["query-db"]?.length) > 0:
       // const engine = await getEngine(loaded.settings.engine);
       // const builder = await getPlugin(loaded.settings.plugin);
       // const rag = await builder.default(engine, settings);
