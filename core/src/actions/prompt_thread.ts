@@ -95,8 +95,10 @@ export class PromptThread {
   private async runOne(c: Content, i: number): Promise<Content> {
     if (this.view === undefined) {
       this.view = mergeViews(
-        mergeViews(GLOBAL_VIEW, (await this.engine.view?.()) ?? {}),
-        (await this.plugin.view?.()) ?? {}
+        GLOBAL_VIEW,
+        (await this.engine.view?.()) ?? {},
+        (await this.plugin.view?.()) ?? {},
+        this.settings.templateView
       );
     }
     try {

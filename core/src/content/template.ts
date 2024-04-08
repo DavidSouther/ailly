@@ -1,8 +1,10 @@
 import mustache from "mustache";
 import { Content, View } from "./content.js";
 
-export function mergeViews(a: View, b: View): View {
-  return { ...structuredClone(a), ...structuredClone(b) };
+export function mergeViews(...views: View[]): View {
+  return views
+    .map((v) => structuredClone(v))
+    .reduce((a, b) => Object.assign(a, b), {});
 }
 
 export function mergeContentViews(c: Content, base: View) {
