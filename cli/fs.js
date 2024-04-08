@@ -4,6 +4,10 @@ import { dirname, resolve } from "node:path";
 import * as yaml from "js-yaml";
 import * as ailly from "@ailly/core";
 
+/**
+ * @param {ReturnType<import("./args.js").makeArgs>} args
+ * @returns
+ */
 export async function loadFs(args) {
   const root = resolve(args.values.root ?? '.');
   const fs = new ailly.Ailly.GitignoreFs(new NodeFileSystemAdapter());
@@ -37,7 +41,15 @@ export async function loadFs(args) {
 
   if (isPipe) {
     content.forEach(c => { c.meta = c.meta ?? {}; c.meta.skip = true; });
-    content.push({ name: 'stdout', outPath: "/dev/stdout", path: "/dev/stdout", prompt: args.values.prompt, predecessor: content.filter(c => dirname(c.path) == root).at(-1), view: {} })
+    const cliContent = {
+      name: 'stdout',
+      outPath: "/dev/stdout",
+      path: "/dev/stdout",
+      prompt: args.values.prompt ?? "",
+      predecessor: content.filter(c => dirname(c.path) == root).at(-1),
+      view: settings.templateView,
+    };
+    content.push(cliContent)
   } else {
     if (positionals.length == 0) positionals.push(root);
     content = content.filter((c) =>
@@ -57,11 +69,11 @@ export async function loadFs(args) {
  * Read, parse, and validate a template view.
  * 
  * @param {FileSystem} fs 
- * @param {string} path
+ * @param {string|undefined} path
  * @returns {Promise<View>}
  */
 async function loadTemplateView(fs, path) {
-  if (path == "") return {};
+  if (path == undefined) return {};
   try {
     const file = await fs.readFile(path);
     const view = yaml.load(file);
