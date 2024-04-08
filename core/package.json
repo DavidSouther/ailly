@@ -27,13 +27,12 @@
     "@dqbd/tiktoken": "^1.0.7",
     "gitignore-parser": "^0.0.2",
     "gray-matter": "^4.0.3",
-    "js-yaml": "^4.1.0",
     "mustache": "^4.2.0",
     "openai": "^4.11.1",
-    "vectra": "^0.6.0"
+    "vectra": "^0.6.0",
+    "yaml": "^2.4.1"
   },
   "devDependencies": {
-    "@types/js-yaml": "^4.0.8",
     "@types/mustache": "^4.2.5",
     "vitest": "^0.34.6"
   }

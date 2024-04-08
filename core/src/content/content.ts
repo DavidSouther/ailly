@@ -8,7 +8,8 @@ import {
   isAbsolute,
 } from "@davidsouther/jiffies/lib/esm/fs.js";
 import matter from "gray-matter";
-import * as yaml from "js-yaml";
+// import * as yaml from "js-yaml";
+import { stringify } from "yaml";
 import { join, dirname } from "path";
 import type { Message } from "../engine/index.js";
 import { isDefined } from "../util.js";
@@ -307,7 +308,7 @@ async function writeSingleContent(fs: FileSystem, content: Content) {
     meta.prompt = content.meta?.prompt ?? content.prompt;
   }
 
-  const head = yaml.dump(meta, { sortKeys: true });
+  const head = stringify(meta, { blockQuote: "literal", lineWidth: 0 });
   const file = `---\n${head}---\n${content.response}`;
   await fs.writeFile(path, file);
 }
