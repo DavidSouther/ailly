@@ -14,43 +14,43 @@ export { GenerateManager } from "./actions/generate_manager.js";
 
 export interface PipelineSettings {
   root: string;
-  paths: string[];
   out: string;
   engine: string;
   model: string;
   plugin: string;
+  isolated: boolean;
   overwrite: boolean;
   templateView: View;
 }
 
 export async function makePipelineSettings({
   root,
-  paths = [],
   out = root,
   engine = DEFAULT_ENGINE,
   model,
   plugin = DEFAULT_PLUGIN,
   overwrite = true,
+  isolated = false,
   templateView = {},
 }: {
   root: string;
-  paths?: string[];
   out?: string;
   engine?: string;
   model?: string;
   plugin?: string;
   overwrite?: boolean;
+  isolated?: boolean;
   templateView?: View;
 }): Promise<PipelineSettings> {
   model = model ?? (await getEngine(engine)).DEFAULT_MODEL;
   return {
     root,
-    paths,
     out,
     engine,
     model,
     plugin,
     overwrite,
+    isolated,
     templateView,
   };
 }

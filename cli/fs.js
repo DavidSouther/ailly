@@ -6,29 +6,27 @@ import * as ailly from "@ailly/core";
 
 /**
  * @param {ReturnType<import("./args.js").makeArgs>} args
- * @returns
+ * @returns {Promise<{
+ *   fs: import("@davidsouther/jiffies/lib/esm/fs").FileSystem,
+ *   content: ailly.types.Content[],
+ *   settings: import("@ailly/core/dist/src/ailly").PipelineSettings
+ * }>}
  */
 export async function loadFs(args) {
   const root = resolve(args.values.root ?? '.');
   const fs = new ailly.Ailly.GitignoreFs(new NodeFileSystemAdapter());
   fs.cd(root);
 
-  const settings = {
+  const settings = await ailly.Ailly.makePipelineSettings({
     root,
     out: resolve(args.values.out ?? root),
     isolated: args.values.isolated,
     engine: args.values.engine,
     model: args.values.model,
     plugin: args.values.plugin,
-    updateDb: args.values["update-db"],
-    queryDb: args.values["query-db"] ?? "",
     templateView: await loadTemplateView(fs, args.values['template-view']),
-    augment:
-      args.values.augment ||
-      args.values["update-db"] ||
-      args.values["query-db"],
     overwrite: !args.values["no-overwrite"],
-  };
+  });
   const positionals = args.positionals.slice(2).map(a => resolve(a));
   const isPipe = positionals.length == 0 && args.values.prompt;
   DEFAULT_LOGGER.level = isPipe ? 100 : 0;
