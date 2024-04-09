@@ -6,12 +6,13 @@
 
 ## Ordering
 
+### Content
 Content files in the file system will get combined into a work as a whole.
 A work can be a book or an article (possibly a series or a journal in the future).
 Content within a work is ordered by using unix-style two-character numeric prefixes in the file or folder name.
 When presenting a work, content must be displayed in that numeric sort order.
 When creating the entire text, the content within a folder is presented before the content in the next sorted file or folder.
-Filenames that begin with an \_, or otherwise do not start with a numeric prefix, are not included in the content.
+Filenames that begin with an \_ or . are not included in the content.
 
 For example, with this file system:
 
@@ -34,7 +35,7 @@ dog.
 
 Each file will be parsed as markdown individually.
 
-### gray matter
+#### gray matter
 
 Files named `.aillyrc` or `.aillyrc.md` in a folder are "system" files, which are used to create a system prompt for AI training.
 `.aillyrc.md` files and prompt files are parsed for gray matter in the head.
@@ -45,7 +46,7 @@ Files named `.aillyrc` or `.aillyrc.md` in a folder are "system" files, which ar
 | isolated | Don't include the prior content in the folder in the context window.                                          |
 | training | Don't include this file or folder in fine-tuning training data.                                               |
 
-### Sections
+#### Sections
 
 Within a work, sections are created in two ways.
 Nesting folders creates a new section of work.
@@ -61,6 +62,22 @@ This may result in some levels being below the `h6` nesting threshold for large 
 
 > ! TODO Implement the nesting using the [document outline algorithm](https://html.spec.whatwg.org/multipage/sections.html#outline).
 > See https://css-tricks.com/document-outline-dilemma/.
+
+### Folder (TODO)
+
+In folder mode, all files are read and combined into a set of User/Assistant messages.
+The prompt is then added as a final User message, before sending to the LLM.
+In this way, the response will include the entire context of the current folder, to keep overall context size reasonable.
+
+Users of Ailly should apply "summary of summary" techniques to summarize nested folders into a README or API or similar document in the current folder.
+
+## Edit (TODO)
+
+Edit is a holistic mode that creates an "edit" User prompt with the range of content to replace, along with the user's request.
+It also includes system and the context to that point.
+When the LLM returns, Ailly extracts (if necessary, via plugin or engine) the replacement lines and applies those changes to the source content.
+
+Lines are specified 1-based `[start]:[end]`, inclusive start exclusive end, with `[start]` for insert-after and `:[end]` for insert before.
 
 ## Prompts vs Content
 
