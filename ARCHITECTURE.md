@@ -41,8 +41,10 @@ This starts with no dependents, though I do anticipate releasing the tooling aro
 ## Solution Strategy
 
 The content will be plaintext markdown files in a version controlled folder structure.
-Next.js will orchestrate tooling.
-Tooling for the authoring experience will be dev only, will load content files as necessary, and will use NextJS's server side execution environment to call OpenAI APIs.
+Authoring tooling runs as an npm cli command.
+Options are available as cli arguments, plugin extension points, and as per-file settings.
+Tooling for the authoring experience will be dev only, will load content files as necessary, and will use node or NextJS server side execution environments to call LLM APIs.
+Engines will be available at least for AWS Bedrock and OpenAI API.
 Publishing will use NextJS static site generation utilities to build & export files appropriate for deploying using GitHub Pages.
 
 ## Containers
@@ -54,8 +56,8 @@ These routes will have access to the project's local file system.
 It will read and write files directly, and will have some git awareness to block operations when the repo is dirty.
 Authoring proper will happen using text editors of choice.
 
-Generative AI features will use OpenAI APIs.
-The project will use a base model, and will fine tune that model using version controlled prompts and responses.
+Generative AI features will use engines to allow multiple LLM backends.
+The project will use a base model, and may fine tune that model using version controlled prompts and responses.
 The responses are the markdown content that will get published to the site.
 The prompts are stored adjacent their generated content, and can be edited same as content.
 Fine-tuning will happen when requested, and be tied to a specific git commit of the project's content.
@@ -74,9 +76,9 @@ Site style, themes, and look & feel are by David.
 ### Authoring
 
 - David writes and edits prompt and content files.
-- NextJS reads git statuses, to prevent OpenAI operations while the working tree is dirty.
-- NextJS reads prompt and content files to prepare model fine-tuning runs.
-- NextJS reads prompt files to request generated content, and writes that content to disk.
+- ~Ailly reads git statuses, to prevent OpenAI operations while the working tree is dirty.~
+- ~Ailly reads prompt and content files to prepare model fine-tuning runs.~
+- Ailly reads prompt files to request generated content, and writes that content to disk.
 
 ### Publishing
 
@@ -100,19 +102,19 @@ While the generative AI portions could be run as a CLI, writing that in Node wou
 Such a CLI could also be written in Python, and perhaps a Python implementation of the resulting spec will be a useful tool, but for now I'm starting from NextJS so let's see where NextJS takes me.
 
 OpenAI's GPT models are comfortable and familiar, and the APIs "just work" (so far).
+AWS 
 Learning to deploy and run a llama model would add significant overhead to getting started on the interesting parts, the authoring experience.
 Perhaps when the Python CLI version comes, it'll have a module that allows switching between OpenAI API and a local llama.
 
 ## Quality Commitments
 
-The only person with a face to get an egg is me, so, that's my own quality bar.
+~The only person with a face to get an egg is me, so, that's my own quality bar.~
+As Ailly begins to hit wider usage, unit and integration tests cases are becoming increasingly important. Need to integration test on both *nix and Windows.
 
 ## Risks and Technical Debt
 
 I'm doing this as a hobby project, which has a long history of starting strong and losing steam.
 Let's see how much I like using this tool, how much people want me to be writing, and how much feedback I get on wanting to write with it.
-
-~Tech debt is that it's on NextJS pages router and needs to get migrated to app router, and~ ongoing interest payments in keeping NextJS up to date.
 
 ### Glossary
 
