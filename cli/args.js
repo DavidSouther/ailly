@@ -70,9 +70,6 @@ export function help() {
     --plugin can load a custom RAG plugin. Specify a path to import with "file://./path/to/plugin.mjs". plugin.mjs must export a single default function that meets the PluginBuilder interface in core/src/plugin/index.ts
     --template-view loads a YAML or JSON file to use as a view for the prompt templates. This view will be merged after global, engine, and plugin views but before system and template views.
 
-    --update-db will create and update a Vectra database with the current content. When available, a local Vectra db will augment retrieval data.
-    --augment will look up augmentations in the db.
-
     --no-overwrite will not run generation on Content with an existing Response.
     -s, --summary will show a pricing expectation before running and prompt for OK.
     -y, —yes will skip any prompts.
@@ -80,4 +77,7 @@ export function help() {
     --version will print the cli and core versions
     -h, --help will print this message and exit.
   `);
+
+  // --update-db will create and update a Vectra database with the current content. When available, a local Vectra db will augment retrieval data.
+  // --augment will look up augmentations in the db.
 }
