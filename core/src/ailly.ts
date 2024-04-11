@@ -17,6 +17,7 @@ export interface PipelineSettings {
   out: string;
   engine: string;
   model: string;
+  context: "content" | "folder" | "none";
   plugin: string;
   isolated: boolean;
   overwrite: boolean;
@@ -28,6 +29,7 @@ export async function makePipelineSettings({
   out = root,
   engine = DEFAULT_ENGINE,
   model,
+  context = "content",
   plugin = DEFAULT_PLUGIN,
   overwrite = true,
   isolated = false,
@@ -37,17 +39,22 @@ export async function makePipelineSettings({
   out?: string;
   engine?: string;
   model?: string;
+  context?: string;
   plugin?: string;
   overwrite?: boolean;
   isolated?: boolean;
   templateView?: View;
 }): Promise<PipelineSettings> {
   model = model ?? (await getEngine(engine)).DEFAULT_MODEL;
+  context = ["content", "folder", "none"].includes(context)
+    ? context
+    : "content";
   return {
     root,
     out,
     engine,
     model,
+    context: context as "content" | "folder" | "none",
     plugin,
     overwrite,
     isolated,

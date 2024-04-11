@@ -45,7 +45,8 @@ export interface Content {
 export interface ContentMeta {
   root?: string;
   out?: string;
-  parent?: "always" | "root" | "never";
+  context?: "content" | "folder" | "none";
+  parent?: "root" | "always" | "never";
   messages?: Message[];
   skip?: boolean;
   isolated?: boolean;
@@ -252,10 +253,17 @@ export async function loadContent(
   const files: Content[] = (
     await Promise.all(dir.files.map((file) => loadFile(fs, file, system, meta)))
   ).filter(isDefined);
-  if (!Boolean(meta.isolated)) {
+
+  const isIsolated = Boolean(meta.isolated);
+  const context = meta.context ?? "content";
+  if (!isIsolated && context == "content") {
     files.sort((a, b) => a.name.localeCompare(b.name));
     for (let i = files.length - 1; i > 0; i--) {
       files[i].predecessor = files[i - 1];
+    }
+  } else if (context == "none") {
+    for (let i = files.length - 1; i > 0; i--) {
+      files[i].system = [];
     }
   }
 

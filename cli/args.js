@@ -37,13 +37,15 @@ export function makeArgs(argv = process.argv) {
         type: "string",
         default: process.env["AILLY_PLUGIN"] ?? "noop",
       },
+      context: { type: "string", default: "content", short: "c" },
       "template-view": { type: "string", default: "" },
       prompt: { type: "string", default: "", short: "p" },
+      system: { type: "string", default: "", short: "s" },
       "update-db": { type: "boolean", default: false },
       "query-db": { type: "string", default: "" },
       augment: { type: "boolean", default: false },
 
-      summary: { type: "boolean", default: false, short: "s" },
+      summary: { type: "boolean", default: false },
       yes: { type: "boolean", default: false, short: "y" },
       help: { type: "boolean", short: "h", default: false },
       version: { type: "boolean", default: false },
@@ -51,6 +53,8 @@ export function makeArgs(argv = process.argv) {
       verbose: { type: "boolean", default: false, short: "v" }
     },
   });
+
+  // TODO assert context is content, folder, or none
 
   return args;
 }
@@ -62,11 +66,17 @@ export function help() {
 
   options:
     -r, --root sets base folder to search for content and system prompts.
-    -p, --prompt sets an initial system prompt. If no paths are specified, --prompt will generate a single piece of content with the local folder as context and print the response to standard out.
+    -s, --system sets an initial system prompt.
+    -p, --prompt generate a final, single piece of content and print the response to standard out.
     -i, --isolated will start in isolated mode, generating each file separately.  Can be overridden with 'isolated: false' in .aillyrc files, and set with AILLY_ISOLATED=true environment variable.
     -o, --out specify an output folder to work with responses. Defaults to --root. Will load responses from and write outputs to here, using .ailly file extensions.
+    -c, --context content | folder | none
+      'content' (default) loads files from the root folder and includes them alphabetically, chatbot history style, before the current file when generating.
+      'folder' includes all files in the folder at the same level as the current file when generating.
+      'none' includes no additional content (including no system context) when generating.
+      (note: context is separate from isolated. isolated: true with either 'content' or 'folder' will result in the same behavior with either. With 'none', Ailly will send _only_ the prompt when generating.)
 
-    -e, --engine will set the default engine. Can be set with AILLY_ENGINE environment variable. Default is OpenAI. (Probably? Check the code.)
+    -e, --engine will set the default engine. Can be set with AILLY_ENGINE environment variable. Default is openai. bedrock calls AWS Bedrock. noop is available for testing. (Probably? Check the code.)
     -m, --model will set the model from the engine. Can be set with AILLY_MODEL environment variable. Default depends on the engine; OpenAI is gpt-4-0613, bedrock is anthropic-claude-3. (Probably? Check the code.)
 
     --plugin can load a custom RAG plugin. Specify a path to import with "file://./path/to/plugin.mjs". plugin.mjs must export a single default function that meets the PluginBuilder interface in core/src/plugin/index.ts
