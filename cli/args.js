@@ -17,7 +17,7 @@ export function makeArgs(argv = process.argv) {
       isolated: {
         type: "boolean",
         short: "i",
-        default: Boolean(process.env["AILLY_ISOLATED"]),
+        default: false,
       },
       "no-overwrite": {
         type: "boolean",
