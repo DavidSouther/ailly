@@ -9,7 +9,8 @@ import * as ailly from "@ailly/core";
  * @param {ReturnType<import("./args.js").makeArgs>} args
  * @returns {Promise<{
  *   fs: import("@davidsouther/jiffies/lib/esm/fs").FileSystem,
- *   content: ailly.types.Content[],
+ *   context: Record<string, ailly.types.Content>,
+ *   content: string[],
  *   settings: import("@ailly/core/dist/src/ailly").PipelineSettings
  * }>}
  */
@@ -35,18 +36,20 @@ export async function loadFs(args) {
   const isPipe = !hasPositionals && hasPrompt;
   DEFAULT_LOGGER.level = getLogLevel(args.values['log-level'], args.values.verbose, isPipe);
 
-  let content = await ailly.content.load(
+  let context = await ailly.content.load(
     fs,
     args.values.system ? [{ content: args.values.system, view: {} }] : [],
     settings
   );
 
+  let content = [];
+
   if (!hasPositionals && hasPrompt) {
-    content.forEach(c => { c.meta = c.meta ?? {}; c.meta.skip = true; });
+    Object.values(context).forEach(c => { c.meta = c.meta ?? {}; c.meta.skip = true; });
   } else {
     if (!hasPositionals) positionals.push(root);
-    content = content.filter((c) =>
-      positionals.some((p) => c.path.startsWith(p))
+    content = Object.keys(context).filter((c) =>
+      positionals.some((p) => c.startsWith(p))
     );
   }
 
@@ -57,14 +60,17 @@ export async function loadFs(args) {
       outPath: "/dev/stdout",
       path: "/dev/stdout",
       prompt: args.values.prompt ?? "",
-      predecessor: noContext ? undefined : content.filter(c => dirname(c.path) == root).at(-1),
-      view: settings.templateView,
-      system: noContext ? [] : [{ content: args.values.system ?? "", view: {} }],
+      context: {
+        view: settings.templateView,
+        predecessor: noContext ? undefined : content.filter(c => dirname(c.path) == root).at(-1)?.path,
+        system: noContext ? [] : [{ content: args.values.system ?? "", view: {} }],
+      }
     };
-    content.push(cliContent)
+    context['/dev/stdout'] = cliContent;
+    content.push('/dev/stdout');
   }
 
-  return { fs, settings, content };
+  return { fs, settings, content, context };
 }
 
 /**

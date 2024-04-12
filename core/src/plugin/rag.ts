@@ -76,7 +76,7 @@ export class RAG {
   async augment(content: Content) {
     content.meta = content.meta ?? {};
     const results = await this.query(content.prompt);
-    content.augment = results;
+    content.context.augment = results;
   }
 
   async clean(content: Content) {}

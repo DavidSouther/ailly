@@ -32,13 +32,17 @@ export interface Content {
   // The prompt itself
   prompt: string;
   response?: string;
+  context: Context;
+  meta?: ContentMeta;
+}
 
+export interface Context {
+  view: false | View;
   // The list of system prompts above this content
   system?: System[];
-  view: false | View;
-  predecessor?: Content;
+  predecessor?: string;
+  folder?: string[];
   augment?: { score: number; content: string; name: string }[];
-  meta?: ContentMeta;
 }
 
 // Additional useful metadata.
@@ -170,8 +174,10 @@ async function loadFile(
       name: ordering.id,
       path: promptPath,
       outPath,
-      system,
-      view,
+      context: {
+        system,
+        view,
+      },
       prompt,
       response,
       meta: {
@@ -239,14 +245,14 @@ export async function loadContent(
   fs: FileSystem,
   system: System[] = [],
   meta: ContentMeta = {}
-): Promise<Content[]> {
+): Promise<Record<string, Content>> {
   DEFAULT_LOGGER.debug(`Loading content from ${fs.cwd()}`);
   [system, meta] = await loadAillyRc(fs, system, meta);
   if (meta.skip) {
     DEFAULT_LOGGER.debug(
       `Skipping content from ${fs.cwd()} based on head of .aillyrc`
     );
-    return [];
+    return {};
   }
 
   const dir = await loadDir(fs).catch((e) => defaultPartitionedDirectory());
@@ -256,27 +262,43 @@ export async function loadContent(
 
   const isIsolated = Boolean(meta.isolated);
   const context = meta.context ?? "content";
-  if (!isIsolated && context == "content") {
-    files.sort((a, b) => a.name.localeCompare(b.name));
-    for (let i = files.length - 1; i > 0; i--) {
-      files[i].predecessor = files[i - 1];
-    }
-  } else if (context == "none") {
-    for (const file of files) {
-      delete file.system;
-    }
+  switch (context) {
+    case "content":
+      if (isIsolated) break;
+      files.sort((a, b) => a.name.localeCompare(b.name));
+      for (let i = files.length - 1; i > 0; i--) {
+        files[i].context.predecessor = files[i - 1].path;
+      }
+      break;
+    case "none":
+      for (const file of files) {
+        delete file.context.system;
+      }
+      break;
+    case "folder":
+      const folder = files.map((f) => f.path);
+      for (const file of files) {
+        file.context.folder = folder;
+      }
+      break;
   }
 
-  const folders: Content[] = [];
+  const folders: Record<string, Content> = {};
   for (const folder of dir.folders) {
     if (folder.name == ".vectors") continue;
     fs.pushd(folder.name);
     let contents = await loadContent(fs, system, meta);
-    folders.push(...contents);
+    Object.assign(folders, contents);
     fs.popd();
   }
 
-  const content = [...files, ...folders];
+  const content: Record<string, Content> = {
+    ...files.reduce(
+      (c, f) => ((c[f.path] = f), c),
+      {} as Record<string, Content>
+    ),
+    ...folders,
+  };
   DEFAULT_LOGGER.debug(`Found ${content.length} at or below ${fs.cwd()}`);
   return content;
 }
@@ -297,8 +319,8 @@ async function writeSingleContent(fs: FileSystem, content: Content) {
   DEFAULT_LOGGER.info(`Writing response for ${filename}`);
   const path = join(dir, filename);
   const { debug, isolated } = content.meta ?? {};
-  if (content.augment) {
-    (debug as { augment: unknown[] }).augment = content.augment.map(
+  if (content.context.augment) {
+    (debug as { augment: unknown[] }).augment = content.context.augment.map(
       ({ score, name }) => ({
         score,
         name,
@@ -325,8 +347,11 @@ async function writeSingleContent(fs: FileSystem, content: Content) {
   await fs.writeFile(path, file);
 }
 
-export async function writeContent(fs: FileSystem, content: Content[]) {
-  for (const c of content) {
+export async function writeContent(
+  fs: FileSystem,
+  content: Record<string, Content>
+) {
+  for (const c of Object.values(content)) {
     try {
       await writeSingleContent(fs, c);
     } catch (e) {

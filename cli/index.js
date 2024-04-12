@@ -26,7 +26,7 @@ async function main() {
 
   await check_should_run(args, loaded);
 
-  let generator = await ailly.Ailly.GenerateManager.from(loaded.content, loaded.settings);
+  let generator = await ailly.Ailly.GenerateManager.from(loaded.content, loaded.context, loaded.settings);
 
   switch (true) {
     case args.values["update-db"]:

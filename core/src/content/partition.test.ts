@@ -42,38 +42,54 @@ test("partitioning", () => {
     path: "/a/b",
     outPath: "/a/b",
     prompt: "",
-    view: {},
+    context: {
+      view: {},
+    },
   };
   const c: Content = {
     name: "c",
     path: "/a/c",
     outPath: "/a/c",
     prompt: "",
-    view: {},
+    context: {
+      view: {},
+    },
   };
   const h: Content = {
     name: "h",
     path: "/a/g/h",
     outPath: "/a/g/h",
     prompt: "",
-    view: {},
+    context: {
+      view: {},
+    },
   };
   const e: Content = {
     name: "e",
     path: "/d/e",
     outPath: "/d/e",
     prompt: "",
-    view: {},
+    context: {
+      view: {},
+    },
   };
   const f: Content = {
     name: "f",
     path: "/d/f",
     outPath: "/d/f",
     prompt: "",
-    view: {},
+    context: {
+      view: {},
+    },
   };
 
   const content: Content[] = [b, c, h, e, f];
-  const actual = partitionPrompts(content);
+  const actual = partitionPrompts(
+    content.map((c) => c.path),
+    content.reduce(
+      (a, c) => ((a[c.path] = c), a),
+      {} as Record<string, Content>
+    )
+  );
   expect(actual).toEqual([[b, c], [h], [e, f]]);
 });

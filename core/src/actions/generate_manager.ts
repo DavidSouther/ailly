@@ -24,31 +24,31 @@ export class GenerateManager {
   threadRunners: PromptThread[] = [];
 
   static async from(
-    content: Content[],
+    content: string[],
+    context: Record<string, Content>,
     settings: PipelineSettings
   ): Promise<GenerateManager> {
     const engineName = settings?.engine ?? DEFAULT_ENGINE;
     const engine = await getEngine(engineName);
-    engine.format(content);
     const pluginBuilder = await getPlugin(settings.plugin);
     const plugin = await pluginBuilder.default(engine, settings);
-    return new GenerateManager(content, settings, engine, plugin);
+    return new GenerateManager(content, context, settings, engine, plugin);
   }
 
   constructor(
-    content: Content[],
+    content: string[],
+    private context: Record<string, Content>,
     private settings: PipelineSettings,
     private engine: Engine,
     private rag: Plugin
   ) {
-    this.threads = partitionPrompts(content);
+    this.threads = partitionPrompts(content, context);
     DEFAULT_LOGGER.info(`Ready to generate ${this.threads.length} messages`);
   }
-
   start() {
     this.started = true;
     this.threadRunners = this.threads.map((t) =>
-      PromptThread.run(t, this.settings, this.engine, this.rag)
+      PromptThread.run(t, this.context, this.settings, this.engine, this.rag)
     );
 
     Promise.allSettled(this.threadRunners.map((t) => t.allSettled())).then(
