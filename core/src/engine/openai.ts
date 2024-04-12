@@ -26,6 +26,7 @@ export async function generate(
   );
   const baseURL = process.env["OPENAI_BASE_URL"];
   const openai = new OpenAI({ apiKey, baseURL });
+
   let messages = c.meta?.messages ?? [];
   if (messages.length < 2) {
     throw new Error("Not enough messages");

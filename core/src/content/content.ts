@@ -262,8 +262,8 @@ export async function loadContent(
       files[i].predecessor = files[i - 1];
     }
   } else if (context == "none") {
-    for (let i = files.length - 1; i > 0; i--) {
-      files[i].system = [];
+    for (const file of files) {
+      delete file.system;
     }
   }
 
@@ -316,7 +316,11 @@ async function writeSingleContent(fs: FileSystem, content: Content) {
     meta.prompt = content.meta?.prompt ?? content.prompt;
   }
 
-  const head = stringify(meta, { blockQuote: "literal", lineWidth: 0 });
+  const head = stringify(meta, {
+    blockQuote: "literal",
+    lineWidth: 0,
+    sortMapEntries: true,
+  });
   const file = `---\n${head}---\n${content.response}`;
   await fs.writeFile(path, file);
 }

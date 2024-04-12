@@ -400,6 +400,7 @@ describe("Load aillyrc", () => {
 
       expect(system.map((s) => s.content)).toEqual([]);
     });
+
     test("at root with .aillyrc in cwd", async () => {
       const fs = new FileSystem(
         new ObjectFileSystemAdapter({
@@ -578,6 +579,53 @@ describe("Load aillyrc", () => {
 
       expect(system.map((s) => s.content)).toEqual([]);
     });
+  });
+
+  test("context = none removes all context", async () => {
+    const fs = new FileSystem(
+      new ObjectFileSystemAdapter({
+        root: {
+          ".aillyrc": "system",
+          a: "a",
+          "a.ailly.md": "aa",
+          b: "b",
+        },
+      })
+    );
+    fs.cd("/root");
+
+    const content: Content[] = await loadContent(fs, [], { context: "none" });
+
+    expect(content).toEqual([
+      {
+        name: "a",
+        path: "/root/a",
+        outPath: "/root/a.ailly.md",
+        prompt: "a",
+        response: "aa",
+        view: {},
+        meta: {
+          combined: false,
+          context: "none",
+          parent: "root",
+          root: "/root",
+        },
+      },
+      {
+        name: "b",
+        path: "/root/b",
+        outPath: "/root/b.ailly.md",
+        prompt: "b",
+        response: "",
+        view: {},
+        meta: {
+          combined: false,
+          context: "none",
+          parent: "root",
+          root: "/root",
+        },
+      },
+    ] as const);
   });
 });
 
