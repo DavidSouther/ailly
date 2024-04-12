@@ -42,7 +42,7 @@ export async function loadFs(args) {
     settings
   );
 
-  let content = [];
+  let content = /* @type string[] */[];
 
   if (!hasPositionals && hasPrompt) {
     Object.values(context).forEach(c => { c.meta = c.meta ?? {}; c.meta.skip = true; });
@@ -62,8 +62,9 @@ export async function loadFs(args) {
       prompt: args.values.prompt ?? "",
       context: {
         view: settings.templateView,
-        predecessor: noContext ? undefined : content.filter(c => dirname(c.path) == root).at(-1)?.path,
+        predecessor: noContext ? undefined : content.filter(c => dirname(c) == root).at(-1)?.path,
         system: noContext ? [] : [{ content: args.values.system ?? "", view: {} }],
+        folder: args.values.context == 'folder' ? Object.values(context).find(c => dirname(c.path) == root)?.context.folder : undefined,
       }
     };
     context['/dev/stdout'] = cliContent;

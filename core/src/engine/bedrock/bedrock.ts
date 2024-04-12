@@ -91,10 +91,13 @@ async function addContentMeta(
   context: Record<string, Content>
 ) {
   content.meta ??= {};
-  content.meta.messages = getMessages(content, context);
+  if (content.context.predecessor)
+    content.meta.messages = getMessagesPredecessor(content, context);
+  if (content.context.folder)
+    content.meta.messages = getMessagesFolder(content, context);
 }
 
-export function getMessages(
+export function getMessagesPredecessor(
   content: Content,
   context: Record<string, Content>
 ): Message[] {
@@ -120,6 +123,38 @@ export function getMessages(
     )
     .flat()
     .filter(isDefined);
+  const parts = history
+    .map<Array<Message | undefined>>((content) => [
+      {
+        role: "user",
+        content: content.prompt,
+      },
+      content.response
+        ? { role: "assistant", content: content.response }
+        : undefined,
+    ])
+    .flat()
+    .filter(isDefined);
+  return [{ role: "system", content: system }, ...augment, ...parts];
+}
+
+export function getMessagesFolder(
+  content: Content,
+  context: Record<string, Content>
+): Message[] {
+  const system = (content.context.system ?? [])
+    .map((s) => s.content)
+    .join("\n");
+  const history: Content[] = [];
+
+  const augment = (content.context.folder ?? [])
+    .map((c) => context[c])
+    .map<Message[]>((c) => [
+      { role: "user", content: `The contents of the file ${c.name}` },
+      { role: "assistant", content: c.prompt ?? c.response ?? "" },
+    ])
+    .flat();
+
   const parts = history
     .map<Array<Message | undefined>>((content) => [
       {

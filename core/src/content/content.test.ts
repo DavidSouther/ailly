@@ -148,8 +148,8 @@ test("it loads combined prompt and responses", async () => {
 test("it writes combined prompt and responses", async () => {
   const fs = new FileSystem(new ObjectFileSystemAdapter({}));
 
-  const content: Record<string, Content> = {
-    "/content.md": {
+  const content: Content[] = [
+    {
       name: "content.md",
       path: "/content.md",
       outPath: "/content.md",
@@ -161,7 +161,7 @@ test("it writes combined prompt and responses", async () => {
       },
       meta: { isolated: true, combined: true, root: "/", parent: "root" },
     },
-  };
+  ];
 
   await writeContent(fs, content);
 
@@ -275,8 +275,8 @@ test("it writes separate prompt and responses", async () => {
     })
   );
 
-  const content = {
-    "/content.md": {
+  const content = [
+    {
       name: "content.md",
       path: "/content.md",
       outPath: "/content.md.ailly.md",
@@ -288,7 +288,7 @@ test("it writes separate prompt and responses", async () => {
       },
       meta: { isolated: true, combined: false },
     },
-  };
+  ];
 
   await writeContent(fs, content);
 
@@ -308,8 +308,8 @@ test("it writes separate prompt and responses in outPath", async () => {
     })
   );
 
-  const content = {
-    "/root/content.md": {
+  const content = [
+    {
       name: "content.md",
       path: "/root/content.md",
       outPath: "/out/content.md.ailly.md",
@@ -321,7 +321,7 @@ test("it writes separate prompt and responses in outPath", async () => {
       },
       meta: { isolated: true, combined: false },
     },
-  };
+  ];
 
   await writeContent(fs, content);
 
@@ -390,7 +390,7 @@ test("it writes deep java prompts and responses", async () => {
   content["/root/.gitignore"].response = "Response";
   content["/root/src/com/example/Main.java"].response = "Response";
 
-  await writeContent(fs, content);
+  await writeContent(fs, [...Object.values(content)]);
 
   expect((fs as any).adapter.fs).toEqual({
     "/root/.gitignore": "target",

@@ -28,6 +28,7 @@ async function main() {
 
   let generator = await ailly.Ailly.GenerateManager.from(loaded.content, loaded.context, loaded.settings);
 
+  const last = loaded.content.at(-1);
   switch (true) {
     case args.values["update-db"]:
       await generator.updateDatabase();
@@ -49,10 +50,10 @@ async function main() {
       await generator.allSettled();
 
       DEFAULT_LOGGER.info("Generated!");
-      if (loaded.content.at(-1)?.outPath == "/dev/stdout") {
-        console.log(loaded.content.at(-1)?.response);
+      if (last == "/dev/stdout") {
+        console.log(loaded.context[last].response);
       } else {
-        await ailly.content.write(loaded.fs, loaded.content);
+        await ailly.content.write(loaded.fs, loaded.content.map(c => loaded.context[c]));
       }
       break;
   }

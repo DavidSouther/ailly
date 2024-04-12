@@ -347,10 +347,7 @@ async function writeSingleContent(fs: FileSystem, content: Content) {
   await fs.writeFile(path, file);
 }
 
-export async function writeContent(
-  fs: FileSystem,
-  content: Record<string, Content>
-) {
+export async function writeContent(fs: FileSystem, content: Content[]) {
   for (const c of Object.values(content)) {
     try {
       await writeSingleContent(fs, c);
