@@ -1,4 +1,3 @@
-import pkg from "./package.json" assert { type: "json" };
 import * as contentModule from "./src/content/content.js";
 import * as aillyModule from "./src/ailly.js";
 import * as engineModule from "./src/engine/index.js";
@@ -19,5 +18,33 @@ export const content = {
 };
 
 export const Ailly = aillyModule;
+export const version = getVersion(import.meta.url);
 
-export const version = pkg.version;
+// TODO move this to jiffies
+import { execSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
+import { normalize, join } from "node:path";
+import { readFileSync } from "node:fs";
+
+export function getVersion(root: /*ImportMeta.URL*/ string) {
+  const cwd = normalize(join(fileURLToPath(root), ".."));
+  const packageJson = join(cwd, "./package.json");
+  const pkg = JSON.parse(readFileSync(packageJson, { encoding: "utf8" }));
+  return pkg.version;
+}
+
+export function getRevision(root: /* ImportMeta.URL */ string) {
+  const cwd = normalize(join(fileURLToPath(root), ".."));
+  let sha = "";
+  let status = "";
+  let changes = "";
+  try {
+    // Are there any outstanding git changes?
+    const run = (cmd: string) => execSync(cmd, { encoding: "utf-8", cwd });
+    sha = run("git rev-parse --short HEAD").trim();
+    status = run("git status --porcelain=v1");
+  } catch (e) {}
+  if (sha.length > 0)
+    changes = ` (${sha} ±${status.trim().split("\n").length})`;
+  return changes;
+}
