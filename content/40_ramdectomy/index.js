@@ -1,4 +1,3 @@
-```javascript
 /**
  * Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
  * SPDX-License-Identifier: Apache-2.0
@@ -81,8 +80,3 @@ const handlers = [
 
 cmdInterface.write('Welcome to Amazon Cognito. Type "help" for more info.\n');
 readCommands({ reader: cmdInterface, handlers });
-```
-
-```
-
-```

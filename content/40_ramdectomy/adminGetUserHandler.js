@@ -1,4 +1,3 @@
-```javascript
 /**
  * Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
  * SPDX-License-Identifier: Apache-2.0
@@ -51,4 +50,3 @@ const adminGetUserHandler = async ([_cmd, username]) => {
 };
 
 export { adminGetUserHandler };
-```

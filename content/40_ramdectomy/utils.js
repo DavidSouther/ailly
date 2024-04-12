@@ -1,4 +1,3 @@
-```javascript
 import { pipe, zipWith, fromPairs } from "ramda";
 import { Item } from "src/types/item.js";
 
@@ -23,4 +22,3 @@ const parseItem: (record: DBRecord) => Item = pipe(
 );
 
 export { parseItem };
-```
