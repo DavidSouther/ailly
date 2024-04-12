@@ -1,5 +1,7 @@
 import mustache from "mustache";
 import { Content, View } from "./content.js";
+import { META_PROMPT } from "./template_anthropic_metaprompt.js";
+import { GRUG_PROMPT } from "./template_grug_prompt.js";
 
 export function mergeViews(...views: View[]): View {
   return views
@@ -28,10 +30,15 @@ export function mergeContentViews(c: Content, base: View) {
 export const GLOBAL_VIEW: View = {
   output: {
     explain: "Explain your thought process each step of the way.",
-    verbatim: "Please respond verbatim, without commentary.",
+    verbatim:
+      "Please respond verbatim, without commentary. Skip the preamble. Do not explain your reasoning.",
     prose: "Your output should be prose, with no additional formatting.",
     markdown: "Your output should use full markdown syntax.",
     python:
       "Your output should only contain Python code, within a markdown code fence:\n\n```py\n#<your code>\n```",
+  },
+  persona: {
+    grug: GRUG_PROMPT,
+    meta: META_PROMPT,
   },
 };
