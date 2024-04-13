@@ -8,7 +8,6 @@ import {
   isAbsolute,
 } from "@davidsouther/jiffies/lib/esm/fs.js";
 import matter from "gray-matter";
-// import * as yaml from "js-yaml";
 import { stringify } from "yaml";
 import { join, dirname } from "path";
 import type { Message } from "../engine/index.js";
@@ -43,6 +42,7 @@ export interface Context {
   predecessor?: string;
   folder?: string[];
   augment?: { score: number; content: string; name: string }[];
+  edit?: { start: number; end: number; file: string };
 }
 
 // Additional useful metadata.

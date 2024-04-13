@@ -172,11 +172,11 @@ async function generateOne(
   const has_response = (c.response?.length ?? 0) > 0;
 
   if (c.meta?.skip || (!settings.overwrite && has_response)) {
-    DEFAULT_LOGGER.info(`Skipping ${c.name}`);
+    DEFAULT_LOGGER.info(`Skipping ${c.path}`);
     return c;
   }
 
-  DEFAULT_LOGGER.info(`Preparing ${c.name}`);
+  DEFAULT_LOGGER.info(`Preparing ${c.path}`);
 
   const meta = c.meta;
   engine.format([c], context);

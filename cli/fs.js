@@ -54,7 +54,13 @@ export async function loadFs(args) {
   }
 
   if (hasPrompt) {
+    if (edit && content.length == 1) {
+      edit.file = content[0];
+      content = [];
+    }
     const noContext = args.values.context == "none";
+    const folder = args.values.context == 'folder' ?
+      Object.values(context).find(c => dirname(c.path) == root)?.context.folder : edit ? [edit.file] : undefined;
     const cliContent = {
       name: 'stdout',
       outPath: "/dev/stdout",
@@ -64,7 +70,8 @@ export async function loadFs(args) {
         view: settings.templateView,
         predecessor: noContext ? undefined : content.filter(c => dirname(c) == root).at(-1)?.path,
         system: noContext ? [] : [{ content: args.values.system ?? "", view: {} }],
-        folder: args.values.context == 'folder' ? Object.values(context).find(c => dirname(c.path) == root)?.context.folder : undefined,
+        folder,
+        edit,
       }
     };
     context['/dev/stdout'] = cliContent;

@@ -1,3 +1,4 @@
+import { dirname } from "node:path";
 import { DEFAULT_LOGGER } from "@davidsouther/jiffies/lib/esm/log.js";
 import {
   BedrockRuntimeClient,
@@ -62,7 +63,7 @@ export async function generate(
     console.warn(`Error from Bedrock for ${c.name}`, e);
     return {
       message: "💩",
-      debug: { finish: "Failed", error: { message: (e as Error).message } },
+      debug: { finish: "failed", error: { message: (e as Error).message } },
     };
   }
 }
@@ -142,18 +143,21 @@ export function getMessagesFolder(
   content: Content,
   context: Record<string, Content>
 ): Message[] {
-  const system = (content.context.system ?? [])
-    .map((s) => s.content)
-    .join("\n");
-  const history: Content[] = [];
+  const system =
+    (content.context.system ?? []).map((s) => s.content).join("\n") +
+    "\n" +
+    "Instructions are happening in the context of this folder:\n" +
+    `<folder name="${dirname(content.path)}">\n` +
+    (content.context.folder ?? [])
+      .map((c) => context[c])
+      .map<string>(
+        (c) => `<file name="${c.name}>\n${c.prompt ?? c.response ?? ""}</file>`
+      )
+      .join("\n") +
+    "\n</folder>";
 
-  const augment = (content.context.folder ?? [])
-    .map((c) => context[c])
-    .map<Message[]>((c) => [
-      { role: "user", content: `The contents of the file ${c.name}` },
-      { role: "assistant", content: c.prompt ?? c.response ?? "" },
-    ])
-    .flat();
+  const history: Content[] = [content];
+  const augment: Message[] = [];
 
   const parts = history
     .map<Array<Message | undefined>>((content) => [
