@@ -1,5 +1,5 @@
 import { NodeFileSystemAdapter } from "@davidsouther/jiffies/lib/esm/fs_node.js";
-import { DEFAULT_LOGGER } from "@davidsouther/jiffies/lib/esm/log.js";
+import { DEFAULT_LOGGER, LEVEL, error } from "@davidsouther/jiffies/lib/esm/log.js";
 import { dirname, resolve } from "node:path";
 import { parse } from "yaml";
 // import * as yaml from "yaml";
@@ -30,7 +30,7 @@ export async function loadFs(args) {
   });
   const positionals = args.positionals.slice(2).map(a => resolve(a));
   const isPipe = positionals.length == 0 && args.values.prompt;
-  DEFAULT_LOGGER.level = isPipe ? 100 : 0;
+  DEFAULT_LOGGER.level = getLogLevel(args.values['log-level'], args.values.verbose, isPipe);
 
   let content = await ailly.content.load(
     fs,
@@ -83,4 +83,27 @@ async function loadTemplateView(fs, path) {
     console.warn(`Failed to load template-view ${path}`, e)
   }
   return {};
+}
+
+/**
+ * @param {string|undefined} level
+ * @param {boolean} verbose
+ * @param {boolean} isPipe
+ * @returns {number}
+ */
+function getLogLevel(level, verbose, isPipe) {
+  if (level) {
+    switch (level) {
+      case "debug": LEVEL.DEBUG;
+      case "info": LEVEL.INFO;
+      case "warn": LEVEL.WARN;
+      case "error": LEVEL.ERROR;
+      default:
+        if (!isNaN(+level)) return Number(level);
+    }
+  }
+  if (verbose) {
+    return LEVEL.INFO;
+  }
+  return isPipe ? LEVEL.SILENT : LEVEL.INFO;
 }
