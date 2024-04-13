@@ -1,5 +1,9 @@
 import { dirname } from "node:path";
-import { DEFAULT_LOGGER } from "@davidsouther/jiffies/lib/esm/log.js";
+import {
+  DEFAULT_LOGGER,
+  debug,
+  warn,
+} from "@davidsouther/jiffies/lib/esm/log.js";
 import {
   BedrockRuntimeClient,
   InvokeModelCommand,
@@ -30,9 +34,27 @@ export async function generate(
   if (messages.at(-1)?.role == "assistant") {
     messages = messages.slice(0, -1);
   }
+  let stopSequences: undefined | string[];
+  let fence: undefined | string = undefined;
+  if (c.context.edit) {
+    const lang = c.context.edit.file.split(".").at(-1) ?? "";
+    fence = "```" + lang;
+    messages.push({ role: "assistant", content: fence });
+    stopSequences = ["```"];
+  }
 
   const promptBuilder = new PromptBuilder(model as Models);
   const prompt = promptBuilder.build(messages);
+
+  if (stopSequences) {
+    prompt.stop_sequences = stopSequences;
+  }
+
+  // Use given temperature; or 0 for edit (don't want creativity) but 1.0 generally.
+  prompt.temperature =
+    c.meta?.temperature ?? c.context.edit != undefined ? 0.0 : 1.0;
+
+  debug("Sending prompt", prompt);
 
   try {
     const response = await bedrock.send(
@@ -47,11 +69,16 @@ export async function generate(
     const body = JSON.parse(response.body.transformToString());
     response.body = body;
 
+    let message: string = body.content?.[0]?.text ?? "";
+    if (c.context.edit) {
+      message = extractFirstFence(fence + message);
+    }
+
     DEFAULT_LOGGER.info(`Response from Bedrock for ${c.name}`, {
       finish_reason: body.stop_reason,
     });
     return {
-      message: body.content?.[0]?.text ?? "",
+      message,
       debug: {
         id: null,
         model,
@@ -191,4 +218,13 @@ export async function vector(inputText: string, {}: {}): Promise<number[]> {
   const body = JSON.parse(td.decode(response.body));
 
   return body.embedding;
+}
+
+export function extractFirstFence(message: string): string {
+  const firstTicks = message.indexOf("```");
+  if (firstTicks != 0) warn("First code fence is not at index 0");
+  const endOfFirstLine = message.indexOf("\n", firstTicks);
+  const nextTicks = message.indexOf("```", endOfFirstLine + 1);
+  message = message.slice(endOfFirstLine + 1, nextTicks + 1);
+  return message;
 }

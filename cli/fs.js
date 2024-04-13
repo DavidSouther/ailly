@@ -34,7 +34,34 @@ export async function loadFs(args) {
   const hasPositionals = positionals.length > 0;
   const hasPrompt = Boolean(args.values.prompt)
   const isPipe = !hasPositionals && hasPrompt;
-  DEFAULT_LOGGER.level = getLogLevel(args.values['log-level'], args.values.verbose, isPipe);
+  DEFAULT_LOGGER.level = getLogLevel(args.values['log-level'], args.values.verbose ?? false, isPipe);
+
+  let edit = undefined;
+  if (args.values.edit) {
+    if (positionals.length != 1) {
+      throw new Error("Edit requires exactly 1 path")
+    }
+    if (!hasPrompt) {
+      throw new Error("Edit requires a prompt to know what to change")
+    }
+    const line = args.values.lines?.split(':') ?? [];
+    const hasStart = Boolean(line[0]);
+    const hasEnd = Boolean(line[1]);
+    const start = Number(line[0]) - 1;
+    const end = Number(line[1]) - 1;
+    switch (true) {
+      case hasStart && hasEnd:
+        edit = { start, end, file: '' };
+        break;
+      case hasStart:
+        edit = { start, end: start + 1, file: '' };
+        break;
+      case hasEnd:
+        edit = { start: end - 1, end, file: "" };
+        break;
+    }
+  }
+
 
   let context = await ailly.content.load(
     fs,

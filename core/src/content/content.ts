@@ -58,6 +58,7 @@ export interface ContentMeta {
   debug?: unknown;
   view?: false | View;
   prompt?: string;
+  temperature?: number;
 }
 
 export type Value = string | number | boolean;
