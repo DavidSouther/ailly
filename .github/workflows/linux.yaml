@@ -1,4 +1,4 @@
-name: Windows Integration Tests
+name: "*Nix Integration Tests"
 
 on:
   push:
@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  build:
+  linux-integ:
     runs-on: ubuntu-latest
 
     steps:
