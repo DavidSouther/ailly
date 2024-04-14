@@ -1,0 +1,10 @@
+---
+combined: true
+debug:
+  engine: noop
+  model: NOOP
+  system: []
+isolated: false
+prompt: Combined
+---
+noop response for combined

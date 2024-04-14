@@ -8,8 +8,9 @@ export async function generate<D extends {} = {}>(
   _: unknown
 ): Promise<{ debug: D; message: string }> {
   return {
-    message: `noop response for ${c.name}`,
-    debug: { system: c.system } as unknown as D,
+    message:
+      process.env["AILLY_NOOP_RESPONSE"] ?? `noop response for ${c.name}`,
+    debug: { system: c.context.system } as unknown as D,
   };
 }
 export async function vector(s: string, _: unknown): Promise<number[]> {

@@ -1,7 +1,8 @@
 #! /usr/bin/env node
 import { createInterface } from "readline/promises";
 
-import { DEFAULT_LOGGER } from "@davidsouther/jiffies/lib/esm/log.js"
+import { DEFAULT_LOGGER } from "@davidsouther/jiffies/lib/esm/log.js";
+import { NodeFileSystemAdapter } from "@davidsouther/jiffies/lib/esm/fs_node.js";
 import * as ailly from "@ailly/core";
 import { makeArgs, help } from "./args.js";
 import { loadFs } from "./fs.js";
@@ -22,7 +23,8 @@ async function main() {
     process.exit(0);
   }
 
-  const loaded = await loadFs(args);
+  const fs = new ailly.Ailly.GitignoreFs(new NodeFileSystemAdapter());
+  const loaded = await loadFs(fs, args);
 
   await check_should_run(args, loaded);
 
@@ -58,35 +60,65 @@ async function main() {
         }
         const edit = prompt.context.edit;
         if (edit) {
-          await doEdit(loaded, edit, prompt, args);
+          await doEdit(fs, loaded, edit, prompt, args.values.yes ?? false);
         } else {
           console.log(prompt.response);
         }
       } else {
-        await ailly.content.write(loaded.fs, loaded.content.map(c => loaded.context[c]));
+        await ailly.content.write(fs, loaded.content.map(c => loaded.context[c]));
       }
       break;
   }
 }
 
-async function doEdit(loaded, edit, prompt, args) {
+/**
+ * 
+ * @param {import("@davidsouther/jiffies/lib/esm/fs").FileSystem} fs 
+ * @param {Awaited<ReturnType<import("./fs").loadFs>>} loaded 
+ * @param {import("./fs.js").Edit} edit 
+ * @param {import("./fs.js").Content} prompt 
+ * @param {boolean} yes 
+ */
+async function doEdit(fs, loaded, edit, prompt, yes) {
   const out = loaded.context[edit.file];
   const responseLines = out.prompt?.split("\n") ?? [];
   const replaceLines = prompt.response?.split("\n") ?? [];
-  const editValue = [
-    `Edit ${out.name} ${edit.start + 1}:${edit.end + 1}\n`,
-    responseLines.slice(edit.start - 3, edit.start).map(s => ` ${s}`).join('\n'),
-    responseLines.slice(edit.start, edit.end + 1).map(s => `-${s}`).join('\n'),
-    replaceLines.map(s => `+${s}`).join("\n"),
-    responseLines.slice(edit.end + 1, edit.end + 4).map(s => ` ${s}`).join('\n'),
-  ].join("\n");
+  const editValue = makeEditConfirmMessage(edit, out.name, responseLines, replaceLines);
   console.log(editValue);
-  if (!args.values.yes) {
+  if (!yes) {
     await check_or_exit('Continue? (y/N) ');
   }
-  responseLines?.splice(edit.start, edit.end - edit.start, ...(replaceLines));
+  if (edit.after) {
+    responseLines?.splice(edit.after + 1, 0, ...(replaceLines));
+  } else {
+    responseLines?.splice(edit.start, edit.end - edit.start, ...(replaceLines));
+  }
   out.response = responseLines.join("\n");
-  await loaded.fs.writeFile(out.path, out.response);
+  await fs.writeFile(out.path, out.response);
+}
+
+/**
+ * 
+ * @param {*} edit 
+ * @param {string} name
+ * @param {string[]} responseLines 
+ * @param {string[]} replaceLines 
+ * @returns 
+ */
+function makeEditConfirmMessage(edit, name, responseLines, replaceLines) {
+  return (edit.after ?
+    [`Insert into ${name} at ${edit.after + 1}\n`,
+    responseLines.slice(edit.after - 3, edit.after).map(s => ` ${s}`).join('\n'),
+    replaceLines.map(s => `+${s}`).join("\n"),
+    responseLines.slice(edit.after + 1, edit.after + 4).map(s => ` ${s}`).join('\n'),
+    ]
+    : [
+      `Edit ${name} ${edit.start + 1}:${edit.end + 1}\n`,
+      responseLines.slice(edit.start - 3, edit.start).map(s => ` ${s}`).join('\n'),
+      responseLines.slice(edit.start, edit.end + 1).map(s => `-${s}`).join('\n'),
+      replaceLines.map(s => `+${s}`).join("\n"),
+      responseLines.slice(edit.end + 1, edit.end + 4).map(s => ` ${s}`).join('\n'),
+    ]).join("\n");
 }
 
 async function check_should_run(args, { content }) {
