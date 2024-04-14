@@ -1,10 +1,11 @@
-name: CI
+name: Windows Integration Tests
 
 on:
   push:
     branches: [main]
   pull_request:
     branches: [main]
+  workflow_dispatch:
 
 jobs:
   build:
@@ -19,10 +20,7 @@ jobs:
           node-version: "20.x"
 
       - name: Install dependencies
-        run: npm install
+        run: npm install ; npx tsc -p core
 
-      - name: Run CI script in cli workspace
-        run: npm run --workspace cli ci
-
-      - name: Run CI script in core workspace
-        run: npm run --workspace core ci
+      - name: Run integration tests
+        run: ./integ/integ.sh
