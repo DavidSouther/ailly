@@ -70,8 +70,8 @@ export function help() {
     -p, --prompt generate a final, single piece of content and print the response to standard out.
     -i, --isolated will start in isolated mode, generating each file separately.  Can be overridden with 'isolated: false' in .aillyrc files, and set with AILLY_ISOLATED=true environment variable.
     -o, --out specify an output folder to work with responses. Defaults to --root. Will load responses from and write outputs to here, using .ailly file extensions.
-    -c, --context content | folder | none
-      'content' (default) loads files from the root folder and includes them alphabetically, chatbot history style, before the current file when generating.
+    -c, --context conversation | folder | none
+      'conversation' (default) loads files from the root folder and includes them alphabetically, chatbot history style, before the current file when generating.
       'folder' includes all files in the folder at the same level as the current file when generating.
       'none' includes no additional content (including no system context) when generating.
       (note: context is separate from isolated. isolated: true with either 'content' or 'folder' will result in the same behavior with either. With 'none', Ailly will send _only_ the prompt when generating.)

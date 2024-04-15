@@ -166,6 +166,7 @@ export function getMessages(
 
 export async function tune(
   content: Content[],
+  context: Record<string, Content>,
   {
     model = MODEL,
     apiKey = process.env["OPENAI_API_KEY"] ?? "",
@@ -173,7 +174,7 @@ export async function tune(
   }: { model: string; apiKey: string; baseURL: string }
 ) {
   const openai = new OpenAI({ apiKey, baseURL });
-  await format(content); // fill in content parts
+  await format(content, context); // fill in content parts
 
   const file = content
     .map((c) =>

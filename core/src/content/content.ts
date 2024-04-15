@@ -49,7 +49,7 @@ export interface Context {
 export interface ContentMeta {
   root?: string;
   out?: string;
-  context?: "content" | "folder" | "none";
+  context?: "conversation" | "folder" | "none";
   parent?: "root" | "always" | "never";
   messages?: Message[];
   skip?: boolean;

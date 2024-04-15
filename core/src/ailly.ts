@@ -1,4 +1,4 @@
-import { Content, View } from "./content/content.js";
+import { Content, View, ContentMeta } from "./content/content.js";
 export { GitignoreFs } from "./content/gitignore_fs.js";
 export { getPlugin } from "./plugin/index.js";
 import { getEngine } from "./engine/index.js";
@@ -17,7 +17,7 @@ export interface PipelineSettings {
   out: string;
   engine: string;
   model: string;
-  context: "content" | "folder" | "none";
+  context: NonNullable<ContentMeta["context"]>;
   plugin: string;
   isolated: boolean;
   overwrite: boolean;
@@ -29,7 +29,7 @@ export async function makePipelineSettings({
   out = root,
   engine = DEFAULT_ENGINE,
   model,
-  context = "content",
+  context = "conversation",
   plugin = DEFAULT_PLUGIN,
   overwrite = true,
   isolated = false,
@@ -46,15 +46,15 @@ export async function makePipelineSettings({
   templateView?: View;
 }): Promise<PipelineSettings> {
   model = model ?? (await getEngine(engine)).DEFAULT_MODEL;
-  context = ["content", "folder", "none"].includes(context)
+  context = ["conversation", "folder", "none"].includes(context)
     ? context
-    : "content";
+    : "conversation";
   return {
     root,
     out,
     engine,
     model,
-    context: context as "content" | "folder" | "none",
+    context: context as NonNullable<ContentMeta["context"]>,
     plugin,
     overwrite,
     isolated,
