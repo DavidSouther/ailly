@@ -20,3 +20,7 @@ rm 01_basic/basic.ailly.md
 echo "combined"
 npx ailly --root 02_combined --combined
 [ ! -f 02_combined/combined.ailly.md ]
+
+echo "edit"
+AILLY_NOOP_RESPONSE="Edited" npx ailly --root 04_edit --edit file --lines 2:4 --prompt "edit" --yes
+grep -q 'Edited' 04_edit/file

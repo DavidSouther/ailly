@@ -1,6 +1,6 @@
 import { DEFAULT_LOGGER, LEVEL } from "@davidsouther/jiffies/lib/esm/log.js";
 import { assertExists } from "@davidsouther/jiffies/lib/esm/assert.js";
-import { dirname, resolve } from "node:path";
+import { dirname, resolve, join } from "node:path";
 import { parse } from "yaml";
 import * as ailly from "@ailly/core";
 
@@ -37,7 +37,7 @@ export async function loadFs(fs, args) {
     overwrite: !args.values["no-overwrite"],
   });
 
-  const positionals = args.positionals.slice(2).map(a => resolve(a));
+  const positionals = args.positionals.slice(2).map(a => resolve(join(root, a)));
   const hasPositionals = positionals.length > 0;
   const hasPrompt = args.values.prompt !== undefined && args.values.prompt !== "";
   const isPipe = !hasPositionals && hasPrompt;

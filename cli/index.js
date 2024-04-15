@@ -108,14 +108,14 @@ async function doEdit(fs, loaded, edit, prompt, yes) {
 function makeEditConfirmMessage(edit, name, responseLines, replaceLines) {
   return (edit.after ?
     [`Insert into ${name} at ${edit.after + 1}\n`,
-    responseLines.slice(edit.after - 3, edit.after).map(s => ` ${s}`).join('\n'),
+    responseLines.slice(Math.min(edit.after - 3, 0), Math.min(edit.after, 0)).map(s => ` ${s}`).join('\n'),
     replaceLines.map(s => `+${s}`).join("\n"),
     responseLines.slice(edit.after + 1, edit.after + 4).map(s => ` ${s}`).join('\n'),
     ]
     : [
       `Edit ${name} ${edit.start + 1}:${edit.end + 1}\n`,
-      responseLines.slice(edit.start - 3, edit.start).map(s => ` ${s}`).join('\n'),
-      responseLines.slice(edit.start, edit.end + 1).map(s => `-${s}`).join('\n'),
+      responseLines.slice(Math.min(edit.start - 3, 0), Math.min(edit.start, 0)).map(s => ` ${s}`).join('\n'),
+      responseLines.slice(edit.start, edit.end).map(s => `-${s}`).join('\n'),
       replaceLines.map(s => `+${s}`).join("\n"),
       responseLines.slice(edit.end + 1, edit.end + 4).map(s => ` ${s}`).join('\n'),
     ]).join("\n");
