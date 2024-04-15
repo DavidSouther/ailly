@@ -6,7 +6,7 @@ import {
 import { Content, View } from "../../content/content.js";
 import { isDefined } from "../../util.js";
 import { Message, Summary } from "../index.js";
-import { PromptBuilder } from "./prompt-builder.js";
+import { Models, PromptBuilder } from "./prompt-builder.js";
 
 export const name = "bedrock";
 export const DEFAULT_MODEL = "anthropic.claude-3-sonnet-20240229-v1:0";
@@ -30,7 +30,7 @@ export async function generate(
     messages = messages.slice(0, -1);
   }
 
-  const promptBuilder = new PromptBuilder(DEFAULT_MODEL);
+  const promptBuilder = new PromptBuilder(model as Models);
   const prompt = promptBuilder.build(messages);
 
   try {

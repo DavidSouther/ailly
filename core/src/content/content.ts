@@ -102,7 +102,7 @@ export function splitOrderedName(name: string): Ordering {
     return { type: "ignore" };
   }
   if (name.endsWith(EXTENSION)) {
-    const id = name.replace(/\.ailly$/, "");
+    const id = name.replace(new RegExp(EXTENSION + "$"), "");
     return { type: "response", id };
   }
   return { type: "prompt", id: name };
