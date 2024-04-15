@@ -6,19 +6,22 @@ import {
 import { Content, View } from "../../content/content.js";
 import { isDefined } from "../../util.js";
 import { Message, Summary } from "../index.js";
-import { PromptBuilder } from "./prompt-builder.js";
+import { Models, PromptBuilder } from "./prompt-builder.js";
 
 export const name = "bedrock";
 export const DEFAULT_MODEL = "anthropic.claude-3-sonnet-20240229-v1:0";
 
-const promptBuilder = new PromptBuilder(DEFAULT_MODEL);
+const MODEL_MAP: Record<string, string> = {
+  sonnet: "anthropic.claude-3-sonnet-20240229-v1:0",
+  haiku: "anthropic.claude-3-haiku-20240307-v1:0",
+};
 
 export async function generate(
   c: Content,
   { model = DEFAULT_MODEL }: { model: string }
 ): Promise<{ message: string; debug: unknown }> {
   const bedrock = new BedrockRuntimeClient({});
-
+  model = MODEL_MAP[model] ?? model;
   let messages = c.meta?.messages ?? [];
   if (messages.length < 2) {
     throw new Error("Not enough messages");
@@ -27,7 +30,9 @@ export async function generate(
     messages = messages.slice(0, -1);
   }
 
+  const promptBuilder = new PromptBuilder(model as Models);
   const prompt = promptBuilder.build(messages);
+
   try {
     const response = await bedrock.send(
       new InvokeModelCommand({

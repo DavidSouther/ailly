@@ -14,7 +14,7 @@ import { join, dirname } from "path";
 import type { Message } from "../engine/index.js";
 import { isDefined } from "../util.js";
 
-export const AILLY_EXTENSION = ".ailly.md";
+export const EXTENSION = ".ailly.md";
 
 type TODOGrayMatterData = Record<string, any> | ContentMeta;
 
@@ -101,8 +101,8 @@ export function splitOrderedName(name: string): Ordering {
   if (name.startsWith("_")) {
     return { type: "ignore" };
   }
-  if (name.endsWith(AILLY_EXTENSION)) {
-    const id = name.replace(/\.ailly$/, "");
+  if (name.endsWith(EXTENSION)) {
+    const id = name.replace(new RegExp(EXTENSION + "$"), "");
     return { type: "response", id };
   }
   return { type: "prompt", id: name };
@@ -147,7 +147,7 @@ async function loadFile(
           ? promptPath
           : promptPath.replace(head.root, head.out);
       if (!head.combined) {
-        outPath += AILLY_EXTENSION;
+        outPath += EXTENSION;
         try {
           response = matter(
             await fs.readFile(outPath).catch((e) => "")
@@ -285,7 +285,7 @@ async function writeSingleContent(fs: FileSystem, content: Content) {
   const dir = dirname(content.outPath);
   await mkdirp(fs, dir);
 
-  const filename = content.name + (combined ? "" : AILLY_EXTENSION);
+  const filename = content.name + (combined ? "" : EXTENSION);
   DEFAULT_LOGGER.info(`Writing response for ${filename}`);
   const path = join(dir, filename);
   const { debug, isolated } = content.meta ?? {};

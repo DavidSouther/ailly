@@ -17,7 +17,7 @@ export function makeArgs(argv = process.argv) {
       isolated: {
         type: "boolean",
         short: "i",
-        default: Boolean(process.env["AILLY_ISOLATED"]),
+        default: false,
       },
       "no-overwrite": {
         type: "boolean",
@@ -47,6 +47,8 @@ export function makeArgs(argv = process.argv) {
       yes: { type: "boolean", default: false, short: "y" },
       help: { type: "boolean", short: "h", default: false },
       version: { type: "boolean", default: false },
+      "log-level": { type: "string", default: "" },
+      verbose: { type: "boolean", default: false, short: "v" }
     },
   });
 
@@ -71,8 +73,9 @@ export function help() {
     --template-view loads a YAML or JSON file to use as a view for the prompt templates. This view will be merged after global, engine, and plugin views but before system and template views.
 
     --no-overwrite will not run generation on Content with an existing Response.
-    -s, --summary will show a pricing expectation before running and prompt for OK.
-    -y, —yes will skip any prompts.
+    --summary will show a pricing expectation before running and prompt for OK.
+    -y, —-yes will skip any prompts.
+    -v, --verbose, --log-level v and verbose will set log level to info; --log-level can be a string or number and use jefri/jiffies logging levels.
 
     --version will print the cli and core versions
     -h, --help will print this message and exit.
