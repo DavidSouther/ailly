@@ -235,6 +235,55 @@ Calling openai [
 Response from OpenAI for 20_empire.md { id: 'chatcmpl-1234', finish_reason: 'stop' }
 ```
 
+### Editing Files
+
+Ailly's `--edit` flag enables specific functionality to achieve good edits to documents.
+It employs several tricks to reduce the model's explanations, focusing only on getting replacement or insertion text. For the Claude family, this includes using the Haiku model by default, as well as limiting responses to the first markdown code fence ```.
+
+`ailly --edit` requires specifying the lines to edit, either as `[start]:[stop]` which are 1-based includes/exclusive replacement markers, or as `[start]:` or `:[stop]` as 1-based insert after or before, respectively.
+
+Ailly will show the proposed change and ask for confirmation before editing the file, though the prompt can be suppressed by passing `--yes` on the command line.
+
+Here's an example, using the `createUserPoolHandler.js` file from `content/40_ramdectomy`.
+
+```
+% ailly --context folder --prompt "Rewrite the storeUserPoolMeta function to use vanilla javascript without using Ramda." createUserPoolHandler.js --edit --lines 14:19
+Edit createUserPoolHandler.js 14:19
+
+ import { createUserPoolClient } from "../../../actions/create-user-pool-client.js";
+ import { join } from "ramda";
+
+-const storeUserPoolMeta = (...args) => {
+-  const tmp = getTmp(FILE_USER_POOLS);
+-  const entry = join(",", args);
+-  setTmp(FILE_USER_POOLS, tmp ? `${tmp}\n${entry}` : entry);
+-};
++const storeUserPoolMeta = (...args) => {
++  const tmp = getTmp(FILE_USER_POOLS);
++  const entry = args.join(",");
++  setTmp(FILE_USER_POOLS, tmp ? `${tmp}\n${entry}` : entry);
++};
+
+ const validateUserPool = (poolName) => {
+   if (!poolName) {
+
+Continue? (y/N) y
+
+% git diff .
+diff --git a/content/40_ramdectomy/createUserPoolHandler.js b/content/40_ramdectomy/createUserPoolHandler.js
+index 5bc1fdc..54fe19f 100644
+--- a/content/40_ramdectomy/createUserPoolHandler.js
++++ b/content/40_ramdectomy/createUserPoolHandler.js
+@@ -13,7 +13,7 @@ import { join } from "ramda";
+
+ const storeUserPoolMeta = (...args) => {
+   const tmp = getTmp(FILE_USER_POOLS);
+-  const entry = join(",", args);
++  const entry = args.join(",");
+   setTmp(FILE_USER_POOLS, tmp ? `${tmp}\n${entry}` : entry);
+ };
+```
+
 ### How many files or folders?
 
 This is a bit of an experimental / trial by doing issue.

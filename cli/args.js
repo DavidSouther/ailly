@@ -23,16 +23,10 @@ export function makeArgs(argv = process.argv) {
         type: "boolean",
         default: false,
       },
-      engine: {
-        type: "string",
-        short: "e",
-        default: process.env["AILLY_ENGINE"],
-      },
-      model: {
-        type: "string",
-        short: "m",
-        default: process.env["AILLY_MODEL"],
-      },
+      edit: { type: 'boolean', default: false, short: 'e' },
+      lines: { type: 'string', default: "", short: 'l' },
+      engine: { type: "string", default: process.env["AILLY_ENGINE"] },
+      model: { type: "string", default: process.env["AILLY_MODEL"] },
       plugin: {
         type: "string",
         default: process.env["AILLY_PLUGIN"] ?? "noop",
@@ -68,7 +62,7 @@ export function help() {
     -r, --root sets base folder to search for content and system prompts.
     -s, --system sets an initial system prompt.
     -p, --prompt generate a final, single piece of content and print the response to standard out.
-    -i, --isolated will start in isolated mode, generating each file separately.  Can be overridden with 'isolated: false' in .aillyrc files, and set with AILLY_ISOLATED=true environment variable.
+    -i, --isolated will start in isolated mode, generating each file separately. Can be overridden with 'isolated: false' in .aillyrc files.
     -o, --out specify an output folder to work with responses. Defaults to --root. Will load responses from and write outputs to here, using .ailly file extensions.
     -c, --context conversation | folder | none
       'conversation' (default) loads files from the root folder and includes them alphabetically, chatbot history style, before the current file when generating.
@@ -76,8 +70,11 @@ export function help() {
       'none' includes no additional content (including no system context) when generating.
       (note: context is separate from isolated. isolated: true with either 'content' or 'folder' will result in the same behavior with either. With 'none', Ailly will send _only_ the prompt when generating.)
 
-    -e, --engine will set the default engine. Can be set with AILLY_ENGINE environment variable. Default is bedrock. bedrock calls AWS Bedrock. noop is available for testing. (Probably? Check the code.)
-    -m, --model will set the model from the engine. Can be set with AILLY_MODEL environment variable. Default depends on the engine; bedrock is anthropic.claude-3-sonnet-20240229-v1:0, OpenAI is gpt-4-0613. (Probably? Check the code.)
+    -e, --edit use Ailly in edit mode. Provide a single file in paths, an edit marker, and a prompt. The path will be updated with the edit marker at the prompt.
+    -l, --lines the lines to edit as '[start]:[end]' with start inclusive, and end exclusive. With only '[start]', will insert after. With only ':[end]', will insert before.
+
+    --engine will set the default engine. Can be set with AILLY_ENGINE environment variable. Default is bedrock. bedrock calls AWS Bedrock. noop is available for testing. (Probably? Check the code.)
+    --model will set the model from the engine. Can be set with AILLY_MODEL environment variable. Default depends on the engine; bedrock is anthropic.claude-3-sonnet-20240229-v1:0, OpenAI is gpt-4-0613. (Probably? Check the code.)
 
     --plugin can load a custom RAG plugin. Specify a path to import with "file://./path/to/plugin.mjs". plugin.mjs must export a single default function that meets the PluginBuilder interface in core/src/plugin/index.ts
     --template-view loads a YAML or JSON file to use as a view for the prompt templates. This view will be merged after global, engine, and plugin views but before system and template views.
@@ -91,6 +88,8 @@ export function help() {
     -h, --help will print this message and exit.
   `);
 
-  // --update-db will create and update a Vectra database with the current content. When available, a local Vectra db will augment retrieval data.
+  // -n, --section use LLM + TreeSitter to find line numbers.
+  // --kb
+  // --sync will create and update a Vectra database with the current content. When available, a local Vectra db will augment retrieval data.
   // --augment will look up augmentations in the db.
 }

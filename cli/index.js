@@ -49,14 +49,44 @@ async function main() {
       generator.start();
       await generator.allSettled();
 
-      DEFAULT_LOGGER.info("Generated!");
+      DEFAULT_LOGGER.info("Generator all settled!");
       if (last == "/dev/stdout") {
-        console.log(loaded.context[last].response);
+        const prompt = loaded.context[last];
+        if (prompt.meta?.debug?.finish == 'failed') {
+          console.error(prompt.meta.debug.error.message);
+          return;
+        }
+        const edit = prompt.context.edit;
+        if (edit) {
+          await doEdit(loaded, edit, prompt, args);
+        } else {
+          console.log(prompt.response);
+        }
       } else {
         await ailly.content.write(loaded.fs, loaded.content.map(c => loaded.context[c]));
       }
       break;
   }
+}
+
+async function doEdit(loaded, edit, prompt, args) {
+  const out = loaded.context[edit.file];
+  const responseLines = out.prompt?.split("\n") ?? [];
+  const replaceLines = prompt.response?.split("\n") ?? [];
+  const editValue = [
+    `Edit ${out.name} ${edit.start + 1}:${edit.end + 1}\n`,
+    responseLines.slice(edit.start - 3, edit.start).map(s => ` ${s}`).join('\n'),
+    responseLines.slice(edit.start, edit.end + 1).map(s => `-${s}`).join('\n'),
+    replaceLines.map(s => `+${s}`).join("\n"),
+    responseLines.slice(edit.end + 1, edit.end + 4).map(s => ` ${s}`).join('\n'),
+  ].join("\n");
+  console.log(editValue);
+  if (!args.values.yes) {
+    await check_or_exit('Continue? (y/N) ');
+  }
+  responseLines?.splice(edit.start, edit.end - edit.start, ...(replaceLines));
+  out.response = responseLines.join("\n");
+  await loaded.fs.writeFile(out.path, out.response);
 }
 
 async function check_should_run(args, { content }) {
@@ -65,16 +95,19 @@ async function check_should_run(args, { content }) {
       `Found ${content.length} items, estimated cost TODO: CALCULATE`
     );
     if (!args.values.yes) {
-      const rl = createInterface({
-        input: process.stdin,
-        output: process.stdout,
-      });
-      const prompt = await rl.question(
-        "Continue with generating these prompts? (y/N) "
-      );
-      if (!prompt.toUpperCase().startsWith("Y")) {
-        process.exit(0);
-      }
+      await check_or_exit("Continue with generating these prompts? (y/N) ")
     }
   }
+}
+
+async function check_or_exit(prompt) {
+  const rl = createInterface({
+    input: process.stdin,
+    output: process.stdout,
+  });
+  const answer = await rl.question(prompt);
+  if (!answer.toUpperCase().startsWith("Y")) {
+    process.exit(0);
+  }
+  rl.close();
 }
