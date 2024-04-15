@@ -2,12 +2,16 @@ import { dirname } from "node:path";
 
 import type { Content } from "./content";
 
-export function partitionPrompts(content: Content[]): Content[][] {
+export function partitionPrompts(
+  content: string[],
+  context: Record<string, Content>
+): Content[][] {
   const directories = new Map<string, Content[]>();
   for (const c of content) {
-    const prefix = dirname(c.path);
+    if (!context[c]) continue;
+    const prefix = dirname(c);
     const entry = directories.get(prefix) ?? [];
-    entry.push(c);
+    entry.push(context[c]);
     directories.set(prefix, entry);
   }
 
@@ -15,7 +19,7 @@ export function partitionPrompts(content: Content[]): Content[][] {
     thread.sort((a, b) => a.name.localeCompare(b.name));
     if (!Boolean(thread.at(0)?.meta?.["isolated"])) {
       for (let i = thread.length - 1; i > 0; i--) {
-        thread[i].predecessor = thread[i - 1];
+        thread[i].context.predecessor = thread[i - 1].name;
       }
     }
   }

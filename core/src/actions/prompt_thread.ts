@@ -69,17 +69,19 @@ export class PromptThread {
 
   static run(
     content: Content[],
+    context: Record<string, Content>,
     settings: PipelineSettings,
     engine: Engine,
     rag: Plugin
   ) {
-    const thread = new PromptThread(content, settings, engine, rag);
+    const thread = new PromptThread(content, context, settings, engine, rag);
     thread.start();
     return thread;
   }
 
   private constructor(
     private readonly content: Content[],
+    private readonly context: Record<string, Content>,
     private settings: PipelineSettings,
     private engine: Engine,
     private plugin: Plugin
@@ -104,7 +106,7 @@ export class PromptThread {
     try {
       await this.template(c, this.view);
       await this.plugin.augment(c);
-      await generateOne(c, this.settings, this.engine);
+      await generateOne(c, this.context, this.settings, this.engine);
       await this.plugin.clean(c);
       this.finished += 1;
     } catch (e) {
@@ -116,7 +118,7 @@ export class PromptThread {
   }
 
   private async template(c: Content, view: View) {
-    mergeContentViews(c, view);
+    mergeContentViews(c, view, this.context);
   }
 
   private runIsolated(): Promise<PromiseSettledResult<Content>[]> {
@@ -163,6 +165,7 @@ export class PromptThread {
 
 async function generateOne(
   c: Content,
+  context: Record<string, Content>,
   settings: PipelineSettings,
   engine: Engine
 ): Promise<Content> {
@@ -176,7 +179,7 @@ async function generateOne(
   DEFAULT_LOGGER.info(`Preparing ${c.name}`);
 
   const meta = c.meta;
-  engine.format([c]);
+  engine.format([c], context);
 
   DEFAULT_LOGGER.info(
     `Calling ${engine.name}`,

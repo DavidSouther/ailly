@@ -45,11 +45,12 @@ export const getMessages = openai.getMessages;
 
 export async function tune(
   content: Content[],
+  context: Record<string, Content>,
   {
     model = MODEL,
     apiKey = process.env["OPENAI_API_KEY"] ?? "",
     baseURL = "http://localhost:8000/v1",
   }: { model: string; apiKey: string; baseURL: string }
 ) {
-  return openai.tune(content, { model, apiKey, baseURL });
+  return openai.tune(content, context, { model, apiKey, baseURL });
 }

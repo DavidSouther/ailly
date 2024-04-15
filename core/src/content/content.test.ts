@@ -27,65 +27,63 @@ test("it loads content", async () => {
   );
   const content = await loadContent(testFs);
 
-  expect(content.length).toBe(4);
-  expect(content.map((c) => c.path)).toEqual([
+  expect(Object.keys(content)).toEqual([
     "/01_start.md",
     "/20b/40_part.md",
     "/20b/56_part.md",
     "/54_a/12_section.md",
   ]);
-  expect(content).toEqual([
-    {
+  expect(content).toEqual({
+    "/01_start.md": {
       name: "01_start.md",
       path: "/01_start.md",
       outPath: "/01_start.md.ailly.md",
       prompt: "The quick brown",
       response: "",
-      system: [],
-      view: {},
+      context: {
+        system: [],
+        view: {},
+      },
       meta: { combined: false, root: "/", parent: "root" },
     },
-    {
+    "/20b/40_part.md": {
       name: "40_part.md",
       path: "/20b/40_part.md",
       outPath: "/20b/40_part.md.ailly.md",
       prompt: "fox jumped",
       response: "",
-      system: [],
-      view: {},
+      context: {
+        system: [],
+        view: {},
+      },
       meta: { combined: false, root: "/", parent: "root" },
     },
-    {
+    "/20b/56_part.md": {
       name: "56_part.md",
       path: "/20b/56_part.md",
       outPath: "/20b/56_part.md.ailly.md",
       prompt: "over the lazy",
       response: "",
-      system: [],
-      view: {},
-      meta: { combined: false, root: "/", parent: "root" },
-      predecessor: {
-        name: "40_part.md",
-        path: "/20b/40_part.md",
-        outPath: "/20b/40_part.md.ailly.md",
-        prompt: "fox jumped",
-        response: "",
+      context: {
         system: [],
         view: {},
-        meta: { combined: false, root: "/", parent: "root" },
+        predecessor: "/20b/40_part.md",
       },
+      meta: { combined: false, root: "/", parent: "root" },
     },
-    {
+    "/54_a/12_section.md": {
       name: "12_section.md",
       path: "/54_a/12_section.md",
       outPath: "/54_a/12_section.md.ailly.md",
       prompt: "dog.",
       response: "",
-      system: [],
-      view: {},
+      context: {
+        system: [],
+        view: {},
+      },
       meta: { combined: false, root: "/", parent: "root" },
     },
-  ]);
+  });
 });
 
 test("it loads responses", async () => {
@@ -97,9 +95,8 @@ test("it loads responses", async () => {
   );
   const content = await loadContent(testFs);
 
-  expect(content.length).toBe(1);
-  expect(content[0].prompt).toEqual("The quick brown");
-  expect(content[0].response).toEqual("fox jumped");
+  expect(content["/01_start.md"].prompt).toEqual("The quick brown");
+  expect(content["/01_start.md"].response).toEqual("fox jumped");
 });
 
 test.each([
@@ -120,29 +117,32 @@ test("it loads combined prompt and responses", async () => {
   );
 
   const content = await loadContent(fs);
-  expect(content.length).toBe(2);
-  expect(content).toEqual([
-    {
+  expect(content).toEqual({
+    "/content.md": {
       name: "content.md",
       path: "/content.md",
       outPath: "/content.md",
       prompt: "content",
       response: "Response",
-      system: [],
-      view: {},
+      context: {
+        system: [],
+        view: {},
+      },
       meta: { isolated: true, combined: true, root: "/", parent: "root" },
     },
-    {
+    "/prompt.md": {
       name: "prompt.md",
       path: "/prompt.md",
       outPath: "/prompt.md",
       prompt: "prompt",
       response: "",
-      system: [],
-      view: {},
+      context: {
+        system: [],
+        view: {},
+      },
       meta: { isolated: true, combined: true, root: "/", parent: "root" },
     },
-  ] as Content[]);
+  });
 });
 
 test("it writes combined prompt and responses", async () => {
@@ -151,13 +151,15 @@ test("it writes combined prompt and responses", async () => {
   const content: Content[] = [
     {
       name: "content.md",
-      path: "/",
-      outPath: "/",
+      path: "/content.md",
+      outPath: "/content.md",
       prompt: "content",
       response: "Response",
-      system: [],
-      view: {},
-      meta: { isolated: true, combined: true },
+      context: {
+        system: [],
+        view: {},
+      },
+      meta: { isolated: true, combined: true, root: "/", parent: "root" },
     },
   ];
 
@@ -180,29 +182,32 @@ test("it loads separate prompt and responses", async () => {
   );
 
   const content = await loadContent(fs);
-  expect(content.length).toBe(2);
-  expect(content).toEqual([
-    {
+  expect(content).toEqual({
+    "/content.md": {
       name: "content.md",
       path: "/content.md",
       outPath: "/content.md.ailly.md",
       prompt: "content",
       response: "Response",
-      system: [],
-      view: {},
+      context: {
+        system: [],
+        view: {},
+      },
       meta: { isolated: true, combined: false, root: "/", parent: "root" },
     },
-    {
+    "/prompt.md": {
       name: "prompt.md",
       path: "/prompt.md",
       outPath: "/prompt.md.ailly.md",
       prompt: "prompt",
       response: "",
-      system: [],
-      view: {},
+      context: {
+        system: [],
+        view: {},
+      },
       meta: { isolated: true, combined: false, root: "/", parent: "root" },
     },
-  ] as Content[]);
+  });
 });
 
 test("it loads separate prompt and responses in different out directors", async () => {
@@ -223,16 +228,17 @@ test("it loads separate prompt and responses in different out directors", async 
     root: "/root",
     out: "/out",
   });
-  expect(content.length).toBe(2);
-  expect(content).toEqual([
-    {
+  expect(content).toEqual({
+    "/root/content.md": {
       name: "content.md",
       path: "/root/content.md",
       outPath: "/out/content.md.ailly.md",
       prompt: "content",
       response: "Response",
-      system: [],
-      view: {},
+      context: {
+        system: [],
+        view: {},
+      },
       meta: {
         isolated: true,
         combined: false,
@@ -241,14 +247,16 @@ test("it loads separate prompt and responses in different out directors", async 
         parent: "root",
       },
     },
-    {
+    "/root/prompt.md": {
       name: "prompt.md",
       path: "/root/prompt.md",
       outPath: "/out/prompt.md.ailly.md",
       prompt: "prompt",
       response: "",
-      system: [],
-      view: {},
+      context: {
+        system: [],
+        view: {},
+      },
       meta: {
         isolated: true,
         combined: false,
@@ -257,7 +265,7 @@ test("it loads separate prompt and responses in different out directors", async 
         parent: "root",
       },
     },
-  ] as Content[]);
+  });
 });
 
 test("it writes separate prompt and responses", async () => {
@@ -267,15 +275,17 @@ test("it writes separate prompt and responses", async () => {
     })
   );
 
-  const content: Content[] = [
+  const content = [
     {
       name: "content.md",
       path: "/content.md",
       outPath: "/content.md.ailly.md",
       prompt: "content",
       response: "Response",
-      system: [],
-      view: {},
+      context: {
+        system: [],
+        view: {},
+      },
       meta: { isolated: true, combined: false },
     },
   ];
@@ -298,15 +308,17 @@ test("it writes separate prompt and responses in outPath", async () => {
     })
   );
 
-  const content: Content[] = [
+  const content = [
     {
       name: "content.md",
       path: "/root/content.md",
       outPath: "/out/content.md.ailly.md",
       prompt: "content",
       response: "Response",
-      system: [],
-      view: {},
+      context: {
+        system: [],
+        view: {},
+      },
       meta: { isolated: true, combined: false },
     },
   ];
@@ -348,33 +360,37 @@ test("it writes deep java prompts and responses", async () => {
     out: "/out",
   });
 
-  expect(content).toEqual([
-    {
+  expect(content).toEqual({
+    "/root/.gitignore": {
       name: ".gitignore",
       path: "/root/.gitignore",
       outPath: "/out/.gitignore.ailly.md",
       prompt: "target",
       response: "",
-      system: [],
-      view: {},
+      context: {
+        system: [],
+        view: {},
+      },
       meta: { combined: false, out: "/out", root: "/root", parent: "root" },
     },
-    {
+    "/root/src/com/example/Main.java": {
       name: "Main.java",
       path: "/root/src/com/example/Main.java",
       outPath: "/out/src/com/example/Main.java.ailly.md",
       prompt: "class Main {}\n",
       response: "",
-      system: [],
-      view: {},
+      context: {
+        system: [],
+        view: {},
+      },
       meta: { combined: false, out: "/out", root: "/root", parent: "root" },
     },
-  ]);
+  });
 
-  content[0].response = "Response";
-  content[1].response = "Response";
+  content["/root/.gitignore"].response = "Response";
+  content["/root/src/com/example/Main.java"].response = "Response";
 
-  await writeContent(fs, content);
+  await writeContent(fs, [...Object.values(content)]);
 
   expect((fs as any).adapter.fs).toEqual({
     "/root/.gitignore": "target",
@@ -400,6 +416,7 @@ describe("Load aillyrc", () => {
 
       expect(system.map((s) => s.content)).toEqual([]);
     });
+
     test("at root with .aillyrc in cwd", async () => {
       const fs = new FileSystem(
         new ObjectFileSystemAdapter({
@@ -579,6 +596,133 @@ describe("Load aillyrc", () => {
       expect(system.map((s) => s.content)).toEqual([]);
     });
   });
+
+  test("context = none removes all context", async () => {
+    const fs = new FileSystem(
+      new ObjectFileSystemAdapter({
+        root: {
+          ".aillyrc": "system",
+          a: "a",
+          "a.ailly.md": "aa",
+          b: "b",
+        },
+      })
+    );
+    fs.cd("/root");
+
+    const content = await loadContent(fs, [], { context: "none" });
+
+    expect(content).toEqual({
+      "/root/a": {
+        name: "a",
+        path: "/root/a",
+        outPath: "/root/a.ailly.md",
+        prompt: "a",
+        response: "aa",
+        context: {
+          view: {},
+        },
+        meta: {
+          combined: false,
+          context: "none",
+          parent: "root",
+          root: "/root",
+        },
+      },
+      "/root/b": {
+        name: "b",
+        path: "/root/b",
+        outPath: "/root/b.ailly.md",
+        prompt: "b",
+        response: "",
+        context: {
+          view: {},
+        },
+        meta: {
+          combined: false,
+          context: "none",
+          parent: "root",
+          root: "/root",
+        },
+      },
+    });
+  });
+
+  test("context = folder uses folders, not predecessors", async () => {
+    const fs = new FileSystem(
+      new ObjectFileSystemAdapter({
+        root: {
+          ".aillyrc": "system",
+          a: "a",
+          "a.ailly.md": "aa",
+          b: "b",
+          "b.ailly.md": "bb",
+          c: "c",
+          "c.ailly.md": "cc",
+        },
+      })
+    );
+    fs.cd("/root");
+
+    const content = await loadContent(fs, [], { context: "folder" });
+
+    expect(content).toEqual({
+      "/root/a": {
+        name: "a",
+        path: "/root/a",
+        outPath: "/root/a.ailly.md",
+        prompt: "a",
+        response: "aa",
+        context: {
+          system: [{ content: "system", view: {} }],
+          folder: ["/root/a", "/root/b", "/root/c"],
+          view: {},
+        },
+        meta: {
+          combined: false,
+          context: "folder",
+          parent: "root",
+          root: "/root",
+        },
+      },
+      "/root/b": {
+        name: "b",
+        path: "/root/b",
+        outPath: "/root/b.ailly.md",
+        prompt: "b",
+        response: "bb",
+        context: {
+          system: [{ content: "system", view: {} }],
+          folder: ["/root/a", "/root/b", "/root/c"],
+          view: {},
+        },
+        meta: {
+          combined: false,
+          context: "folder",
+          parent: "root",
+          root: "/root",
+        },
+      },
+      "/root/c": {
+        name: "c",
+        path: "/root/c",
+        outPath: "/root/c.ailly.md",
+        prompt: "c",
+        response: "cc",
+        context: {
+          system: [{ content: "system", view: {} }],
+          folder: ["/root/a", "/root/b", "/root/c"],
+          view: {},
+        },
+        meta: {
+          combined: false,
+          context: "folder",
+          parent: "root",
+          root: "/root",
+        },
+      },
+    });
+  });
 });
 
 test("it loads template views for prompts", async () => {
@@ -593,10 +737,10 @@ test("it loads template views for prompts", async () => {
 
   const content = await loadContent(fs, [], {});
 
-  expect(content[0].prompt).toEqual(
+  expect(content["/root/content.md"].prompt).toEqual(
     "{{output.prose}}\nBrainstorm an ad campaign."
   );
-  expect(content[0].view).toEqual({ foo: "bar" });
+  expect(content["/root/content.md"].context.view).toEqual({ foo: "bar" });
 });
 
 test("it loads template views from system files", async () => {
@@ -612,6 +756,10 @@ test("it loads template views from system files", async () => {
 
   const content = await loadContent(fs, [], {});
 
-  expect(content[0].system?.[0].content).toEqual("prompt");
-  expect(content[0].system?.[0].view).toEqual({ whiz: 12 });
+  expect(content["/root/content.md"].context.system?.[0].content).toEqual(
+    "prompt"
+  );
+  expect(content["/root/content.md"].context.system?.[0].view).toEqual({
+    whiz: 12,
+  });
 });

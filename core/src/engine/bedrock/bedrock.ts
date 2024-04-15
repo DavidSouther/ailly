@@ -75,31 +75,45 @@ export async function view(): Promise<View> {
   };
 }
 
-export async function format(contents: Content[]): Promise<Summary> {
+export async function format(
+  contents: Content[],
+  context: Record<string, Content>
+): Promise<Summary> {
   const summary: Summary = { prompts: contents.length, tokens: 0 };
   for (const content of contents) {
-    await addContentMeta(content);
+    await addContentMeta(content, context);
   }
   return summary;
 }
 
-async function addContentMeta(content: Content) {
+async function addContentMeta(
+  content: Content,
+  context: Record<string, Content>
+) {
   content.meta ??= {};
-  content.meta.messages = getMessages(content);
+  if (content.context.predecessor)
+    content.meta.messages = getMessagesPredecessor(content, context);
+  if (content.context.folder)
+    content.meta.messages = getMessagesFolder(content, context);
 }
 
-export function getMessages(content: Content): Message[] {
-  const system = (content.system ?? []).map((s) => s.content).join("\n");
+export function getMessagesPredecessor(
+  content: Content,
+  context: Record<string, Content>
+): Message[] {
+  const system = (content.context.system ?? [])
+    .map((s) => s.content)
+    .join("\n");
   const history: Content[] = [];
   while (content) {
     history.push(content);
-    content = content.predecessor!;
+    content = context[content.context.predecessor!];
   }
   history.reverse();
   const augment = history
     .map<Array<Message | undefined>>(
       (c) =>
-        (c.augment ?? []).map<Message>(({ content }) => ({
+        (c.context.augment ?? []).map<Message>(({ content }) => ({
           role: "user",
           content:
             "Use this code block as background information for format and style, but not for functionality:\n```\n" +
@@ -109,6 +123,38 @@ export function getMessages(content: Content): Message[] {
     )
     .flat()
     .filter(isDefined);
+  const parts = history
+    .map<Array<Message | undefined>>((content) => [
+      {
+        role: "user",
+        content: content.prompt,
+      },
+      content.response
+        ? { role: "assistant", content: content.response }
+        : undefined,
+    ])
+    .flat()
+    .filter(isDefined);
+  return [{ role: "system", content: system }, ...augment, ...parts];
+}
+
+export function getMessagesFolder(
+  content: Content,
+  context: Record<string, Content>
+): Message[] {
+  const system = (content.context.system ?? [])
+    .map((s) => s.content)
+    .join("\n");
+  const history: Content[] = [];
+
+  const augment = (content.context.folder ?? [])
+    .map((c) => context[c])
+    .map<Message[]>((c) => [
+      { role: "user", content: `The contents of the file ${c.name}` },
+      { role: "assistant", content: c.prompt ?? c.response ?? "" },
+    ])
+    .flat();
+
   const parts = history
     .map<Array<Message | undefined>>((content) => [
       {

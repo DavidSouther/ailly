@@ -7,7 +7,7 @@ import { PipelineSettings } from "../ailly.js";
 export interface Engine {
   DEFAULT_MODEL: string;
   name: string;
-  format(c: Content[]): Promise<void>;
+  format(c: Content[], context: Record<string, Content>): Promise<void>;
   generate<D extends {} = {}>(
     c: Content,
     parameters: PipelineSettings

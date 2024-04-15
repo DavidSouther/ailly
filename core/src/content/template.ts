@@ -9,22 +9,27 @@ export function mergeViews(...views: View[]): View {
     .reduce((a, b) => Object.assign(a, b), {});
 }
 
-export function mergeContentViews(c: Content, base: View) {
-  if (c.view === false) return;
+export function mergeContentViews(
+  c: Content,
+  base: View,
+  context: Record<string, Content>
+) {
+  if (c.context.view === false) return;
   c.meta = c.meta ?? {};
-  c.meta.view = c.view;
+  c.meta.view = c.context.view;
   c.meta.prompt = c.prompt;
-  if (c.predecessor) mergeContentViews(c.predecessor, base);
+  if (c.context.predecessor)
+    mergeContentViews(context[c.context.predecessor!], base, context);
   let view = structuredClone(base);
-  for (const s of c.system ?? []) {
+  for (const s of c.context.system ?? []) {
     if (s.view === false) continue;
     view = mergeViews(view, s.view);
     s.view = false;
     s.content = mustache.render(s.content, view);
   }
-  view = mergeViews(view, c.view);
+  view = mergeViews(view, c.context.view || {});
   c.prompt = mustache.render(c.prompt, view);
-  c.view = false;
+  c.context.view = false;
 }
 
 export const GLOBAL_VIEW: View = {

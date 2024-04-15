@@ -14,7 +14,7 @@ export async function augment(content: Content[], rag: RAG): Promise<void> {
         DEFAULT_LOGGER.info(`Sending ${piece.name} (${piece.path})`);
         await rag.augment(piece);
         DEFAULT_LOGGER.info(`Completed ${piece.name} (${piece.path})`);
-        DEFAULT_LOGGER.info(piece.augment ?? []);
+        DEFAULT_LOGGER.info(piece.context.augment ?? []);
       } catch (e) {
         DEFAULT_LOGGER.info(`Error on ${piece.name} (${piece.path})`);
         DEFAULT_LOGGER.info(`${e}`);

@@ -26,6 +26,7 @@ export async function generate(
   );
   const baseURL = process.env["OPENAI_BASE_URL"];
   const openai = new OpenAI({ apiKey, baseURL });
+
   let messages = c.meta?.messages ?? [];
   if (messages.length < 2) {
     throw new Error("Not enough messages");
@@ -98,17 +99,23 @@ async function callOpenAiWithRateLimit(
   }
 }
 
-export async function format(contents: Content[]): Promise<Summary> {
+export async function format(
+  contents: Content[],
+  context: Record<string, Content>
+): Promise<Summary> {
   const summary: Summary = { prompts: contents.length, tokens: 0 };
   for (const content of contents) {
-    summary.tokens += await addContentMeta(content);
+    summary.tokens += await addContentMeta(content, context);
   }
   return summary;
 }
 
-async function addContentMeta(content: Content) {
+async function addContentMeta(
+  content: Content,
+  context: Record<string, Content>
+) {
   content.meta ??= {};
-  content.meta.messages = getMessages(content);
+  content.meta.messages = getMessages(content, context);
   let tokens = 0;
   for (const message of content.meta.messages) {
     const toks = (await encode(message.content)).length;
@@ -118,20 +125,23 @@ async function addContentMeta(content: Content) {
   return tokens;
 }
 
-export function getMessages(content: Content): Message[] {
-  const system: string = (content.system ?? [])
+export function getMessages(
+  content: Content,
+  context: Record<string, Content>
+): Message[] {
+  const system: string = (content.context.system ?? [])
     .map((s) => s.content)
     .join("\n");
   const history: Content[] = [];
   while (content) {
     history.push(content);
-    content = content.predecessor!;
+    content = context[content.context.predecessor!];
   }
   history.reverse();
   const augment = history
     .map<Array<Message | undefined>>(
       (c) =>
-        (c.augment ?? []).map<Message>(({ content }) => ({
+        (c.context.augment ?? []).map<Message>(({ content }) => ({
           role: "user",
           content: "Background information: " + content,
         })) ?? []
@@ -156,6 +166,7 @@ export function getMessages(content: Content): Message[] {
 
 export async function tune(
   content: Content[],
+  context: Record<string, Content>,
   {
     model = MODEL,
     apiKey = process.env["OPENAI_API_KEY"] ?? "",
@@ -163,7 +174,7 @@ export async function tune(
   }: { model: string; apiKey: string; baseURL: string }
 ) {
   const openai = new OpenAI({ apiKey, baseURL });
-  await format(content); // fill in content parts
+  await format(content, context); // fill in content parts
 
   const file = content
     .map((c) =>

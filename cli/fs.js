@@ -9,7 +9,8 @@ import * as ailly from "@ailly/core";
  * @param {ReturnType<import("./args.js").makeArgs>} args
  * @returns {Promise<{
  *   fs: import("@davidsouther/jiffies/lib/esm/fs").FileSystem,
- *   content: ailly.types.Content[],
+ *   context: Record<string, ailly.types.Content>,
+ *   content: string[],
  *   settings: import("@ailly/core/dist/src/ailly").PipelineSettings
  * }>}
  */
@@ -21,6 +22,7 @@ export async function loadFs(args) {
   const settings = await ailly.Ailly.makePipelineSettings({
     root,
     out: resolve(args.values.out ?? root),
+    context: args.values.context,
     isolated: args.values.isolated,
     engine: args.values.engine,
     model: args.values.model,
@@ -29,34 +31,47 @@ export async function loadFs(args) {
     overwrite: !args.values["no-overwrite"],
   });
   const positionals = args.positionals.slice(2).map(a => resolve(a));
-  const isPipe = positionals.length == 0 && args.values.prompt;
+  const hasPositionals = positionals.length > 0;
+  const hasPrompt = Boolean(args.values.prompt)
+  const isPipe = !hasPositionals && hasPrompt;
   DEFAULT_LOGGER.level = getLogLevel(args.values['log-level'], args.values.verbose, isPipe);
 
-  let content = await ailly.content.load(
+  let context = await ailly.content.load(
     fs,
-    args.values.prompt ? [{ content: args.values.prompt, view: {} }] : [],
+    args.values.system ? [{ content: args.values.system, view: {} }] : [],
     settings
   );
 
-  if (isPipe) {
-    content.forEach(c => { c.meta = c.meta ?? {}; c.meta.skip = true; });
+  let content = /* @type string[] */[];
+
+  if (!hasPositionals && hasPrompt) {
+    Object.values(context).forEach(c => { c.meta = c.meta ?? {}; c.meta.skip = true; });
+  } else {
+    if (!hasPositionals) positionals.push(root);
+    content = Object.keys(context).filter((c) =>
+      positionals.some((p) => c.startsWith(p))
+    );
+  }
+
+  if (hasPrompt) {
+    const noContext = args.values.context == "none";
     const cliContent = {
       name: 'stdout',
       outPath: "/dev/stdout",
       path: "/dev/stdout",
       prompt: args.values.prompt ?? "",
-      predecessor: content.filter(c => dirname(c.path) == root).at(-1),
-      view: settings.templateView,
+      context: {
+        view: settings.templateView,
+        predecessor: noContext ? undefined : content.filter(c => dirname(c) == root).at(-1)?.path,
+        system: noContext ? [] : [{ content: args.values.system ?? "", view: {} }],
+        folder: args.values.context == 'folder' ? Object.values(context).find(c => dirname(c.path) == root)?.context.folder : undefined,
+      }
     };
-    content.push(cliContent)
-  } else {
-    if (positionals.length == 0) positionals.push(root);
-    content = content.filter((c) =>
-      positionals.some((p) => c.path.startsWith(p))
-    );
+    context['/dev/stdout'] = cliContent;
+    content.push('/dev/stdout');
   }
 
-  return { fs, settings, content };
+  return { fs, settings, content, context };
 }
 
 /**
@@ -72,7 +87,7 @@ export async function loadFs(args) {
  * @returns {Promise<View>}
  */
 async function loadTemplateView(fs, path) {
-  if (path == undefined) return {};
+  if (!path) return {};
   try {
     const file = await fs.readFile(path);
     const view = parse(file);

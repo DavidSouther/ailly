@@ -1,11 +1,11 @@
-import { Content, View } from "./content/content.js";
+import { Content, View, ContentMeta } from "./content/content.js";
 export { GitignoreFs } from "./content/gitignore_fs.js";
 export { getPlugin } from "./plugin/index.js";
 import { getEngine } from "./engine/index.js";
 export { getEngine } from "./engine/index.js";
 export { RAG } from "./plugin/rag.js";
 
-export const DEFAULT_ENGINE = "openai";
+export const DEFAULT_ENGINE = "bedrock";
 export const DEFAULT_PLUGIN = "noop";
 
 export type Thread = Content[];
@@ -17,6 +17,7 @@ export interface PipelineSettings {
   out: string;
   engine: string;
   model: string;
+  context: NonNullable<ContentMeta["context"]>;
   plugin: string;
   isolated: boolean;
   overwrite: boolean;
@@ -28,6 +29,7 @@ export async function makePipelineSettings({
   out = root,
   engine = DEFAULT_ENGINE,
   model,
+  context = "conversation",
   plugin = DEFAULT_PLUGIN,
   overwrite = true,
   isolated = false,
@@ -37,17 +39,22 @@ export async function makePipelineSettings({
   out?: string;
   engine?: string;
   model?: string;
+  context?: string;
   plugin?: string;
   overwrite?: boolean;
   isolated?: boolean;
   templateView?: View;
 }): Promise<PipelineSettings> {
   model = model ?? (await getEngine(engine)).DEFAULT_MODEL;
+  context = ["conversation", "folder", "none"].includes(context)
+    ? context
+    : "conversation";
   return {
     root,
     out,
     engine,
     model,
+    context: context as NonNullable<ContentMeta["context"]>,
     plugin,
     overwrite,
     isolated,
