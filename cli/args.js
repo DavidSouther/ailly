@@ -5,40 +5,24 @@ export function makeArgs(argv = process.argv) {
     args: argv,
     allowPositionals: true,
     options: {
-      root: {
-        type: "string",
-        short: "r",
-        default: process.cwd(),
-      },
-      out: {
-        type: "string",
-        short: "o",
-      },
-      isolated: {
-        type: "boolean",
-        short: "i",
-        default: false,
-      },
-      "no-overwrite": {
-        type: "boolean",
-        default: false,
-      },
+      root: { type: "string", default: process.cwd(), short: "r" },
+      out: { type: "string", short: "o" },
+      isolated: { type: "boolean", default: false, short: "i" },
+      combined: { type: "boolean", default: false },
+      "no-overwrite": { type: "boolean", default: false },
       edit: { type: 'boolean', default: false, short: 'e' },
       lines: { type: 'string', default: "", short: 'l' },
       engine: { type: "string", default: process.env["AILLY_ENGINE"] },
       model: { type: "string", default: process.env["AILLY_MODEL"] },
-      plugin: {
-        type: "string",
-        default: process.env["AILLY_PLUGIN"] ?? "noop",
-      },
-      context: { type: "string", default: "content", short: "c" },
-      "template-view": { type: "string", default: "" },
-      prompt: { type: "string", default: "", short: "p" },
-      system: { type: "string", default: "", short: "s" },
+      plugin: { type: "string", default: process.env["AILLY_PLUGIN"] ?? "noop", },
+      context: { type: "string", default: process.env["AILLY_CONTEXT"] ?? "content", short: "c" },
+      "template-view": { type: "string", default: process.env["AILLY_TEMPLATE_VIEW"] },
+      prompt: { type: "string", default: process.env["AILLY_PROMPT"], short: "p" },
+      system: { type: "string", default: process.env["AILLY_SYSTEM"], short: "s" },
+      temperature: { type: "string", default: "" },
       "update-db": { type: "boolean", default: false },
       "query-db": { type: "string", default: "" },
       augment: { type: "boolean", default: false },
-
       summary: { type: "boolean", default: false },
       yes: { type: "boolean", default: false, short: "y" },
       help: { type: "boolean", short: "h", default: false },
@@ -63,6 +47,7 @@ export function help() {
     -s, --system sets an initial system prompt.
     -p, --prompt generate a final, single piece of content and print the response to standard out.
     -i, --isolated will start in isolated mode, generating each file separately. Can be overridden with 'isolated: false' in .aillyrc files.
+    --combined will force files to output as combined.
     -o, --out specify an output folder to work with responses. Defaults to --root. Will load responses from and write outputs to here, using .ailly file extensions.
     -c, --context conversation | folder | none
       'conversation' (default) loads files from the root folder and includes them alphabetically, chatbot history style, before the current file when generating.
@@ -75,6 +60,7 @@ export function help() {
 
     --engine will set the default engine. Can be set with AILLY_ENGINE environment variable. Default is bedrock. bedrock calls AWS Bedrock. noop is available for testing. (Probably? Check the code.)
     --model will set the model from the engine. Can be set with AILLY_MODEL environment variable. Default depends on the engine; bedrock is anthropic.claude-3-sonnet-20240229-v1:0, OpenAI is gpt-4-0613. (Probably? Check the code.)
+    --temperature for models that support changing the stochastic temperature. (Usually between 0 and 1, but check the engine and model.)
 
     --plugin can load a custom RAG plugin. Specify a path to import with "file://./path/to/plugin.mjs". plugin.mjs must export a single default function that meets the PluginBuilder interface in core/src/plugin/index.ts
     --template-view loads a YAML or JSON file to use as a view for the prompt templates. This view will be merged after global, engine, and plugin views but before system and template views.
@@ -86,6 +72,13 @@ export function help() {
 
     --version will print the cli and core versions
     -h, --help will print this message and exit.
+
+    Engines:
+
+    bedrock - Call LLM models using @aws-sdk/bedrock-runtime. While this can use any model available in bedrock, in practice, because of the difference in prompt APIs, Claude3 is the only currently supported model.
+    openai - Call ChatGPT models using OpenAI's API.
+    mistral - Attempt to run Mistral 7B instruct locally, using a Python subshell.
+    noop - A testing model that returns with constant text (either a nonce with the name of the file, or the contents of the AILLY_NOOP_RESPONSE environment variable).
   `);
 
   // -n, --section use LLM + TreeSitter to find line numbers.

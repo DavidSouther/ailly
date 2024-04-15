@@ -1,0 +1,54 @@
+Integration tests for Ailly.
+
+Integration tests are small content folders, and bash shell scripts that execute `ailly` with a number of command line and environment options on those folders.
+Assertions mainly run using the NOOP engine, though some can run against other engines when appropriate environment variables are set.
+Tests using the NOOP engine should assert responses and edits to files.
+Tests using other engines should only assert that the command completed.
+
+Ailly's `--help` output:
+
+```
+usage: ailly [options] [paths]
+  paths:
+    Folders or files to generate responses for. If unset, uses $(PWD).
+
+  options:
+    -r, --root sets base folder to search for content and system prompts.
+    -s, --system sets an initial system prompt.
+    -p, --prompt generate a final, single piece of content and print the response to standard out.
+    -i, --isolated will start in isolated mode, generating each file separately. Can be overridden with 'isolated: false' in .aillyrc files.
+    -o, --out specify an output folder to work with responses. Defaults to --root. Will load responses from and write outputs to here, using .ailly file extensions.
+    -c, --context content | folder | none
+      'content' (default) loads files from the root folder and includes them alphabetically, chatbot history style, before the current file when generating.
+      'folder' includes all files in the folder at the same level as the current file when generating.
+      'none' includes no additional content (including no system context) when generating.
+      (note: context is separate from isolated. isolated: true with either 'content' or 'folder' will result in the same behavior with either. With 'none', Ailly will send _only_ the prompt when generating.)
+
+    -e, --edit use Ailly in edit mode. Provide a single file in paths, an edit marker, and a prompt. The path will be updated with the edit marker at the prompt.
+    -l, --lines the lines to edit as '[start]:[end]' with start inclusive, and end exclusive. With only '[start]', will insert after. With only ':[end]', will insert before.
+
+    --engine will set the default engine. Can be set with AILLY_ENGINE environment variable. Default is openai. bedrock calls AWS Bedrock. noop is available for testing. (Probably? Check the code.)
+    --model will set the model from the engine. Can be set with AILLY_MODEL environment variable. Default depends on the engine; OpenAI is gpt-4-0613, bedrock is anthropic-claude-3. (Probably? Check the code.)
+    --temperature for models that support changing the stochastic temperature. (Usually between 0 and 1, but check the engine and model.)
+
+    --plugin can load a custom RAG plugin. Specify a path to import with "file://./path/to/plugin.mjs". plugin.mjs must export a single default function that meets the PluginBuilder interface in core/src/plugin/index.ts
+    --template-view loads a YAML or JSON file to use as a view for the prompt templates. This view will be merged after global, engine, and plugin views but before system and template views.
+
+    --no-overwrite will not run generation on Content with an existing Response.
+    --summary will show a pricing expectation before running and prompt for OK.
+    -y, —-yes will skip any prompts.
+    -v, --verbose, --log-level v and verbose will set log level to info; --log-level can be a string or number and use @davidsouther/jiffies logging levels.
+
+    --version will print the cli and core versions
+    -h, --help will print this message and exit.
+
+    Engines:
+
+    bedrock - Call LLM models using @aws-sdk/bedrock-runtime. While this can use any model available in bedrock, in practice, because of the difference in prompt APIs, Claude3 is the only currently supported model.
+    openai - Call ChatGPT models using OpenAI's API.
+    mistral - Attempt to run Mistral 7B instruct locally, using a Python subshell.
+    noop - A testing model that returns with constant text (either a nonce with the name of the file, or the contents of the AILLY_NOOP_RESPONSE environment variable).
+```
+
+NOOP tests run always.
+Bedrock tests run when AWS_PROFILE is set and AWS_REGION is us-east-1 or us-west-2.

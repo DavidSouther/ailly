@@ -42,7 +42,9 @@ export interface Context {
   predecessor?: string;
   folder?: string[];
   augment?: { score: number; content: string; name: string }[];
-  edit?: { start: number; end: number; file: string };
+  edit?:
+    | { start: number; end: number; file: string }
+    | { after: number; file: string };
 }
 
 // Additional useful metadata.

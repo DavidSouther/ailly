@@ -1,6 +1,7 @@
 {
   "name": "@ailly/ailly",
   "scripts": {
+    "ci": "tsc --project core && npm run ci -w core && npm run ci -w cli && /bin/bash ./integ/integ.sh",
     "prepackage": "tsc --project core",
     "package": "npm run --workspace extension package"
   },

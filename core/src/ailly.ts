@@ -20,6 +20,7 @@ export interface PipelineSettings {
   context: NonNullable<ContentMeta["context"]>;
   plugin: string;
   isolated: boolean;
+  combined: boolean | undefined;
   overwrite: boolean;
   templateView: View;
 }
@@ -33,6 +34,7 @@ export async function makePipelineSettings({
   plugin = DEFAULT_PLUGIN,
   overwrite = true,
   isolated = false,
+  combined,
   templateView = {},
 }: {
   root: string;
@@ -43,6 +45,7 @@ export async function makePipelineSettings({
   plugin?: string;
   overwrite?: boolean;
   isolated?: boolean;
+  combined?: boolean;
   templateView?: View;
 }): Promise<PipelineSettings> {
   model = model ?? (await getEngine(engine)).DEFAULT_MODEL;
@@ -58,6 +61,7 @@ export async function makePipelineSettings({
     plugin,
     overwrite,
     isolated,
+    combined,
     templateView,
   };
 }
