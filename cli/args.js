@@ -76,8 +76,8 @@ export function help() {
       'none' includes no additional content (including no system context) when generating.
       (note: context is separate from isolated. isolated: true with either 'content' or 'folder' will result in the same behavior with either. With 'none', Ailly will send _only_ the prompt when generating.)
 
-    -e, --engine will set the default engine. Can be set with AILLY_ENGINE environment variable. Default is openai. bedrock calls AWS Bedrock. noop is available for testing. (Probably? Check the code.)
-    -m, --model will set the model from the engine. Can be set with AILLY_MODEL environment variable. Default depends on the engine; OpenAI is gpt-4-0613, bedrock is anthropic-claude-3. (Probably? Check the code.)
+    -e, --engine will set the default engine. Can be set with AILLY_ENGINE environment variable. Default is bedrock. bedrock calls AWS Bedrock. noop is available for testing. (Probably? Check the code.)
+    -m, --model will set the model from the engine. Can be set with AILLY_MODEL environment variable. Default depends on the engine; bedrock is anthropic.claude-3-sonnet-20240229-v1:0, OpenAI is gpt-4-0613. (Probably? Check the code.)
 
     --plugin can load a custom RAG plugin. Specify a path to import with "file://./path/to/plugin.mjs". plugin.mjs must export a single default function that meets the PluginBuilder interface in core/src/plugin/index.ts
     --template-view loads a YAML or JSON file to use as a view for the prompt templates. This view will be merged after global, engine, and plugin views but before system and template views.

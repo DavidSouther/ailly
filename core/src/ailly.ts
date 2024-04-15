@@ -5,7 +5,7 @@ import { getEngine } from "./engine/index.js";
 export { getEngine } from "./engine/index.js";
 export { RAG } from "./plugin/rag.js";
 
-export const DEFAULT_ENGINE = "openai";
+export const DEFAULT_ENGINE = "bedrock";
 export const DEFAULT_PLUGIN = "noop";
 
 export type Thread = Content[];
