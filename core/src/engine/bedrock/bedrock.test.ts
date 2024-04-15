@@ -1,5 +1,13 @@
-import { describe, expect, it } from "vitest";
-import { claude3 } from "./prompt-builder";
+import { describe, expect, it, beforeEach } from "vitest";
+import { cleanState } from "@davidsouther/jiffies/lib/esm/scope/state.js";
+import {
+  FileSystem,
+  RecordFileSystemAdapter,
+} from "@davidsouther/jiffies/lib/esm/fs.js";
+import { claude3 } from "./prompt-builder.js";
+import { makePipelineSettings } from "../../ailly";
+import { loadContent } from "../../content/content";
+import { format } from "./bedrock";
 
 describe("bedrock claude3", () => {
   describe("prompt builder", () => {
@@ -28,6 +36,40 @@ describe("bedrock claude3", () => {
       ]);
       expect(actual.messages).toEqual([
         { role: "assistant", content: "assista\nassistb" },
+      ]);
+    });
+  });
+
+  describe("format", () => {
+    const state = cleanState(async () => {
+      const root = "/root";
+      const settings = await makePipelineSettings({ root });
+      const fs = new FileSystem(
+        new RecordFileSystemAdapter({
+          "/root/a": "prompt a",
+          "/root/a.ailly.md": "response a",
+          "/root/b": "prompt b",
+        })
+      );
+      const context = await loadContent(fs, [], settings);
+      return { root, settings, context };
+    }, beforeEach);
+
+    it("formats contents into messages", async () => {
+      const contents = Object.values(state.context);
+      await format(contents, state.context);
+
+      const system = { role: "system", content: "" };
+      expect(contents[0].meta?.messages).toEqual([
+        system,
+        { role: "user", content: "prompt a" },
+        { role: "assistant", content: "response a" },
+      ]);
+      expect(contents[1].meta?.messages).toEqual([
+        system,
+        { role: "user", content: "prompt a" },
+        { role: "assistant", content: "response a" },
+        { role: "user", content: "prompt b" },
       ]);
     });
   });
