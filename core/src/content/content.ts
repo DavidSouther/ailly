@@ -264,9 +264,10 @@ export async function loadContent(
   ).filter(isDefined);
 
   const isIsolated = Boolean(meta.isolated);
-  const context = meta.context ?? "content";
+  const context: NonNullable<ContentMeta["context"]> =
+    meta.context ?? "conversation";
   switch (context) {
-    case "content":
+    case "conversation":
       if (isIsolated) break;
       files.sort((a, b) => a.name.localeCompare(b.name));
       for (let i = files.length - 1; i > 0; i--) {
@@ -287,12 +288,14 @@ export async function loadContent(
   }
 
   const folders: Record<string, Content> = {};
-  for (const folder of dir.folders) {
-    if (folder.name == ".vectors") continue;
-    fs.pushd(folder.name);
-    let contents = await loadContent(fs, system, meta);
-    Object.assign(folders, contents);
-    fs.popd();
+  if (context != "none") {
+    for (const folder of dir.folders) {
+      if (folder.name == ".vectors") continue;
+      fs.pushd(folder.name);
+      let contents = await loadContent(fs, system, meta);
+      Object.assign(folders, contents);
+      fs.popd();
+    }
   }
 
   const content: Record<string, Content> = {
@@ -302,7 +305,9 @@ export async function loadContent(
     ),
     ...folders,
   };
-  DEFAULT_LOGGER.debug(`Found ${content.length} at or below ${fs.cwd()}`);
+  DEFAULT_LOGGER.debug(
+    `Found ${Object.keys(content).length} at or below ${fs.cwd()}`
+  );
   return content;
 }
 

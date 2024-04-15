@@ -119,10 +119,9 @@ async function addContentMeta(
   context: Record<string, Content>
 ) {
   content.meta ??= {};
-  if (content.context.predecessor)
-    content.meta.messages = getMessagesPredecessor(content, context);
   if (content.context.folder)
     content.meta.messages = getMessagesFolder(content, context);
+  else content.meta.messages = getMessagesPredecessor(content, context);
 }
 
 export function getMessagesPredecessor(
