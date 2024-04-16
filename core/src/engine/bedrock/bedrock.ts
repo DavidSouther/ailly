@@ -19,6 +19,7 @@ export const DEFAULT_MODEL = "anthropic.claude-3-sonnet-20240229-v1:0";
 const MODEL_MAP: Record<string, string> = {
   sonnet: "anthropic.claude-3-sonnet-20240229-v1:0",
   haiku: "anthropic.claude-3-haiku-20240307-v1:0",
+  opus: "anthropic.claude-3-opus-20240229-v1:0",
 };
 
 export async function generate(
