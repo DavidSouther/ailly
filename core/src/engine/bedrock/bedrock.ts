@@ -28,8 +28,8 @@ export async function generate(
   const bedrock = new BedrockRuntimeClient({});
   model = MODEL_MAP[model] ?? model;
   let messages = c.meta?.messages ?? [];
-  if (messages.length < 2) {
-    throw new Error("Not enough messages");
+  if (!messages.find((m) => m.role == "user")) {
+    throw new Error("Bedrock must have at least one message with role: user");
   }
   if (messages.at(-1)?.role == "assistant") {
     messages = messages.slice(0, -1);
