@@ -51,11 +51,9 @@ export class GenerateManager {
       PromptThread.run(t, this.context, this.settings, this.engine, this.rag)
     );
 
-    Promise.allSettled(this.threadRunners.map((t) => t.allSettled())).then(
-      () => {
-        this.done = true;
-      }
-    );
+    this.allSettled().then(() => {
+      this.done = true;
+    });
   }
 
   summaries(): PromptThreadSummary[] {
@@ -80,9 +78,11 @@ export class GenerateManager {
   }
 
   async allSettled(): Promise<PromiseSettledResult<Content>[]> {
-    return (
-      await Promise.all(this.threadRunners.map((r) => r.allSettled()))
-    ).flat();
+    const runners = this.threadRunners.map((r) => r.allSettled());
+    const runnersPromises = Promise.all(runners);
+    const settled = await runnersPromises;
+    const flattened = settled.flat();
+    return flattened;
   }
 
   async updateDatabase(): Promise<void> {
