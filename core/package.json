@@ -31,12 +31,14 @@
     "@dqbd/tiktoken": "^1.0.7",
     "gitignore-parser": "^0.0.2",
     "gray-matter": "^4.0.3",
+    "mime-types": "^2.1.35",
     "mustache": "^4.2.0",
     "openai": "^4.11.1",
     "vectra": "^0.6.0",
     "yaml": "^2.4.1"
   },
   "devDependencies": {
+    "@types/mime-types": "^2.1.4",
     "@types/mustache": "^4.2.5",
     "vitest": "^0.34.6"
   }

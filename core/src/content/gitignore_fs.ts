@@ -1,5 +1,6 @@
 import { FileSystem, SEP } from "@davidsouther/jiffies/lib/esm/fs.js";
 import { join, normalize } from "path";
+import { contentType } from "mime-types";
 import * as gitignoreParser from "gitignore-parser";
 
 export class GitignoreFs extends FileSystem {
@@ -19,10 +20,16 @@ export class GitignoreFs extends FileSystem {
     const filtered = paths.filter(
       (p) =>
         p.name !== ".git" &&
+        isTextExtension(p.name) &&
         gitignores.every((g) =>
           p.isDirectory() ? g.accepts(p.name + "/") : g.accepts(p.name)
         )
     );
     return filtered.map((p) => p.name);
   }
+}
+
+function isTextExtension(name: string) {
+  const contType = contentType(name) || "";
+  return contType.startsWith("text") || contType.startsWith("application");
 }
