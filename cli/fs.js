@@ -1,8 +1,10 @@
-import { DEFAULT_LOGGER, LEVEL } from "@davidsouther/jiffies/lib/esm/log.js";
+import { getLogger } from "@davidsouther/jiffies/lib/esm/log.js";
 import { assertExists } from "@davidsouther/jiffies/lib/esm/assert.js";
 import { dirname, resolve, join } from "node:path";
 import { parse } from "yaml";
 import * as ailly from "@ailly/core";
+
+const LOGGER = getLogger('@ailly/cli');
 
 /** @typedef {ReturnType<import("./args.js").makeArgs>} Args */
 /** @typedef {import("@ailly/core").types.Content} Content */
@@ -41,7 +43,8 @@ export async function loadFs(fs, args) {
   const hasPositionals = positionals.length > 0;
   const hasPrompt = args.values.prompt !== undefined && args.values.prompt !== "";
   const isPipe = !hasPositionals && hasPrompt;
-  DEFAULT_LOGGER.level = getLogLevel(args.values['log-level'], args.values.verbose ?? false, isPipe);
+  ailly.Ailly.LOGGER.level = LOGGER.level = ailly.Ailly.getLogLevel(args.values['log-level'], args.values.verbose ?? false, isPipe);
+  if (args.values.pretty || isPipe) LOGGER.format = ailly.Ailly.LOGGER.format = ailly.Ailly.prettyLogFormatter;
 
   const system = args.values.system ?? "";
 
@@ -163,27 +166,4 @@ export async function loadTemplateView(fs, path) {
     console.warn(`Failed to load template-view ${path}`, e)
   }
   return {};
-}
-
-/**
- * @param {string|undefined} level
- * @param {boolean} verbose
- * @param {boolean} isPipe
- * @returns {number}
- */
-export function getLogLevel(level, verbose, isPipe) {
-  if (level) {
-    switch (level) {
-      case "debug": LEVEL.DEBUG;
-      case "info": LEVEL.INFO;
-      case "warn": LEVEL.WARN;
-      case "error": LEVEL.ERROR;
-      default:
-        if (!isNaN(+level)) return Number(level);
-    }
-  }
-  if (verbose) {
-    return LEVEL.INFO;
-  }
-  return isPipe ? LEVEL.SILENT : LEVEL.INFO;
 }

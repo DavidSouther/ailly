@@ -1,4 +1,3 @@
-import { DEFAULT_LOGGER } from "@davidsouther/jiffies/lib/esm/log.js";
 import {
   FileSystem,
   PLATFORM_PARTS,
@@ -11,7 +10,7 @@ import matter from "gray-matter";
 import { stringify } from "yaml";
 import { join, dirname } from "path";
 import type { Message } from "../engine/index.js";
-import { isDefined } from "../util.js";
+import { LOGGER, isDefined } from "../util.js";
 
 export const EXTENSION = ".ailly.md";
 
@@ -135,7 +134,7 @@ async function loadFile(
       prompt = parsed.content;
       data = parsed.data;
     } catch (e) {
-      DEFAULT_LOGGER.warn(
+      LOGGER.warn(
         `Error reading prompt and parsing for matter in ${promptPath}`,
         e as Error
       );
@@ -162,7 +161,7 @@ async function loadFile(
           ).content;
           data.combined = false;
         } catch (e) {
-          DEFAULT_LOGGER.warn(
+          LOGGER.warn(
             `Error reading response and parsing for matter in ${outPath}`,
             e as Error
           );
@@ -249,12 +248,10 @@ export async function loadContent(
   system: System[] = [],
   meta: ContentMeta = {}
 ): Promise<Record<string, Content>> {
-  DEFAULT_LOGGER.debug(`Loading content from ${fs.cwd()}`);
+  LOGGER.debug(`Loading content from ${fs.cwd()}`);
   [system, meta] = await loadAillyRc(fs, system, meta);
   if (meta.skip) {
-    DEFAULT_LOGGER.debug(
-      `Skipping content from ${fs.cwd()} based on head of .aillyrc`
-    );
+    LOGGER.debug(`Skipping content from ${fs.cwd()} based on head of .aillyrc`);
     return {};
   }
 
@@ -305,9 +302,7 @@ export async function loadContent(
     ),
     ...folders,
   };
-  DEFAULT_LOGGER.debug(
-    `Found ${Object.keys(content).length} at or below ${fs.cwd()}`
-  );
+  LOGGER.debug(`Found ${Object.keys(content).length} at or below ${fs.cwd()}`);
   return content;
 }
 
@@ -324,7 +319,7 @@ async function writeSingleContent(fs: FileSystem, content: Content) {
   await mkdirp(fs, dir);
 
   const filename = content.name + (combined ? "" : EXTENSION);
-  DEFAULT_LOGGER.info(`Writing response for ${filename}`);
+  LOGGER.info(`Writing response for ${filename}`);
   const path = join(dir, filename);
   const { debug, isolated } = content.meta ?? {};
   if (content.context.augment) {
@@ -360,7 +355,7 @@ export async function writeContent(fs: FileSystem, content: Content[]) {
     try {
       await writeSingleContent(fs, c);
     } catch (e) {
-      DEFAULT_LOGGER.error(`Failed to write content ${c.name}`, e as Error);
+      LOGGER.error(`Failed to write content ${c.name}`, e as Error);
     }
   }
 }
@@ -368,7 +363,7 @@ export async function writeContent(fs: FileSystem, content: Content[]) {
 const IS_WINDOWS = PLATFORM_PARTS == PLATFORM_PARTS_WIN;
 async function mkdirp(fs: FileSystem, dir: string) {
   if (!isAbsolute(dir)) {
-    DEFAULT_LOGGER.warn(`Cannot mkdirp on non-absolute path ${dir}`);
+    LOGGER.warn(`Cannot mkdirp on non-absolute path ${dir}`);
     return;
   }
   const parts = dir.split(SEP);

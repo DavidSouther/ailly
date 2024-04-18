@@ -1,15 +1,10 @@
 import { dirname } from "node:path";
 import {
-  DEFAULT_LOGGER,
-  debug,
-  warn,
-} from "@davidsouther/jiffies/lib/esm/log.js";
-import {
   BedrockRuntimeClient,
   InvokeModelCommand,
 } from "@aws-sdk/client-bedrock-runtime";
 import { Content, View } from "../../content/content.js";
-import { isDefined } from "../../util.js";
+import { LOGGER, isDefined } from "../../util.js";
 import { Message, Summary } from "../index.js";
 import { Models, PromptBuilder } from "./prompt-builder.js";
 
@@ -55,7 +50,7 @@ export async function generate(
   prompt.temperature =
     c.meta?.temperature ?? c.context.edit != undefined ? 0.0 : 1.0;
 
-  debug("Sending prompt", prompt);
+  LOGGER.debug("Bedrock sending prompt", { prompt });
 
   try {
     const response = await bedrock.send(
@@ -70,14 +65,14 @@ export async function generate(
     const body = JSON.parse(response.body.transformToString());
     response.body = body;
 
+    LOGGER.info(`Response from Bedrock for ${c.name}`);
+    LOGGER.debug(`Bedrock response`, body);
+
     let message: string = body.content?.[0]?.text ?? "";
     if (c.context.edit) {
       message = extractFirstFence(fence + message);
     }
 
-    DEFAULT_LOGGER.info(`Response from Bedrock for ${c.name}`, {
-      finish_reason: body.stop_reason,
-    });
     return {
       message,
       debug: {
@@ -87,11 +82,11 @@ export async function generate(
         finish: body.stop_reason,
       },
     };
-  } catch (e) {
-    console.warn(`Error from Bedrock for ${c.name}`, e);
+  } catch (error) {
+    LOGGER.warn(`Error from Bedrock for ${c.name}`, { error });
     return {
       message: "💩",
-      debug: { finish: "failed", error: { message: (e as Error).message } },
+      debug: { finish: "failed", error: { message: (error as Error).message } },
     };
   }
 }
@@ -222,7 +217,7 @@ export async function vector(inputText: string, {}: {}): Promise<number[]> {
 
 export function extractFirstFence(message: string): string {
   const firstTicks = message.indexOf("```");
-  if (firstTicks != 0) warn("First code fence is not at index 0");
+  if (firstTicks != 0) LOGGER.warn("First code fence is not at index 0");
   const endOfFirstLine = message.indexOf("\n", firstTicks);
   const nextTicks = message.indexOf("```", endOfFirstLine + 1);
   message = message.slice(endOfFirstLine + 1, nextTicks + 1);

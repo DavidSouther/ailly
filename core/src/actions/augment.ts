@@ -1,6 +1,6 @@
-import { DEFAULT_LOGGER } from "@davidsouther/jiffies/lib/esm/log.js";
 import { Content } from "../content/content.js";
 import { RAG } from "../plugin/rag.js";
+import { LOGGER } from "../util.js";
 
 export async function augment(content: Content[], rag: RAG): Promise<void> {
   const _content = [...content];
@@ -11,13 +11,13 @@ export async function augment(content: Content[], rag: RAG): Promise<void> {
         return resolve();
       }
       try {
-        DEFAULT_LOGGER.info(`Sending ${piece.name} (${piece.path})`);
+        LOGGER.info(`Sending for augment ${piece.name} (${piece.path})`);
         await rag.augment(piece);
-        DEFAULT_LOGGER.info(`Completed ${piece.name} (${piece.path})`);
-        DEFAULT_LOGGER.info(piece.context.augment ?? []);
+        LOGGER.info(`Completed augmenting ${piece.name} (${piece.path})`);
+        LOGGER.debug(piece.context.augment ?? []);
       } catch (e) {
-        DEFAULT_LOGGER.info(`Error on ${piece.name} (${piece.path})`);
-        DEFAULT_LOGGER.info(`${e}`);
+        LOGGER.warn(`Error augmenting ${piece.name} (${piece.path})`);
+        LOGGER.info(`${e}`);
       }
       setTimeout(nextPiece, 20);
     };

@@ -1,4 +1,3 @@
-import { DEFAULT_LOGGER, error } from "@davidsouther/jiffies/lib/esm/log.js";
 import { PipelineSettings } from "../ailly.js";
 import { View, type Content } from "../content/content.js";
 import type { Engine } from "../engine/index.js";
@@ -8,6 +7,7 @@ import {
   mergeContentViews,
   mergeViews,
 } from "../content/template.js";
+import { LOGGER } from "../util.js";
 
 export interface PromptThreadsSummary {
   totalPrompts: number;
@@ -93,7 +93,7 @@ export class PromptThread {
   start() {
     this.runner = this.isolated ? this.runIsolated() : this.runSequence();
     this.runner.catch((err) => {
-      error("Error in prompt thread", { err });
+      LOGGER.error("Error in prompt thread", { err });
     });
   }
 
@@ -115,7 +115,7 @@ export class PromptThread {
       await this.plugin.clean(c);
       this.finished += 1;
     } catch (e) {
-      DEFAULT_LOGGER.warn("Error generating content", e as Error);
+      LOGGER.warn("Error generating content", e as Error);
       this.errors.push([i, e as Error]);
       throw e;
     }
@@ -127,16 +127,14 @@ export class PromptThread {
   }
 
   private runIsolated(): Promise<PromiseSettledResult<Content>[]> {
-    DEFAULT_LOGGER.info(
-      `Running thread for ${this.content.length} isolated prompts`
-    );
+    LOGGER.debug(`Running thread for ${this.content.length} isolated prompts`);
     return scheduler(
       this.content.map((c, i) => () => this.runOne(c, i))
     ).finally(() => (this.done = true));
   }
 
   private async runSequence(): Promise<PromiseSettledResult<Content>[]> {
-    DEFAULT_LOGGER.info(
+    LOGGER.debug(
       `Running thread for sequence of ${this.content.length} prompts`
     );
     const results: PromiseSettledResult<Content>[] = [];
@@ -177,18 +175,19 @@ async function generateOne(
   const has_response = (c.response?.length ?? 0) > 0;
 
   if (c.meta?.skip || (!settings.overwrite && has_response)) {
-    DEFAULT_LOGGER.info(`Skipping ${c.path}`);
+    LOGGER.info(`Skipping ${c.path}`);
     return c;
   }
 
-  DEFAULT_LOGGER.info(`Preparing ${c.path}`);
+  LOGGER.info(`Preparing ${c.path}`);
 
   const meta = c.meta;
   engine.format([c], context);
 
-  DEFAULT_LOGGER.info(
-    `Calling ${engine.name}`,
-    meta?.messages
+  LOGGER.info(`Calling ${engine.name}`);
+  LOGGER.debug(`Generating response`, {
+    engine: engine.name,
+    messages: meta?.messages
       ?.map((m) => ({
         role: m.role,
         content: m.content.replaceAll("\n", " ").substring(0, 150) + "...",
@@ -197,8 +196,8 @@ async function generateOne(
       // Skip the last `assistant` message
       .filter((m, i, a) => !(m.role == "assistant" && i === a.length - 1))
       .map(({ role, content }) => `${role}: ${content.replaceAll("\n", "\\n")}`)
-      .join("\n\t")
-  );
+      .join("\n\t"),
+  });
   const generated = await engine.generate(c, settings);
   c.response = generated.message;
   c.meta = {

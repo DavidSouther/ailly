@@ -49,10 +49,15 @@ async function main() {
       // );
       break;
     default:
+      DEFAULT_LOGGER.info(`Starting ${loaded.content.length} requests`);
       generator.start();
       await generator.allSettled();
 
-      DEFAULT_LOGGER.info("Generator all settled!");
+      const doneSummary = generator.summary();
+      DEFAULT_LOGGER.info(`All ${doneSummary.totalPrompts} requests finished`);
+      if (doneSummary.errors) {
+        DEFAULT_LOGGER.warn(`Finished with ${doneSummary.errors} errors`);
+      }
       if (last == "/dev/stdout") {
         const prompt = loaded.context[last];
         if (prompt.meta?.debug?.finish == 'failed') {

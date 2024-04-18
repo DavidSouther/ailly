@@ -1,4 +1,3 @@
-import { DEFAULT_LOGGER } from "@davidsouther/jiffies/lib/esm/log.js";
 import {
   DEFAULT_ENGINE,
   PipelineSettings,
@@ -6,16 +5,17 @@ import {
   getEngine,
   getPlugin,
 } from "../ailly.js";
-import type { Content } from "../content/content";
-import type { Plugin } from "../plugin";
-import type { Engine } from "../engine";
+import { LOGGER } from "../util.js";
+import { partitionPrompts } from "../content/partition.js";
 import {
   PromptThread,
   PromptThreadSummary,
   PromptThreadsSummary,
 } from "./prompt_thread.js";
 
-import { partitionPrompts } from "../content/partition.js";
+import type { Content } from "../content/content";
+import type { Plugin } from "../plugin";
+import type { Engine } from "../engine";
 
 export class GenerateManager {
   done: boolean = false;
@@ -43,7 +43,7 @@ export class GenerateManager {
     private rag: Plugin
   ) {
     this.threads = partitionPrompts(content, context);
-    DEFAULT_LOGGER.info(`Ready to generate ${this.threads.length} messages`);
+    LOGGER.debug(`Ready to generate ${this.threads.length} messages`);
   }
   start() {
     this.started = true;
