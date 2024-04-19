@@ -16,15 +16,15 @@ export default function RootLayout({
   return (
     <html lang="en">
       <head>
-        <link
+        {/* <link
           rel="stylesheet"
           type="text/css"
           href="https://unpkg.com/@davidsouther/jiffies-css"
-        />
-        <script
+        /> */}
+        {/* <script
           async
           src="https://unpkg.com/@davidsouther/jiffies-css/accessibility.js"
-        ></script>
+        ></script> */}
       </head>
       <body className={`container ${styles.body}`}>
         <NavHeader title="Ailly" />
