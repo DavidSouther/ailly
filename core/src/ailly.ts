@@ -3,7 +3,6 @@ export { GitignoreFs } from "./content/gitignore_fs.js";
 export { getPlugin } from "./plugin/index.js";
 import { getEngine } from "./engine/index.js";
 export { getEngine } from "./engine/index.js";
-export { RAG } from "./plugin/rag.js";
 export * from "./util.js";
 
 export const DEFAULT_ENGINE = "bedrock";

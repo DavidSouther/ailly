@@ -2,7 +2,6 @@
 const nextConfig = {
   reactStrictMode: true,
   productionBrowserSourceMaps: true,
-  experimental: { serverActions: true },
   webpack(config, _) {
     config.experiments = { asyncWebAssembly: true, layers: true };
     config.resolve.extensionAlias = {

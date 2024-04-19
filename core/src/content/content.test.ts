@@ -117,7 +117,7 @@ test("it loads responses", async () => {
 test.each([
   ["prompt.md", "prompt"],
   ["prompt.md.ailly.md", "response"],
-])("it splits ordered filenames: %s -> %s", (file, type) => {
+])("it splits ordered filenames: %s -> %s", (file: string, type: string) => {
   const split = splitOrderedName(file);
   expect(split.type).toBe(type);
 });

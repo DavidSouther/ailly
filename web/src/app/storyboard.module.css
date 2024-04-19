@@ -1,0 +1,43 @@
+.blocks {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.blocks > li:not(:last-of-type) {
+  margin-block-end: 30px;
+}
+
+.blocks ol {
+  padding: 0;
+  list-style: none;
+}
+
+.blocks p {
+  margin: 0;
+}
+
+.option {
+  display: block;
+  border-radius: var(--size-base);
+  box-shadow: var(--color-base) 1px 2px 5px 2px;
+  border: var(--color-base) solid 1.5px;
+  padding: var(--size-base) calc(2 * var(--size-base));
+}
+
+li:has(.option):not(:last-of-type) {
+  margin-block-end: calc(2 * var(--size-base));
+}
+
+.option:hover {
+  cursor: pointer;
+  background: color-mix(in lch, var(--color-base) 85%, #fff);
+}
+
+.option:has(:checked) {
+  background: var(--color-base);
+}
+
+.option input {
+  display: none;
+}
