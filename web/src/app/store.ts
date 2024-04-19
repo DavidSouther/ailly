@@ -45,13 +45,14 @@ export function makeAillyStore(dispatch: MutableRefObject<AillyStoreDispatch>) {
 
   const reducers = {
     updateState(state: AillyPageState): AillyPageState {
-      return {
+      const newState = {
         story,
         instruction,
         selections: [...selections.map((opts) => [...opts])],
         storyItem,
         response: { ...response },
       };
+      return newState;
     },
   };
 

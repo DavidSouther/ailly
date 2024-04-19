@@ -3,8 +3,8 @@ import { useAillyPageStore } from "./store";
 
 import styles from "./storyboard.module.css";
 
-export const Storyboard = () => {
-  const { state, actions } = useAillyPageStore();
+export const Storyboard = (store: ReturnType<typeof useAillyPageStore>) => {
+  const { state, actions } = store;
   return (
     <ol className={styles.blocks}>
       {

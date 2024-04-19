@@ -4,8 +4,8 @@ import M from "@/components/M";
 import { useAillyPageStore } from "./store";
 import styles from "./response.module.css";
 
-export const Response = () => {
-  const { state } = useAillyPageStore();
+export const Response = (store: ReturnType<typeof useAillyPageStore>) => {
+  const { state } = store
 
   return (
     <>

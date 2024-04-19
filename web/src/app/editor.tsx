@@ -4,8 +4,8 @@ import { useAillyPageStore } from "./store";
 
 import styles from "./editor.module.css";
 
-export const Editor = () => {
-  const { state, actions } = useAillyPageStore();
+export const Editor = (store: ReturnType<typeof useAillyPageStore>) => {
+  const { state, actions } = store;
 
   return (
     <div>

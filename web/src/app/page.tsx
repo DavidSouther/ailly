@@ -7,7 +7,7 @@ import styles from "./page.module.css";
 import { useAillyPageStore } from "./store";
 
 export default function Home() {
-  const { state } = useAillyPageStore();
+  const store = useAillyPageStore();
   return (
     <div className={styles.main}>
       <div
@@ -17,21 +17,21 @@ export default function Home() {
           bottom: 0,
         }}
       >
-        <pre>{`storyItem: ${state.storyItem}\nselections: ${JSON.stringify(
-          state.selections
+        <pre>{`storyItem: ${store.state.storyItem}\nselections: ${JSON.stringify(
+          store.state.selections
         )}`}</pre>
       </div>
       <aside style={{ flex: 1 }} />
       <section style={{ flex: 2 }}>
-        <Storyboard />
+        <Storyboard {...store} />
       </section>
       <aside style={{ flex: 0.5 }} />
       <section style={{ flex: 3 }}>
-        <Editor />
+        <Editor {...store}/>
       </section>
       <aside style={{ flex: 0.5 }} />
       <section style={{ flex: 2 }}>
-        <Response />
+        <Response {...store}/>
       </section>
       <aside style={{ flex: 1 }} />
     </div>
