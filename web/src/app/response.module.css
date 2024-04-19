@@ -1,0 +1,23 @@
+.button {
+  cursor: pointer;
+  --color-pct: 100%;
+  --color-button: color-mix(
+    in lch,
+    var(--color-contrast) var(--color-pct),
+    white
+  );
+  border-radius: var(--size-base);
+  padding: var(--size-base) calc(2 * var(--size-base));
+  background: var(--color-button);
+  border: var(--color-button) solid 1.5px;
+  box-shadow: var(--color-button) 1px 2px 5px 2px;
+}
+
+.button:hover,
+.button:focus {
+  --color-pct: 95%;
+}
+
+.button:active {
+  --color-pct: 90%;
+}

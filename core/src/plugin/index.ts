@@ -1,7 +1,7 @@
-import * as rag from "./rag.js";
 import { PipelineSettings } from "../ailly.js";
 import type { Content, View } from "../content/content.js";
 import type { Engine } from "../engine/index.js";
+import { RAG } from "./rag";
 
 export interface PluginBuilder {
   (engine: Engine, settings: PipelineSettings): Promise<Plugin>;
@@ -15,9 +15,8 @@ export interface Plugin {
 }
 
 export const PLUGINS: Record<string, { default: PluginBuilder }> = {
-  noop: { default: rag.RAG.empty as unknown as PluginBuilder },
-  none: { default: rag.RAG.empty as unknown as PluginBuilder },
-  rag: { default: rag.RAG.build as unknown as PluginBuilder },
+  noop: { default: RAG.empty as unknown as PluginBuilder },
+  none: { default: RAG.empty as unknown as PluginBuilder },
 };
 
 export async function getPlugin(

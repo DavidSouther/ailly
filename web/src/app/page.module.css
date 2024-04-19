@@ -1,3 +1,6 @@
-.body {
-  padding: 0 var(--spacing-block-horizontal);
+.main {
+  display: flex;
+  flex-direction: row;
+  width: 100%;
+  justify-content: space-around;
 }
