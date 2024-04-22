@@ -73,7 +73,6 @@ describe("makeCLIContent", () => {
       state.context,
       state.root,
       edit,
-      content,
       view
     );
 
@@ -97,7 +96,6 @@ describe("makeCLIContent", () => {
     const argContext = "folder";
     const argSystem = "System";
     const edit = undefined;
-    const content = ["/root/a", "/root/b"];
     const view = { prop: "test" };
 
     const cliContent = cli.makeCLIContent(
@@ -107,7 +105,6 @@ describe("makeCLIContent", () => {
       state.context,
       state.root,
       edit,
-      content,
       view
     );
 
@@ -126,12 +123,11 @@ describe("makeCLIContent", () => {
     });
   });
 
-  it("creates a valid Content object with 'content' context", () => {
+  it("creates a valid Content object with 'conversation' context", () => {
     const prompt = "Prompt";
-    const argContext = "content";
+    const argContext = "conversation";
     const argSystem = "System";
     const edit = undefined;
-    const content = ["/root/a", "/root/b"];
     const view = { prop: "test" };
 
     const cliContent = cli.makeCLIContent(
@@ -141,7 +137,6 @@ describe("makeCLIContent", () => {
       state.context,
       state.root,
       edit,
-      content,
       view
     );
 
@@ -160,12 +155,11 @@ describe("makeCLIContent", () => {
     });
   });
 
-  it("handles empty content array with 'content' context", () => {
+  it("handles empty content array with 'conversation' context", () => {
     const prompt = "Prompt";
-    const argContext = "content";
+    const argContext = "conversation";
     const argSystem = "System";
     const edit = undefined;
-    const content = [];
     const view = { prop: "test" };
 
     const cliContent = cli.makeCLIContent(
@@ -175,7 +169,6 @@ describe("makeCLIContent", () => {
       state.context,
       state.root,
       edit,
-      content,
       view
     );
 
@@ -186,7 +179,7 @@ describe("makeCLIContent", () => {
       prompt: "Prompt",
       context: {
         view: { prop: "test" },
-        predecessor: undefined,
+        predecessor: "/root/b",
         system: [{ content: "System", view: {} }],
         folder: undefined,
         edit: undefined,

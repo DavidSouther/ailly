@@ -6,7 +6,7 @@ describe("gitignore fs", () => {
   it("reads while obeying .gitignores", async () => {
     const fs = new GitignoreFs(
       new ObjectFileSystemAdapter({
-        file: "abc",
+        "file.txt": "abc",
         skip: "def",
         ".gitignore": "skip\nskipdir",
         ".git": {
@@ -17,25 +17,23 @@ describe("gitignore fs", () => {
           },
         },
         dir: {
-          file: "ghi",
+          "file.txt": "ghi",
           skip: "def2",
           deep: {
             ".gitignore": "other",
-            file: "jkl",
+            "file.txt": "jkl",
             skip: "still skipped",
             other: "skipped",
           },
         },
         skipdir: {
-          file: "abc",
+          "file.txt": "abc",
         },
       })
     );
 
-    expect(await fs.readdir("")).toEqual([".gitignore", "dir", "file"]);
-    fs.cd("dir");
-    expect(await fs.readdir("")).toEqual(["deep", "file"]);
-    fs.cd("deep");
-    expect(await fs.readdir("")).toEqual([".gitignore", "file"]);
+    expect(await fs.readdir("/")).toEqual(["dir", "file.txt"]);
+    expect(await fs.readdir("/dir")).toEqual(["deep", "file.txt"]);
+    expect(await fs.readdir("/dir/deep")).toEqual(["file.txt"]);
   });
 });

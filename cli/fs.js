@@ -70,7 +70,7 @@ export async function loadFs(fs, args) {
       content = [];
     }
     const prompt = assertExists(args.values.prompt);
-    const cliContent = makeCLIContent(prompt, settings.context, system, context, root, edit, content, settings.templateView);
+    const cliContent = makeCLIContent(prompt, settings.context, system, context, root, edit, settings.templateView);
     context[cliContent.path] = cliContent;
     content.push(cliContent.path);
   }
@@ -115,20 +115,20 @@ export function makeEdit(lines, content, hasPrompt) {
  * for this Ailly call to the LLM.
  * 
  * @param {string} prompt 
- * @param {'none'|'folder'|'content'} argContext
+ * @param {'none'|'folder'|'conversation'} argContext
  * @param {string} argSystem 
  * @param {Record<string, Content>} context 
  * @param {string} root 
  * @param {Edit|undefined} edit 
- * @param {string[]} content 
  * @param {*} view 
  * @returns Content
  */
-export function makeCLIContent(prompt, argContext, argSystem, context, root, edit, content, view) {
+export function makeCLIContent(prompt, argContext, argSystem, context, root, edit, view) {
+  const inFolder = Object.keys(context).filter(c => dirname(c) == root);
   // When argContext is folder, `folder` is all files in context in root.
-  const folder = argContext == 'folder' ? Object.keys(context).filter(c => dirname(c) == root) : undefined;
-  // When argContext is `content`, `predecessor` is the last item in the root folder.
-  const predecessor = argContext == 'content' ? content.filter(c => dirname(c) == root).at(-1) : undefined;
+  const folder = argContext == 'folder' ? inFolder : undefined;
+  // When argContext is `conversation`, `predecessor` is the last item in the root folder.
+  const predecessor = argContext == 'conversation' ? inFolder.at(-1) : undefined;
   // When argContext is none, system is empty; otherwise, system is argSystem + predecessor's system.
   const system = argContext == "none" ? [] : [{ content: argSystem ?? "", view: {} }, ...((predecessor ? context[predecessor].context.system : undefined) ?? [])];
   const cliContent = {

@@ -86,7 +86,7 @@ async function main() {
  */
 async function doEdit(fs, loaded, edit, prompt, yes) {
   const out = loaded.context[edit.file];
-  const responseLines = out.prompt?.split("\n") ?? [];
+  const responseLines = (out.meta?.text ?? out.prompt)?.split("\n") ?? [];
   const replaceLines = prompt.response?.split("\n") ?? [];
   const editValue = makeEditConfirmMessage(edit, out.name, responseLines, replaceLines);
   console.log(editValue);

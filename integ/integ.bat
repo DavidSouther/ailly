@@ -13,12 +13,12 @@ set AILLY_ENGINE=noop
 
 echo basic
 call npx ailly --root 01_basic
-if not exist "01_basic/basic.ailly.md" goto :error
-del "01_basic/basic.ailly.md"
+if not exist "01_basic/basic.txt.ailly.md" goto :error
+del "01_basic/basic.txt.ailly.md"
 
 echo combined
 call npx ailly --root 02_combined --combined
-if exist "02_combined/combined.ailly.md" goto :error
+if exist "02_combined/combined.txt.ailly.md" goto :error
 
 goto :end
 

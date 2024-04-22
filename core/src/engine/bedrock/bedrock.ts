@@ -68,10 +68,8 @@ export async function generate(
     LOGGER.info(`Response from Bedrock for ${c.name}`);
     LOGGER.debug(`Bedrock response`, body);
 
-    let message: string = body.content?.[0]?.text ?? "";
-    if (c.context.edit) {
-      message = extractFirstFence(fence + message);
-    }
+    let message: string = (body.content?.[0]?.text ?? "").trim();
+    // In edit mode, claude (at least) does not return the stop sequence nor the prefill, so the edit is the message.
 
     return {
       message,

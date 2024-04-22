@@ -50,6 +50,7 @@ export interface Context {
 export interface ContentMeta {
   root?: string;
   out?: string;
+  text?: string;
   context?: "conversation" | "folder" | "none";
   parent?: "root" | "always" | "never";
   messages?: Message[];
@@ -127,10 +128,12 @@ async function loadFile(
     head.root = head.root ?? cwd;
     const promptPath = join(cwd, file.name);
 
+    let text: string = "";
     let prompt: string = "";
     let data: Record<string, any> = {};
     try {
-      const parsed = matter(await fs.readFile(promptPath).catch((e) => ""));
+      text = await fs.readFile(promptPath).catch((e) => "");
+      const parsed = matter(text);
       prompt = parsed.content;
       data = parsed.data;
     } catch (e) {
@@ -185,6 +188,7 @@ async function loadFile(
       meta: {
         ...head,
         ...data,
+        text,
       },
     };
   } else {
