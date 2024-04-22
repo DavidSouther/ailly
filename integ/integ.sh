@@ -23,6 +23,6 @@ npx ailly --root 02_combined --combined
 git restore 02_combined/combined.txt
 
 echo "edit"
-AILLY_NOOP_RESPONSE="Edited" npx ailly --root 04_edit --edit file --lines 2:4 --prompt "edit" --yes
-grep -q 'Edited' 04_edit/file
-git restore 04_edit/file
+AILLY_NOOP_RESPONSE="Edited" npx ailly --root 04_edit --edit file --lines 2:4 --prompt "Respond with the word Edited" --yes
+grep -q 'Edited' 04_edit/file.txt
+git restore 04_edit/file.txt
