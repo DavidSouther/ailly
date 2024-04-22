@@ -1,6 +1,6 @@
 {
   "name": "@ailly/cli",
-  "version": "1.3.0-rc2",
+  "version": "1.3.0",
   "description": "",
   "type": "module",
   "main": "index.js",
@@ -26,7 +26,7 @@
     "ci": "npm link ../core && vitest --run --reporter=verbose"
   },
   "dependencies": {
-    "@ailly/core": "1.3.0-rc2",
+    "@ailly/core": "1.3.0",
     "@davidsouther/jiffies": "^2.2.0",
     "yaml": "^2.4.1"
   },
