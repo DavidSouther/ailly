@@ -1,5 +1,5 @@
 #! /usr/bin/env node
-import { createInterface } from "readline/promises";
+import { createInterface } from "node:readline";
 
 import { DEFAULT_LOGGER } from "@davidsouther/jiffies/lib/esm/log.js";
 import { NodeFileSystemAdapter } from "@davidsouther/jiffies/lib/esm/fs_node.js";
@@ -7,6 +7,7 @@ import * as ailly from "@ailly/core";
 import { makeArgs, help } from "./args.js";
 import { loadFs } from "./fs.js";
 import { version } from "./version.js";
+import { promisify } from "node:util";
 
 await main();
 
@@ -137,7 +138,7 @@ async function check_or_exit(prompt) {
     input: process.stdin,
     output: process.stdout,
   });
-  const answer = await rl.question(prompt);
+  const answer = await promisify(rl.question)(prompt);
   if (!answer.toUpperCase().startsWith("Y")) {
     process.exit(0);
   }

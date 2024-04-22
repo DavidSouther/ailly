@@ -3,6 +3,11 @@ import { Content, View } from "./content.js";
 import { META_PROMPT } from "./template_anthropic_metaprompt.js";
 import { GRUG_PROMPT } from "./template_grug_prompt.js";
 
+if (!global.structuredClone) {
+  // TODO: Drop node 16 support
+  global.structuredClone = (obj) => JSON.parse(JSON.stringify(obj));
+}
+
 export function mergeViews(...views: View[]): View {
   return views
     .map((v) => structuredClone(v))

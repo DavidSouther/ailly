@@ -1,4 +1,4 @@
-import { DEFAULT_LOGGER } from "@davidsouther/jiffies/lib/esm/log.js";
+import { DEFAULT_LOGGER, error } from "@davidsouther/jiffies/lib/esm/log.js";
 import { PipelineSettings } from "../ailly.js";
 import { View, type Content } from "../content/content.js";
 import type { Engine } from "../engine/index.js";
@@ -92,14 +92,19 @@ export class PromptThread {
 
   start() {
     this.runner = this.isolated ? this.runIsolated() : this.runSequence();
+    this.runner.catch((err) => {
+      error("Error in prompt thread", { err });
+    });
   }
 
   private async runOne(c: Content, i: number): Promise<Content> {
     if (this.view === undefined) {
+      const engineView = (await this.engine.view?.().catch(() => ({}))) ?? {};
+      const pluginView = (await this.plugin.view?.().catch(() => ({}))) ?? {};
       this.view = mergeViews(
         GLOBAL_VIEW,
-        (await this.engine.view?.()) ?? {},
-        (await this.plugin.view?.()) ?? {},
+        engineView,
+        pluginView,
         this.settings.templateView
       );
     }
