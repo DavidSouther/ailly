@@ -44,7 +44,12 @@ test("it loads content", async () => {
         system: [],
         view: {},
       },
-      meta: { combined: false, root: "/", parent: "root" },
+      meta: {
+        combined: false,
+        root: "/",
+        parent: "root",
+        text: "The quick brown",
+      },
     },
     "/20b/40_part.md": {
       name: "40_part.md",
@@ -56,7 +61,12 @@ test("it loads content", async () => {
         system: [],
         view: {},
       },
-      meta: { combined: false, root: "/", parent: "root" },
+      meta: {
+        combined: false,
+        root: "/",
+        parent: "root",
+        text: "fox jumped",
+      },
     },
     "/20b/56_part.md": {
       name: "56_part.md",
@@ -69,7 +79,12 @@ test("it loads content", async () => {
         view: {},
         predecessor: "/20b/40_part.md",
       },
-      meta: { combined: false, root: "/", parent: "root" },
+      meta: {
+        combined: false,
+        root: "/",
+        parent: "root",
+        text: "over the lazy",
+      },
     },
     "/54_a/12_section.md": {
       name: "12_section.md",
@@ -81,7 +96,7 @@ test("it loads content", async () => {
         system: [],
         view: {},
       },
-      meta: { combined: false, root: "/", parent: "root" },
+      meta: { combined: false, root: "/", parent: "root", text: "dog." },
     },
   });
 });
@@ -128,7 +143,13 @@ test("it loads combined prompt and responses", async () => {
         system: [],
         view: {},
       },
-      meta: { isolated: true, combined: true, root: "/", parent: "root" },
+      meta: {
+        isolated: true,
+        combined: true,
+        root: "/",
+        parent: "root",
+        text: "---\nprompt: content\n---\nResponse",
+      },
     },
     "/prompt.md": {
       name: "prompt.md",
@@ -140,7 +161,13 @@ test("it loads combined prompt and responses", async () => {
         system: [],
         view: {},
       },
-      meta: { isolated: true, combined: true, root: "/", parent: "root" },
+      meta: {
+        isolated: true,
+        combined: true,
+        root: "/",
+        parent: "root",
+        text: "---\nprompt: prompt\n---",
+      },
     },
   });
 });
@@ -193,7 +220,13 @@ test("it loads separate prompt and responses", async () => {
         system: [],
         view: {},
       },
-      meta: { isolated: true, combined: false, root: "/", parent: "root" },
+      meta: {
+        isolated: true,
+        combined: false,
+        root: "/",
+        parent: "root",
+        text: "content",
+      },
     },
     "/prompt.md": {
       name: "prompt.md",
@@ -205,7 +238,13 @@ test("it loads separate prompt and responses", async () => {
         system: [],
         view: {},
       },
-      meta: { isolated: true, combined: false, root: "/", parent: "root" },
+      meta: {
+        isolated: true,
+        combined: false,
+        root: "/",
+        parent: "root",
+        text: "prompt",
+      },
     },
   });
 });
@@ -245,6 +284,7 @@ test("it loads separate prompt and responses in different out directors", async 
         root: "/root",
         out: "/out",
         parent: "root",
+        text: "content",
       },
     },
     "/root/prompt.md": {
@@ -263,6 +303,7 @@ test("it loads separate prompt and responses in different out directors", async 
         root: "/root",
         out: "/out",
         parent: "root",
+        text: "prompt",
       },
     },
   });
@@ -361,18 +402,6 @@ test("it writes deep java prompts and responses", async () => {
   });
 
   expect(content).toEqual({
-    "/root/.gitignore": {
-      name: ".gitignore",
-      path: "/root/.gitignore",
-      outPath: "/out/.gitignore.ailly.md",
-      prompt: "target",
-      response: "",
-      context: {
-        system: [],
-        view: {},
-      },
-      meta: { combined: false, out: "/out", root: "/root", parent: "root" },
-    },
     "/root/src/com/example/Main.java": {
       name: "Main.java",
       path: "/root/src/com/example/Main.java",
@@ -383,11 +412,16 @@ test("it writes deep java prompts and responses", async () => {
         system: [],
         view: {},
       },
-      meta: { combined: false, out: "/out", root: "/root", parent: "root" },
+      meta: {
+        combined: false,
+        out: "/out",
+        root: "/root",
+        parent: "root",
+        text: "class Main {}\n",
+      },
     },
   });
 
-  content["/root/.gitignore"].response = "Response";
   content["/root/src/com/example/Main.java"].response = "Response";
 
   await writeContent(fs, [...Object.values(content)]);
@@ -396,7 +430,6 @@ test("it writes deep java prompts and responses", async () => {
     "/root/.gitignore": "target",
     "/root/src/com/example/Main.java": "class Main {}\n",
     "/root/target/com/example/Main.class": "0xCAFEBABE",
-    "/out/.gitignore.ailly.md": "---\ncombined: false\n---\nResponse",
     "/out/src/com/example/Main.java.ailly.md":
       "---\ncombined: false\n---\nResponse",
   });
@@ -627,6 +660,7 @@ describe("Load aillyrc", () => {
           context: "none",
           parent: "root",
           root: "/root",
+          text: "a",
         },
       },
       "/root/b": {
@@ -643,6 +677,7 @@ describe("Load aillyrc", () => {
           context: "none",
           parent: "root",
           root: "/root",
+          text: "b",
         },
       },
     });
@@ -683,6 +718,7 @@ describe("Load aillyrc", () => {
           context: "folder",
           parent: "root",
           root: "/root",
+          text: "a",
         },
       },
       "/root/b": {
@@ -701,6 +737,7 @@ describe("Load aillyrc", () => {
           context: "folder",
           parent: "root",
           root: "/root",
+          text: "b",
         },
       },
       "/root/c": {
@@ -719,6 +756,7 @@ describe("Load aillyrc", () => {
           context: "folder",
           parent: "root",
           root: "/root",
+          text: "c",
         },
       },
     });
