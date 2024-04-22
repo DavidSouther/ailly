@@ -1,7 +1,7 @@
 import { PipelineSettings } from "../ailly.js";
 import type { Content, View } from "../content/content.js";
 import type { Engine } from "../engine/index.js";
-import { RAG } from "./rag";
+import { RAG } from "./rag.js";
 
 export interface PluginBuilder {
   (engine: Engine, settings: PipelineSettings): Promise<Plugin>;

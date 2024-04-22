@@ -9,6 +9,7 @@ export interface AillyPageState {
   selections: number[][];
   instruction: string;
   response: Response;
+  generating: boolean;
 }
 
 export interface StoryBook {
@@ -39,9 +40,11 @@ export type AillyStoreDispatch = Dispatch<{
 export function makeAillyStore(dispatch: MutableRefObject<AillyStoreDispatch>) {
   const story: StoryBook[] = [ROLES, TONES];
   let storyItem = -1;
+  let nextStoryItem = -1;
   let selections: number[][] = [];
   let instruction = "";
   let response = { content: "" };
+  let generating = true;
 
   const reducers = {
     updateState(state: AillyPageState): AillyPageState {
@@ -51,6 +54,7 @@ export function makeAillyStore(dispatch: MutableRefObject<AillyStoreDispatch>) {
         selections: [...selections.map((opts) => [...opts])],
         storyItem,
         response: { ...response },
+        generating,
       };
       return newState;
     },
@@ -66,12 +70,12 @@ export function makeAillyStore(dispatch: MutableRefObject<AillyStoreDispatch>) {
     },
     prompt(content: string) {
       instruction = content;
-      if (storyItem == -1) storyItem = 0;
+      if (storyItem == -1) nextStoryItem = 0;
       this.updateAndGenerate();
     },
     select(block: number, choice: number) {
       if (selections[block + 1] == undefined) {
-        storyItem = block + 1;
+        nextStoryItem = block + 1;
       }
       const newBlock =
         story[block].select == "multi"
@@ -97,8 +101,23 @@ export function makeAillyStore(dispatch: MutableRefObject<AillyStoreDispatch>) {
           view: {},
         },
       };
-      const genContent = await generateOne(content);
-      response.content = genContent.response ?? "";
+      generating = true;
+      this.update();
+      try {
+        const genContent = await generateOne(content);
+        const error = (genContent.meta?.debug as { error: {} } | undefined)
+          ?.error;
+        if (error) {
+          response.content = JSON.stringify(error);
+        } else {
+          response.content = genContent.response ?? "";
+        }
+      } finally {
+        generating = false;
+      }
+      this.update();
+      await pause(1200);
+      storyItem = nextStoryItem;
       this.update();
     },
   };
@@ -160,3 +179,7 @@ const TONES: StoryBook = {
   ],
   select: "single",
 };
+
+async function pause(ms: number): Promise<void> {
+  return new Promise((r) => setTimeout(r, ms));
+}

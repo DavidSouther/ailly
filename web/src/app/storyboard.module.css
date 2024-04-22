@@ -23,6 +23,18 @@
   box-shadow: var(--color-base) 1px 2px 5px 2px;
   border: var(--color-base) solid 1.5px;
   padding: var(--size-base) calc(2 * var(--size-base));
+
+  animation: fadeIn 1s;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 100;
+  }
 }
 
 li:has(.option):not(:last-of-type) {
@@ -31,7 +43,7 @@ li:has(.option):not(:last-of-type) {
 
 .option:hover {
   cursor: pointer;
-  background: color-mix(in lch, var(--color-base) 85%, #fff);
+  background: color-mix(in lch, var(--color-base) 85%, var(--color-background));
 }
 
 .option:has(:checked) {

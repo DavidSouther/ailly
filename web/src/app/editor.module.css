@@ -11,4 +11,5 @@
   border: none;
   border-radius: var(--size-base);
   box-shadow: lightgrey 0 0 2px 4px;
+  margin-top: calc(var(--size-base) * 5);
 }

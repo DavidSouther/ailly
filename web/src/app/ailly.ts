@@ -5,7 +5,7 @@ import { Ailly, types } from "@ailly/core";
 export async function generateOne(content: types.Content) {
   const settings = await Ailly.makePipelineSettings({
     root: "/ailly",
-    engine: "noop",
+    // engine: "noop",
   });
   const manager = await Ailly.GenerateManager.from(
     [content.path],

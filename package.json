@@ -4,7 +4,7 @@
     "webdev": "npm run link && npm run -w web dev",
     "build-core": "tsc --project core",
     "link": "npm run build-core && npm link -w cli ./core && npm link -w web ./core",
-    "ci": "npm run build-core && npm run ci -w core && npm run ci -w cli && /bin/bash ./integ/integ.sh",
+    "ci": "npm run build-core && npm run ci -w core && npm run ci -w cli && ./integ/integ-noop.sh",
     "prepackage": "npm run build-core",
     "package": "npm run --workspace extension package"
   },

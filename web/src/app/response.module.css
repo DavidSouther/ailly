@@ -1,23 +1,41 @@
-.button {
-  cursor: pointer;
-  --color-pct: 100%;
-  --color-button: color-mix(
-    in lch,
-    var(--color-contrast) var(--color-pct),
-    white
-  );
-  border-radius: var(--size-base);
-  padding: var(--size-base) calc(2 * var(--size-base));
-  background: var(--color-button);
-  border: var(--color-button) solid 1.5px;
-  box-shadow: var(--color-button) 1px 2px 5px 2px;
+.response {
+  min-height: 55px;
+  max-height: 235px;
+  overflow-y: scroll;
+  transition: max-height 1s ease-in, min-height 1s ease-in;
+
+  &.generating {
+    max-height: 35px;
+    min-height: 35px;
+  }
 }
 
-.button:hover,
-.button:focus {
-  --color-pct: 95%;
+.spinner {
+  margin: 25px auto;
+  display: flex;
+  justify-content: center;
 }
 
-.button:active {
-  --color-pct: 90%;
+.spinner:before {
+  content: " ";
+  display: block;
+  width: 25px;
+  height: 25px;
+  padding: 25px;
+  --border: 5px solid var(--color-base);
+  border: var(--border);
+  border-bottom: none;
+  border-radius: 50%;
+  rotate: 0deg;
+  animation: rotation 0.8s infinite;
+}
+
+@keyframes rotation {
+  from {
+    rotate: 0deg;
+  }
+
+  to {
+    rotate: 360deg;
+  }
 }

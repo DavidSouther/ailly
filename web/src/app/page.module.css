@@ -1,6 +1,17 @@
 .main {
   display: flex;
-  flex-direction: row;
-  width: 100%;
+  flex-direction: column;
   justify-content: space-around;
+  margin: 0 calc(var(--size-base) * 4);
+}
+
+.main section {
+  width: 100%;
+}
+
+@media (min-width: 500px) {
+  .main {
+    width: 500px;
+    margin: 0 auto;
+  }
 }

@@ -1,6 +1,7 @@
 import { Content } from "../content/content.js";
 
 export const DEFAULT_MODEL = "NOOP";
+const NOOP_TIMEOUT = 750;
 export const name = "noop";
 export async function format(c: Content[]): Promise<void> {}
 export async function generate<D extends {} = {}>(
@@ -8,7 +9,7 @@ export async function generate<D extends {} = {}>(
   _: unknown
 ): Promise<{ debug: D; message: string }> {
   await new Promise<void>((resolve) => {
-    setTimeout(() => resolve(), 750);
+    setTimeout(() => resolve(), NOOP_TIMEOUT);
   });
   return {
     message:
