@@ -1,10 +1,10 @@
 import { join } from "node:path";
-import { DEFAULT_LOGGER } from "@davidsouther/jiffies/lib/esm/log.js";
 import { LocalIndex } from "vectra/lib/LocalIndex.js";
 
 import type { Content } from "../content/content.js";
 import type { Engine } from "../engine/index.js";
 import type { PipelineSettings } from "../ailly.js";
+import { LOGGER } from "../util.js";
 
 function ragDb(path: string) {
   return join(path, ".vectors");
@@ -49,12 +49,12 @@ export class RAG {
           return resolve();
         }
         try {
-          DEFAULT_LOGGER.info(`Sending ${piece.name} (${piece.path})`);
+          LOGGER.info(`Adding to RAG ${piece.name} (${piece.path})`);
           await this.add(piece);
-          DEFAULT_LOGGER.info(`Completed ${piece.name} (${piece.path})`);
+          LOGGER.info(`Completed adding to RAG ${piece.name} (${piece.path})`);
         } catch (e) {
-          DEFAULT_LOGGER.info(`Error on ${piece.name} (${piece.path})`);
-          DEFAULT_LOGGER.info(`${e}`);
+          LOGGER.warn(`Error adding to RAG ${piece.name} (${piece.path})`);
+          LOGGER.info(`${e}`);
         }
         nextPiece();
       };

@@ -1,11 +1,10 @@
 #! /usr/bin/env node
 import { createInterface } from "node:readline";
 
-import { DEFAULT_LOGGER } from "@davidsouther/jiffies/lib/esm/log.js";
 import { NodeFileSystemAdapter } from "@davidsouther/jiffies/lib/esm/fs_node.js";
 import * as ailly from "@ailly/core";
 import { makeArgs, help } from "./args.js";
-import { loadFs } from "./fs.js";
+import { loadFs, LOGGER } from "./fs.js";
 import { version } from "./version.js";
 import { promisify } from "node:util";
 
@@ -49,10 +48,15 @@ async function main() {
       // );
       break;
     default:
+      LOGGER.info(`Starting ${loaded.content.length} requests`);
       generator.start();
       await generator.allSettled();
 
-      DEFAULT_LOGGER.info("Generator all settled!");
+      const doneSummary = generator.summary();
+      LOGGER.info(`All ${doneSummary.totalPrompts} requests finished`);
+      if (doneSummary.errors) {
+        LOGGER.warn(`Finished with ${doneSummary.errors} errors`);
+      }
       if (last == "/dev/stdout") {
         const prompt = loaded.context[last];
         if (prompt.meta?.debug?.finish == 'failed') {
