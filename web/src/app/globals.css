@@ -1,10 +1,61 @@
 @import url("https://fonts.googleapis.com/css2?family=Ibarra+Real+Nova:wght@400;700&family=Inter:wght@400;700&family=JetBrains+Mono&display=swap");
 
 :root {
-  --chroma: 0.125;
-  --color-primary-hue: 216deg; /* Default 115deg in bundle */
-  --sizing: 1;
+  color-scheme: light;
   --font-family-base: Inter, sans-serif;
-  --font-family-heading: "Ibarra Real Nova", var(--font-family-heading);
+  --font-family-heading: "Ibarra Real Nova", serif;
   --font-family-monospace: "JetBrains Mono", monospace;
+  --font-size-base: 20px;
+  --color-base: lightblue;
+  --color-contrast: lightgreen;
+  --color-background: white;
+  --color-text: black;
+  --size-base: 5px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+    --color-base: darkblue;
+    --color-contrast: darkgreen;
+    --color-background: black;
+    --color-text: white;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-size: var(--font-size-base);
+  font-family: var(--font-family-base);
+}
+
+h1,
+h2 {
+  font-family: var(--font-family-heading);
+  margin: 0;
+  padding: calc(var(--size-base) * 3) 0;
+}
+
+header {
+  background: var(--color-contrast);
+  border-bottom: 2px solid color-mix(in lch, var(--color-contrast) 85%, black);
+  margin-bottom: var(--size-base);
+}
+
+header nav ul {
+  list-style: none;
+  margin: 0;
+}
+
+code,
+pre {
+  font-family: var(--font-family-monospace);
+}
+
+pre {
+  white-space: pre;
 }

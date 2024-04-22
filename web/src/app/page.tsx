@@ -1,14 +1,18 @@
-import M from "@/components/M";
-import Link from "next/link";
+"use client";
+import { Editor } from "./editor";
+import { Response } from "./response";
+import { Storyboard } from "./storyboard";
+
+import styles from "./page.module.css";
+import { useAillyPageStore } from "./store";
 
 export default function Home() {
+  const store = useAillyPageStore();
   return (
-    <>
-      <M>Get started by editing files in the `/content` directory.</M>
-      <p>
-        Then, see your content and trigger generating updates by navigating to
-        the <Link href="/content">/content</Link> route.
-      </p>
-    </>
+    <div className={styles.main}>
+      <Response {...store} />
+      <Editor {...store} />
+      <Storyboard {...store} />
+    </div>
   );
 }

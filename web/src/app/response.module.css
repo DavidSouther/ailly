@@ -1,0 +1,41 @@
+.response {
+  min-height: 55px;
+  max-height: 235px;
+  overflow-y: scroll;
+  transition: max-height 1s ease-in, min-height 1s ease-in;
+
+  &.generating {
+    max-height: 35px;
+    min-height: 35px;
+  }
+}
+
+.spinner {
+  margin: 25px auto;
+  display: flex;
+  justify-content: center;
+}
+
+.spinner:before {
+  content: " ";
+  display: block;
+  width: 25px;
+  height: 25px;
+  padding: 25px;
+  --border: 5px solid var(--color-base);
+  border: var(--border);
+  border-bottom: none;
+  border-radius: 50%;
+  rotate: 0deg;
+  animation: rotation 0.8s infinite;
+}
+
+@keyframes rotation {
+  from {
+    rotate: 0deg;
+  }
+
+  to {
+    rotate: 360deg;
+  }
+}
