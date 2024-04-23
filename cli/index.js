@@ -60,7 +60,7 @@ async function main() {
       if (last == "/dev/stdout") {
         const prompt = loaded.context[last];
         if (prompt.meta?.debug?.finish == 'failed') {
-          console.error(prompt.meta.debug.error.message);
+          LOGGER.error("There was an error", { err: { message: prompt.meta.debug.error.message } });
           return;
         }
         const edit = prompt.context.edit;
@@ -142,7 +142,7 @@ async function check_or_exit(prompt) {
     input: process.stdin,
     output: process.stdout,
   });
-  const answer = await promisify(rl.question)(prompt);
+  const answer = await new Promise((resolve) => rl.question(prompt, resolve));
   if (!answer.toUpperCase().startsWith("Y")) {
     process.exit(0);
   }

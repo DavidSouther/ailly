@@ -4,12 +4,15 @@ import {
   InvokeModelCommand,
 } from "@aws-sdk/client-bedrock-runtime";
 import { Content, View } from "../../content/content.js";
-import { LOGGER, isDefined } from "../../util.js";
+import { LOGGER as ROOT_LOGGER, isDefined } from "../../util.js";
 import { Message, Summary } from "../index.js";
 import { Models, PromptBuilder } from "./prompt-builder.js";
+import { getLogger } from "@davidsouther/jiffies/lib/esm/log.js";
 
 export const name = "bedrock";
 export const DEFAULT_MODEL = "anthropic.claude-3-sonnet-20240229-v1:0";
+
+const LOGGER = getLogger("@ailly/core:bedrock");
 
 const MODEL_MAP: Record<string, string> = {
   sonnet: "anthropic.claude-3-sonnet-20240229-v1:0",
@@ -21,6 +24,8 @@ export async function generate(
   c: Content,
   { model = DEFAULT_MODEL }: { model: string }
 ): Promise<{ message: string; debug: unknown }> {
+  LOGGER.level = ROOT_LOGGER.level;
+  LOGGER.format = ROOT_LOGGER.format;
   const bedrock = new BedrockRuntimeClient({});
   model = MODEL_MAP[model] ?? model;
   let messages = c.meta?.messages ?? [];
