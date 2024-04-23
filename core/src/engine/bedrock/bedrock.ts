@@ -7,7 +7,7 @@ import { Content, View } from "../../content/content.js";
 import { LOGGER as ROOT_LOGGER, isDefined } from "../../util.js";
 import { Message, Summary } from "../index.js";
 import { Models, PromptBuilder } from "./prompt-builder.js";
-import { getLogger } from "@davidsouther/jiffies/lib/esm/log";
+import { getLogger } from "@davidsouther/jiffies/lib/esm/log.js";
 
 export const name = "bedrock";
 export const DEFAULT_MODEL = "anthropic.claude-3-sonnet-20240229-v1:0";
