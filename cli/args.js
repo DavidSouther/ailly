@@ -27,7 +27,7 @@ export function makeArgs(argv = process.argv) {
       yes: { type: "boolean", default: false, short: "y" },
       help: { type: "boolean", short: "h", default: false },
       version: { type: "boolean", default: false },
-      "log-level": { type: "string", default: "" },
+      "log-level": { type: "string", default: undefined },
       verbose: { type: "boolean", default: false, short: "v" },
       pretty: { type: "boolean", default: false },
     },

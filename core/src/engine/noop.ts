@@ -1,4 +1,8 @@
+import { getLogger } from "@davidsouther/jiffies/lib/esm/log.js";
 import { Content } from "../content/content.js";
+import { LOGGER as ROOT_LOGGER } from "../util.js";
+
+const LOGGER = getLogger("@ailly/core:noop");
 
 export const DEFAULT_MODEL = "NOOP";
 const NOOP_TIMEOUT = 750;
@@ -8,6 +12,8 @@ export async function generate<D extends {} = {}>(
   c: Content,
   _: unknown
 ): Promise<{ debug: D; message: string }> {
+  LOGGER.level = ROOT_LOGGER.level;
+  LOGGER.format = ROOT_LOGGER.format;
   await new Promise<void>((resolve) => {
     setTimeout(() => resolve(), NOOP_TIMEOUT);
   });
