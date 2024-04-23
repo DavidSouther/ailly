@@ -27,7 +27,7 @@
   },
   "dependencies": {
     "@ailly/core": "1.3.0",
-    "@davidsouther/jiffies": "^2.2.1",
+    "@davidsouther/jiffies": "^2.2.2",
     "yaml": "^2.4.1"
   },
   "devDependencies": {
