@@ -1,4 +1,4 @@
-import { getLogger } from "@davidsouther/jiffies/lib/esm/log.js";
+import { basicLogFormatter, getLogLevel, getLogger } from "@davidsouther/jiffies/lib/esm/log.js";
 import { assertExists } from "@davidsouther/jiffies/lib/esm/assert.js";
 import { dirname, resolve, join } from "node:path";
 import { parse } from "yaml";
@@ -43,8 +43,9 @@ export async function loadFs(fs, args) {
   const hasPositionals = positionals.length > 0;
   const hasPrompt = args.values.prompt !== undefined && args.values.prompt !== "";
   const isPipe = !hasPositionals && hasPrompt;
-  ailly.Ailly.LOGGER.level = LOGGER.level = ailly.Ailly.getLogLevel(args.values['log-level'], args.values.verbose ?? false, isPipe);
-  if (args.values.pretty || isPipe) LOGGER.format = ailly.Ailly.LOGGER.format = ailly.Ailly.prettyLogFormatter;
+  const logLevel = args.values['log-level'] ?? args.values.verbose ? 'verbose' : isPipe ? 'silent' : '';
+  ailly.Ailly.LOGGER.level = LOGGER.level = getLogLevel(logLevel);
+  if (args.values.pretty || isPipe) LOGGER.format = ailly.Ailly.LOGGER.format = basicLogFormatter;
 
   const system = args.values.system ?? "";
 

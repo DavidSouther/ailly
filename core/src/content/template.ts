@@ -23,8 +23,8 @@ export function mergeContentViews(
   c.meta = c.meta ?? {};
   c.meta.view = c.context.view;
   c.meta.prompt = c.prompt;
-  if (c.context.predecessor)
-    mergeContentViews(context[c.context.predecessor!], base, context);
+  if (c.context.predecessor && context[c.context.predecessor])
+    mergeContentViews(context[c.context.predecessor], base, context);
   let view = structuredClone(base);
   for (const s of c.context.system ?? []) {
     if (s.view === false) continue;

@@ -27,7 +27,7 @@
   "homepage": "https://github.com/DavidSouther/ailly#readme",
   "dependencies": {
     "@aws-sdk/client-bedrock-runtime": "^3.427.0",
-    "@davidsouther/jiffies": "^2.2.0",
+    "@davidsouther/jiffies": "^2.2.1",
     "@dqbd/tiktoken": "^1.0.7",
     "gitignore-parser": "^0.0.2",
     "gray-matter": "^4.0.3",

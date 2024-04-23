@@ -114,10 +114,11 @@ export class PromptThread {
       await generateOne(c, this.context, this.settings, this.engine);
       await this.plugin.clean(c);
       this.finished += 1;
-    } catch (e) {
-      LOGGER.warn("Error generating content", e as Error);
-      this.errors.push([i, e as Error]);
-      throw e;
+    } catch (err) {
+      const { message, stack } = err as Error;
+      LOGGER.warn("Error generating content", { err: { message, stack } });
+      this.errors.push([i, err as Error]);
+      throw err;
     }
     return c;
   }
