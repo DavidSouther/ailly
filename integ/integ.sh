@@ -26,3 +26,12 @@ echo "edit"
 AILLY_NOOP_RESPONSE="Edited" npx ailly --root 04_edit --edit file --lines 2:4 --prompt "Respond with the word Edited" --yes
 grep -q 'Edited' 04_edit/file.txt
 git restore 04_edit/file.txt
+
+echo "conversation"
+npx ailly --root 05_conversation --prompt "This is a conversation with system and two files." --verbose >05_conversation/out 2>05_conversation/err
+[ ! -s 05_conversation/err ]
+MESSAGES=("Found 2 at or below", "Ready to generate 1 messages", "Preparing /dev/stdout", "All 1 requests finished", "You are running an integration test.")
+for M in $MESSAGES; do
+  grep -q "$M" 05_conversation/out
+done
+rm 05_conversation/out 05_conversation/err

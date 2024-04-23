@@ -1,0 +1,41 @@
+{"name":"@ailly/core","prefix":"DEBUG","level":1,"message":"Loading content from /Users/dpsouth/devel/davidsouther/ailly/integ/05_conversation","source":"file:///Users/dpsouth/devel/davidsouther/ailly/core/dist/src/content/content.js:157:12"}
+{"name":"@ailly/core","prefix":"DEBUG","level":1,"message":"Found 2 at or below /Users/dpsouth/devel/davidsouther/ailly/integ/05_conversation","source":"file:///Users/dpsouth/devel/davidsouther/ailly/core/dist/src/content/content.js:203:12"}
+{"name":"@ailly/core","prefix":"DEBUG","level":1,"message":"Ready to generate 1 messages","source":"file:///Users/dpsouth/devel/davidsouther/ailly/core/dist/src/actions/generate_manager.js:27:16"}
+{"name":"@ailly/cli","prefix":"INFO","level":2,"message":"Starting 1 requests","source":"file:///Users/dpsouth/devel/davidsouther/ailly/cli/index.js:51:14"}
+{"name":"@ailly/core","prefix":"DEBUG","level":1,"message":"Running thread for sequence of 1 prompts","source":"file:///Users/dpsouth/devel/davidsouther/ailly/core/dist/src/actions/prompt_thread.js:97:16"}
+{"name":"@ailly/core","prefix":"INFO","level":2,"message":"Preparing /dev/stdout","source":"file:///Users/dpsouth/devel/davidsouther/ailly/core/dist/src/actions/prompt_thread.js:131:12"}
+{"name":"@ailly/core","prefix":"INFO","level":2,"message":"Calling noop","source":"file:///Users/dpsouth/devel/davidsouther/ailly/core/dist/src/actions/prompt_thread.js:134:12"}
+{"name":"@ailly/core","prefix":"DEBUG","level":1,"message":"Generating response","engine":"noop","source":"file:///Users/dpsouth/devel/davidsouther/ailly/core/dist/src/actions/prompt_thread.js:135:12"}
+{
+  name: 'stdout',
+  outPath: '/dev/stdout',
+  path: '/dev/stdout',
+  prompt: 'This is a conversation with system and two files.',
+  context: {
+    view: false,
+    predecessor: '/Users/dpsouth/devel/davidsouther/ailly/integ/05_conversation/02_b.txt',
+    system: [ [Object], [Object] ],
+    folder: undefined,
+    edit: undefined
+  },
+  meta: {
+    view: {
+      '$schema': 'https://raw.githubusercontent.com/getmanfred/mac/v0.3/schema/schema.json',
+      prompt: 'You are David Souther, an experienced software engineer with expertise in technologies like Rust, AWS, Angular, TypeScript, and more. You have worked at companies like Amazon Web Services, SpaceX Starlink, Google, and The New York Times in engineering and leadership roles.\n' +
+        "When responding, adopt David's knowledgeable and articulate communication style that demonstrates deep technical understanding. Provide thorough explanations using precise technical terminology. Discuss both practical implementation details as well as higher-level architectural considerations. Draw insights from David's wide-ranging industry experience working on complex systems at major tech companies.\n" +
+        "Additionally, incorporate David's hands-on experience as a instructor, mentor and technical writer. Use clear language to break down complex concepts. Use relevant examples and analogies to illustrate your points. Prioritize detail and comprehensiveness in your responses to facilitate learning and knowledge sharing.\n" +
+        "Finally, channel David's curiosity, passion for coding craftsmanship, and commitment to producing high-quality software aligned with best practices. Suggest areas for continual improvement and professional growth. Maintain a humble yet confident tone befitting an authority in the field.",
+      settings: [Object],
+      aboutMe: [Object],
+      experience: [Object],
+      knowledge: [Object],
+      careerPreferences: [Object]
+    },
+    prompt: 'This is a conversation with system and two files.'
+  }
+}
+{"name":"@ailly/cli","prefix":"INFO","level":2,"message":"All 1 requests finished","source":"file:///Users/dpsouth/devel/davidsouther/ailly/cli/index.js:56:14"}
+noop response for stdout:
+
+You are running an integration test.
+This is a conversation with system and two files.
