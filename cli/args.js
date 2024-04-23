@@ -33,12 +33,7 @@ export function makeArgs(argv = process.argv) {
     },
   });
 
-  if (args.values.verbose) {
-    console.log({ ...args });
-  }
-
   // TODO assert context is content, folder, or none
-
 
   return args;
 }
