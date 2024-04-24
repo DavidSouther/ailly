@@ -40,7 +40,8 @@ export function getRevision(root: /* ImportMeta.URL */ string) {
   let changes = "";
   try {
     // Are there any outstanding git changes?
-    const run = (cmd: string) => execSync(cmd, { encoding: "utf-8", cwd });
+    const run = (cmd: string) =>
+      execSync(cmd, { encoding: "utf-8", cwd, stdio: "pipe" });
     sha = run("git rev-parse --short HEAD").trim();
     status = run("git status --porcelain=v1");
   } catch (e) {}
