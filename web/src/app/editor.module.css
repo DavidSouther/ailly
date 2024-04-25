@@ -1,3 +1,30 @@
+.section {
+  margin-top: var(--size-lg);
+
+  & > form {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+  }
+}
+
+.button {
+  display: block;
+  aspect-ratio: 1;
+  margin-left: var(--size-md);
+  border-radius: 50%;
+  background-color: var(--color-contrast);
+}
+
+.button:hover {
+  cursor: pointer;
+  background: color-mix(
+    in lch,
+    var(--color-contrast) 85%,
+    var(--color-background)
+  );
+}
+
 .prompt {
   margin: 0;
   padding: 0;
@@ -7,9 +34,8 @@
 .instruction {
   width: 100%;
   min-height: 30px;
-  padding: var(--size-base) calc(2 * var(--size-base));
+  padding: var(--size-base) var(--size-md);
   border: none;
   border-radius: var(--size-base);
   box-shadow: lightgrey 0 0 2px 4px;
-  margin-top: calc(var(--size-base) * 5);
 }

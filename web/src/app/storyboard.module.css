@@ -15,16 +15,37 @@
 
 .blocks p {
   margin: 0;
+  margin-block-end: 0.8em;
+  font-size: 0.8em;
 }
 
 .option {
+  --background-mix: 70%;
   display: block;
   border-radius: var(--size-base);
   box-shadow: var(--color-base) 1px 2px 5px 2px;
   border: var(--color-base) solid 1.5px;
-  padding: var(--size-base) calc(2 * var(--size-base));
+  padding: var(--size-base) var(--size-md);
+  font-weight: 200;
+
+  background: color-mix(
+    in lch,
+    var(--color-base) var(--background-mix),
+    var(--color-background)
+  );
 
   animation: fadeIn 1s;
+}
+
+.option:hover,
+.option:has(:focus) {
+  --background-mix: 85%;
+  cursor: pointer;
+}
+
+.option:has(:checked) {
+  --background-mix: 100%;
+  font-weight: normal;
 }
 
 @keyframes fadeIn {
@@ -38,18 +59,5 @@
 }
 
 li:has(.option):not(:last-of-type) {
-  margin-block-end: calc(2 * var(--size-base));
-}
-
-.option:hover {
-  cursor: pointer;
-  background: color-mix(in lch, var(--color-base) 85%, var(--color-background));
-}
-
-.option:has(:checked) {
-  background: var(--color-base);
-}
-
-.option input {
-  display: none;
+  margin-block-end: var(--size-md);
 }

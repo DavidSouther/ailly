@@ -10,6 +10,14 @@
   }
 }
 
+@media (min-width: 500px) {
+  .response {
+    border-left: var(--size-thin) solid lightgrey;
+    padding-left: var(--size-lg);
+    max-height: inherit;
+  }
+}
+
 .spinner {
   margin: 25px auto;
   display: flex;
@@ -19,6 +27,7 @@
 .spinner:before {
   content: " ";
   display: block;
+  /* These are hand-selected for the spinner, and should not change with --sizing */
   width: 25px;
   height: 25px;
   padding: 25px;

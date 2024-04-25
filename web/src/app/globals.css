@@ -1,4 +1,4 @@
-@import url("https://fonts.googleapis.com/css2?family=Ibarra+Real+Nova:wght@400;700&family=Inter:wght@400;700&family=JetBrains+Mono&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Ibarra+Real+Nova:wght@200;400;700&family=Inter:wght@400;700&family=JetBrains+Mono&display=swap");
 
 :root {
   color-scheme: light;
@@ -11,6 +11,10 @@
   --color-background: white;
   --color-text: black;
   --size-base: 5px;
+  --size-md: calc(2 * var(--size-base));
+  --size-lg: calc(4 * var(--size-base));
+  --size-thin: 1px;
+  --size-thick: 2px;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -37,12 +41,13 @@ h1,
 h2 {
   font-family: var(--font-family-heading);
   margin: 0;
-  padding: calc(var(--size-base) * 3) 0;
+  padding: var(--size-md) 0;
 }
 
 header {
+  --border-bottom-color: color-mix(in lch, var(--color-contrast) 85%, black);
   background: var(--color-contrast);
-  border-bottom: 2px solid color-mix(in lch, var(--color-contrast) 85%, black);
+  border-bottom: var(--size-thick) solid var(--border-bottom-color);
   margin-bottom: var(--size-base);
 }
 
