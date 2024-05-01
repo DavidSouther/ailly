@@ -1,4 +1,4 @@
-import { PipelineSettings } from "../ailly.js";
+import { DEFAULT_SCHEDULER_LIMIT, PipelineSettings } from "../ailly.js";
 import { View, type Content } from "../content/content.js";
 import type { Engine } from "../engine/index.js";
 import type { Plugin } from "../plugin/index.js";
@@ -22,7 +22,7 @@ export interface PromptThreadSummary extends PromptThreadsSummary {
 
 export async function scheduler<T>(
   taskQueue: Array<() => Promise<T>>,
-  limit: number = 5
+  limit: number = DEFAULT_SCHEDULER_LIMIT
 ): Promise<PromiseSettledResult<T>[]> {
   taskQueue = [...taskQueue].reverse();
   let finished: Array<Promise<T>> = [];
@@ -130,7 +130,8 @@ export class PromptThread {
   private runIsolated(): Promise<PromiseSettledResult<Content>[]> {
     LOGGER.debug(`Running thread for ${this.content.length} isolated prompts`);
     return scheduler(
-      this.content.map((c, i) => () => this.runOne(c, i))
+      this.content.map((c, i) => () => this.runOne(c, i)),
+      this.settings.requestLimit
     ).finally(() => (this.done = true));
   }
 

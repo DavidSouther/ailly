@@ -26,6 +26,7 @@ export async function loadFs(fs, args) {
   const root = resolve(args.values.root ?? '.');
   fs.cd(root);
 
+
   const settings = await ailly.Ailly.makePipelineSettings({
     root,
     out: resolve(args.values.out ?? root),
@@ -37,6 +38,7 @@ export async function loadFs(fs, args) {
     plugin: args.values.plugin,
     templateView: await loadTemplateView(fs, args.values['template-view']),
     overwrite: !args.values["no-overwrite"],
+    requestLimit: args.values['request-limit'] ?? args.values.model?.includes("opus") ? 1 : undefined,
   });
 
   const positionals = args.positionals.slice(2).map(a => resolve(join(root, a)));
