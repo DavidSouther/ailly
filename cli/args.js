@@ -66,7 +66,7 @@ export function help() {
 
     --plugin can load a custom RAG plugin. Specify a path to import with "file://./path/to/plugin.mjs". plugin.mjs must export a single default function that meets the PluginBuilder interface in core/src/plugin/index.ts
     --template-view loads a YAML or JSON file to use as a view for the prompt templates. This view will be merged after global, engine, and plugin views but before system and template views.
-    --request-limit will limit to this many requests at once. Default is 5, unless the model is Opus, which has a default request limit of 1.
+    --request-limit will limit the number of requests per call to the provided value. Default value is 5, except for Opus with a default of 1.
 
     --no-overwrite will not run generation on Content with an existing Response.
     --summary will show a pricing expectation before running and prompt for OK.
