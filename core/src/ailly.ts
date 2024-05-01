@@ -12,11 +12,14 @@ export type Thread = Content[];
 
 export { GenerateManager } from "./actions/generate_manager.js";
 
+export const DEFAULT_SCHEDULER_LIMIT = 5;
+
 export interface PipelineSettings {
   root: string;
   out: string;
   engine: string;
   model: string;
+  requestLimit: number;
   context: NonNullable<ContentMeta["context"]>;
   plugin: string;
   isolated: boolean;
@@ -30,6 +33,7 @@ export async function makePipelineSettings({
   out = root,
   engine = DEFAULT_ENGINE,
   model,
+  requestLimit = DEFAULT_SCHEDULER_LIMIT,
   context = "conversation",
   plugin = DEFAULT_PLUGIN,
   overwrite = true,
@@ -46,6 +50,7 @@ export async function makePipelineSettings({
   overwrite?: boolean;
   isolated?: boolean;
   combined?: boolean;
+  requestLimit?: number;
   templateView?: View;
 }): Promise<PipelineSettings> {
   model = model ?? (await getEngine(engine)).DEFAULT_MODEL;
@@ -57,6 +62,7 @@ export async function makePipelineSettings({
     out,
     engine,
     model,
+    requestLimit,
     context: context as NonNullable<ContentMeta["context"]>,
     plugin,
     overwrite,

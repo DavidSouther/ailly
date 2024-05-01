@@ -19,6 +19,7 @@ export function makeArgs(argv = process.argv) {
       "template-view": { type: "string", default: process.env["AILLY_TEMPLATE_VIEW"] },
       prompt: { type: "string", default: process.env["AILLY_PROMPT"], short: "p" },
       system: { type: "string", default: process.env["AILLY_SYSTEM"], short: "s" },
+      "request-limit": { type: "string", default: process.env["AILLY_REQUEST_LIMIT"] },
       temperature: { type: "string", default: "" },
       "update-db": { type: "boolean", default: false },
       "query-db": { type: "string", default: "" },
@@ -65,6 +66,7 @@ export function help() {
 
     --plugin can load a custom RAG plugin. Specify a path to import with "file://./path/to/plugin.mjs". plugin.mjs must export a single default function that meets the PluginBuilder interface in core/src/plugin/index.ts
     --template-view loads a YAML or JSON file to use as a view for the prompt templates. This view will be merged after global, engine, and plugin views but before system and template views.
+    --request-limit will limit to this many requests at once. Default is 5, unless the model is Opus, which has a default request limit of 1.
 
     --no-overwrite will not run generation on Content with an existing Response.
     --summary will show a pricing expectation before running and prompt for OK.
