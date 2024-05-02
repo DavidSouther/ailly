@@ -16,7 +16,7 @@ Ailly's best feature is rapidly itearting on prompt engineering. By keeping your
 2. Create a file, `content/.aillyrc`, and put your top-level prompt instructions.
    - Include system prompts, level setting expectations. etc.
 3. Create several files, `content/01_big_point.md`, `content/02_second_point.md` etc.
-4. Run ailly using NodeJS: `npx @ailly/cli@1.2.4 --root content`
+4. Run ailly using NodeJS: `npx @ailly/cli --root content`
 
 ### Properties
 
@@ -46,16 +46,17 @@ PLAN to use Ailly effectively. Iterate often. Provide context. Put words in Aill
   - [Models documented by OpenAI](https://platform.openai.com/docs/models/continuous-model-upgrades)
 - Bedrock `bedrock`
   - [Claude 2 and available models documented by AWS](https://docs.aws.amazon.com/bedrock/latest/userguide/api-methods-list.html)
-  - Enable models in Bedrock console. Remember that models are enabled per-region - you will need to enable them for each reach you call Bedrock from.
+  - [Enable models in Bedrock console.](https://docs.aws.amazon.com/bedrock/latest/userguide/model-access.html) Remember that models are enabled per-region - you will need to enable them for each reach you call Bedrock from.
   - Each model behaves lightly differently, so the default formatter might not work. In that case, either open an issue or poke around in `./core/src/engine/bedrock`.
 
 To choose an engine, export `AILLY_ENGINE=[bedrock|openai]` or provide `ailly --engine` on the command line.
 
-## Installing ailly command line
+## Developing ailly command line
 
 - Clone the repo and install dependencies
   - `git clone https://github.com/davidsouther/ailly.git ; cd ailly ; npm install`
 - Compile the core module with `npx tsc -p core`
+  - Rerun this step for any edits in `core`
 - Install ailly cli with `npm install -g ./cli`
 - Set any environment variables for your engine
   - `export OPENAI_API_KEY=sk-...`
