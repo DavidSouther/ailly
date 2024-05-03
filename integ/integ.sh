@@ -73,3 +73,6 @@ for M in "${MESSAGES[@]}"; do
 done
 rm 05_conversation/out 05_conversation/err
 echo "(all verbose conversation messages checked)"
+
+echo "Pipes"
+./10_std_pipes/pipes.sh

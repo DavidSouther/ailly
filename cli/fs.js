@@ -3,6 +3,7 @@ import { assertExists } from "@davidsouther/jiffies/lib/esm/assert.js";
 import { dirname, resolve, join } from "node:path";
 import { parse } from "yaml";
 import * as ailly from "@ailly/core";
+import { Console } from "node:console";
 
 export const LOGGER = getLogger('@ailly/cli');
 
@@ -45,7 +46,8 @@ export async function loadFs(fs, args) {
   const hasPositionals = positionals.length > 0;
   const hasPrompt = args.values.prompt !== undefined && args.values.prompt !== "";
   const isPipe = !hasPositionals && hasPrompt;
-  const logLevel = args.values['log-level'] ?? (args.values.verbose ? 'verbose' : (isPipe ? 'silent' : ''));
+  const logLevel = args.values['log-level'] ?? (args.values.verbose ? 'verbose' : (isPipe ? 'silent' : undefined));
+  ailly.Ailly.LOGGER.console = LOGGER.console = isPipe ? new Console(process.stderr, process.stderr) : global.console;
   ailly.Ailly.LOGGER.level = LOGGER.level = getLogLevel(logLevel);
   if (args.values.pretty || isPipe) LOGGER.format = ailly.Ailly.LOGGER.format = basicLogFormatter;
 
@@ -73,7 +75,7 @@ export async function loadFs(fs, args) {
       content = [];
     }
     const prompt = assertExists(args.values.prompt);
-    const cliContent = makeCLIContent(prompt, settings.context, system, context, root, edit, settings.templateView);
+    const cliContent = await makeCLIContent(prompt, settings.context, system, context, root, edit, settings.templateView);
     context[cliContent.path] = cliContent;
     content.push(cliContent.path);
   }
@@ -126,7 +128,7 @@ export function makeEdit(lines, content, hasPrompt) {
  * @param {*} view 
  * @returns Content
  */
-export function makeCLIContent(prompt, argContext, argSystem, context, root, edit, view) {
+export async function makeCLIContent(prompt, argContext, argSystem, context, root, edit, view) {
   const inFolder = Object.keys(context).filter(c => dirname(c) == root);
   // When argContext is folder, `folder` is all files in context in root.
   const folder = argContext == 'folder' ? inFolder : undefined;
@@ -134,6 +136,13 @@ export function makeCLIContent(prompt, argContext, argSystem, context, root, edi
   const predecessor = argContext == 'conversation' ? inFolder.at(-1) : undefined;
   // When argContext is none, system is empty; otherwise, system is argSystem + predecessor's system.
   const system = argContext == "none" ? [] : [{ content: argSystem ?? "", view: {} }, ...((predecessor ? context[predecessor].context.system : undefined) ?? [])];
+  if (prompt === "-") { // Treat `-` as "read from stdin"
+    try {
+      prompt = await readAll(process.stdin);
+    } catch (err) {
+      LOGGER.warn("Failed to read stdin", { e: err });
+    }
+  }
   const cliContent = {
     name: 'stdout',
     outPath: "/dev/stdout",
@@ -169,4 +178,24 @@ export async function loadTemplateView(fs, path) {
     console.warn(`Failed to load template-view ${path}`, e)
   }
   return {};
+}
+
+async function readAll(readable) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+
+    readable.on('readable', () => {
+      let chunk;
+      while (null !== (chunk = readable.read())) {
+        chunks.push(chunk);
+      }
+    });
+
+    readable.on('end', () => {
+      const content = chunks.join('');
+      resolve(content);
+    });
+
+    readable.on('error', reject);
+  });
 }

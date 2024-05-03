@@ -55,12 +55,12 @@ async function main() {
       const doneSummary = generator.summary();
       LOGGER.info(`All ${doneSummary.totalPrompts} requests finished`);
       if (doneSummary.errors) {
-        LOGGER.warn(`Finished with ${doneSummary.errors} errors`);
+        LOGGER.warn(`Finished with errors`, { errors: doneSummary.errors });
       }
       if (last == "/dev/stdout") {
         const prompt = loaded.context[last];
         if (prompt.meta?.debug?.finish == 'failed') {
-          LOGGER.error("There was an error", { err: { message: prompt.meta.debug.error.message } });
+          console.error(prompt.meta.debug.error.message);
           return;
         }
         const edit = prompt.context.edit;
