@@ -42,6 +42,7 @@ export type AillyStoreDispatch = Dispatch<{
 
 export function makeAillyStore(dispatch: MutableRefObject<AillyStoreDispatch>) {
   const story: StoryBook[] = [ROLES, TONES, BACKGROUND, OUTPUT];
+  // const story: StoryBook[] = [BIRD_ROLES, BIRD_TONES];
   story.forEach((book) => {
     if (book.options.at(-1)?.slug != "custom")
       book.options.push({ slug: "custom", content: "" });
@@ -209,58 +210,74 @@ const OUTPUT_JSON =
 const OUTPUT_MARKDOWN =
   "Output in Markdown. Do not use headings. Paragraphs are separated by a blank line. Prefix lists with *.";
 
-const ROLES: StoryBook = {
-  title: "Role",
-  slug: "role",
-  about: EXPLAIN_ROLE,
-  options: [
-    { content: ROLE_PROGRAMMER, slug: "programmer" },
-    { content: ROLE_TECH_WRITER, slug: "tech-writer" },
-    { content: ROLE_FIC_WRITER, slug: "fic-writer" },
-  ],
-  select: "single",
-  format: (c) => `<role>${c}</role>`,
-};
-const TONES: StoryBook = {
-  title: "Tone",
-  slug: "tone",
-  about: EXPLAIN_TONE,
-  options: [
-    { content: TONE_PRECISE, slug: "precise" },
-    { content: TONE_PRO, slug: "pro" },
-    { content: TONE_WHIMSY, slug: "whimsy" },
-  ],
-  select: "single",
-  format: (c) => `<tone>${c}</tone>`,
-};
-const BACKGROUND: StoryBook = {
-  title: "Background",
-  slug: "background",
-  about: EXPLAIN_BACKGROUND,
-  options: [
-    { content: BACKGROUND_MAX_TOKENS, slug: "max_tokens" },
-    { content: BACKGROUND_TEMPERATURE, slug: "temperature" },
-    { content: BACKGROUND_PROMPT_SINGLE, slug: "single" },
-    { content: BACKGROUND_PROMPT_MULTI, slug: "many" },
-  ],
-  select: "multi",
-  format: (c) => `<background>${c}</background>`,
-};
+const ROLES = makeBook("Role", EXPLAIN_ROLE, "single", [
+  { content: ROLE_PROGRAMMER, slug: "programmer" },
+  { content: ROLE_TECH_WRITER, slug: "tech-writer" },
+  { content: ROLE_FIC_WRITER, slug: "fic-writer" },
+]);
+const TONES = makeBook("Tone", EXPLAIN_TONE, "single", [
+  { content: TONE_PRECISE, slug: "precise" },
+  { content: TONE_PRO, slug: "pro" },
+  { content: TONE_WHIMSY, slug: "whimsy" },
+]);
+const BACKGROUND = makeBook("Background", EXPLAIN_BACKGROUND, "multi", [
+  { content: BACKGROUND_MAX_TOKENS, slug: "max_tokens" },
+  { content: BACKGROUND_TEMPERATURE, slug: "temperature" },
+  { content: BACKGROUND_PROMPT_SINGLE, slug: "single" },
+  { content: BACKGROUND_PROMPT_MULTI, slug: "many" },
+]);
 
-const OUTPUT: StoryBook = {
-  title: "Output",
-  slug: "output",
-  about: EXPLAIN_OUTPUT,
-  options: [
-    { content: OUTPUT_HTML, slug: "html" },
-    { content: OUTPUT_DOCBOOK, slug: "xml" },
-    { content: OUTPUT_JSON, slug: "json" },
-    { content: OUTPUT_MARKDOWN, slug: "md" },
-  ],
-  select: "single",
-  format: (c) => `<output>${c}</output>`,
-};
+const OUTPUT = makeBook("Output", EXPLAIN_OUTPUT, "single", [
+  { content: OUTPUT_HTML, slug: "html" },
+  { content: OUTPUT_DOCBOOK, slug: "xml" },
+  { content: OUTPUT_JSON, slug: "json" },
+  { content: OUTPUT_MARKDOWN, slug: "md" },
+]);
 
 async function pause(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
+}
+
+const TONE_SASSY = "You are sassy.";
+const TONE_INQUISITIVE = "You are inquisitive.";
+const TONE_CAUTIOUS = "You are cautious.";
+
+const ROLE_TURKEY =
+  "You are a wild turkey, roaming the forests and fields of North America. Respond to user questions and prompts with the behaviors, instincts, and knowledge typical of a turkey. Share insights on foraging habits, mating rituals, interactions with predators, and the significance of turkeys in Native American cultures.";
+const ROLE_PIGEON =
+  "You are embodying the essence of a pigeon, the quintessential city dweller with wings. Imagine yourself perched on a ledge, observing the world below with curiosity and the occasional flutter of flight. As a pigeon, your responses should reflect a simple yet observant perspective, grounded in the everyday experiences of urban life. Occasionally coo.";
+const ROLE_BLUE_JAY =
+  "You are a blue jay, I'm a strikingly colored passerine bird native to eastern North America, known for my vibrant blue plumage, white chest, and distinctive crest atop your head. Bold and gregarious, You are often found in deciduous and coniferous forests as well as residential areas throughout the eastern and central United States and parts of Canada. You are omnivorous, with a diet consisting mainly of seeds, nuts, fruits, and arthropods.";
+const ROLE_RAVEN =
+  "You are a wise and observant raven, perched atop an ancient oak tree, your keen eyes scanning the world below for any signs of interest or inquiry. When users seek your insight, respond with cryptic yet insightful answers, weaving in hints of myth, legend, and the natural world.";
+
+const BIRD_TONES = makeBook("Tones", EXPLAIN_TONE, "single", [
+  { content: TONE_CAUTIOUS, slug: "cautious" },
+  { content: TONE_INQUISITIVE, slug: "inquisitive" },
+  { content: TONE_SASSY, slug: "sassy" },
+]);
+
+const BIRD_ROLES = makeBook("Roles", EXPLAIN_ROLE, "single", [
+  { content: ROLE_TURKEY, slug: "turkey" },
+  { content: ROLE_PIGEON, slug: "pigeon" },
+  { content: ROLE_BLUE_JAY, slug: "blue_jay" },
+  { content: ROLE_RAVEN, slug: "raven" },
+]);
+
+function makeBook(
+  title: string,
+  about: string,
+  select: "single" | "multi",
+  options: StoryBookOption[],
+  slug = title.toLowerCase(),
+  format = (c: string) => `<${slug}>${c}</${slug}>`
+): StoryBook {
+  return {
+    title,
+    slug,
+    about,
+    options,
+    select,
+    format,
+  };
 }
