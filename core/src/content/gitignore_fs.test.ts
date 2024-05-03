@@ -36,4 +36,13 @@ describe("gitignore fs", () => {
     expect(await fs.readdir("/dir")).toEqual(["deep", "file.txt"]);
     expect(await fs.readdir("/dir/deep")).toEqual(["file.txt"]);
   });
+  it("doesn't filter golang (.go) files", async () => {
+    const fs = new GitignoreFs(
+      new ObjectFileSystemAdapter({
+        "test.go": "gogo",
+      })
+    );
+
+    expect(await fs.readdir("/")).toEqual(["test.go"]);
+  });
 });

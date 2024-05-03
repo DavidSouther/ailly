@@ -36,6 +36,10 @@ export class GitignoreFs extends FileSystem {
 }
 
 function isTextExtension(name: string) {
+  const overrides = ["go"];
+  if (overrides.includes((name.split(".").pop() || ""))) {
+    return true;
+  }
   const contType = contentType(name) || "";
   return contType.startsWith("text") || contType.startsWith("application");
 }
