@@ -1,8 +1,8 @@
 import { OpenAI, toFile } from "openai";
 import { assertExists } from "@davidsouther/jiffies/lib/esm/assert.js";
-import type { Content } from "../content/content";
-import type { PipelineSettings } from "../ailly";
-import type { Message, Summary } from "./index";
+import type { Content } from "../content/content.js";
+import type { PipelineSettings } from "../ailly.js";
+import type { Message, Summary } from "./index.js";
 import { LOGGER, isDefined } from "../util.js";
 import { encode } from "../encoding.js";
 
@@ -85,7 +85,7 @@ async function callOpenAiWithRateLimit(
     } catch (e: any) {
       LOGGER.warn("Error calling openai", e.message);
       if (retry == 0) {
-        throw new Error("Failed 3 times to call openai", { cause: e });
+        throw new Error("Failed 3 times to call openai" /*, { cause: e }*/);
       }
       if (e.error.code == "rate_limit_exceeded") {
         await new Promise((resolve) => {

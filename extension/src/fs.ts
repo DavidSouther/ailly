@@ -11,6 +11,10 @@ export class VSCodeFileSystemAdapter implements FileSystemAdapter {
     return Promise.resolve();
   }
 
+  mkdir(path: string): Promise<void> {
+    return Promise.resolve(workspace.fs.createDirectory(Uri.file(path)));
+  }
+
   readFile(path: string): Promise<string> {
     return Promise.resolve(
       workspace.fs

@@ -18,7 +18,7 @@ export const content = {
 };
 
 export const Ailly = aillyModule;
-export const version = getVersion(import.meta.url);
+export const version = getVersion(import.meta?.url ?? "file://" + __filename);
 
 // TODO move this to jiffies
 import { execSync } from "node:child_process";
@@ -27,10 +27,14 @@ import { normalize, join } from "node:path";
 import { readFileSync } from "node:fs";
 
 export function getVersion(root: /*ImportMeta.URL*/ string) {
-  const cwd = normalize(join(fileURLToPath(root), ".."));
-  const packageJson = join(cwd, "./package.json");
-  const pkg = JSON.parse(readFileSync(packageJson, { encoding: "utf8" }));
-  return pkg.version;
+  try {
+    const cwd = normalize(join(fileURLToPath(root), ".."));
+    const packageJson = join(cwd, "./package.json");
+    const pkg = JSON.parse(readFileSync(packageJson, { encoding: "utf8" }));
+    return pkg.version;
+  } catch (_) {
+    return "unknown";
+  }
 }
 
 export function getRevision(root: /* ImportMeta.URL */ string) {

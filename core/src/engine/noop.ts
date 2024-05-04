@@ -1,8 +1,8 @@
 import { getLogger } from "@davidsouther/jiffies/lib/esm/log.js";
 import { Content } from "../content/content.js";
 import { LOGGER as ROOT_LOGGER } from "../util.js";
-import type { PipelineSettings } from "../ailly";
-import type { Message } from "./index";
+import type { PipelineSettings } from "../ailly.js";
+import type { Message } from "./index.js";
 
 const LOGGER = getLogger("@ailly/core:noop");
 
