@@ -58,7 +58,7 @@ describe("makeCLIContent", () => {
     return { root, settings, context };
   }, beforeEach);
 
-  it("creates a valid Content object with 'none' context", () => {
+  it("creates a valid Content object with 'none' context", async () => {
     const prompt = "Prompt";
     const argContext = "none";
     const argSystem = "System";
@@ -66,7 +66,7 @@ describe("makeCLIContent", () => {
     const content = ["/root/a", "/root/b"];
     const view = { prop: "test" };
 
-    const cliContent = cli.makeCLIContent(
+    const cliContent = await cli.makeCLIContent(
       prompt,
       argContext,
       argSystem,
@@ -91,14 +91,14 @@ describe("makeCLIContent", () => {
     });
   });
 
-  it("creates a valid Content object with 'folder' context", () => {
+  it("creates a valid Content object with 'folder' context", async () => {
     const prompt = "Prompt";
     const argContext = "folder";
     const argSystem = "System";
     const edit = undefined;
     const view = { prop: "test" };
 
-    const cliContent = cli.makeCLIContent(
+    const cliContent = await cli.makeCLIContent(
       prompt,
       argContext,
       argSystem,
@@ -123,14 +123,14 @@ describe("makeCLIContent", () => {
     });
   });
 
-  it("creates a valid Content object with 'conversation' context", () => {
+  it("creates a valid Content object with 'conversation' context", async () => {
     const prompt = "Prompt";
     const argContext = "conversation";
     const argSystem = "System";
     const edit = undefined;
     const view = { prop: "test" };
 
-    const cliContent = cli.makeCLIContent(
+    const cliContent = await cli.makeCLIContent(
       prompt,
       argContext,
       argSystem,
@@ -155,14 +155,14 @@ describe("makeCLIContent", () => {
     });
   });
 
-  it("handles empty content array with 'conversation' context", () => {
+  it("handles empty content array with 'conversation' context", async () => {
     const prompt = "Prompt";
     const argContext = "conversation";
     const argSystem = "System";
     const edit = undefined;
     const view = { prop: "test" };
 
-    const cliContent = cli.makeCLIContent(
+    const cliContent = await cli.makeCLIContent(
       prompt,
       argContext,
       argSystem,
