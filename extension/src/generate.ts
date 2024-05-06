@@ -5,7 +5,6 @@ import { FileSystem } from "@davidsouther/jiffies/lib/esm/fs.js";
 import { VSCodeFileSystemAdapter } from "./fs.js";
 import { LOGGER, getAillyEngine, getAillyModel, resetLogger } from "./settings";
 import { AillyEdit } from "@ailly/core/src/content/content";
-import { dirname } from "path";
 
 export async function generate(
   path: string,
@@ -43,9 +42,11 @@ export async function generate(
     content[0] = {
       context: {
         view: {},
-        contents: content[0].context.contents,
         folder: [content[0].path],
         edit: editContext,
+      },
+      meta: {
+        text: content[0].meta?.text,
       },
       path: "/dev/ailly",
       name: "ailly",
@@ -68,7 +69,7 @@ export async function generate(
   await generator.allSettled();
 
   if (content[0].meta?.debug?.finish! == "failed") {
-    throw new Error(content[0].meta.debug?.message!);
+    throw new Error(content[0].meta.debug?.error.message);
   }
 
   // Write
