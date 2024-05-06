@@ -3,6 +3,7 @@
 import M from "@/components/M";
 import { useAillyPageStore } from "./store";
 import styles from "./response.module.css";
+import { Tab, TabList } from "@/components/Tabs";
 
 export const Response = (store: ReturnType<typeof useAillyPageStore>) => {
   const { state } = store;
@@ -14,7 +15,19 @@ export const Response = (store: ReturnType<typeof useAillyPageStore>) => {
       {state.generating ? (
         <div className={styles.spinner}></div>
       ) : (
-        <M>{state.response.content}</M>
+        <TabList>
+          <Tab title="Response">
+            <M>{state.response.content}</M>
+          </Tab>
+          <Tab title="Prompt">
+            <h2>System</h2>
+            {state.content?.context.system?.map((s) => (
+              <p>{s.content}</p>
+            ))}
+            <h2>User</h2>
+            {state.content?.prompt}
+          </Tab>
+        </TabList>
       )}
     </section>
   );

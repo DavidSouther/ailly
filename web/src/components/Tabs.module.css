@@ -1,0 +1,94 @@
+.tablist {
+  --tab-border-color: var(--color-contrast);
+  --tab-border-style: solid;
+  --border: var(--size-thin) var(--tab-border-style) var(--tab-border-color);
+  /* If you have more than 5 tabs, you need to set this */
+  --tab-count: 5; /* <section role="tablist" style={{--tab-count: 8}} /> */
+  --spacing-tab-edge: var(--size-thick);
+  display: grid;
+  grid-template-rows: min-content 1fr;
+  grid-template-columns:
+    /* One column for the ::before left-side space */
+    var(--spacing-tab-edge)
+    /* --tab-count columns "as small as their content" */
+    /* NB: Set "word-wrap: nowrap" on the tab labels in user's code */
+    repeat(var(--tab-count), min-content)
+    /* The rest of the area to the ::after right-side space */
+    1fr;
+  height: 100%;
+}
+
+.tablist::after,
+.tablist::before {
+  content: "";
+  display: block;
+  border: var(--border);
+  border-color: transparent;
+  border-bottom-color: var(--tab-border-color);
+  min-width: var(--size-thick);
+  grid-row: 1;
+}
+
+.tablist::before {
+  order: -1;
+}
+
+.tablist::after {
+  order: 1;
+}
+
+.tab {
+  grid-row: 1;
+  order: 0;
+  border: var(--border);
+  border-color: transparent;
+  border-bottom-color: var(--tab-border-color);
+  height: min-content;
+  white-space: nowrap;
+}
+
+.tab label {
+  cursor: pointer;
+  /* Ensure the padding is on the label, so the entire area is clickable */
+  padding-top: var(--size-thin);
+  padding-bottom: var(--size-thin);
+  padding-left: var(--size-thick);
+  padding-right: var(--size-thick);
+}
+
+.tab:is(:hover),
+.tab:has(:focus, :active) {
+  border-color: var(--tab-border-color);
+  border-bottom-color: transparent;
+}
+
+.tab:is(:hover) {
+  border-style: dotted;
+}
+
+/* .tab:has(:focus, :active) {
+  border-style: dotted;
+} */
+
+.tab [type="radio"] {
+  /* Leave the radio button focusable, but not visible. */
+  clip: rect(1px, 1px, 1px, 1px);
+  position: absolute !important;
+  height: 1px;
+  width: 1px;
+  overflow: hidden;
+}
+
+.tab:where(:has(:checked), [aria-selected="true"]) {
+  border-color: var(--tab-border-color);
+  border-bottom-color: transparent;
+}
+
+.tabpanel {
+  display: none;
+  grid-area: 2 / 1 / span 1 / -1;
+}
+
+.tab:where([aria-selected="true"], :has(:checked)) + .tabpanel {
+  display: block;
+}
