@@ -21,8 +21,8 @@ export const Response = (store: ReturnType<typeof useAillyPageStore>) => {
           </Tab>
           <Tab title="Prompt">
             <h2>System</h2>
-            {state.content?.context.system?.map((s) => (
-              <p>{s.content}</p>
+            {state.content?.context.system?.map((s, i) => (
+              <p key={i}>{s.content}</p>
             ))}
             <h2>User</h2>
             {state.content?.prompt}
