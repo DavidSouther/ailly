@@ -1,0 +1,30 @@
+name: Package Extension
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  npm-test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20.x"
+
+      - name: Install dependencies
+        run: npm install && npx tsc -p core && npm link ./core -w cli
+
+      - name: Package Extension
+        run: npm run --workspace extension
+
+      - name: Publish extension artifact
+        uses: actions/upload-artifact
+        with:
+          name: extension
+          path: extension/ailly-*.vsix
