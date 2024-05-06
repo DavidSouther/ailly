@@ -10,6 +10,7 @@ export interface AillyPageState {
   instruction: string;
   response: Response;
   generating: boolean;
+  content: Content;
 }
 
 export interface StoryBook {
@@ -41,12 +42,25 @@ export type AillyStoreDispatch = Dispatch<{
 
 export function makeAillyStore(dispatch: MutableRefObject<AillyStoreDispatch>) {
   const story: StoryBook[] = [ROLES, TONES, BACKGROUND, OUTPUT];
+  story.forEach((book) => {
+    if (book.options.at(-1)?.slug != "custom")
+      book.options.push({ slug: "custom", content: "" });
+  });
   let storyItem = -1;
   let nextStoryItem = -1;
   let selections: number[][] = [];
   let instruction = "";
   let response = { content: "" };
   let generating = true;
+  let content: Content = {
+    name: "dev",
+    path: "/ailly/dev",
+    outPath: "/ailly/dev",
+    prompt: "",
+    context: {
+      view: false,
+    },
+  };
 
   const reducers = {
     updateState(_: AillyPageState): AillyPageState {
@@ -57,6 +71,7 @@ export function makeAillyStore(dispatch: MutableRefObject<AillyStoreDispatch>) {
         storyItem,
         response: { ...response },
         generating,
+        content,
       };
       return newState;
     },
@@ -90,7 +105,7 @@ export function makeAillyStore(dispatch: MutableRefObject<AillyStoreDispatch>) {
       this.updateAndGenerate();
     },
     async generate() {
-      const content: Content = {
+      content = {
         name: "dev",
         outPath: "/ailly/dev",
         path: "/ailly/dev",
@@ -106,7 +121,7 @@ export function makeAillyStore(dispatch: MutableRefObject<AillyStoreDispatch>) {
             )
             .flat()
             .map((content) => ({ content, view: {} })),
-          view: {},
+          view: false,
         },
       };
       generating = true;
