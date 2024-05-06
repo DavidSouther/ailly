@@ -8,6 +8,10 @@
     max-height: 35px;
     min-height: 35px;
   }
+
+  & h2 {
+    font-family: var(--font-family-monospace);
+  }
 }
 
 @media (min-width: 500px) {
