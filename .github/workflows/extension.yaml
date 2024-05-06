@@ -24,7 +24,7 @@ jobs:
         run: npm run --workspace extension
 
       - name: Publish extension artifact
-        uses: actions/upload-artifact
+        uses: actions/upload-artifact@v4
         with:
           name: extension
           path: extension/ailly-*.vsix
