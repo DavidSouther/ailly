@@ -19,7 +19,7 @@
 .button:hover {
   cursor: pointer;
   background: color-mix(
-    in lch,
+    in srgb,
     var(--color-contrast) 85%,
     var(--color-background)
   );
