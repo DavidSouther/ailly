@@ -6,7 +6,6 @@ import * as ailly from "@ailly/core";
 import { makeArgs, help } from "./args.js";
 import { loadFs, LOGGER } from "./fs.js";
 import { version } from "./version.js";
-import { promisify } from "node:util";
 
 await main();
 

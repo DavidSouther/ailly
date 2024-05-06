@@ -40,6 +40,18 @@ export async function generate(
   if (c.context.edit) {
     const lang = c.context.edit.file.split(".").at(-1) ?? "";
     fence = "```" + lang;
+    const { start, end } = c.context.edit as { start?: number; end?: number };
+    if (start != undefined) {
+      if (messages.at(-1)?.role === "user") {
+        messages.at(-1)!.content += [
+          "",
+          "You are replacing this section:",
+          "```",
+          c.meta?.text?.split("\n").slice(start, end),
+          "```",
+        ].join("\n");
+      }
+    }
     messages.push({ role: "assistant", content: fence });
     stopSequences = ["```"];
   }
@@ -176,7 +188,7 @@ export function getMessagesFolder(
     (content.context.folder ?? [])
       .map((c) => context[c])
       .map<string>(
-        (c) => `<file name="${c.name}>\n${c.prompt ?? c.response ?? ""}</file>`
+        (c) => `<file name="${c.name}>\n${c.meta?.text ?? c.prompt + "\n" + c.response}</file>`
       )
       .join("\n") +
     "\n</folder>";

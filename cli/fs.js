@@ -27,7 +27,6 @@ export async function loadFs(fs, args) {
   const root = resolve(args.values.root ?? '.');
   fs.cd(root);
 
-
   const settings = await ailly.Ailly.makePipelineSettings({
     root,
     out: resolve(args.values.out ?? root),
