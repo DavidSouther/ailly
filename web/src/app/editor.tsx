@@ -14,14 +14,14 @@ export const Editor = (store: ReturnType<typeof useAillyPageStore>) => {
   const send = useCallback(() => {
     clearTimeout(timer.current);
     if (input.current) actions.prompt(input.current?.value);
-  }, [input]);
+  }, [input, actions]);
 
   const onChange = useMemo(() => {
-    return (e: ChangeEvent<HTMLTextAreaElement>) => {
+    return () => {
       clearTimeout(timer.current);
       timer.current = setTimeout(send, INPUT_DELAY);
     };
-  }, []);
+  }, [send, timer]);
 
   return (
     <section className={styles.section}>

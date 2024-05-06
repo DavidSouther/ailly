@@ -27,3 +27,6 @@ jobs:
 
       - name: Run CI script in core workspace
         run: npm run --workspace core ci
+
+      - name: Run CI script in web workspace
+        run: npm run --workspace web ci

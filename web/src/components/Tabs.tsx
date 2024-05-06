@@ -54,7 +54,7 @@ export const TabList = (props: { children: ReturnType<typeof Tab>[] }) => {
     <section
       role="tablist"
       className={style.tablist}
-      style={{ "--tab-count": props.children.length }}
+      style={{ "--tab-count": props.children.length } as React.CSSProperties}
     >
       {Children.map(props.children, (child, index) =>
         cloneElement(child, {

@@ -21,7 +21,7 @@ export const Storyboard = (store: ReturnType<typeof useAillyPageStore>) => {
         actions.select(block, opt);
       }
     };
-  }, [timer]);
+  }, [timer, actions, state.story]);
 
   const editTimer = useRef<ReturnType<typeof globalThis.setTimeout>>();
   const onEdit = useMemo(() => {
@@ -32,7 +32,7 @@ export const Storyboard = (store: ReturnType<typeof useAillyPageStore>) => {
         INPUT_DELAY
       );
     };
-  }, [editTimer]);
+  }, [editTimer, actions]);
 
   return (
     <section>
