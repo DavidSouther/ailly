@@ -22,6 +22,10 @@
       {
         "command": "ailly.generate",
         "title": "Ailly: Generate"
+      },
+      {
+        "command": "ailly.edit",
+        "title": "Ailly: Edit"
       }
     ],
     "menus": {
@@ -36,6 +40,40 @@
       {
         "title": "Ailly",
         "properties": {
+          "ailly.engine": {
+            "type": "string",
+            "default": "bedrock",
+            "enum": [
+              "bedrock",
+              "openai"
+            ],
+            "description": "The Ailly engine to use when making LLM calls."
+          },
+          "ailly.model": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": "haiku",
+            "description": "The default model to use when making LLM calls."
+          },
+          "ailly.log-level": {
+            "type": "string",
+            "default": "info",
+            "enum": [
+              "debug",
+              "info",
+              "warn",
+              "error",
+              "silent"
+            ],
+            "description": "The log level to record Ailly details."
+          },
+          "ailly.log-pretty": {
+            "type": "boolean",
+            "default": false,
+            "description": "JSON (false) or pretty print (true) logs."
+          },
           "ailly.openai-api-key": {
             "type": [
               "string",
@@ -50,11 +88,12 @@
   },
   "scripts": {
     "vscode:prepublish": "npm run esbuild-base -- --minify",
-    "esbuild-base": "esbuild ./src/extension.cts --bundle --outfile=out/main.js --external:vscode --format=cjs --platform=node",
+    "esbuild-base": "esbuild ./src/extension.ts --bundle --outfile=out/main.js --external:vscode --format=cjs --platform=node",
     "esbuild": "npm run esbuild-base -- --sourcemap",
     "esbuild-watch": "npm run esbuild-base -- --sourcemap --watch",
     "test-compile": "tsc -p ./",
     "compile": "tsc -p ./",
+    "build": "esbuild",
     "watch": "tsc -watch -p ./",
     "pretest": "npm run compile && npm run lint",
     "lint": "eslint src --ext ts",

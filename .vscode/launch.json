@@ -12,8 +12,8 @@
         "--profile-temp",
         "--extensionDevelopmentPath=${workspaceFolder}/extension"
       ],
-      "outFiles": ["${workspaceFolder}/extension/out/**/*.js"],
-      "preLaunchTask": "${defaultBuildTask}"
+      "outFiles": ["${workspaceFolder}/extension/out/**/*.js"]
+      // "preLaunchTask": "${defaultBuildTask}"
     },
     {
       "name": "Ailly Extension Tests",

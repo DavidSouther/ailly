@@ -16,9 +16,10 @@ export async function generate(
     }
 
     let cwd = dirname(
-      import.meta.url
-        .replace(/^file:/, "")
-        .replace("ailly/core/dist", "ailly/core/src")
+      (import.meta?.url.replace(/^file:/, "") ?? __filename).replace(
+        "ailly/core/dist",
+        "ailly/core/src"
+      )
     );
     let command = join(cwd, normalize(".venv/bin/python3"));
     let args = [join(cwd, "mistral.py"), prompt];
@@ -35,7 +36,7 @@ export async function generate(
     child.on("disconnect", done);
 
     const error = (cause: unknown) =>
-      reject(new Error("child_process had a problem", { cause }));
+      reject(new Error("child_process had a problem" /*, { cause }*/));
     child.on("error", error);
   });
 }

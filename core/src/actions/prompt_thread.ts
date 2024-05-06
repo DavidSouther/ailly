@@ -192,12 +192,12 @@ async function generateOne(
     messages: meta?.messages
       ?.map((m) => ({
         role: m.role,
-        content: m.content.replaceAll("\n", " ").substring(0, 150) + "...",
+        content: m.content.replace(/\n/g, " ").substring(0, 150) + "...",
         // tokens: m.tokens,
       }))
       // Skip the last `assistant` message
       .filter((m, i, a) => !(m.role == "assistant" && i === a.length - 1))
-      .map(({ role, content }) => `${role}: ${content.replaceAll("\n", "\\n")}`)
+      .map(({ role, content }) => `${role}: ${content.replace(/\n/g, "\\n")}`)
       .join("\n\t"),
   });
   const generated = await engine.generate(c, settings);

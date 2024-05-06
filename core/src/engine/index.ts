@@ -15,6 +15,7 @@ export interface Engine {
   ): Promise<{ debug: D; message: string }>;
   vector(s: string, parameters: ContentMeta): Promise<number[]>;
   view?(): Promise<View>;
+  models?(): string[];
 }
 
 export interface Message {
