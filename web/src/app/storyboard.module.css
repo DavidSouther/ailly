@@ -21,7 +21,8 @@
 
 .option {
   --background-mix: 70%;
-  display: block;
+  display: flex;
+  align-items: baseline;
   border-radius: var(--size-base);
   box-shadow: var(--color-base) 1px 2px 5px 2px;
   border: var(--color-base) solid 1.5px;
@@ -35,6 +36,16 @@
   );
 
   animation: fadeIn 1s;
+
+  & input[type="radio"] {
+    margin-right: var(--size-md);
+  }
+
+  & textarea {
+    width: 100%;
+    border: 0;
+    padding: var(--size-base) var(--size-md);
+  }
 }
 
 .option:hover,

@@ -42,6 +42,10 @@ export type AillyStoreDispatch = Dispatch<{
 
 export function makeAillyStore(dispatch: MutableRefObject<AillyStoreDispatch>) {
   const story: StoryBook[] = [ROLES, TONES, BACKGROUND, OUTPUT];
+  story.forEach((book) => {
+    if (book.options.at(-1)?.slug != "custom")
+      book.options.push({ slug: "custom", content: "" });
+  });
   let storyItem = -1;
   let nextStoryItem = -1;
   let selections: number[][] = [];

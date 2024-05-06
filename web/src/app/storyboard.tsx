@@ -21,7 +21,18 @@ export const Storyboard = (store: ReturnType<typeof useAillyPageStore>) => {
         actions.select(block, opt);
       }
     };
-  }, []);
+  }, [timer]);
+
+  const editTimer = useRef<ReturnType<typeof globalThis.setTimeout>>();
+  const onEdit = useMemo(() => {
+    return (block: number, opt: number) => {
+      clearTimeout(editTimer.current);
+      editTimer.current = setTimeout(
+        () => actions.select(block, opt),
+        INPUT_DELAY
+      );
+    };
+  }, [editTimer]);
 
   return (
     <section>
@@ -40,20 +51,54 @@ export const Storyboard = (store: ReturnType<typeof useAillyPageStore>) => {
                       item.select == "single" ? "radio" : "checkbox";
                     const checked =
                       state.selections[block]?.includes(opt) ?? false;
-                    return (
-                      <li key={option.slug}>
-                        <label htmlFor={name} className={styles.option}>
-                          <input
-                            type={input}
-                            id={name}
-                            name={item.slug}
-                            defaultChecked={checked}
-                            onClick={() => onChange(block, opt)}
-                          />{" "}
-                          {option.content}
-                        </label>
-                      </li>
-                    );
+                    if (option.slug === "custom") {
+                      if (state.storyItem >= state.story.length) {
+                        return (
+                          <li key={option.slug}>
+                            <label htmlFor={name} className={styles.option}>
+                              <input
+                                type={input}
+                                id={name}
+                                name={item.slug}
+                                defaultChecked={checked}
+                                onClick={() => onChange(block, opt)}
+                              />
+                              <textarea
+                                defaultValue={option.content}
+                                placeholder={`Write your own ${item.title}`}
+                                onChange={(e) => {
+                                  const { value } = e.target;
+                                  if (item.options.at(-1)?.slug !== "custom") {
+                                    item.options.push({
+                                      slug: "custom",
+                                      content: value,
+                                    });
+                                  } else {
+                                    item.options.at(-1)!.content = value;
+                                  }
+                                  onEdit(block, item.options.length - 1);
+                                }}
+                              ></textarea>
+                            </label>
+                          </li>
+                        );
+                      }
+                    } else {
+                      return (
+                        <li key={option.slug}>
+                          <label htmlFor={name} className={styles.option}>
+                            <input
+                              type={input}
+                              id={name}
+                              name={item.slug}
+                              defaultChecked={checked}
+                              onClick={() => onChange(block, opt)}
+                            />{" "}
+                            {option.content}
+                          </label>
+                        </li>
+                      );
+                    }
                   })}
                 </ol>
               </li>
