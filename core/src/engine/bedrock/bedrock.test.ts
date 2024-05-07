@@ -51,7 +51,7 @@ describe("bedrock claude3", () => {
           "/root/b": "prompt b",
         })
       );
-      const context = await loadContent(fs, [], settings);
+      const context = await loadContent(fs, [], settings, 2);
       return { root, settings, context };
     }, beforeEach);
 

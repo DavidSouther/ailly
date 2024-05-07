@@ -52,11 +52,13 @@ export async function loadFs(fs, args) {
   ailly.Ailly.LOGGER.format = LOGGER.format = logFormat == "json" ? JSON.stringify : basicLogFormatter;
 
   const system = args.values.system ?? "";
+  const depth = Number(args.values["max-depth"]);
 
   let context = await ailly.content.load(
     fs,
     system ? [{ content: system, view: {} }] : [],
-    settings
+    settings,
+    depth
   );
 
   let content = /* @type {string[]} */[];
