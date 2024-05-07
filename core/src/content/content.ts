@@ -7,7 +7,7 @@ import {
   isAbsolute,
 } from "@davidsouther/jiffies/lib/esm/fs.js";
 import matter from "gray-matter";
-import { stringify } from "yaml";
+import * as YAML from "yaml";
 import { join, dirname } from "path";
 import type { Message } from "../engine/index.js";
 import { LOGGER, isDefined } from "../util.js";
@@ -206,12 +206,22 @@ export async function loadAillyRc(
   // Reset to "root" if there's no intervening .aillyrc.
   if (aillyrc === "" && meta.parent === "always") meta.parent = "root";
   const { data, content } = matter(aillyrc);
+  if (data["template-view"]) {
+    try {
+      const templateView = await fs.readFile(data["template-view"]);
+      const view = YAML.parse(templateView);
+      data.view = { ...(data.view ?? {}), ...view };
+    } catch (err) {
+      LOGGER.warn("Failed to load template-view", { err });
+    }
+  }
   const view = data.view ?? {};
   delete data.view;
   meta = { ...meta, ...data };
   switch (meta.parent) {
     case "root":
-      if (content != "") system = [...system, { content, view }];
+      if (!(content == "" && Object.keys(view).length == 0))
+        system = [...system, { content, view }];
       break;
     case "never":
       if (content != "") {
@@ -353,7 +363,7 @@ async function writeSingleContent(fs: FileSystem, content: Content) {
     meta.prompt = content.meta?.prompt ?? content.prompt;
   }
 
-  const head = stringify(meta, {
+  const head = YAML.stringify(meta, {
     blockQuote: "literal",
     lineWidth: 0,
     sortMapEntries: true,
