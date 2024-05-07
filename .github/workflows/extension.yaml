@@ -21,7 +21,7 @@ jobs:
         run: npm install && npx tsc -p core && npm link ./core -w cli
 
       - name: Package Extension
-        run: npm run --workspace extension
+        run: npm run --workspace extension package
 
       - name: Publish extension artifact
         uses: actions/upload-artifact@v4
