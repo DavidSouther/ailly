@@ -29,12 +29,10 @@ export function mergeContentViews(
   for (const s of c.context.system ?? []) {
     if (s.view === false) continue;
     view = mergeViews(view, s.view);
-    s.view = false;
     s.content = mustache.render(s.content, view);
   }
   view = mergeViews(view, c.context.view || {});
   c.prompt = mustache.render(c.prompt, view);
-  c.context.view = false;
 }
 
 export const GLOBAL_VIEW: View = {

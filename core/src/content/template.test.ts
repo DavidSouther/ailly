@@ -22,9 +22,12 @@ test("merge content views", () => {
   };
   mergeContentViews(content, { base: "base", test: "bang" }, {});
   expect(content.context.system?.[0].content).toBe("system base");
-  expect(content.context.system?.[0].view).toBe(false);
+  expect(content.context.system?.[0].view).toEqual({
+    system: "system",
+    test: "baz",
+  });
   expect(content.prompt).toEqual("base system foo");
-  expect(content.context.view).toEqual(false);
+  expect(content.context.view).toEqual({ test: "foo" });
   expect(content.meta?.prompt).toEqual("{{base}} {{system}} {{test}}");
   expect(content.meta?.view).toEqual({ test: "foo" });
 });
