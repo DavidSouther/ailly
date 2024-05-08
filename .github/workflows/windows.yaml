@@ -25,3 +25,5 @@ jobs:
       - name: Run Integration Tests
         run: ./integ/integ.bat
         shell: cmd
+        env:
+          AILLY_ENGINE: noop

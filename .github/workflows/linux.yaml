@@ -24,3 +24,5 @@ jobs:
 
       - name: Run integration tests
         run: ./integ/integ.sh
+        env:
+          AILLY_ENGINE: noop
