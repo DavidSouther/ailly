@@ -1,0 +1,4 @@
+.button {
+  float: right;
+  margin: 0 0 var(--size-base) var(--size-base);
+}

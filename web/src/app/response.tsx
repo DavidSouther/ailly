@@ -4,6 +4,7 @@ import M from "@/components/M";
 import { useAillyPageStore } from "./store";
 import styles from "./response.module.css";
 import { Tab, TabList } from "@/components/Tabs";
+import { Copy } from "@/components/Copy";
 
 export const Response = (store: ReturnType<typeof useAillyPageStore>) => {
   const { state } = store;
@@ -17,9 +18,22 @@ export const Response = (store: ReturnType<typeof useAillyPageStore>) => {
       ) : (
         <TabList>
           <Tab title="Response">
+            {state.response.content && (
+              <Copy contents={state.response.content}></Copy>
+            )}
             <M>{state.response.content}</M>
           </Tab>
           <Tab title="Prompt">
+            <Copy
+              contents={JSON.stringify(
+                {
+                  system: state.content?.context.system?.map((s) => s.content),
+                  user: state.content?.prompt,
+                },
+                undefined,
+                "\t"
+              )}
+            ></Copy>
             <h2>System</h2>
             {state.content?.context.system?.map((s, i) => (
               <p key={i}>{s.content}</p>
