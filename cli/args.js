@@ -17,7 +17,7 @@ export function makeArgs(argv = process.argv) {
       model: { type: "string", default: process.env["AILLY_MODEL"] },
       plugin: { type: "string", default: process.env["AILLY_PLUGIN"] ?? "noop", },
       context: { type: "string", default: process.env["AILLY_CONTEXT"] ?? "content", short: "c" },
-      "template-view": { type: "string", default: process.env["AILLY_TEMPLATE_VIEW"] },
+      "template-view": { type: "string", default: process.env["AILLY_TEMPLATE_VIEW"] ? [process.env["AILLY_TEMPLATE_VIEW"]] : [], multiple: true },
       prompt: { type: "string", default: process.env["AILLY_PROMPT"], short: "p" },
       system: { type: "string", default: process.env["AILLY_SYSTEM"], short: "s" },
       "request-limit": { type: "string", default: process.env["AILLY_REQUEST_LIMIT"] },
