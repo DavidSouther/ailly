@@ -41,7 +41,7 @@ export async function loadFs(fs, args) {
     requestLimit: args.values['request-limit'] ?? args.values.model?.includes("opus") ? 1 : undefined,
   });
 
-  const positionals = args.positionals.slice(2).map(a => resolve(join(root, a)));
+  const positionals = args.positionals.map(a => resolve(join(root, a)));
   const hasPositionals = positionals.length > 0;
   const hasPrompt = args.values.prompt !== undefined && args.values.prompt !== "";
   const isPipe = !hasPositionals && hasPrompt;

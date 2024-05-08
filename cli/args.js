@@ -1,3 +1,4 @@
+import { basename } from "node:path";
 import { parseArgs } from "node:util";
 
 export function makeArgs(argv = process.argv) {
@@ -37,7 +38,8 @@ export function makeArgs(argv = process.argv) {
   // TODO assert context is content, folder, or none
   // TODO assert log-format is pretty, json, or empty
 
-  console.log("Args", { args });
+  // Remove node and ailly positionals
+  args.positionals.splice(0, args.positionals[0].match(/node(\.exe)?/) ? 2 : 1)
 
   return args;
 }
