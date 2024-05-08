@@ -32,3 +32,6 @@ echo "conversations"
 
 echo "Pipes"
 ./10_std_pipes/pipes.sh
+
+echo "Max depth"
+./11_max_depth/max_depth.sh

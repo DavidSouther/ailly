@@ -31,7 +31,7 @@ export async function generate(
   });
 
   // Load content
-  const context = await ailly.content.load(fs);
+  const context = await ailly.content.load(fs, [], {}, 1);
   const content = Object.values(context).filter((c) => c.path.startsWith(path));
   if (content.length == 0) return;
   if (edit) {

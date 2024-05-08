@@ -242,16 +242,19 @@ export async function loadAillyRc(
  * 3. If it is a folder
  *    1. Find all files that are not denied by .gitignore
  *    2. Apply the above logic.
- * @param fs the file system abstraction
- * @param system the system message chain
- * @param meta current head matter & settings
+ * @param fs the file system abstraction.
+ * @param system the system message chain.
+ * @param meta current head matter & settings.
+ * @param depth maximum depth to load. `1` loads only the cwd; 0 or negative loads no content.
  * @returns
  */
 export async function loadContent(
   fs: FileSystem,
   system: System[] = [],
-  meta: ContentMeta = {}
+  meta: ContentMeta = {},
+  depth: number = Number.MAX_SAFE_INTEGER
 ): Promise<Record<string, Content>> {
+  if (depth < 1) return {};
   LOGGER.debug(`Loading content from ${fs.cwd()}`);
   [system, meta] = await loadAillyRc(fs, system, meta);
   if (meta.skip) {
@@ -293,7 +296,12 @@ export async function loadContent(
     for (const folder of dir.folders) {
       if (folder.name == ".vectors") continue;
       fs.pushd(folder.name);
-      let contents = await loadContent(fs, system, meta);
+      let contents = await loadContent(
+        fs,
+        system,
+        meta,
+        depth ? depth - 1 : undefined
+      );
       Object.assign(folders, contents);
       fs.popd();
     }
