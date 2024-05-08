@@ -801,3 +801,20 @@ test("it loads template views from system files", async () => {
     whiz: 12,
   });
 });
+
+test("it loads template-view in .aillyrc", async () => {
+  const fs = new FileSystem(
+    new ObjectFileSystemAdapter({
+      root: {
+        ".aillyrc": "---\ntemplate-view: ../view.yaml\n---",
+        "content.md": "{{view}}",
+      },
+      "view.yaml": "view: foo",
+    })
+  );
+  const content = await loadContent(fs);
+
+  expect(content["/root/content.md"].context.system?.[0].view).toEqual({
+    view: "foo",
+  });
+});
