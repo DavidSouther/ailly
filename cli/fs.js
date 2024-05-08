@@ -46,9 +46,10 @@ export async function loadFs(fs, args) {
   const hasPrompt = args.values.prompt !== undefined && args.values.prompt !== "";
   const isPipe = !hasPositionals && hasPrompt;
   const logLevel = args.values['log-level'] ?? (args.values.verbose ? 'verbose' : (isPipe ? 'silent' : undefined));
+  const logFormat = args.values['log-format'] ?? (isPipe ? "pretty" : "json");
   ailly.Ailly.LOGGER.console = LOGGER.console = isPipe ? new Console(process.stderr, process.stderr) : global.console;
   ailly.Ailly.LOGGER.level = LOGGER.level = getLogLevel(logLevel);
-  if (args.values.pretty || isPipe) LOGGER.format = ailly.Ailly.LOGGER.format = basicLogFormatter;
+  ailly.Ailly.LOGGER.format = LOGGER.format = logFormat == "json" ? JSON.stringify : basicLogFormatter;
 
   const system = args.values.system ?? "";
 

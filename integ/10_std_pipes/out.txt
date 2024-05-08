@@ -1,6 +1,0 @@
-noop response for stdout:
-
-
-function example() {}
-Explain this code
-

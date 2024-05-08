@@ -29,12 +29,15 @@ export function makeArgs(argv = process.argv) {
       help: { type: "boolean", short: "h", default: false },
       version: { type: "boolean", default: false },
       "log-level": { type: "string", default: undefined },
+      "log-format": { type: "string", default: undefined },
       verbose: { type: "boolean", default: false, short: "v" },
-      pretty: { type: "boolean", default: false },
     },
   });
 
   // TODO assert context is content, folder, or none
+  // TODO assert log-format is pretty, json, or empty
+
+  console.log("Args", { args });
 
   return args;
 }
@@ -71,8 +74,8 @@ export function help() {
     --no-overwrite will not run generation on Content with an existing Response.
     --summary will show a pricing expectation before running and prompt for OK.
     -y, —-yes will skip any prompts.
-    -v, --verbose, --log-level v and verbose will set log level to info; --log-level can be a string or number and use jefri/jiffies logging levels. Ailly uses warn for reporting details on errors, info for general runtime progress, and debug for details of requests and responses. Logs are structures in JSONL.
-    --log-pretty Use a pretty log formatter. Default is a structured JSON log formatter, unless using --prompt or in a pipe, when using pretty.
+    -v, --verbose, --log-level v and verbose will set log level to info; --log-level can be a string or number and use jefri/jiffies logging levels. Ailly uses warn for reporting details on errors, info for general runtime progress, and debug for details of requests and responses.
+    --log-format json or pretty; default is pretty when run in a pipe. JSON prints in JSONL format.
 
     --version will print the cli and core versions
     -h, --help will print this message and exit.

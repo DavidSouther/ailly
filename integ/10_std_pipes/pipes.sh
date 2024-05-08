@@ -19,3 +19,4 @@ rm out.txt
 [ -f out.txt ]
 grep -vq '{"name":"@ailly/core"' out.txt
 grep -q "Explain this code" out.txt
+rm out.txt
