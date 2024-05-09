@@ -165,21 +165,24 @@ export async function makeCLIContent(prompt, argContext, argSystem, context, roo
  * Read, parse, and validate a template view.
  * 
  * @param {FileSystem} fs 
- * @param {string|undefined} path
+ * @param {string[]|undefined} paths
  * @returns {Promise<View>}
  */
-export async function loadTemplateView(fs, path) {
-  if (!path) return {};
-  try {
-    const file = await fs.readFile(path);
-    const view = parse(file);
-    if (view && typeof view == "object") {
-      return /** @type View */ (/** @type unknown */ view);
+export async function loadTemplateView(fs, paths) {
+  if (!paths) return {};
+  let view = /* @type View */({});
+  for (const path of paths) {
+    try {
+      const file = await fs.readFile(path);
+      const parsed = parse(file);
+      if (parsed && typeof parsed == "object") {
+        view = { ...view, ...parsed };
+      }
+    } catch (err) {
+      LOGGER.warn(`Failed to load template-view ${path}`, { err })
     }
-  } catch (e) {
-    console.warn(`Failed to load template-view ${path}`, e)
   }
-  return {};
+  return view;
 }
 
 async function readAll(readable) {

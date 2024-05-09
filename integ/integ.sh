@@ -35,3 +35,6 @@ echo "Pipes"
 
 echo "Max depth"
 ./11_max_depth/max_depth.sh
+
+echo "Tempate Views"
+./12_template_view/template_view.sh
