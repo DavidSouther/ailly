@@ -35,3 +35,27 @@ ailly .
 Provide a templating mechanism and expose views.
 Templates use Mustache syntax.
 Templates get their views by collecting `View` objects along the content load path.
+
+## Edit
+
+Ailly should provide a line-based mechanism to edit files in situ.
+Ailly will provide context from the current contents to the LLM with a user prompt.
+The prompt will also include instructions and settings to encourage the LLM to only respond with new content for that portion of the file.
+Then, replace the chosen portion with the LLM's response.
+
+```
+ailly --edit --lines 10,20 file.js --prompt 'Change it to be more like so'
+```
+
+## Extension
+
+Ailly's edit mode works great on the command line.
+Expose it as an editor extension.
+Prompt for the changes, include the contents same as CLI, and use the users's current selection (or cursor) to decide where to edit.
+This intentional approach to editing is very different from CoPilot's and Q's inline completions.
+
+## Ailly.dev
+
+Repurpose the website and domain for a Prompt Engineering playground and training site.
+Users are guided through several prompt engineering exercises that show how small changes to the system prompt cause huge changes to the output.
+Allow a final "playground" mode when they've completed the main course.
