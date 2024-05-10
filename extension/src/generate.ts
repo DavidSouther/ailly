@@ -3,7 +3,13 @@ import vscode from "vscode";
 import * as ailly from "@ailly/core";
 import { FileSystem } from "@davidsouther/jiffies/lib/esm/fs.js";
 import { VSCodeFileSystemAdapter } from "./fs.js";
-import { LOGGER, getAillyEngine, getAillyModel, resetLogger } from "./settings";
+import {
+  LOGGER,
+  getAillyAwsProfile,
+  getAillyEngine,
+  getAillyModel,
+  resetLogger,
+} from "./settings";
 import { AillyEdit } from "@ailly/core/src/content/content";
 import { dirname } from "node:path";
 
@@ -20,6 +26,9 @@ export async function generate(
 
   const engine = await getAillyEngine();
   const model = await getAillyModel(engine);
+  if (engine == "bedrock") {
+    process.env["AWS_PROFILE"] = await getAillyAwsProfile();
+  }
 
   const settings = await ailly.Ailly.makePipelineSettings({
     root,
