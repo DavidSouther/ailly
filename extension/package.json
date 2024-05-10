@@ -5,7 +5,7 @@
   "author": "David Souther <davidsouther@gmail.com>",
   "contributors": [],
   "repository": "http://github.com/davidsouther/ailly",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "engines": {
     "vscode": "^1.83.0"
   },
@@ -57,12 +57,16 @@
             "default": "haiku",
             "description": "The default model to use when making LLM calls."
           },
-          "ailly.aws-profile": {
+          "ailly.awsProfile": {
             "type": "string",
             "default": "default",
             "description": "The AWS profile to use when making calls to AWS services using the bedrock engine."
           },
-          "ailly.openai-api-key": {
+          "ailly.awsRegion": {
+            "type": "string",
+            "description": "The AWS region to use when making calls to AWS services using the bedrock engine."
+          },
+          "ailly.openaiApiKey": {
             "type": [
               "string",
               "null"

@@ -18,7 +18,10 @@ function aillyLogFormatter<
     source: string;
   }
 >(data: D) {
-  let base = `${data.message}`;
+  let base = `${data.name} ${data.message}`;
+  if (data.err) {
+    base += ` err: ${JSON.stringify(data.err)}`;
+  }
   if (data.debug) {
     base += ` debug: ${JSON.stringify(data.debug)}`;
   }
@@ -26,7 +29,7 @@ function aillyLogFormatter<
     base += ` prompt: ${JSON.stringify(data.prompt)}`;
   }
   if (data.messages) {
-    base += ` prompt: \n${data.messages}`;
+    base += ` prompt: \n${JSON.stringify(data.messages)}`;
   }
   return base;
 }
@@ -40,13 +43,20 @@ export function resetLogger() {
     outputChannel as unknown as Console;
 }
 
+const SETTINGS = {
+  OPENAI_API_KEY: "openaiApiKey",
+  ENGINE: "engine",
+  MODEL: "model",
+  AWS_PROFILE: "awsProfile",
+  AWS_REGION: "awsRegion",
+};
 export async function getOpenAIKey(): Promise<string | undefined> {
   if (process.env["OPENAI_API_KEY"]) {
     return process.env["OPENAI_API_KEY"];
   }
   let aillyConfig = getConfig();
-  if (aillyConfig.has("openai-api-key")) {
-    const key = aillyConfig.get<string>("openai-api-key");
+  if (aillyConfig.has(SETTINGS.OPENAI_API_KEY)) {
+    const key = aillyConfig.get<string>(SETTINGS.OPENAI_API_KEY);
     if (key) {
       return key;
     }
@@ -55,14 +65,14 @@ export async function getOpenAIKey(): Promise<string | undefined> {
     title: "Ailly: OpenAI API Key",
     prompt: "API Key from OpenAI for requests",
   });
-  aillyConfig.update("openai-api-key", key);
+  aillyConfig.update(SETTINGS.OPENAI_API_KEY, key);
   return key;
 }
 
 export async function getAillyEngine(): Promise<string> {
   const aillyConfig = getConfig();
-  if (aillyConfig.has("engine")) {
-    const engine = aillyConfig.get<string>("engine");
+  if (aillyConfig.has(SETTINGS.ENGINE)) {
+    const engine = aillyConfig.get<string>(SETTINGS.ENGINE);
     if (engine) {
       return engine;
     }
@@ -70,7 +80,7 @@ export async function getAillyEngine(): Promise<string> {
   const engine = await vscode.window.showQuickPick(Object.keys(ENGINES), {
     title: "Ailly: Engine",
   });
-  aillyConfig.update("engine", engine);
+  aillyConfig.update(SETTINGS.ENGINE, engine);
   return engine ?? DEFAULT_ENGINE;
 }
 
@@ -79,8 +89,8 @@ export async function getAillyModel(
 ): Promise<string | undefined> {
   const engine = await getEngine(engineName);
   const aillyConfig = getConfig();
-  if (aillyConfig.has("model")) {
-    const model = aillyConfig.get<string>("model");
+  if (aillyConfig.has(SETTINGS.MODEL)) {
+    const model = aillyConfig.get<string>(SETTINGS.MODEL);
     if (model) {
       return model;
     }
@@ -90,14 +100,28 @@ export async function getAillyModel(
   const model = await vscode.window.showQuickPick(models, {
     title: "Ailly: Model",
   });
-  aillyConfig.update("model", model);
+  aillyConfig.update(SETTINGS.MODEL, model);
   return model;
 }
 
 export async function getAillyAwsProfile(): Promise<string> {
   const aillyConfig = getConfig();
-  const awsProfile = aillyConfig.get<string>("aws-profile");
+  const awsProfile = aillyConfig.get<string>(SETTINGS.AWS_PROFILE);
   return awsProfile ?? process.env["AWS_PROFILE"] ?? "default";
+}
+
+export async function getAillyAwsRegion(): Promise<string | undefined> {
+  const aillyConfig = getConfig();
+  const awsProfile = aillyConfig.get<string>(SETTINGS.AWS_REGION);
+  return awsProfile ?? (process.env["AWS_REGION"] || undefined);
+}
+
+export async function prepareBedrock() {
+  process.env["AWS_PROFILE"] = await getAillyAwsProfile();
+  const region = await getAillyAwsRegion();
+  if (region != undefined) {
+    process.env["AWS_REGION"] = region;
+  }
 }
 
 function getConfig() {
