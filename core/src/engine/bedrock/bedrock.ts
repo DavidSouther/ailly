@@ -1,14 +1,14 @@
-import { dirname } from "node:path";
 import {
   BedrockRuntimeClient,
   InvokeModelCommand,
 } from "@aws-sdk/client-bedrock-runtime";
 import { Content, View } from "../../content/content.js";
-import { LOGGER as ROOT_LOGGER, isDefined } from "../../util.js";
-import { Message, Summary } from "../index.js";
+import { LOGGER as ROOT_LOGGER } from "../../util.js";
+import { Summary } from "../index.js";
 import { Models, PromptBuilder } from "./prompt-builder.js";
 import { getLogger } from "@davidsouther/jiffies/lib/esm/log.js";
 import { fromIni } from "@aws-sdk/credential-providers";
+import { addContentMessages } from "../messages.js";
 
 export const name = "bedrock";
 export const DEFAULT_MODEL = "anthropic.claude-3-sonnet-20240229-v1:0";
@@ -35,29 +35,7 @@ export async function generate(
   if (!messages.find((m) => m.role == "user")) {
     throw new Error("Bedrock must have at least one message with role: user");
   }
-  if (messages.at(-1)?.role == "assistant") {
-    messages = messages.slice(0, -1);
-  }
-  let stopSequences: undefined | string[];
-  let fence: undefined | string = undefined;
-  if (c.context.edit) {
-    const lang = c.context.edit.file.split(".").at(-1) ?? "";
-    fence = "```" + lang;
-    const { start, end } = c.context.edit as { start?: number; end?: number };
-    if (start != undefined) {
-      if (messages.at(-1)?.role === "user") {
-        messages.at(-1)!.content += [
-          "",
-          "You are replacing this section:",
-          "```",
-          c.meta?.text?.split("\n").slice(start, end),
-          "```",
-        ].join("\n");
-      }
-    }
-    messages.push({ role: "assistant", content: fence });
-    stopSequences = ["```"];
-  }
+  const stopSequences = c.context.edit ? ["```"] : undefined;
 
   const promptBuilder = new PromptBuilder(model as Models);
   const prompt = promptBuilder.build(messages);
@@ -70,7 +48,11 @@ export async function generate(
   prompt.temperature =
     c.meta?.temperature ?? c.context.edit != undefined ? 0.0 : 1.0;
 
-  LOGGER.debug("Bedrock sending prompt", { prompt });
+  LOGGER.debug("Bedrock sending prompt", {
+    ...prompt,
+    messages: [`...${prompt.messages.length} messages...`],
+    system: `${prompt.system.slice(0, 20)}...`,
+  });
 
   try {
     const response = await bedrock.send(
@@ -123,98 +105,9 @@ export async function format(
 ): Promise<Summary> {
   const summary: Summary = { prompts: contents.length, tokens: 0 };
   for (const content of contents) {
-    await addContentMeta(content, context);
+    await addContentMessages(content, context);
   }
   return summary;
-}
-
-async function addContentMeta(
-  content: Content,
-  context: Record<string, Content>
-) {
-  content.meta ??= {};
-  if (content.context.folder)
-    content.meta.messages = getMessagesFolder(content, context);
-  else content.meta.messages = getMessagesPredecessor(content, context);
-}
-
-export function getMessagesPredecessor(
-  content: Content,
-  context: Record<string, Content>
-): Message[] {
-  const system = (content.context.system ?? [])
-    .map((s) => s.content)
-    .join("\n");
-  const history: Content[] = [];
-  while (content) {
-    history.push(content);
-    content = context[content.context.predecessor!];
-  }
-  history.reverse();
-  const augment = history
-    .map<Array<Message | undefined>>(
-      (c) =>
-        (c.context.augment ?? []).map<Message>(({ content }) => ({
-          role: "user",
-          content:
-            "Use this code block as background information for format and style, but not for functionality:\n```\n" +
-            content +
-            "\n```\n",
-        })) ?? []
-    )
-    .flat()
-    .filter(isDefined);
-  const parts = history
-    .map<Array<Message | undefined>>((content) => [
-      {
-        role: "user",
-        content: content.prompt,
-      },
-      content.response
-        ? { role: "assistant", content: content.response }
-        : undefined,
-    ])
-    .flat()
-    .filter(isDefined);
-  return [{ role: "system", content: system }, ...augment, ...parts];
-}
-
-export function getMessagesFolder(
-  content: Content,
-  context: Record<string, Content>
-): Message[] {
-  const system =
-    (content.context.system ?? []).map((s) => s.content).join("\n") +
-    "\n" +
-    "Instructions are happening in the context of this folder:\n" +
-    `<folder name="${dirname(content.path)}">\n` +
-    (content.context.folder ?? [])
-      .map((c) => context[c])
-      .map<string>(
-        (c) =>
-          `<file name="${c.name}>\n${
-            c.meta?.text ?? c.prompt + "\n" + c.response
-          }</file>`
-      )
-      .join("\n") +
-    "\n</folder>";
-
-  const history: Content[] = [content];
-  const augment: Message[] = [];
-
-  const parts = history
-    .map<Array<Message | undefined>>((content) => [
-      {
-        role: "user",
-        content: content.prompt,
-      },
-      content.response
-        ? { role: "assistant", content: content.response }
-        : undefined,
-    ])
-    .flat()
-    .filter(isDefined);
-  return [{ role: "system", content: system }, ...augment, ...parts];
 }
 
 export async function tune(content: Content[]) {}

@@ -22,10 +22,14 @@ npx ailly --root 02_combined --combined
 git restore 02_combined/combined.txt
 
 echo "edit"
-AILLY_NOOP_RESPONSE="Edited" npx ailly --root 04_edit --edit file --lines 2:4 --prompt "Respond with the word Edited" --yes
+AILLY_NOOP_RESPONSE="Edited" \
+  npx ailly --root 04_edit --edit file.txt --lines 2:4 --prompt "Respond with the word Edited" --yes \
+  --verbose > >(tee ./04_edit/out) 2> >(tee ./04_edit/err >&2)
 grep -q 'Edited' 04_edit/file.txt
+grep -q 'Instructions are happening in the context of this folder' 04_edit/out
+grep -q 'You are replacing this section:\\n```\\nLine 2\\nLine 3\\n```' 04_edit/out
 git restore 04_edit/file.txt
-unset AILLY_NOOP_RESPONSE
+rm 04_edit/{err,out}
 
 echo "conversations"
 ./05_conversation/conversation.sh
