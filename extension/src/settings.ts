@@ -79,6 +79,12 @@ export async function getAillyModel(
   return model;
 }
 
+export async function getAillyAwsProfile(): Promise<string> {
+  const aillyConfig = getConfig();
+  const awsProfile = aillyConfig.get<string>("aws-profile");
+  return awsProfile ?? process.env["AWS_PROFILE"] ?? "default";
+}
+
 function getConfig() {
   return vscode.workspace.getConfiguration("ailly");
 }

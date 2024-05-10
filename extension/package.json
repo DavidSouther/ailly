@@ -74,6 +74,11 @@
             "default": false,
             "description": "JSON (false) or pretty print (true) logs."
           },
+          "ailly.aws-profile": {
+            "type": "string",
+            "default": "default",
+            "description": "The AWS profile to use when making calls to AWS services using the bedrock engine."
+          },
           "ailly.openai-api-key": {
             "type": [
               "string",

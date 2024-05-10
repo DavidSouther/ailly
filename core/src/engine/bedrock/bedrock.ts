@@ -8,6 +8,7 @@ import { LOGGER as ROOT_LOGGER, isDefined } from "../../util.js";
 import { Message, Summary } from "../index.js";
 import { Models, PromptBuilder } from "./prompt-builder.js";
 import { getLogger } from "@davidsouther/jiffies/lib/esm/log.js";
+import { fromIni } from "@aws-sdk/credential-providers";
 
 export const name = "bedrock";
 export const DEFAULT_MODEL = "anthropic.claude-3-sonnet-20240229-v1:0";
@@ -22,11 +23,13 @@ const MODEL_MAP: Record<string, string> = {
 
 export async function generate(
   c: Content,
-  { model = DEFAULT_MODEL }: { model: string }
+  { model = DEFAULT_MODEL }: { model?: string }
 ): Promise<{ message: string; debug: unknown }> {
   LOGGER.level = ROOT_LOGGER.level;
   LOGGER.format = ROOT_LOGGER.format;
-  const bedrock = new BedrockRuntimeClient({});
+  const bedrock = new BedrockRuntimeClient({
+    credentials: fromIni({ ignoreCache: true }),
+  });
   model = MODEL_MAP[model] ?? model;
   let messages = c.meta?.messages ?? [];
   if (!messages.find((m) => m.role == "user")) {
@@ -188,7 +191,10 @@ export function getMessagesFolder(
     (content.context.folder ?? [])
       .map((c) => context[c])
       .map<string>(
-        (c) => `<file name="${c.name}>\n${c.meta?.text ?? c.prompt + "\n" + c.response}</file>`
+        (c) =>
+          `<file name="${c.name}>\n${
+            c.meta?.text ?? c.prompt + "\n" + c.response
+          }</file>`
       )
       .join("\n") +
     "\n</folder>";
