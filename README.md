@@ -52,7 +52,21 @@ PLAN to use Ailly effectively. Iterate often. Provide context. Put words in Aill
 
 To choose an engine, export `AILLY_ENGINE=[bedrock|openai]` or provide `ailly --engine` on the command line.
 
-## Installing Ailly Extension
+## VSCode Extension
+
+The VSCode extension provides two commands, `Generate` and `Edit`.
+
+`Generate` runs Ailly on a file or folder, and can be activated either with the right-click context menu or the command palette.
+Via the context menu, Ailly will run on the file with its parent folder sas the root, or on an entire folder using the folder as the root.
+When run from the command prompt, Ailly will run on the current active file (or will do nothing if there's no active editor).
+
+`Edit` runs from the command prompt on the current active file (or does nothing if there's no active editor).
+`Edit` will use the current file and its root, in `folder` context, and include the current highlighted selection as the edit range.
+With multiple selections, it will only use the first.
+
+### Installing Ailly Extension
+
+Update May 8 2024: the extension is available as an artifact in the most recent [workflow run](https://github.com/DavidSouther/ailly/actions/workflows/extension.yaml).
 
 - Clone the repo and install dependencies
   - `git clone https://github.com/davidsouther/ailly.git ; cd ailly ; npm install`
@@ -61,7 +75,12 @@ To choose an engine, export `AILLY_ENGINE=[bedrock|openai]` or provide `ailly --
 - Right click a file in content explorer and select `Ailly: Generate`
 - Make a selection and edit with `Ailly: Edit` in the command palette.
 
-Update May 8 2024: the extension is also available as an artifact in the most recent [workflow run](https://github.com/DavidSouther/ailly/actions/workflows/extension.yaml).
+### Ailly Extension and Bedrock
+
+When using the bedrock engine, the Ailly extension uses your current [AWS configuration](https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-files.html).
+It also exposes two settings, `Ailly: Aws Profile` and `Ailly: Aws Region`, to choose which profile (and optionally region) to use for Bedrock requests.
+Use `aws configure` or equivalent to configure `~/.aws/config` and `~/.aws/credentials`.
+If Ailly shows a credentials error, this is probably what you need to check first.
 
 ### Developing
 
