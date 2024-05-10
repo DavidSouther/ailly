@@ -1,116 +1,135 @@
-# Ailly - AI Writing Ally
+# Ailly: AI Writing Ally
 
 Load your writing.
 Guide Ailly to your voice.
 Write your outline.
-Prompt Ailly to continue to continue the writing.
-Edit its output, and get even more like that.
+Prompt Ailly to continue to keep writing.
+Edit its output, and get even more text like that.
 
-Rhymes with Daily.
+Rhymes with *daily*.
 
-Ailly's best feature is rapidly iterating on prompt engineering. By keeping your prompts in snippets on the file system, you can make very fine-grained changes to your prompt and immediately see the difference. You can also use all your normal source control tooling to track changes over time - both your changes, and what the LLM does.
+Ailly's best feature is rapid prompt engineering iteration. By keeping your prompts in snippets on the file system, you can make very fine-grained changes to your prompt and immediately see the difference in the output. You can also use all of your normal source control tooling to track changes over time: both your changes, and those from the LLM.
 
 ## Quickstart
 
-1. Create a folder, `content`.
-2. Create a file, `content/.aillyrc`, and put your top-level prompt instructions.
+To get started, follow these steps:
+
+1. Create a folder named `content`.
+2. Create a file named `content/.aillyrc`, and put your top-level prompt instructions in the file.
    - Include system prompts, level setting expectations. etc.
-3. Create several files, `content/01_big_point.md`, `content/02_second_point.md` etc.
-4. Run ailly using NodeJS: `npx @ailly/cli --root content`
+3. Create more numbered files, such as `content/01_big_point.md` and `content/02_second_point.md`.
+4. Run Ailly using NodeJS: `npx @ailly/cli --root content`
 
 ### Properties
 
-These properties can be set in a combination of places, including the command line, .aillyrc, and greymatter. Later settings override earlier.
+You can set these properties in a combination of locations, including the command line, .aillyrc, and greymatter. Later settings override earlier settings.
 
-- **`combined`** `boolean` If true, the file's body is the response and the prompt is in the greymatter key `prompt`. If false, the file's body is the prompt and the response is in `{file_name}.ailly.md`. Default false.
-- **`skip`** `boolean` If true, the prompt will not be sent through the LLM (but it will be part of the context).
-- **`isolated`** `boolean` If true, the LLM inference will only include the system prompt, and not the prior context in this folder.
+- **`combined`**: `boolean` If `true`, the file's body is the response and the prompt is in the greymatter key `prompt`. If `false`, the file's body is the prompt and the response is in `{file_name}.ailly.md`. The default is `false`.
+- **`skip`**: `boolean` If `true`, the prompt is not sent through the LLM (but is part of the context).
+- **`isolated`**: `boolean` If `true`, the LLM inference only includes the system prompt, and not the prior context in this folder.
 - **`context`** `conversation` | `folder` | `none`
-  - `conversation` (default) loads files from the root folder and includes them alphabetically, chatbot history style, before the current file when generating.
-  - `folder` includes all files in the folder at the same level as the current file when generating.
-  - `none` includes no additional content (including no system context) when generating.
-  - (note: context is separate from isolated. isolated: true with either 'content' or 'folder' will result in the same behavior with either. With 'none', Ailly will send _only_ the prompt when generating.)
+  - `conversation` (default) loads files from the root folder and includes them alphabetically, chatbot history style, before the current file.
+  - `folder` includes all files in the folder at the same level as the current file.
+  - `none` includes no additional content (including no system context).
 - **`template-view`** `[path]` loads variables to use with [mustache](https://mustache.github.io/) templates in your prompts.
+
+**Note**: `Context` is separate from `isolated`. `isolated: true` with either `content` or `folder` results in the same behavior with either. With `none`, Ailly sends _only_ the prompt when generating.
+
+<!--
+There was a lot of "when generating" in here, but it's not clear what's being generated (the intro has you creating a folder and numbered files, so I'd rewrite to make clear what's being generated (the folder? the files in the folder? the content of the files you already created?).
+-->
 
 ### PLAN
 
 PLAN to use Ailly effectively. Iterate often. Provide context. Put words in Ailly's mouth.
 
-- **Prepare** a precise prompt (by writing an aillyrc system prompt, providing supporting documents, and giving individual prompt steps).
+- **Prepare** a precise prompt (by writing an aillyrc system prompt, providing supporting documents, and specifying individual prompt steps).
 - **Leverage** LLM models (by running Ailly on some or all parts of the context chain).
-- **Assess** the generated content (as Ailly and the LLM writes output, make sure it's on the right track).
-- **Narrow** your context (by editing Ailly's generated content to keep the conversation going where you want it to).
+- **Assess** the generated content (as Ailly and the LLM write output, make sure they're on the right track).
+- **Narrow** your context (by editing Ailly's generated content to keep the conversation going where you want it to go).
 
 ## Engines
 
-- OpenAI `openai`
+- OpenAI (Use `openai`)
   - [Models documented by OpenAI](https://platform.openai.com/docs/models/continuous-model-upgrades)
-- Bedrock `bedrock`
+- Amazon Bedrock (Use `bedrock`)
   - [Claude 2 and available models documented by AWS](https://docs.aws.amazon.com/bedrock/latest/userguide/api-methods-list.html)
-  - [Enable models in Bedrock console.](https://docs.aws.amazon.com/bedrock/latest/userguide/model-access.html) Remember that models are enabled per-region - you will need to enable them for each reach you call Bedrock from.
-  - Each model behaves lightly differently, so the default formatter might not work. In that case, either open an issue or poke around in `./core/src/engine/bedrock`.
+  - [Enable models in Bedrock console.](https://docs.aws.amazon.com/bedrock/latest/userguide/model-access.html) Remember that you must enable a model for each Region from which you call Bedrock.
+  - Each model behaves differently, so the default forematter might not work for a particular model. In that case, either open an issue or poke around in `./core/src/engine/bedrock`.
 
 To choose an engine, export `AILLY_ENGINE=[bedrock|openai]` or provide `ailly --engine` on the command line.
 
-## VSCode Extension
+## VSCode extension
 
 The VSCode extension provides two commands, `Generate` and `Edit`.
 
-`Generate` runs Ailly on a file or folder, and can be activated either with the right-click context menu or the command palette.
-Via the context menu, Ailly will run on the file with its parent folder sas the root, or on an entire folder using the folder as the root.
-When run from the command prompt, Ailly will run on the current active file (or will do nothing if there's no active editor).
+`Generate` runs Ailly on a file or folder. You can activate it with either the right-click context menu or the command palette.
+
+- When you run Ailly from the context menu, it runs on the file with its parent folder as the root, or on an entire folder using the folder as the root.
+
+- When you run Ailly from the command prompt, it runs on the current active file (or does nothing if there's no active editor).
 
 `Edit` runs from the command prompt on the current active file (or does nothing if there's no active editor).
-`Edit` will use the current file and its root, in `folder` context, and include the current highlighted selection as the edit range.
-With multiple selections, it will only use the first.
 
-### Installing Ailly Extension
+- `Edit` uses the current file and its root, in the `folder` context, and includes the current highlighted selection as the edit range.
 
-Update May 8 2024: the extension is available as an artifact in the most recent [workflow run](https://github.com/DavidSouther/ailly/actions/workflows/extension.yaml).
+- With multiple selections, it only uses the first selection.
 
-- Clone the repo and install dependencies
+### Installing the Ailly extension
+
+**Update** May 8, 2024: The extension is available as an artifact in the most recent [workflow run](https://github.com/DavidSouther/ailly/actions/workflows/extension.yaml).
+
+To install the Ailly extension:
+
+- Clone the repo and install dependencies.
   - `git clone https://github.com/davidsouther/ailly.git ; cd ailly ; npm install`
-- Package the extension with `npm run package`
+- Package the extension with `npm run package`.
 - In VSCode extensions, install `./extension/ailly-0.*.*.vsix` from vsix.
-- Right click a file in content explorer and select `Ailly: Generate`
-- Make a selection and edit with `Ailly: Edit` in the command palette.
+- Right-click a file in the content explorer and select `Ailly: Generate`.
+- Make a selection and edit it with `Ailly: Edit` in the command palette.
 
-### Ailly Extension and Bedrock
+### The Ailly extension and Bedrock
 
-When using the bedrock engine, the Ailly extension uses your current [AWS configuration](https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-files.html).
-It also exposes two settings, `Ailly: Aws Profile` and `Ailly: Aws Region`, to choose which profile (and optionally region) to use for Bedrock requests.
-Use `aws configure` or equivalent to configure `~/.aws/config` and `~/.aws/credentials`.
-If Ailly shows a credentials error, this is probably what you need to check first.
+When using the Bedrock engine, the Ailly extension uses your current [AWS configuration](https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-files.html).
+It also exposes two settings, `Ailly: Aws Profile` and `Ailly: Aws Region`, to choose which profile and (optionally) which Region to use for Bedrock requests.
+Use `aws configure` or the equivalent command to configure `~/.aws/config` and `~/.aws/credentials`.
+If Ailly shows a credentials error, check this setting first.
 
 ### Developing
 
 See [DEVELOPING.md](./DEVELOPING.md) for details on how to run and debug various Ailly components.
 
-## Ailly Plugins
+## Ailly plugins
 
-Ailly can use plugins to provide additional data when calling the LLM models (retrieval augmented generation, or RAG).
+Ailly can use plugins to provide additional data when calling the LLM models using retrieval augmented generation (RAG).
+
 The default plugin `rag` (`AILLY_PLUGIN=rag`, `--plugin=rag`) uses a [vectra]() database in `./vectors/index.json`.
+
 You can provide custom plugins with `--plugin=file:/absolute/path/to/plugin.mjs`.
 This plugin must export a default factory function matching the [`PluginBuilder`](./core/src/plugin/index.ts) interface in `core/src/plugin/index.ts`.
 
-## Conversational History
+## Conversational history
 
-In LLM Chatbots like ChatGPT or chains like Langchain, the history of the conversation is kept in the sequence of human, assistant interactions.
-This is typically kept in memory, or at least in an inaccessible format to the user.
+In LLM chat interfaces like ChatGPT or chains like Langchain, the history of the conversation remains in the sequence of interactions between the human and the assistant.
+
+This history is typically in a format that is inaccessible to the user.
 The user can only regenerate sequences, or add their next prompt at the end.
 
 Ailly removes this limitation by using your file system as the conversational history.
-The writer maintains full control over the sequence of prompts, up to and including editing the LLM's response before (re)generating the next prompt!
-This lets the writer decide how the conversation should evolve.
-By editing an LLM prompt, they can take the best of what the LLM did in some cases, and modify it in others.
-Using Ailly's filesystem based conversational history, each piece of the session can be stored in source control.
-Version tracking lets the author see how their prompts and responses have changed over time, and unlock a number of long-term process improvements that are difficult to impossible with chat interfaces.
+
+You maintain full control over the sequence of prompts, including editing the LLM's response before (re)generating the next prompt so you can decide how the conversation should evolve.
+
+By editing an LLM prompt, you can keep the best of what the LLM produced and modify the rest.
+Using this filesystem-based conversational history, Ailly stores each piece of the session in source control.
+With version tracking, you can see how your prompts and responses have changed over time, and unlock long-term process improvements that are difficult or even impossible with chat interfaces.
 
 In one session, a developer was working on a long sequence of prompts to build a software project.
-While reviewing an LLM written draft of the README, the developer wanted the list of API calls to be links to the reference documentation.
-With a chat conversational history, the developer would have needed to modify the instructions for the entire prompt to encourage creating the list, rerun the generation, and hope the rest of the README came out similarly.
+While reviewing an LLM-generated draft of the README, the developer wanted the list of API calls to be links to the reference documentation.
+With a chat conversational history, the developer would have needed to modify the instructions for the entire prompt to encourage creating the list, rerun the generation, and hoped the rest of the README came out similarly.
+
 Instead, with Ailly, the developer created a new file with only the list and an instruction on how to create URLs from the list items, saved it as `list.md` (with `isolated: true` in the combined head), and ran `ailly list.md`.
+
 The LLM followed the instructions, generated just the updated list, and the developer copied that list into the original (generated) README.md.
-In later prompts, the context window included the entire URLs, and the agent model was able to intelligently request to download their contents.
+In later prompts, the context window included the entire list of URLs, and the agent model could intelligently request to download their contents.
 
 To the author's knowledge, no other LLM interface provides this level of interaction with LLMs.
