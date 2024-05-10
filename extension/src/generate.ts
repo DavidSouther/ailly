@@ -5,18 +5,17 @@ import { FileSystem } from "@davidsouther/jiffies/lib/esm/fs.js";
 import { VSCodeFileSystemAdapter } from "./fs.js";
 import { LOGGER, getAillyEngine, getAillyModel, resetLogger } from "./settings";
 import { AillyEdit } from "@ailly/core/src/content/content";
+import { dirname } from "node:path";
 
 export async function generate(
   path: string,
   edit?: { prompt: string; start: number; end: number }
 ) {
   resetLogger();
-  // CommonJS <> ESM Shenanigans
   LOGGER.info(`Generating for ${path}`);
 
   const fs = new FileSystem(new VSCodeFileSystemAdapter());
-  // TODO: Work with multi-workspace editors
-  const root = vscode.workspace.workspaceFolders?.[0].uri.fsPath!;
+  const root = dirname(path);
   fs.cd(root);
 
   const engine = await getAillyEngine();
