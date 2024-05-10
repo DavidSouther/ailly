@@ -1,28 +1,43 @@
 import * as ailly from "@ailly/core";
 import { DEFAULT_ENGINE, getEngine } from "@ailly/core/src/ailly";
 import { ENGINES } from "@ailly/core/src/engine";
-import {
-  basicLogFormatter,
-  getLogLevel,
-  getLogger,
-} from "@davidsouther/jiffies/lib/esm/log";
+import { getLogger } from "@davidsouther/jiffies/lib/esm/log";
 import vscode from "vscode";
 
 export const LOGGER = getLogger("@ailly/extension");
+const outputChannel = vscode.window.createOutputChannel("Ailly", {
+  log: true,
+});
+
+function aillyLogFormatter<
+  D extends {
+    name: string;
+    prefix: string;
+    level: number;
+    message: string;
+    source: string;
+  }
+>(data: D) {
+  let base = `${data.message}`;
+  if (data.debug) {
+    base += ` debug: ${JSON.stringify(data.debug)}`;
+  }
+  if (data.prompt) {
+    base += ` prompt: ${JSON.stringify(data.prompt)}`;
+  }
+  if (data.messages) {
+    base += ` prompt: \n${data.messages}`;
+  }
+  return base;
+}
 
 export function resetLogger() {
-  ailly.Ailly.LOGGER.level = LOGGER.level = getLogLevel(getAillyLogLevel());
-  ailly.Ailly.LOGGER.format = LOGGER.format = getAillyLogPretty()
-    ? basicLogFormatter
-    : JSON.stringify;
-}
-
-export function getAillyLogLevel() {
-  return getConfig().get<string>("log-level") ?? "info";
-}
-
-export function getAillyLogPretty() {
-  return getConfig().get<boolean>("log-pretty") ?? false;
+  let level = outputChannel.logLevel - 1;
+  if (level < 0) level = 5;
+  ailly.Ailly.LOGGER.level = LOGGER.level = level;
+  ailly.Ailly.LOGGER.format = LOGGER.format = aillyLogFormatter;
+  ailly.Ailly.LOGGER.console = LOGGER.console =
+    outputChannel as unknown as Console;
 }
 
 export async function getOpenAIKey(): Promise<string | undefined> {

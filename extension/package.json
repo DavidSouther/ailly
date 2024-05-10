@@ -57,23 +57,6 @@
             "default": "haiku",
             "description": "The default model to use when making LLM calls."
           },
-          "ailly.log-level": {
-            "type": "string",
-            "default": "info",
-            "enum": [
-              "debug",
-              "info",
-              "warn",
-              "error",
-              "silent"
-            ],
-            "description": "The log level to record Ailly details."
-          },
-          "ailly.log-pretty": {
-            "type": "boolean",
-            "default": false,
-            "description": "JSON (false) or pretty print (true) logs."
-          },
           "ailly.aws-profile": {
             "type": "string",
             "default": "default",
