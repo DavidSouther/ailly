@@ -7,7 +7,7 @@ import { LOGGER as ROOT_LOGGER } from "../../util.js";
 import { Summary } from "../index.js";
 import { Models, PromptBuilder } from "./prompt-builder.js";
 import { getLogger } from "@davidsouther/jiffies/lib/esm/log.js";
-import { fromIni } from "@aws-sdk/credential-providers";
+import { fromNodeProviderChain } from "@aws-sdk/credential-providers";
 import { addContentMessages } from "../messages.js";
 
 export const name = "bedrock";
@@ -28,7 +28,11 @@ export async function generate(
   LOGGER.level = ROOT_LOGGER.level;
   LOGGER.format = ROOT_LOGGER.format;
   const bedrock = new BedrockRuntimeClient({
-    credentials: fromIni({ ignoreCache: true }),
+    credentials: fromNodeProviderChain({
+      ignoreCache: true,
+      profile: process.env["AWS_PROFILE"],
+    }),
+    ...(process.env["AWS_REGION"] && { region: process.env["AWS_REGION"] }),
   });
   model = MODEL_MAP[model] ?? model;
   let messages = c.meta?.messages ?? [];
