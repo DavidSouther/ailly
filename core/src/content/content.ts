@@ -294,9 +294,15 @@ export async function loadContent(
       }
       break;
     case "folder":
-      const folder = files.map((f) => f.path);
-      for (const file of files) {
-        file.context.folder = folder;
+      if (isIsolated) {
+        for (const file of files) {
+          file.context.folder = [file.path];
+        }
+      } else {
+        const folder = files.map((f) => f.path);
+        for (const file of files) {
+          file.context.folder = folder;
+        }
       }
       break;
   }

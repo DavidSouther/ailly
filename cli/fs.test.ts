@@ -73,7 +73,8 @@ describe("makeCLIContent", () => {
       state.context,
       state.root,
       edit,
-      view
+      view,
+      false
     );
 
     expect(cliContent).toEqual({
@@ -105,7 +106,8 @@ describe("makeCLIContent", () => {
       state.context,
       state.root,
       edit,
-      view
+      view,
+      false
     );
 
     expect(cliContent).toEqual({
@@ -137,7 +139,8 @@ describe("makeCLIContent", () => {
       state.context,
       state.root,
       edit,
-      view
+      view,
+      false
     );
 
     expect(cliContent).toEqual({
@@ -169,7 +172,8 @@ describe("makeCLIContent", () => {
       state.context,
       state.root,
       edit,
-      view
+      view,
+      false
     );
 
     expect(cliContent).toEqual({

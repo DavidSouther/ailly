@@ -30,7 +30,7 @@ export async function loadFs(fs, args) {
   const settings = await ailly.Ailly.makePipelineSettings({
     root,
     out: resolve(args.values.out ?? root),
-    context: args.values.context,
+    context: args.values.context ?? (args.values.edit ? 'folder' : undefined),
     isolated: args.values.isolated,
     combined: args.values.combined,
     engine: args.values.engine,
@@ -77,7 +77,7 @@ export async function loadFs(fs, args) {
       content = [];
     }
     const prompt = assertExists(args.values.prompt);
-    const cliContent = await makeCLIContent(prompt, settings.context, system, context, root, edit, settings.templateView);
+    const cliContent = await makeCLIContent(prompt, settings.context, system, context, root, edit, settings.templateView, settings.isolated);
     context[cliContent.path] = cliContent;
     content.push(cliContent.path);
   }
@@ -128,12 +128,13 @@ export function makeEdit(lines, content, hasPrompt) {
  * @param {string} root 
  * @param {Edit|undefined} edit 
  * @param {*} view 
+ * @param {boolean} isolated
  * @returns Content
  */
-export async function makeCLIContent(prompt, argContext, argSystem, context, root, edit, view) {
+export async function makeCLIContent(prompt, argContext, argSystem, context, root, edit, view, isolated) {
   const inFolder = Object.keys(context).filter(c => dirname(c) == root);
   // When argContext is folder, `folder` is all files in context in root.
-  const folder = argContext == 'folder' ? inFolder : undefined;
+  const folder = argContext == 'folder' ? (isolated && edit) ? [edit?.file] : inFolder : undefined;
   // When argContext is `conversation`, `predecessor` is the last item in the root folder.
   const predecessor = argContext == 'conversation' ? inFolder.at(-1) : undefined;
   // When argContext is none, system is empty; otherwise, system is argSystem + predecessor's system.
@@ -158,6 +159,9 @@ export async function makeCLIContent(prompt, argContext, argSystem, context, roo
       edit,
     }
   };
+  if (edit && context[edit.file]) {
+    cliContent.meta = context[edit.file].meta;
+  }
   return cliContent;
 }
 

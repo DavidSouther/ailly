@@ -3,6 +3,7 @@ import { Content } from "../content/content.js";
 import { LOGGER as ROOT_LOGGER } from "../util.js";
 import type { PipelineSettings } from "../ailly.js";
 import type { Message } from "./index.js";
+import { addContentMessages } from "./messages.js";
 
 const LOGGER = getLogger("@ailly/core:noop");
 
@@ -21,18 +22,7 @@ export async function format(
   context: Record<string, Content>
 ): Promise<void> {
   for (const content of contents) {
-    let messages: Message[] = [];
-    if (content.context.folder) {
-      messages = Object.values(context).map<Message[]>(asMessages).flat();
-    } else if (content.context.predecessor) {
-      let history = [context[content.context.predecessor]];
-      while (history.at(-1)?.context.predecessor) {
-        history.push(context[history.at(-1)?.context?.predecessor!]);
-      }
-      messages = history.reverse().map(asMessages).flat();
-    }
-    content.meta ??= {};
-    content.meta.messages = messages;
+    addContentMessages(content, context);
   }
 }
 export async function generate<D extends {} = {}>(
