@@ -14,26 +14,46 @@ Ailly's best feature is rapid prompt engineering iteration. By keeping your prom
 
 To get started, follow these steps:
 
-1. Create a folder named `content`.
-2. Create a file named `content/.aillyrc`, and put your top-level prompt instructions in the file.
-   - Include system prompts, level setting expectations. etc.
-3. Create more numbered files, such as `content/01_big_point.md` and `content/02_second_point.md`.
-4. Run Ailly using NodeJS: `npx @ailly/cli --root content`
+1. Create a folder named `jokes`.
+2. Create a file named `10_chickens.md` with "Tell me a joke about chickens" as the content.
+3. Run Ailly using NodeJS: `npx @ailly/cli --root content`
+   - See the joke in `10_chickens.md.ailly.md`
+2. Create a file named `content/.aillyrc` with "You are a farmer writing jokes for your other barnyard animals."
+   - Include other system prompts, level setting expectations. etc.
+   - Run Ailly with the same command, and see how thr joke changes.
+3. Create more numbered files, such as `content/20_knock_knock.md` with "Turn the chicken joke into a knock knock joke."
+4. Run Ailly using NodeJS: `npx @ailly/cli --root content content/20_knock_knock.md`
+  - Ailly will send each file to the configured LLM engine and write its result.
+  - `20_knock_knock.md.ailly.md` will have the new knock knock joke based on thr chickenjome it first wrote!
+
+### System Context
+
+System prompts provide grounding and background information for LLMs.
+There are a number of techniques and "best practices" for developing LLM system prompts.
+In Ailly, these are in files with the name `.aillyrc`, and apply top all files in the current folder when using Ailly.
+These files can also specify properties that control how the LLM prompts are constructed, again for every file.
 
 ### Properties
 
-You can set these properties in a combination of locations, including the command line, .aillyrc, and greymatter. Later settings override earlier settings.
+Ailly generates LLM responses for one file at a time.
+It prepares the conversational history and context by using the file system and folders the file is in.
+There are variations in how Ailly composes the prompt, which can be controlled with several properties.
 
-- **`combined`**: `boolean` If `true`, the file's body is the response and the prompt is in the greymatter key `prompt`. If `false`, the file's body is the prompt and the response is in `{file_name}.ailly.md`. The default is `false`.
+You can set these properties in a combination of locations, including the command line, `.aillyrc` files, and greymatter in each file.
+Later settings override earlier settings.
+
+- **`combined`**: `boolean` If `true`, the file's body is the response and the prompt is in the greymatter key `prompt`. If `false`, the file's body is the prompt and the response is written to `{file_name}.ailly.md`. The default is `false`.
 - **`skip`**: `boolean` If `true`, the prompt is not sent through the LLM (but is part of the context).
 - **`isolated`**: `boolean` If `true`, the LLM inference only includes the system prompt, and not the prior context in this folder.
 - **`context`** `conversation` | `folder` | `none`
-  - `conversation` (default) loads files from the root folder and includes them alphabetically, chatbot history style, before the current file.
-  - `folder` includes all files in the folder at the same level as the current file.
+  - `conversation` (default, unless editing) loads files from the root folder and includes them alphabetically, chatbot history style, before the current file.
+  - `folder` includes all files in the folder at the same level as the current file. (Default when editing.)
   - `none` includes no additional content (including no system context).
+- **`parent`** `root` | `always` | `never`
+  - `root` (default) start the chain of system prompts from here.
+  - `always` include the .aillyrc file in the parent directory as part of this system prompt.
+  - `never` don't include any other system prompts.
 - **`template-view`** `[path]` loads variables to use with [mustache](https://mustache.github.io/) templates in your prompts.
-
-**Note**: `Context` is separate from `isolated`. `isolated: true` with either `content` or `folder` results in the same behavior with either. With `none`, Ailly sends _only_ the prompt when generating.
 
 <!--
 There was a lot of "when generating" in here, but it's not clear what's being generated (the intro has you creating a folder and numbered files, so I'd rewrite to make clear what's being generated (the folder? the files in the folder? the content of the files you already created?).
