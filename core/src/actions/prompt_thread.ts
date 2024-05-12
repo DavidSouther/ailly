@@ -198,15 +198,15 @@ export async function generateOne(
       // Skip the last `assistant` message
       .filter((m, i, a) => !(m.role == "assistant" && i === a.length - 1)),
   });
-  const generated = await engine.generate(c, settings);
-  c.response = generated.message;
   c.meta = {
     ...c.meta,
     debug: {
-      ...generated.debug,
       engine: settings.engine,
       model: settings.model,
     },
   };
+  const generated = await engine.generate(c, settings);
+  c.response = generated.message;
+  c.meta.debug = { ...c.meta.debug, ...generated.debug };
   return c;
 }

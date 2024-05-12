@@ -57,7 +57,7 @@ export interface ContentMeta {
   skip?: boolean;
   isolated?: boolean;
   combined?: boolean;
-  debug?: unknown;
+  debug?: {};
   view?: false | View;
   prompt?: string;
   temperature?: number;
