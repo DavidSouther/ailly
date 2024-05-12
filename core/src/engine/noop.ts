@@ -2,20 +2,21 @@ import { getLogger } from "@davidsouther/jiffies/lib/esm/log.js";
 import { Content } from "../content/content.js";
 import { LOGGER as ROOT_LOGGER } from "../util.js";
 import type { PipelineSettings } from "../ailly.js";
-import type { Message } from "./index.js";
 import { addContentMessages } from "./messages.js";
 
 const LOGGER = getLogger("@ailly/core:noop");
 
-const asMessages = (content: Content) => [
-  { role: "user", content: content.prompt } satisfies Message,
-  ...(content.response
-    ? [{ role: "assistant", content: content.response } satisfies Message]
-    : []),
-];
-
 export const DEFAULT_MODEL = "NOOP";
-const NOOP_TIMEOUT = Number(process.env["AILLY_NOOP_TIMEOUT"] ?? 750);
+export const TIMEOUT = {
+  timeout: 0,
+  setTimeout(timeout: number) {
+    TIMEOUT.timeout = timeout;
+  },
+  resetTimeout() {
+    TIMEOUT.setTimeout(Number(process.env["AILLY_NOOP_TIMEOUT"] ?? 750));
+  },
+};
+TIMEOUT.resetTimeout();
 export const name = "noop";
 export async function format(
   contents: Content[],
@@ -32,7 +33,7 @@ export async function generate<D extends {} = {}>(
   LOGGER.level = ROOT_LOGGER.level;
   LOGGER.format = ROOT_LOGGER.format;
   await new Promise<void>((resolve) => {
-    setTimeout(() => resolve(), NOOP_TIMEOUT);
+    setTimeout(() => resolve(), TIMEOUT.timeout);
   });
   const system = content.context.system?.map((s) => s.content).join("\n");
   const messages = content.meta?.messages

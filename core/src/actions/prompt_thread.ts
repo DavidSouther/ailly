@@ -28,7 +28,7 @@ export async function scheduler<T>(
   let finished: Array<Promise<T>> = [];
   let outstanding = new Set<Promise<T>>();
   while (taskQueue.length > 0) {
-    if (outstanding.size > limit) {
+    if (outstanding.size >= limit) {
       // Wait for something in outstanding to finish
       await Promise.race([...outstanding]);
     } else {
@@ -47,7 +47,7 @@ export async function scheduler<T>(
 export class PromptThread {
   finished: number = 0;
   isolated: boolean = false;
-  done: boolean = false;
+  private done: boolean = false;
   runner?: Promise<PromiseSettledResult<Content>[]>;
   // Results holds a list of errors that occurred and the index the occurred at.
   // If the thread is isolated, this can have many entries. If the thread is not
@@ -87,7 +87,7 @@ export class PromptThread {
     private plugin: Plugin
   ) {
     this.content = content;
-    this.isolated = Boolean(content[0]?.meta?.isolated ?? false);
+    this.isolated = Boolean(settings.isolated ?? false);
   }
 
   start() {
@@ -168,7 +168,7 @@ export class PromptThread {
   }
 }
 
-async function generateOne(
+export async function generateOne(
   c: Content,
   context: Record<string, Content>,
   settings: PipelineSettings,

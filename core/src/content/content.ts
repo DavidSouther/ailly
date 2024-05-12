@@ -93,7 +93,6 @@ function partitionDirectory(stats: Stats[]): PartitionedDirectory {
 async function loadDir(fs: FileSystem): Promise<PartitionedDirectory> {
   const dir = await fs.readdir(".");
   const entries = await Promise.all(dir.map((s) => fs.stat(s)));
-  // const entries = await fs.scandir("");
   return partitionDirectory(entries);
 }
 
@@ -143,7 +142,7 @@ async function loadFile(
       );
     }
 
-    let response = "";
+    let response: string | undefined;
     let outPath: string;
     if (data.prompt) {
       outPath = promptPath;
@@ -171,6 +170,7 @@ async function loadFile(
         }
       }
     }
+    if (response?.trim() == "") response = undefined;
 
     const view = data.view === false ? false : data.view ?? {};
     delete data.view;
