@@ -168,17 +168,20 @@ export class PromptThread {
   }
 }
 
-export async function generateOne(
+export function generateOne(
   c: Content,
   context: Record<string, Content>,
   settings: PipelineSettings,
   engine: Engine
-): Promise<Content> {
+): Promise<void> {
   const has_response = (c.response?.length ?? 0) > 0;
 
   if (c.meta?.skip || (!settings.overwrite && has_response)) {
     LOGGER.info(`Skipping ${c.path}`);
-    return c;
+    const stream = new TextEncoderStream();
+    stream.writable.getWriter().write(c.response ?? "");
+    c.responseStream = stream.readable;
+    return Promise.resolve();
   }
 
   LOGGER.info(`Preparing ${c.path}`);
@@ -205,8 +208,20 @@ export async function generateOne(
       model: settings.model,
     },
   };
-  const generated = await engine.generate(c, settings);
-  c.response = generated.message();
-  c.meta.debug = { ...c.meta.debug, ...generated.debug };
-  return c;
+  try {
+    const generator = engine.generate(c, settings);
+    c.responseStream = generator.stream;
+    return generator.done.then(
+      () => {
+        c.response = generator.message();
+        c.meta!.debug = { ...c.meta!.debug, ...generator.debug() };
+      },
+      (err) => {
+        c.meta!.debug = { ...c.meta!.debug, ...generator.debug() };
+      }
+    );
+  } catch (err) {
+    LOGGER.error(`Uncaught error in ${engine.name} generator`, { err });
+    return Promise.resolve();
+  }
 }

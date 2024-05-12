@@ -10,6 +10,7 @@ import { Models, PromptBuilder } from "./prompt-builder.js";
 import { getLogger } from "@davidsouther/jiffies/lib/esm/log.js";
 import { fromNodeProviderChain } from "@aws-sdk/credential-providers";
 import { addContentMessages } from "../messages.js";
+import { checkExhaustive } from "@davidsouther/jiffies/lib/esm/assert";
 
 export const name = "bedrock";
 export const DEFAULT_MODEL = "anthropic.claude-3-sonnet-20240229-v1:0";
@@ -19,6 +20,7 @@ const LOGGER = getLogger("@ailly/core:bedrock");
 export interface BedrockDebug {
   finish?: string;
   error?: Error;
+  id: string;
 }
 
 const MODEL_MAP: Record<string, string> = {
@@ -27,7 +29,7 @@ const MODEL_MAP: Record<string, string> = {
   opus: "anthropic.claude-3-opus-20240229-v1:0",
 };
 
-export const generate: EngineGenerate<BedrockDebug> = async (
+export const generate: EngineGenerate<BedrockDebug> = (
   c: Content,
   { model = DEFAULT_MODEL }: { model?: string }
 ) => {
@@ -66,40 +68,73 @@ export const generate: EngineGenerate<BedrockDebug> = async (
 
   try {
     let message = "";
-    let chunkNum = 0;
+    let error: Error | undefined;
+    let id = "";
     const stream = new TransformStream();
-    const response = await bedrock.send(
-      new InvokeModelWithResponseStreamCommand({
-        modelId: model,
-        contentType: "application/json",
-        accept: "application/json",
-        body: JSON.stringify(prompt),
+    const done = bedrock
+      .send(
+        new InvokeModelWithResponseStreamCommand({
+          modelId: model,
+          contentType: "application/json",
+          accept: "application/json",
+          body: JSON.stringify(prompt),
+        })
+      )
+      .then(async (response) => {
+        LOGGER.info(`Begin streaming response from Bedrock for ${c.name}`);
+
+        for await (const block of response.body ?? []) {
+          const chunk = JSON.parse(
+            new TextDecoder().decode(block.chunk?.bytes)
+          );
+          LOGGER.debug(
+            `Received chunk for (${chunk.message?.id ?? id}) from Bedrock for ${
+              c.name
+            }`,
+            { chunk }
+          );
+          switch (chunk.type) {
+            case "message_start":
+              id = chunk.message.id;
+              break;
+            case "content_block_start":
+              break;
+            case "content_block_delta":
+              const text = chunk.delta.text;
+              const writer = stream.writable.getWriter();
+              await writer.ready;
+              message += text;
+              await writer.write(text);
+              writer.releaseLock();
+              break;
+          }
+        }
       })
-    );
-
-    Promise.resolve().then(async () => {
-      LOGGER.info(`Begin streaming response from Bedrock for ${c.name}`);
-
-      for await (const block of response.body ?? []) {
-        LOGGER.debug(`Received chunk ${chunkNum++} from Bedrock for ${c.name}`);
-        const writer = stream.writable.getWriter();
-        await writer.ready;
-        const chunk = new TextDecoder().decode(block.chunk?.bytes);
-        message += chunk;
-        await writer.write(chunk);
-        writer.releaseLock();
-      }
-
-      await stream.writable.getWriter().close();
-    });
-    // In edit mode, claude (at least) does not return the stop sequence nor the prefill, so the edit is the message.
+      .catch((e) => {
+        error = e as Error;
+        LOGGER.error(`Error for bedrock response ${id ?? "unknown"}`, {
+          error,
+        });
+      })
+      .finally(async () => {
+        LOGGER.debug(
+          `Closing write stream for bedrock response ${id ?? "unknown"}`
+        );
+        await stream.writable.getWriter().close();
+      });
 
     return {
       stream: stream.readable,
-      message: () => message,
-      debug: () => ({
-        finish: "unknown",
-      }),
+      message: () => (error ? "💩" : message),
+      debug: () =>
+        error
+          ? {
+              finish: "failed",
+              error,
+              id,
+            }
+          : { finish: "unknown", id },
+      done,
     };
   } catch (error) {
     LOGGER.warn(`Error from Bedrock for ${c.name}`, { error });
@@ -109,7 +144,9 @@ export const generate: EngineGenerate<BedrockDebug> = async (
       debug: () => ({
         finish: "failed",
         error: error as Error,
+        id: "_failed_",
       }),
+      done: Promise.resolve(),
     };
   }
 };

@@ -1,7 +1,6 @@
 import { getLogger } from "@davidsouther/jiffies/lib/esm/log.js";
 import { Content } from "../content/content.js";
 import { LOGGER as ROOT_LOGGER } from "../util.js";
-import type { PipelineSettings } from "../ailly.js";
 import { addContentMessages } from "./messages.js";
 import { EngineGenerate } from ".";
 
@@ -29,17 +28,9 @@ export async function format(
   }
 }
 
-export interface MistralDebug {}
-
-export const generate: EngineGenerate<MistralDebug> = async (
-  content: Content,
-  _: PipelineSettings
-) => {
+export const generate: EngineGenerate = (content: Content, _) => {
   LOGGER.level = ROOT_LOGGER.level;
   LOGGER.format = ROOT_LOGGER.format;
-  await new Promise<void>((resolve) => {
-    setTimeout(() => resolve(), TIMEOUT.timeout);
-  });
 
   const system = content.context.system?.map((s) => s.content).join("\n");
   const messages = content.meta?.messages
@@ -54,19 +45,45 @@ export const generate: EngineGenerate<MistralDebug> = async (
       content.prompt,
     ].join("\n");
 
+  let error: Error | undefined;
   const stream = new TextEncoderStream();
-  Promise.resolve().then(async () => {
-    const writer = await stream.writable.getWriter();
-    await writer.ready;
-    await writer.write(message);
-    writer.close();
-  });
+  const done = Promise.resolve()
+    .then(async () => {
+      await sleep(TIMEOUT.timeout);
+      const writer = await stream.writable.getWriter();
+      try {
+        await writer.ready;
+        if (process.env["AILLY_NOOP_STREAM"]) {
+          let first = true;
+          for (const word of message.split(" ")) {
+            await writer.write((first ? "" : " ") + word);
+            first = false;
+            await sleep(TIMEOUT.timeout / 10);
+          }
+        }
+      } finally {
+        writer.close();
+      }
+    })
+    .catch((err) => {
+      error = err as Error;
+    });
+
   return {
     stream: stream.readable,
     message: () => message,
-    debug: () => ({}),
+    debug: () => (error ? { finish: "failed", error } : {}),
+    done,
   };
 };
+
+function sleep(duration: number) {
+  if (isFinite(duration) && duration > 16)
+    return new Promise<void>((resolve) => {
+      setTimeout(() => resolve(), duration);
+    });
+}
+
 export async function vector(s: string, _: unknown): Promise<number[]> {
   return [0.0, 1.0];
 }

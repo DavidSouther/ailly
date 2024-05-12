@@ -30,6 +30,7 @@ export interface Content {
   // The prompt itself
   prompt: string;
   response?: string;
+  responseStream?: ReadableStream;
   context: Context;
   meta?: ContentMeta;
 }

@@ -9,21 +9,9 @@ import {
   ObjectFileSystemAdapter,
 } from "@davidsouther/jiffies/lib/esm/fs";
 import { getPlugin, makePipelineSettings } from "../ailly";
-import { ENGINES, getEngine } from "../engine";
+import { getEngine } from "../engine";
 import { LEVEL } from "@davidsouther/jiffies/lib/esm/log";
 import { TIMEOUT } from "../engine/noop";
-
-Promise.withResolvers =
-  Promise.withResolvers ??
-  function makePromise<T = void>(): PromiseWithResolvers<T> {
-    let resolve: (t: T | PromiseLike<T>) => void = () => {};
-    let reject: (reason?: any) => void = () => {};
-    const promise = new Promise<T>((r, j) => {
-      resolve = r;
-      reject = j;
-    });
-    return { promise, resolve, reject };
-  };
 
 describe("scheduler", () => {
   it("limits outstanding tasks", async () => {

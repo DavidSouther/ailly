@@ -21,7 +21,7 @@ export interface OpenAIDebug {
   finish?: string;
   error?: Error;
 }
-export const generate: EngineGenerate<OpenAIDebug> = async (
+export const generate: EngineGenerate<OpenAIDebug> = (
   c: Content,
   { model = MODEL }: PipelineSettings
 ) => {
@@ -49,20 +49,20 @@ export const generate: EngineGenerate<OpenAIDebug> = async (
   };
 
   try {
-    const completions = await callOpenAiWithRateLimit(openai, {
-      ...body,
-      stream: true,
-    });
-    if (!completions) {
-      throw new Error(
-        "Failed to get completions and call with rate limit did not itself error"
-      );
-    }
     let message = "";
     let chunkNum = 0;
     const stream = new TransformStream();
 
-    Promise.resolve().then(async () => {
+    const done = Promise.resolve().then(async () => {
+      const completions = await callOpenAiWithRateLimit(openai, {
+        ...body,
+        stream: true,
+      });
+      if (!completions) {
+        throw new Error(
+          "Failed to get completions and call with rate limit did not itself error"
+        );
+      }
       LOGGER.info(`Begin streaming response from Bedrock for ${c.name}`);
 
       for await (const block of completions) {
@@ -84,17 +84,14 @@ export const generate: EngineGenerate<OpenAIDebug> = async (
     });
     return {
       stream: stream.readable,
-      message() {
-        return message;
-      },
-      debug() {
-        return {
-          // id: completions.id,
-          // model: completions.model,
-          // usage: completions.usage,
-          // finish: choice.finish_reason,
-        };
-      },
+      message: () => message,
+      debug: () => ({
+        // id: completions.id,
+        // model: completions.model,
+        // usage: completions.usage,
+        // finish: choice.finish_reason,
+      }),
+      done,
     };
   } catch (e) {
     console.warn(`Error from OpenAI for ${c.name}`, e);
@@ -105,6 +102,7 @@ export const generate: EngineGenerate<OpenAIDebug> = async (
         finish: "failed",
         error: { message: (e as Error).message },
       }),
+      done: Promise.reject(e),
     };
   }
 };

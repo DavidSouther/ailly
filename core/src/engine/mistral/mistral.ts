@@ -7,10 +7,7 @@ import { normalize, join, dirname } from "node:path";
 const DEFAULT_MODEL = "mistralai/Mistral-7B-v0.1";
 interface MistralDebug {}
 
-export const generate: EngineGenerate<MistralDebug> = async (
-  c: Content,
-  { model = DEFAULT_MODEL }: { model?: string }
-) => {
+export const generate: EngineGenerate<MistralDebug> = (c: Content, _) => {
   const prompt = c.meta?.messages?.map(({ content }) => content).join("\n");
   if (!prompt) {
     throw new Error("No messages in Content");
@@ -27,6 +24,7 @@ export const generate: EngineGenerate<MistralDebug> = async (
   let child = spawn(command, args, { cwd });
 
   const stream = new TransformStream();
+  const done = Promise.withResolvers<void>();
 
   let message = "";
   child.on("message", async (m) => {
@@ -37,24 +35,27 @@ export const generate: EngineGenerate<MistralDebug> = async (
     message += `${m}`;
   });
 
-  const done = () => {
+  const onDone = () => {
     stream.writable.close();
+    done.resolve();
   };
-  child.on("exit", done);
-  child.on("close", done);
-  child.on("disconnect", done);
+  child.on("exit", onDone);
+  child.on("close", onDone);
+  child.on("disconnect", onDone);
 
-  const error = (cause: unknown) => {
+  const onError = (cause: unknown) => {
     stream.writable.abort(
       `child_process had a problem ${JSON.stringify(cause)}`
     );
+    done.reject(cause);
   };
-  child.on("error", error);
+  child.on("error", onError);
 
   return {
     stream: stream.readable,
     message: () => message,
     debug: () => ({}),
+    done: done.promise,
   };
 };
 
