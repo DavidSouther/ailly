@@ -10,7 +10,6 @@ import { Models, PromptBuilder } from "./prompt-builder.js";
 import { getLogger } from "@davidsouther/jiffies/lib/esm/log.js";
 import { fromNodeProviderChain } from "@aws-sdk/credential-providers";
 import { addContentMessages } from "../messages.js";
-import { checkExhaustive } from "@davidsouther/jiffies/lib/esm/assert";
 
 export const name = "bedrock";
 export const DEFAULT_MODEL = "anthropic.claude-3-sonnet-20240229-v1:0";
@@ -18,6 +17,12 @@ export const DEFAULT_MODEL = "anthropic.claude-3-sonnet-20240229-v1:0";
 const LOGGER = getLogger("@ailly/core:bedrock");
 
 export interface BedrockDebug {
+  statistics?: {
+    inputTokenCount?: number;
+    outputTokenCount?: number;
+    invocationLatency?: number;
+    firstByteLatency?: number;
+  };
   finish?: string;
   error?: Error;
   id: string;
@@ -68,9 +73,9 @@ export const generate: EngineGenerate<BedrockDebug> = (
 
   try {
     let message = "";
-    let error: Error | undefined;
-    let id = "";
+    const debug: BedrockDebug = { id: "", finish: "unknown" };
     const stream = new TransformStream();
+    const writer = stream.writable.getWriter();
     const done = bedrock
       .send(
         new InvokeModelWithResponseStreamCommand({
@@ -88,52 +93,47 @@ export const generate: EngineGenerate<BedrockDebug> = (
             new TextDecoder().decode(block.chunk?.bytes)
           );
           LOGGER.debug(
-            `Received chunk for (${chunk.message?.id ?? id}) from Bedrock for ${
-              c.name
-            }`,
+            `Received chunk for (${
+              chunk.message?.id ?? debug.id
+            }) from Bedrock for ${c.name}`,
             { chunk }
           );
           switch (chunk.type) {
             case "message_start":
-              id = chunk.message.id;
+              debug.id = chunk.message.id;
               break;
             case "content_block_start":
               break;
             case "content_block_delta":
               const text = chunk.delta.text;
-              const writer = stream.writable.getWriter();
               await writer.ready;
               message += text;
               await writer.write(text);
-              writer.releaseLock();
+              break;
+            case "message_delta":
+              debug.finish = chunk.delta.stop_reason;
+              break;
+            case "message_stop":
+              debug.statistics = chunk["amazon-bedrock-invocationMetrics"];
               break;
           }
         }
       })
       .catch((e) => {
-        error = e as Error;
-        LOGGER.error(`Error for bedrock response ${id ?? "unknown"}`, {
-          error,
+        debug.error = e as Error;
+        LOGGER.error(`Error for bedrock response ${debug.id}`, {
+          error: debug.error,
         });
       })
       .finally(async () => {
-        LOGGER.debug(
-          `Closing write stream for bedrock response ${id ?? "unknown"}`
-        );
-        await stream.writable.getWriter().close();
+        LOGGER.debug(`Closing write stream for bedrock response ${debug.id}`);
+        await writer.close();
       });
 
     return {
       stream: stream.readable,
-      message: () => (error ? "💩" : message),
-      debug: () =>
-        error
-          ? {
-              finish: "failed",
-              error,
-              id,
-            }
-          : { finish: "unknown", id },
+      message: () => (debug.error ? "💩" : message),
+      debug: () => debug,
       done,
     };
   } catch (error) {
