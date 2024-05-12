@@ -2,9 +2,11 @@ import { OpenAI, toFile } from "openai";
 import { assertExists } from "@davidsouther/jiffies/lib/esm/assert.js";
 import type { Content } from "../content/content.js";
 import type { PipelineSettings } from "../ailly.js";
-import type { Message, Summary } from "./index.js";
+import type { EngineGenerate, Message, Summary } from "./index.js";
 import { LOGGER, isDefined } from "../util.js";
 import { encode } from "../encoding.js";
+import { ChatCompletionChunk } from "openai/resources/index.mjs";
+import { Stream } from "openai/streaming.mjs";
 
 export const name = "openai";
 
@@ -15,10 +17,14 @@ const MODEL = "gpt-4-0613";
 // const MODEL = "gpt-3.5-turbo-16k-0613";
 const EMBEDDING_MODEL = "text-embedding-ada-002";
 
-export async function generate(
+export interface OpenAIDebug {
+  finish?: string;
+  error?: Error;
+}
+export const generate: EngineGenerate<OpenAIDebug> = async (
   c: Content,
   { model = MODEL }: PipelineSettings
-): Promise<{ message: string; debug: unknown }> {
+) => {
   const apiKey = assertExists(
     process.env["OPENAI_API_KEY"],
     "Missing OPENAI_API_KEY"
@@ -43,40 +49,70 @@ export async function generate(
   };
 
   try {
-    const completions = await callOpenAiWithRateLimit(openai, body);
+    const completions = await callOpenAiWithRateLimit(openai, {
+      ...body,
+      stream: true,
+    });
     if (!completions) {
       throw new Error(
         "Failed to get completions and call with rate limit did not itself error"
       );
     }
+    let message = "";
+    let chunkNum = 0;
+    const stream = new TransformStream();
 
-    const choice = completions.choices[0];
+    Promise.resolve().then(async () => {
+      LOGGER.info(`Begin streaming response from Bedrock for ${c.name}`);
+
+      for await (const block of completions) {
+        LOGGER.debug(`Received chunk ${chunkNum++} from Bedrock for ${c.name}`);
+        const writer = stream.writable.getWriter();
+        await writer.ready;
+        const chunk = block.choices[0]?.delta.content;
+        message += chunk;
+        await writer.write(chunk);
+        writer.releaseLock();
+      }
+
+      await stream.writable.getWriter().close();
+    });
+
     LOGGER.debug(`Response from OpenAI for ${c.name}`, {
-      id: completions.id,
-      finish_reason: choice.finish_reason,
+      // id: completions.id,
+      // finish_reason: choice.finish_reason,
     });
     return {
-      message: choice.message.content ?? "",
-      debug: {
-        id: completions.id,
-        model: completions.model,
-        usage: completions.usage,
-        finish: choice.finish_reason,
+      stream: stream.readable,
+      message() {
+        return message;
+      },
+      debug() {
+        return {
+          // id: completions.id,
+          // model: completions.model,
+          // usage: completions.usage,
+          // finish: choice.finish_reason,
+        };
       },
     };
   } catch (e) {
     console.warn(`Error from OpenAI for ${c.name}`, e);
     return {
-      message: "💩",
-      debug: { finish: "Failed", error: { message: (e as Error).message } },
+      stream: new TextDecoderStream("💩").readable,
+      message: () => "💩",
+      debug: () => ({
+        finish: "failed",
+        error: { message: (e as Error).message },
+      }),
     };
   }
-}
+};
 
 async function callOpenAiWithRateLimit(
   openai: OpenAI,
-  content: OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming
-): Promise<OpenAI.Chat.Completions.ChatCompletion | undefined> {
+  content: OpenAI.Chat.Completions.ChatCompletionCreateParamsStreaming
+): Promise<Stream<ChatCompletionChunk> | undefined> {
   let retry = 3;
   while (retry > 0) {
     retry -= 1;

@@ -206,7 +206,7 @@ export async function generateOne(
     },
   };
   const generated = await engine.generate(c, settings);
-  c.response = generated.message;
+  c.response = generated.message();
   c.meta.debug = { ...c.meta.debug, ...generated.debug };
   return c;
 }
