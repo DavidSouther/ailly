@@ -53,6 +53,7 @@ const SETTINGS_KEYS = {
   model: "model",
   awsProfile: "awsProfile",
   awsRegion: "awsRegion",
+  preferStreamingEdit: "preferStreamingEdit",
 };
 export const SETTINGS = {
   async getOpenAIKey(): Promise<string | undefined> {
@@ -127,6 +128,14 @@ export const SETTINGS = {
     if (region !== undefined) {
       process.env["AWS_REGION"] = region;
     }
+  },
+
+  getPreferStreamingEdit(): boolean {
+    const aillyConfig = getConfig();
+    const preferStreamingEdit = aillyConfig.get<boolean>(
+      SETTINGS_KEYS.preferStreamingEdit
+    );
+    return preferStreamingEdit ?? true;
   },
 };
 

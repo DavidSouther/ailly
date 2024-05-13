@@ -69,6 +69,11 @@
             "default": "us-east-1",
             "description": "The AWS region to use when making calls to AWS services using the bedrock engine."
           },
+          "ailly.preferStreamingEdit": {
+            "type": "boolean",
+            "default": true,
+            "description": "Stream edit responses into the selection, rather than replacing the selection in one update."
+          },
           "ailly.openaiApiKey": {
             "type": [
               "string",
