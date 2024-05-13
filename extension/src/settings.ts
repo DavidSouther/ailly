@@ -20,16 +20,19 @@ function aillyLogFormatter<
 >(data: D) {
   let base = `${data.name} ${data.message}`;
   if (data.err) {
-    base += ` err: ${JSON.stringify(data.err)}`;
-  }
-  if (data.debug) {
-    base += ` debug: ${JSON.stringify(data.debug)}`;
-  }
-  if (data.prompt) {
-    base += ` prompt: ${JSON.stringify(data.prompt)}`;
-  }
-  if (data.messages) {
-    base += ` prompt: \n${JSON.stringify(data.messages)}`;
+    base += ` err: ${data.err.message}${
+      data.err.cause ? "" + data.err.cause.message : ""
+    }`;
+  } else {
+    const debug = { ...data };
+    delete debug.name;
+    delete debug.message;
+    delete debug.prefix;
+    delete debug.level;
+    delete debug.source;
+    if (Object.keys(debug).length > 0) {
+      base += " " + JSON.stringify(debug);
+    }
   }
   return base;
 }
@@ -49,6 +52,7 @@ const SETTINGS = {
   MODEL: "model",
   AWS_PROFILE: "awsProfile",
   AWS_REGION: "awsRegion",
+  PREFER_STREAMING_EDIT: "preferStreamingEdit",
 };
 export async function getOpenAIKey(): Promise<string | undefined> {
   if (process.env["OPENAI_API_KEY"]) {
@@ -122,6 +126,14 @@ export async function prepareBedrock() {
   if (region != undefined) {
     process.env["AWS_REGION"] = region;
   }
+}
+
+export function getPreferStreamingEdit(): boolean {
+  const aillyConfig = getConfig();
+  const preferStreamingEdit = aillyConfig.get<boolean>(
+    SETTINGS.PREFER_STREAMING_EDIT
+  );
+  return preferStreamingEdit ?? true;
 }
 
 function getConfig() {

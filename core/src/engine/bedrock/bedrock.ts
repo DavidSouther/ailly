@@ -40,12 +40,13 @@ export const generate: EngineGenerate<BedrockDebug> = (
 ) => {
   LOGGER.level = ROOT_LOGGER.level;
   LOGGER.format = ROOT_LOGGER.format;
+  LOGGER.console = ROOT_LOGGER.console;
   const bedrock = new BedrockRuntimeClient({
     credentials: fromNodeProviderChain({
       ignoreCache: true,
       profile: process.env["AWS_PROFILE"],
     }),
-    ...(process.env["AWS_REGION"] && { region: process.env["AWS_REGION"] }),
+    ...(process.env["AWS_REGION"] ? { region: process.env["AWS_REGION"] } : {}),
   });
   model = MODEL_MAP[model] ?? model;
   let messages = c.meta?.messages ?? [];
@@ -120,9 +121,10 @@ export const generate: EngineGenerate<BedrockDebug> = (
         }
       })
       .catch((e) => {
+        debug.finish = "failed";
         debug.error = e as Error;
         LOGGER.error(`Error for bedrock response ${debug.id}`, {
-          error: debug.error,
+          err: debug.error,
         });
       })
       .finally(async () => {
