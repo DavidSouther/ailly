@@ -11,27 +11,20 @@ npm link ../core ../cli
 
 export AILLY_ENGINE=${AILLY_ENGINE:-noop}
 
-echo "basic"
+echo "Basic"
 npx ailly --root 01_basic
 [ -f 01_basic/basic.txt.ailly.md ]
 rm 01_basic/basic.txt.ailly.md
 
-echo "combined"
+echo "Combined"
 npx ailly --root 02_combined --combined
 [ ! -f 02_combined/combined.txt.ailly.md ]
 git restore 02_combined/combined.txt
 
-echo "edit"
-AILLY_NOOP_RESPONSE="Edited" \
-  npx ailly --root 04_edit --edit file.txt --lines 2:4 --prompt "Respond with the word Edited" --yes \
-  --verbose > >(tee ./04_edit/out) 2> >(tee ./04_edit/err >&2)
-grep -q 'Edited' 04_edit/file.txt
-grep -q 'Instructions are happening in the context of this folder' 04_edit/out
-grep -q 'You are replacing this section:\\n```\\nLine 2\\nLine 3\\n```' 04_edit/out
-git restore 04_edit/file.txt
-rm 04_edit/{err,out}
+echo "Edit"
+./04_edit/edit.sh
 
-echo "conversations"
+echo "Conversations"
 ./05_conversation/conversation.sh
 
 echo "Pipes"
