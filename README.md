@@ -20,17 +20,17 @@ To get started, follow these steps:
    - See the joke in `10_chickens.md.ailly.md`
 2. Create a file named `jokes/.aillyrc` with "You are a farmer writing jokes for your other barnyard animals."
    - Include other system prompts, level setting expectations. etc.
-   - Run Ailly with the same command, and see how thr joke changes.
+   - Run Ailly with the same command, and see how the joke changes.
 3. Create more numbered files, such as `jokes/20_knock_knock.md` with "Turn the chicken joke into a knock knock joke."
 4. Run Ailly using NodeJS: `npx @ailly/cli 20_knock_knock.md`
   - Ailly will send each file to the configured LLM engine and write its result.
-  - `20_knock_knock.md.ailly.md` will have the new knock knock joke based on thr chickenjome it first wrote!
+  - `20_knock_knock.md.ailly.md` will have the new knock knock joke based on the chicken joke it first wrote!
 
 ### System Context
 
 System prompts provide grounding and background information for LLMs.
 There are a number of techniques and "best practices" for developing LLM system prompts.
-In Ailly, these are in files with the name `.aillyrc`, and apply top all files in the current folder when using Ailly.
+In Ailly, these are in files with the name `.aillyrc`, and apply to all files in the current folder when using Ailly.
 These files can also specify properties that control how the LLM prompts are constructed, again for every file.
 
 ### Properties
