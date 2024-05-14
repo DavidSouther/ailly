@@ -483,7 +483,7 @@ export function makeCLIContent(
         edit: { selection },
       },
     };
+    cliContent.prompt = "{{{output.edit}}}";
   }
-  cliContent.prompt = "{{{output.edit}}}";
   return cliContent;
 }
