@@ -15,6 +15,7 @@ export namespace types {
 export const content = {
   load: contentModule.loadContent,
   write: contentModule.writeContent,
+  makeCLIContent: contentModule.makeCLIContent,
 };
 
 export const Ailly = aillyModule;

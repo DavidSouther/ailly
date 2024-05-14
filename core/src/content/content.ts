@@ -4,6 +4,7 @@ import {
   PLATFORM_PARTS_WIN,
   SEP,
   Stats,
+  basename,
   isAbsolute,
 } from "@davidsouther/jiffies/lib/esm/fs.js";
 import matter from "gray-matter";
@@ -64,8 +65,12 @@ export interface ContentMeta {
   temperature?: number;
 }
 
+export type AillyEdit =
+  | { start: number; end: number; file: string }
+  | { after: number; file: string };
 export type Value = string | number | boolean;
 export interface View extends Record<string, View | Value> {}
+
 export interface System {
   content: string;
   view: false | View;
@@ -407,4 +412,79 @@ async function mkdirp(fs: FileSystem, dir: string) {
       await fs.mkdir(path);
     }
   }
+}
+
+/**
+ * Create a "synthetic" Content block with path "/dev/stdout" to serve as the Content root
+ * for this Ailly call to the LLM.
+ */
+export function makeCLIContent(
+  prompt: string,
+  argContext: "none" | "folder" | "conversation",
+  argSystem: string,
+  context: Record<string, Content>,
+  root: string,
+  edit: AillyEdit | undefined,
+  view: View,
+  isolated: boolean
+): Content {
+  const inFolder = Object.keys(context).filter((c) => dirname(c) == root);
+  // When argContext is folder, `folder` is all files in context in root.
+  const folder =
+    argContext == "folder"
+      ? isolated && edit
+        ? [edit?.file]
+        : inFolder
+      : undefined;
+  // When argContext is `conversation`, `predecessor` is the last item in the root folder.
+  const predecessor =
+    argContext == "conversation" ? inFolder.at(-1) : undefined;
+  // When argContext is none, system is empty; otherwise, system is argSystem + predecessor's system.
+  const system =
+    argContext == "none"
+      ? []
+      : [
+          { content: argSystem ?? "", view: {} },
+          ...((predecessor ? context[predecessor].context.system : undefined) ??
+            []),
+        ];
+  const cliContent: Content = {
+    name: "stdout",
+    outPath: "/dev/stdout",
+    path: "/dev/stdout",
+    prompt: prompt ?? "",
+    context: {
+      view,
+      predecessor,
+      system,
+      folder,
+      edit,
+    },
+  };
+  if (edit && context[edit.file]) {
+    cliContent.meta = context[edit.file].meta;
+    const name: string = basename(context[edit.file].name);
+    const ext: string = name.split(".", 2).at(-1) ?? name;
+    const start =
+      (edit as { start: number }).start ??
+      (edit as { after: number }).after ??
+      0;
+    const end = (edit as { end: number }).end ?? -1;
+    const selection: string = (context[edit.file].meta?.text?.split("\n") ?? [])
+      .slice(start, end)
+      .join("\n");
+    cliContent.context.view = {
+      ...cliContent.context.view,
+      ...{
+        request: {
+          name,
+          ext,
+          prompt: cliContent.prompt,
+        },
+        edit: { selection },
+      },
+    };
+    cliContent.prompt = "{{{output.edit}}}";
+  }
+  return cliContent;
 }

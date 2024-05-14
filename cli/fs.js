@@ -1,6 +1,6 @@
 import { basicLogFormatter, getLogLevel, getLogger } from "@davidsouther/jiffies/lib/esm/log.js";
 import { assertExists } from "@davidsouther/jiffies/lib/esm/assert.js";
-import { dirname, resolve, join } from "node:path";
+import { resolve, join } from "node:path";
 import { parse } from "yaml";
 import * as ailly from "@ailly/core";
 import { Console } from "node:console";
@@ -9,7 +9,6 @@ export const LOGGER = getLogger('@ailly/cli');
 
 /** @typedef {ReturnType<import("./args.js").makeArgs>} Args */
 /** @typedef {import("@ailly/core").types.Content} Content */
-/** @typedef {{start: number, end: number, file: string}|{after: number, file: string}} Edit */
 /** @typedef {import("@ailly/core/dist/src/ailly").PipelineSettings} PipelineSettings */
 /** @typedef {import("@ailly/core/dist/src/content/content").View} View */
 /** @typedef {import("@davidsouther/jiffies/lib/esm/fs").FileSystem} FileSystem */
@@ -76,13 +75,26 @@ export async function loadFs(fs, args) {
     if (edit && content.length == 1) {
       content = [];
     }
-    const prompt = assertExists(args.values.prompt);
-    const cliContent = await makeCLIContent(prompt, settings.context, system, context, root, edit, settings.templateView, settings.isolated);
+    const prompt = await readPrompt(args);
+    const cliContent = ailly.content.makeCLIContent(prompt, settings.context, system, context, root, edit, settings.templateView, settings.isolated);
     context[cliContent.path] = cliContent;
     content.push(cliContent.path);
   }
 
   return { settings, content, context };
+}
+
+function readPrompt(args) {
+  const prompt = assertExists(args.values.prompt);
+  if (prompt === "-") { // Treat `-` as "read from stdin"
+    try {
+      return readAll(process.stdin);
+    } catch (err) {
+      LOGGER.warn("Failed to read stdin", { e: err });
+      return "";
+    }
+  }
+  return prompt;
 }
 
 /**
@@ -117,53 +129,6 @@ export function makeEdit(lines, content, hasPrompt) {
   }
 }
 
-/**
- * Create a "synthetic" Content block with path "/dev/stdout" to serve as the Content root
- * for this Ailly call to the LLM.
- * 
- * @param {string} prompt 
- * @param {'none'|'folder'|'conversation'} argContext
- * @param {string} argSystem 
- * @param {Record<string, Content>} context 
- * @param {string} root 
- * @param {Edit|undefined} edit 
- * @param {*} view 
- * @param {boolean} isolated
- * @returns Content
- */
-export async function makeCLIContent(prompt, argContext, argSystem, context, root, edit, view, isolated) {
-  const inFolder = Object.keys(context).filter(c => dirname(c) == root);
-  // When argContext is folder, `folder` is all files in context in root.
-  const folder = argContext == 'folder' ? (isolated && edit) ? [edit?.file] : inFolder : undefined;
-  // When argContext is `conversation`, `predecessor` is the last item in the root folder.
-  const predecessor = argContext == 'conversation' ? inFolder.at(-1) : undefined;
-  // When argContext is none, system is empty; otherwise, system is argSystem + predecessor's system.
-  const system = argContext == "none" ? [] : [{ content: argSystem ?? "", view: {} }, ...((predecessor ? context[predecessor].context.system : undefined) ?? [])];
-  if (prompt === "-") { // Treat `-` as "read from stdin"
-    try {
-      prompt = await readAll(process.stdin);
-    } catch (err) {
-      LOGGER.warn("Failed to read stdin", { e: err });
-    }
-  }
-  const cliContent = {
-    name: 'stdout',
-    outPath: "/dev/stdout",
-    path: "/dev/stdout",
-    prompt: prompt ?? "",
-    context: {
-      view,
-      predecessor,
-      system,
-      folder,
-      edit,
-    }
-  };
-  if (edit && context[edit.file]) {
-    cliContent.meta = context[edit.file].meta;
-  }
-  return cliContent;
-}
 
 /**
  * Read, parse, and validate a template view.

@@ -1,6 +1,7 @@
-import { expect, test } from "vitest";
+import { expect, test, vi } from "vitest";
 import { mergeContentViews, mergeViews } from "./template.js";
 import { Content } from "./content";
+import { LOGGER } from "../util";
 
 test("merge views", () => {
   const c = mergeViews({ a: "a", c: "1" }, { b: "b" }, { c: "2" });
@@ -30,4 +31,36 @@ test("merge content views", () => {
   expect(content.context.view).toEqual({ test: "foo" });
   expect(content.meta?.prompt).toEqual("{{base}} {{system}} {{test}}");
   expect(content.meta?.view).toEqual({ test: "foo" });
+});
+
+test("recursion settle", () => {
+  const content: Content = {
+    name: "test",
+    outPath: "/test",
+    path: "/test",
+    prompt: "{{foo}}",
+    context: {
+      view: { foo: "{{bar}}", bar: "baz" },
+    },
+  };
+  mergeContentViews(content, {}, {});
+  expect(content.prompt).toBe("baz");
+});
+
+test("recursion convergence limit", () => {
+  const spy = vi.spyOn(LOGGER, "warn");
+  const content: Content = {
+    name: "test",
+    outPath: "/test",
+    path: "/test",
+    prompt: "{{foo}}",
+    context: {
+      view: { foo: "{{bar}}", bar: "{{foo}}" },
+    },
+  };
+  mergeContentViews(content, {}, {});
+  expect(content.prompt).toBe("{{foo}}");
+  expect(spy).toHaveBeenCalledWith(
+    "Reached TEMPLATE_RECURSION_CONVERGENCE limit of 10"
+  );
 });

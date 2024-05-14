@@ -6,6 +6,7 @@ import {
   FileSystem,
   RecordFileSystemAdapter,
 } from "@davidsouther/jiffies/lib/esm/fs";
+import { makeCLIContent } from "@ailly/core/src/content/content";
 
 describe("makeEdit", () => {
   it("parses line range", () => {
@@ -66,7 +67,7 @@ describe("makeCLIContent", () => {
     const content = ["/root/a", "/root/b"];
     const view = { prop: "test" };
 
-    const cliContent = await cli.makeCLIContent(
+    const cliContent = await makeCLIContent(
       prompt,
       argContext,
       argSystem,
@@ -99,7 +100,7 @@ describe("makeCLIContent", () => {
     const edit = undefined;
     const view = { prop: "test" };
 
-    const cliContent = await cli.makeCLIContent(
+    const cliContent = await makeCLIContent(
       prompt,
       argContext,
       argSystem,
@@ -132,7 +133,7 @@ describe("makeCLIContent", () => {
     const edit = undefined;
     const view = { prop: "test" };
 
-    const cliContent = await cli.makeCLIContent(
+    const cliContent = await makeCLIContent(
       prompt,
       argContext,
       argSystem,
@@ -165,7 +166,7 @@ describe("makeCLIContent", () => {
     const edit = undefined;
     const view = { prop: "test" };
 
-    const cliContent = await cli.makeCLIContent(
+    const cliContent = await makeCLIContent(
       prompt,
       argContext,
       argSystem,
