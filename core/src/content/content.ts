@@ -484,6 +484,6 @@ export function makeCLIContent(
       },
     };
   }
-  cliContent.prompt = "{{output.edit}}";
+  cliContent.prompt = "{{{output.edit}}}";
   return cliContent;
 }

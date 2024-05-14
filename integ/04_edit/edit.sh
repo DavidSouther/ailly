@@ -11,6 +11,6 @@ AILLY_NOOP_RESPONSE="Edited" \
 
 grep -q 'Edited' root/file.txt
 grep -q 'Instructions are happening in the context of this folder' root/out
-grep -q 'You are replacing this section:\\n```\\nLine 2\\nLine 3\\n```' root/out
+grep -q 'You are replacing this section:\\n```txt\\nLine 2\\nLine 3\\n```' root/out
 git restore root/file.txt
 rm root/{err,out}

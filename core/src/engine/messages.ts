@@ -19,22 +19,6 @@ export async function addContentMessages(
   if (content.context.edit) {
     const lang = content.context.edit.file.split(".").at(-1) ?? "";
     fence = "```" + lang;
-    const { start, end } = content.context.edit as {
-      start?: number;
-      end?: number;
-    };
-    if (start != undefined) {
-      if (messages.at(-1)?.role === "user") {
-        messages.at(-1)!.content = [
-          "You are replacing this section:",
-          "```",
-          ...(content.meta?.text?.split("\n").slice(start, end) ?? []),
-          "```",
-          "",
-          messages.at(-1)!.content,
-        ].join("\n");
-      }
-    }
     messages.push({ role: "assistant", content: fence });
   }
 }

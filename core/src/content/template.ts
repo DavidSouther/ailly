@@ -2,6 +2,7 @@ import mustache from "mustache";
 import { Content, View } from "./content.js";
 import { META_PROMPT } from "./template_anthropic_metaprompt.js";
 import { GRUG_PROMPT } from "./template_grug_prompt.js";
+import { EDIT } from "./edit_template.js";
 import { LOGGER } from "../util.js";
 
 if (!global.structuredClone) {
@@ -55,6 +56,7 @@ export const GLOBAL_VIEW: View = {
     markdown: "Your output should use full markdown syntax.",
     python:
       "Your output should only contain Python code, within a markdown code fence:\n\n```py\n#<your code>\n```",
+    edit: EDIT,
   },
   persona: {
     grug: GRUG_PROMPT,
