@@ -5,14 +5,22 @@ import * as mistral from "./mistral/mistral.js";
 import * as noop from "./noop.js";
 import { PipelineSettings } from "../ailly.js";
 
+export type EngineGenerate<D extends { finish?: string; error?: Error } = {}> =
+  (
+    c: Content,
+    parameters: PipelineSettings
+  ) => {
+    stream: ReadableStream;
+    message(): string;
+    debug(): D;
+    done: Promise<void>;
+  };
+
 export interface Engine {
   DEFAULT_MODEL: string;
   name: string;
   format(c: Content[], context: Record<string, Content>): Promise<void>;
-  generate<D extends {} = {}>(
-    c: Content,
-    parameters: PipelineSettings
-  ): Promise<{ debug: D; message: string }>;
+  generate: EngineGenerate;
   vector(s: string, parameters: ContentMeta): Promise<number[]>;
   view?(): Promise<View>;
   models?(): string[];

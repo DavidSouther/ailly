@@ -49,15 +49,22 @@ async function main() {
     default:
       LOGGER.info(`Starting ${loaded.content.length} requests`);
       generator.start();
-      await generator.allSettled();
-
-      const doneSummary = generator.summary();
-      LOGGER.info(`All ${doneSummary.totalPrompts} requests finished`);
-      if (doneSummary.errors) {
-        LOGGER.warn(`Finished with errors`, { errors: doneSummary.errors });
+      if (!args.values.stream) {
+        await finish(generator);
       }
       if (last == "/dev/stdout") {
         const prompt = loaded.context[last];
+        if (args.values.stream) {
+          // Lazy spin until the request starts
+          while (prompt.responseStream == undefined) {
+            await Promise.resolve();
+          }
+          for await (const word of prompt.responseStream) {
+            process.stdout.write(word);
+          }
+          await finish(generator);
+        }
+        console.debug(`Finished prompt, final meta`, { meta: prompt.meta });
         if (prompt.meta?.debug?.finish == 'failed') {
           console.error(prompt.meta.debug.error.message);
           return;
@@ -72,6 +79,16 @@ async function main() {
         await ailly.content.write(fs, loaded.content.map(c => loaded.context[c]));
       }
       break;
+  }
+}
+
+async function finish(generator) {
+  await generator.allSettled();
+
+  const doneSummary = generator.summary();
+  LOGGER.info(`All ${doneSummary.totalPrompts} requests finished`);
+  if (doneSummary.errors) {
+    LOGGER.warn(`Finished with errors`, { errors: doneSummary.errors });
   }
 }
 

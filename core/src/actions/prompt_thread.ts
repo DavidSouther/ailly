@@ -28,7 +28,7 @@ export async function scheduler<T>(
   let finished: Array<Promise<T>> = [];
   let outstanding = new Set<Promise<T>>();
   while (taskQueue.length > 0) {
-    if (outstanding.size > limit) {
+    if (outstanding.size >= limit) {
       // Wait for something in outstanding to finish
       await Promise.race([...outstanding]);
     } else {
@@ -47,7 +47,7 @@ export async function scheduler<T>(
 export class PromptThread {
   finished: number = 0;
   isolated: boolean = false;
-  done: boolean = false;
+  private done: boolean = false;
   runner?: Promise<PromiseSettledResult<Content>[]>;
   // Results holds a list of errors that occurred and the index the occurred at.
   // If the thread is isolated, this can have many entries. If the thread is not
@@ -87,7 +87,7 @@ export class PromptThread {
     private plugin: Plugin
   ) {
     this.content = content;
-    this.isolated = Boolean(content[0]?.meta?.isolated ?? false);
+    this.isolated = Boolean(settings.isolated ?? false);
   }
 
   start() {
@@ -168,17 +168,20 @@ export class PromptThread {
   }
 }
 
-async function generateOne(
+export function generateOne(
   c: Content,
   context: Record<string, Content>,
   settings: PipelineSettings,
   engine: Engine
-): Promise<Content> {
+): Promise<void> {
   const has_response = (c.response?.length ?? 0) > 0;
 
   if (c.meta?.skip || (!settings.overwrite && has_response)) {
     LOGGER.info(`Skipping ${c.path}`);
-    return c;
+    const stream = new TextEncoderStream();
+    stream.writable.getWriter().write(c.response ?? "");
+    c.responseStream = stream.readable;
+    return Promise.resolve();
   }
 
   LOGGER.info(`Preparing ${c.path}`);
@@ -198,15 +201,27 @@ async function generateOne(
       // Skip the last `assistant` message
       .filter((m, i, a) => !(m.role == "assistant" && i === a.length - 1)),
   });
-  const generated = await engine.generate(c, settings);
-  c.response = generated.message;
   c.meta = {
     ...c.meta,
     debug: {
-      ...generated.debug,
       engine: settings.engine,
       model: settings.model,
     },
   };
-  return c;
+  try {
+    const generator = engine.generate(c, settings);
+    c.responseStream = generator.stream;
+    return generator.done.then(
+      () => {
+        c.response = generator.message();
+        c.meta!.debug = { ...c.meta!.debug, ...generator.debug() };
+      },
+      (err) => {
+        c.meta!.debug = { ...c.meta!.debug, ...generator.debug() };
+      }
+    );
+  } catch (err) {
+    LOGGER.error(`Uncaught error in ${engine.name} generator`, { err });
+    return Promise.resolve();
+  }
 }

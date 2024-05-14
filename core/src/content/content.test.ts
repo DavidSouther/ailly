@@ -39,7 +39,7 @@ test("it loads content", async () => {
       path: "/01_start.md",
       outPath: "/01_start.md.ailly.md",
       prompt: "The quick brown",
-      response: "",
+      response: undefined,
       context: {
         system: [],
         view: {},
@@ -56,7 +56,7 @@ test("it loads content", async () => {
       path: "/20b/40_part.md",
       outPath: "/20b/40_part.md.ailly.md",
       prompt: "fox jumped",
-      response: "",
+      response: undefined,
       context: {
         system: [],
         view: {},
@@ -73,7 +73,7 @@ test("it loads content", async () => {
       path: "/20b/56_part.md",
       outPath: "/20b/56_part.md.ailly.md",
       prompt: "over the lazy",
-      response: "",
+      response: undefined,
       context: {
         system: [],
         view: {},
@@ -91,7 +91,7 @@ test("it loads content", async () => {
       path: "/54_a/12_section.md",
       outPath: "/54_a/12_section.md.ailly.md",
       prompt: "dog.",
-      response: "",
+      response: undefined,
       context: {
         system: [],
         view: {},
@@ -156,7 +156,7 @@ test("it loads combined prompt and responses", async () => {
       path: "/prompt.md",
       outPath: "/prompt.md",
       prompt: "prompt",
-      response: "",
+      response: undefined,
       context: {
         system: [],
         view: {},
@@ -233,7 +233,7 @@ test("it loads separate prompt and responses", async () => {
       path: "/prompt.md",
       outPath: "/prompt.md.ailly.md",
       prompt: "prompt",
-      response: "",
+      response: undefined,
       context: {
         system: [],
         view: {},
@@ -292,7 +292,7 @@ test("it loads separate prompt and responses in different out directors", async 
       path: "/root/prompt.md",
       outPath: "/out/prompt.md.ailly.md",
       prompt: "prompt",
-      response: "",
+      response: undefined,
       context: {
         system: [],
         view: {},
@@ -407,7 +407,7 @@ test("it writes deep java prompts and responses", async () => {
       path: "/root/src/com/example/Main.java",
       outPath: "/out/src/com/example/Main.java.ailly.md",
       prompt: "class Main {}\n",
-      response: "",
+      response: undefined,
       context: {
         system: [],
         view: {},
@@ -668,7 +668,7 @@ describe("Load aillyrc", () => {
         path: "/root/b",
         outPath: "/root/b.ailly.md",
         prompt: "b",
-        response: "",
+        response: undefined,
         context: {
           view: {},
         },

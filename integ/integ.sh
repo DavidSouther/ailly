@@ -34,6 +34,9 @@ rm 04_edit/{err,out}
 echo "conversations"
 ./05_conversation/conversation.sh
 
+echo "Stream"
+./06_stream/stream.sh
+
 echo "Pipes"
 ./10_std_pipes/pipes.sh
 

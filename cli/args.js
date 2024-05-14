@@ -20,6 +20,7 @@ export function makeArgs(argv = process.argv) {
       "template-view": { type: "string", default: process.env["AILLY_TEMPLATE_VIEW"] ? [process.env["AILLY_TEMPLATE_VIEW"]] : [], multiple: true },
       prompt: { type: "string", default: process.env["AILLY_PROMPT"], short: "p" },
       system: { type: "string", default: process.env["AILLY_SYSTEM"], short: "s" },
+      stream: { type: 'boolean', default: false },
       "request-limit": { type: "string", default: process.env["AILLY_REQUEST_LIMIT"] },
       "max-depth": { type: "string", default: "1" },
       temperature: { type: "string", default: "" },
@@ -63,6 +64,7 @@ export function help() {
       'none' includes no additional content (including no system context) when generating.
       (note: context is separate from isolated. isolated: true with either 'content' or 'folder' will result in the same behavior with either. With 'none', Ailly will send _only_ the prompt when generating.)
 
+    --stream (--prompt only) print responses as they return.
     -e, --edit use Ailly in edit mode. Provide a single file in paths, an edit marker, and a prompt. The path will be updated with the edit marker at the prompt.
     -l, --lines the lines to edit as '[start]:[end]' with start inclusive, and end exclusive. With only '[start]', will insert after. With only ':[end]', will insert before.
 

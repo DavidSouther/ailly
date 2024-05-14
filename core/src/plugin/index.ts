@@ -20,7 +20,7 @@ export const PLUGINS: Record<string, { default: PluginBuilder }> = {
 };
 
 export async function getPlugin(
-  name: string
+  name: keyof typeof PLUGINS | string
 ): Promise<{ default: PluginBuilder }> {
   if (name.startsWith("file://")) {
     return import(name);
