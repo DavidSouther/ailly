@@ -14,15 +14,15 @@ Ailly's best feature is rapid prompt engineering iteration. By keeping your prom
 
 To get started, follow these steps:
 
-1. Create a folder named `jokes`.
+1. Create a folder named `jokes` and `cd` into it.
 2. Create a file named `10_chickens.md` with "Tell me a joke about chickens" as the content.
-3. Run Ailly using NodeJS: `npx @ailly/cli --root content`
+3. Run Ailly using NodeJS: `npx @ailly/cli`
    - See the joke in `10_chickens.md.ailly.md`
-2. Create a file named `content/.aillyrc` with "You are a farmer writing jokes for your other barnyard animals."
+2. Create a file named `jokes/.aillyrc` with "You are a farmer writing jokes for your other barnyard animals."
    - Include other system prompts, level setting expectations. etc.
    - Run Ailly with the same command, and see how thr joke changes.
-3. Create more numbered files, such as `content/20_knock_knock.md` with "Turn the chicken joke into a knock knock joke."
-4. Run Ailly using NodeJS: `npx @ailly/cli --root content content/20_knock_knock.md`
+3. Create more numbered files, such as `jokes/20_knock_knock.md` with "Turn the chicken joke into a knock knock joke."
+4. Run Ailly using NodeJS: `npx @ailly/cli 20_knock_knock.md`
   - Ailly will send each file to the configured LLM engine and write its result.
   - `20_knock_knock.md.ailly.md` will have the new knock knock joke based on thr chickenjome it first wrote!
 
@@ -50,14 +50,11 @@ Later settings override earlier settings.
   - `folder` includes all files in the folder at the same level as the current file. (Default when editing.)
   - `none` includes no additional content (including no system context).
 - **`parent`** `root` | `always` | `never`
-  - `root` (default) start the chain of system prompts from here.
+  - `root` (default) start the chain of system prompts from the loaded `.aillyrc` file.
   - `always` include the .aillyrc file in the parent directory as part of this system prompt.
   - `never` don't include any other system prompts.
+  - Note: `always` goes up one level, and then `parent` gets reapplied. To include several ancestors, have `parent: always` in each, with `root` as the base `.aillyrc` of the project.
 - **`template-view`** `[path]` loads variables to use with [mustache](https://mustache.github.io/) templates in your prompts.
-
-<!--
-There was a lot of "when generating" in here, but it's not clear what's being generated (the intro has you creating a folder and numbered files, so I'd rewrite to make clear what's being generated (the folder? the files in the folder? the content of the files you already created?).
--->
 
 ### PLAN
 
