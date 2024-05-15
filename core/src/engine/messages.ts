@@ -77,7 +77,7 @@ export function getMessagesFolder(
       .map((c) => context[c])
       .map<string>(
         (c) =>
-          `<file name="${c.name}>\n${
+          `<file name="${c.name}">\n${
             c.meta?.text ?? c.prompt + "\n" + c.response
           }</file>`
       )
