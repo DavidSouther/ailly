@@ -1,5 +1,6 @@
-import { basename } from "node:path";
 import { parseArgs } from "node:util";
+
+export type Args = ReturnType<typeof makeArgs>;
 
 export function makeArgs(argv = process.argv) {
   const args = parseArgs({
@@ -11,17 +12,41 @@ export function makeArgs(argv = process.argv) {
       isolated: { type: "boolean", default: false, short: "i" },
       combined: { type: "boolean", default: false },
       "no-overwrite": { type: "boolean", default: false },
-      edit: { type: 'boolean', default: false, short: 'e' },
-      lines: { type: 'string', default: "", short: 'l' },
+      edit: { type: "boolean", default: false, short: "e" },
+      lines: { type: "string", default: "", short: "l" },
       engine: { type: "string", default: process.env["AILLY_ENGINE"] },
       model: { type: "string", default: process.env["AILLY_MODEL"] },
-      plugin: { type: "string", default: process.env["AILLY_PLUGIN"] ?? "noop", },
-      context: { type: "string", default: process.env["AILLY_CONTEXT"], short: "c" },
-      "template-view": { type: "string", default: process.env["AILLY_TEMPLATE_VIEW"] ? [process.env["AILLY_TEMPLATE_VIEW"]] : [], multiple: true },
-      prompt: { type: "string", default: process.env["AILLY_PROMPT"], short: "p" },
-      system: { type: "string", default: process.env["AILLY_SYSTEM"], short: "s" },
-      stream: { type: 'boolean', default: false },
-      "request-limit": { type: "string", default: process.env["AILLY_REQUEST_LIMIT"] },
+      plugin: {
+        type: "string",
+        default: process.env["AILLY_PLUGIN"] ?? "noop",
+      },
+      context: {
+        type: "string",
+        default: process.env["AILLY_CONTEXT"],
+        short: "c",
+      },
+      "template-view": {
+        type: "string",
+        default: process.env["AILLY_TEMPLATE_VIEW"]
+          ? [process.env["AILLY_TEMPLATE_VIEW"]]
+          : [],
+        multiple: true,
+      },
+      prompt: {
+        type: "string",
+        default: process.env["AILLY_PROMPT"],
+        short: "p",
+      },
+      system: {
+        type: "string",
+        default: process.env["AILLY_SYSTEM"],
+        short: "s",
+      },
+      stream: { type: "boolean", default: false },
+      "request-limit": {
+        type: "string",
+        default: process.env["AILLY_REQUEST_LIMIT"],
+      },
       "max-depth": { type: "string", default: "1" },
       temperature: { type: "string", default: "" },
       "update-db": { type: "boolean", default: false },
@@ -41,7 +66,7 @@ export function makeArgs(argv = process.argv) {
   // TODO assert log-format is pretty, json, or empty
 
   // Remove node and ailly positionals
-  args.positionals.splice(0, args.positionals[0].match(/node(\.exe)?/) ? 2 : 1)
+  args.positionals.splice(0, args.positionals[0].match(/node(\.exe)?/) ? 2 : 1);
 
   return args;
 }

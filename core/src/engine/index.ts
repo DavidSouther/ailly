@@ -5,16 +5,22 @@ import * as mistral from "./mistral/mistral.js";
 import * as noop from "./noop.js";
 import { PipelineSettings } from "../ailly.js";
 
-export type EngineGenerate<D extends { finish?: string; error?: Error } = {}> =
-  (
-    c: Content,
-    parameters: PipelineSettings
-  ) => {
-    stream: ReadableStream;
-    message(): string;
-    debug(): D;
-    done: Promise<void>;
-  };
+export interface EngineDebug {
+  engine?: string;
+  model?: string;
+  finish?: string;
+  error?: Error;
+}
+
+export type EngineGenerate<D extends EngineDebug = {}> = (
+  c: Content,
+  parameters: PipelineSettings
+) => {
+  stream: ReadableStream;
+  message(): string;
+  debug(): D;
+  done: Promise<void>;
+};
 
 export interface Engine {
   DEFAULT_MODEL: string;

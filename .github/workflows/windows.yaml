@@ -20,7 +20,12 @@ jobs:
           node-version: "20.x"
 
       - name: Install dependencies
-        run: npm install ; npx tsc -p core
+        run: npm install
+        shell: cmd
+
+      - name: Build CLI
+        run: npm run build
+        shell: cmd
 
       - name: Run Integration Tests
         run: ./integ/integ.bat

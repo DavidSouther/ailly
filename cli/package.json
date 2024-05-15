@@ -23,11 +23,14 @@
   "homepage": "https://github.com/DavidSouther/ailly#readme",
   "scripts": {
     "test": "vitest",
-    "ci": "npm link ../core && vitest --run --reporter=verbose"
+    "build": "tsc",
+    "prebuild": "npm link ../core",
+    "preci": "npm run build",
+    "ci": "vitest --run --reporter=verbose"
   },
   "dependencies": {
     "@ailly/core": "1.4.0",
-    "@davidsouther/jiffies": "^2.2.3",
+    "@davidsouther/jiffies": "^2.2.4",
     "yaml": "^2.4.1"
   },
   "devDependencies": {
