@@ -1,18 +1,19 @@
-import { Content, View, ContentMeta } from "./content/content.js";
-export { GitignoreFs } from "./content/gitignore_fs.js";
-export { getPlugin } from "./plugin/index.js";
+import { getLogLevel, getLogger } from "@davidsouther/jiffies/lib/cjs/log.js";
+import { Content, ContentMeta, View } from "./content/content.js";
 import { getEngine } from "./engine/index.js";
-export { getEngine } from "./engine/index.js";
-export * from "./util.js";
+import { getVersion } from "./version.js";
+export const LOGGER = getLogger("@ailly/core");
+
+LOGGER.level = getLogLevel(process.env["AILLY_LOG_LEVEL"]);
 
 export const DEFAULT_ENGINE = "bedrock";
 export const DEFAULT_PLUGIN = "noop";
 
 export type Thread = Content[];
 
-export { GenerateManager } from "./actions/generate_manager.js";
-
 export const DEFAULT_SCHEDULER_LIMIT = 5;
+
+export const version = getVersion(__dirname);
 
 export interface PipelineSettings {
   root: string;

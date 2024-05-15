@@ -1,6 +1,6 @@
 import { dirname } from "node:path";
 
-import type { Content } from "./content";
+import type { Content } from "./content.js";
 
 export function partitionPrompts(
   content: string[],

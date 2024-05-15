@@ -1,6 +1,6 @@
 import { test, expect } from "vitest";
-import { partitionPrompts } from "./partition";
-import { Content } from "./content";
+import { partitionPrompts } from "./partition.js";
+import { Content } from "./content.js";
 
 /*
 

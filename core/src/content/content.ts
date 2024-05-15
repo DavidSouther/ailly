@@ -6,12 +6,13 @@ import {
   Stats,
   basename,
   isAbsolute,
-} from "@davidsouther/jiffies/lib/esm/fs.js";
-import matter from "gray-matter";
+} from "@davidsouther/jiffies/lib/cjs/fs.js";
+const matter = require("gray-matter");
 import * as YAML from "yaml";
 import { join, dirname } from "path";
-import type { Message } from "../engine/index.js";
-import { LOGGER, isDefined } from "../util.js";
+import type { Message, EngineDebug } from "../engine/index.js";
+import { isDefined } from "../util.js";
+import { LOGGER } from "../ailly.js";
 
 export const EXTENSION = ".ailly.md";
 
@@ -31,7 +32,7 @@ export interface Content {
   // The prompt itself
   prompt: string;
   response?: string;
-  responseStream?: ReadableStream;
+  responseStream: PromiseWithResolvers<ReadableStream>;
   context: Context;
   meta?: ContentMeta;
 }
@@ -59,15 +60,18 @@ export interface ContentMeta {
   skip?: boolean;
   isolated?: boolean;
   combined?: boolean;
-  debug?: {};
+  debug?: EngineDebug;
   view?: false | View;
   prompt?: string;
   temperature?: number;
 }
 
-export type AillyEdit =
-  | { start: number; end: number; file: string }
-  | { after: number; file: string };
+export type AillyEditReplace = { start: number; end: number; file: string };
+export type AillyEditInsert = { after: number; file: string };
+export type AillyEdit = AillyEditReplace | AillyEditInsert;
+export const isAillyEditReplace = (edit: AillyEdit): edit is AillyEditReplace =>
+  (edit as AillyEditReplace).start !== undefined;
+
 export type Value = string | number | boolean;
 export interface View extends Record<string, View | Value> {}
 
@@ -191,6 +195,7 @@ async function loadFile(
       },
       prompt,
       response,
+      responseStream: Promise.withResolvers(),
       meta: {
         ...head,
         ...data,

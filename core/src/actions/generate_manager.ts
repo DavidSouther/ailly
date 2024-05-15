@@ -1,11 +1,4 @@
-import {
-  DEFAULT_ENGINE,
-  PipelineSettings,
-  Thread,
-  getEngine,
-  getPlugin,
-} from "../ailly.js";
-import { LOGGER } from "../util.js";
+import { DEFAULT_ENGINE, LOGGER, PipelineSettings, Thread } from "../ailly.js";
 import { partitionPrompts } from "../content/partition.js";
 import {
   PromptThread,
@@ -13,12 +6,14 @@ import {
   PromptThreadsSummary,
 } from "./prompt_thread.js";
 
-import type { Content } from "../content/content";
-import type { Plugin } from "../plugin";
-import type { Engine } from "../engine";
+import type { Content } from "../content/content.js";
+import { getPlugin, type Plugin } from "../plugin/index.js";
+import { getEngine, type Engine } from "../engine/index.js";
 
 export class GenerateManager {
   done: boolean = false;
+  settled: PromiseWithResolvers<PromiseSettledResult<Content>[]> =
+    Promise.withResolvers();
   started: boolean = false;
   threads: Thread[];
   threadRunners: PromptThread[] = [];
@@ -51,7 +46,7 @@ export class GenerateManager {
       PromptThread.run(t, this.context, this.settings, this.engine, this.rag)
     );
 
-    this.allSettled().then(() => {
+    this.settled.promise.then(() => {
       this.done = true;
     });
   }
@@ -77,11 +72,28 @@ export class GenerateManager {
     );
   }
 
+  drainAll() {
+    this.threads.forEach((thread) =>
+      thread.forEach(async (c) => {
+        while (c.responseStream === undefined) {
+          await Promise.resolve();
+        }
+        if (!c.responseStream.locked) {
+          for await (const _ of c.responseStream as unknown as AsyncIterable<string>) {
+            // Drain c.responseStream
+          }
+        }
+      })
+    );
+  }
+
   async allSettled(): Promise<PromiseSettledResult<Content>[]> {
     const runners = this.threadRunners.map((r) => r.allSettled());
     const runnersPromises = Promise.all(runners);
+    this.drainAll();
     const settled = await runnersPromises;
     const flattened = settled.flat();
+    this.settled.resolve(flattened);
     return flattened;
   }
 

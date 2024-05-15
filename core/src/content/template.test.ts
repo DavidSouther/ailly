@@ -1,7 +1,7 @@
 import { expect, test, vi } from "vitest";
 import { mergeContentViews, mergeViews } from "./template.js";
-import { Content } from "./content";
-import { LOGGER } from "../util";
+import { Content } from "./content.js";
+import { LOGGER } from "../ailly.js";
 
 test("merge views", () => {
   const c = mergeViews({ a: "a", c: "1" }, { b: "b" }, { c: "2" });

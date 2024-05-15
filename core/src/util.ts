@@ -1,9 +1,16 @@
-import { getLogLevel, getLogger } from "@davidsouther/jiffies/lib/esm/log.js";
-export const LOGGER = getLogger("@ailly/core");
-
-LOGGER.level = getLogLevel(process.env["AILLY_LOG_LEVEL"]);
-
 export const isDefined = <T>(t: T | undefined): t is T => t !== undefined;
+
+interface PromiseWithResolvers<T> {
+  resolve: (t: T | PromiseLike<T>) => void;
+  reject: (reason?: any) => void;
+  promise: Promise<T>;
+}
+
+declare global {
+  interface PromiseConstructor {
+    withResolvers<T>(): PromiseWithResolvers<T>;
+  }
+}
 
 Promise.withResolvers =
   Promise.withResolvers ??

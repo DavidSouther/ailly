@@ -1,12 +1,15 @@
+import { assertExists } from "@davidsouther/jiffies/lib/cjs/assert.js";
 import { OpenAI, toFile } from "openai";
-import { assertExists } from "@davidsouther/jiffies/lib/esm/assert.js";
+import { LOGGER, type PipelineSettings } from "../ailly.js";
 import type { Content } from "../content/content.js";
-import type { PipelineSettings } from "../ailly.js";
-import type { EngineGenerate, Message, Summary } from "./index.js";
-import { LOGGER, isDefined } from "../util.js";
 import { encode } from "../encoding.js";
-import { ChatCompletionChunk } from "openai/resources/index.mjs";
-import { Stream } from "openai/streaming.mjs";
+import { isDefined } from "../util.js";
+import type { EngineGenerate, Message, Summary } from "./index.js";
+// import { ChatCompletionChunk } from "openai/resources/index.mjs";
+// import { Stream } from "openai/streaming.mjs";
+import { ChatCompletionChunk } from "openai/resources/index.js";
+
+import { Stream } from "openai/streaming.js";
 
 export const name = "openai";
 

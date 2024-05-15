@@ -1,8 +1,10 @@
-import * as ailly from "@ailly/core";
-import { DEFAULT_ENGINE, getEngine } from "@ailly/core/src/ailly";
-import { ENGINES } from "@ailly/core/src/engine";
-import { getLogger } from "@davidsouther/jiffies/lib/esm/log";
-import vscode from "vscode";
+import {
+  DEFAULT_ENGINE,
+  LOGGER as ROOT_LOGGER,
+} from "@ailly/core/lib/ailly.js";
+import { ENGINES, getEngine } from "@ailly/core/lib/engine/index.js";
+import * as vscode from "vscode";
+const { getLogger } = require("@davidsouther/jiffies/lib/cjs/log.js");
 
 export const LOGGER = getLogger("@ailly/extension");
 const outputChannel = vscode.window.createOutputChannel("Ailly", {
@@ -16,15 +18,18 @@ function aillyLogFormatter<
     level: number;
     message: string;
     source: string;
+    err?: Error;
   }
 >(data: D) {
   let base = `${data.name} ${data.message}`;
   if (data.err) {
     base += ` err: ${data.err.message}${
-      data.err.cause ? "" + data.err.cause.message : ""
+      data.err.cause
+        ? " " + String((data.err.cause as { message?: string }).message)
+        : ""
     }`;
   } else {
-    const debug = { ...data };
+    const debug: Partial<D> = { ...data };
     delete debug.name;
     delete debug.message;
     delete debug.prefix;
@@ -39,103 +44,107 @@ function aillyLogFormatter<
 
 export function resetLogger() {
   let level = outputChannel.logLevel - 1;
-  if (level < 0) level = 5;
-  ailly.Ailly.LOGGER.level = LOGGER.level = level;
-  ailly.Ailly.LOGGER.format = LOGGER.format = aillyLogFormatter;
-  ailly.Ailly.LOGGER.console = LOGGER.console =
-    outputChannel as unknown as Console;
+  if (level < 0) {
+    level = 5;
+  }
+  ROOT_LOGGER.level = LOGGER.level = level;
+  ROOT_LOGGER.format = LOGGER.format = aillyLogFormatter;
+  ROOT_LOGGER.console = LOGGER.console = outputChannel as unknown as Console;
 }
 
-const SETTINGS = {
-  OPENAI_API_KEY: "openaiApiKey",
-  ENGINE: "engine",
-  MODEL: "model",
-  AWS_PROFILE: "awsProfile",
-  AWS_REGION: "awsRegion",
-  PREFER_STREAMING_EDIT: "preferStreamingEdit",
+export const SETTINGS = {
+  openApiKey: "openaiApiKey",
+  engine: "engine",
+  model: "model",
+  awsProfile: "awsProfile",
+  awsRegion: "awsRegion",
+  preferStreamingEdit: "preferStreamingEdit",
 };
-export async function getOpenAIKey(): Promise<string | undefined> {
-  if (process.env["OPENAI_API_KEY"]) {
-    return process.env["OPENAI_API_KEY"];
-  }
-  let aillyConfig = getConfig();
-  if (aillyConfig.has(SETTINGS.OPENAI_API_KEY)) {
-    const key = aillyConfig.get<string>(SETTINGS.OPENAI_API_KEY);
-    if (key) {
-      return key;
+
+export const Settings = {
+  async getOpenAIKey(): Promise<string | undefined> {
+    if (process.env["OPENAI_API_KEY"]) {
+      return process.env["OPENAI_API_KEY"];
     }
-  }
-  const key = await vscode.window.showInputBox({
-    title: "Ailly: OpenAI API Key",
-    prompt: "API Key from OpenAI for requests",
-  });
-  aillyConfig.update(SETTINGS.OPENAI_API_KEY, key);
-  return key;
-}
-
-export async function getAillyEngine(): Promise<string> {
-  const aillyConfig = getConfig();
-  if (aillyConfig.has(SETTINGS.ENGINE)) {
-    const engine = aillyConfig.get<string>(SETTINGS.ENGINE);
-    if (engine) {
-      return engine;
+    let aillyConfig = Settings.getConfig();
+    if (aillyConfig.has(SETTINGS.openApiKey)) {
+      const key = aillyConfig.get<string>(SETTINGS.openApiKey);
+      if (key) {
+        return key;
+      }
     }
-  }
-  const engine = await vscode.window.showQuickPick(Object.keys(ENGINES), {
-    title: "Ailly: Engine",
-  });
-  aillyConfig.update(SETTINGS.ENGINE, engine);
-  return engine ?? DEFAULT_ENGINE;
-}
+    const key = await vscode.window.showInputBox({
+      title: "Ailly: OpenAI API Key",
+      prompt: "API Key from OpenAI for requests",
+    });
+    aillyConfig.update(SETTINGS.openApiKey, key);
+    return key;
+  },
 
-export async function getAillyModel(
-  engineName: string
-): Promise<string | undefined> {
-  const engine = await getEngine(engineName);
-  const aillyConfig = getConfig();
-  if (aillyConfig.has(SETTINGS.MODEL)) {
-    const model = aillyConfig.get<string>(SETTINGS.MODEL);
-    if (model) {
-      return model;
+  async getAillyEngine(): Promise<string> {
+    const aillyConfig = Settings.getConfig();
+    if (aillyConfig.has(SETTINGS.engine)) {
+      const engine = aillyConfig.get<string>(SETTINGS.engine);
+      if (engine) {
+        return engine;
+      }
     }
-  }
-  const models = engine.models?.();
-  if (!models) return;
-  const model = await vscode.window.showQuickPick(models, {
-    title: "Ailly: Model",
-  });
-  aillyConfig.update(SETTINGS.MODEL, model);
-  return model;
-}
+    const engine = await vscode.window.showQuickPick(Object.keys(ENGINES), {
+      title: "Ailly: Engine",
+    });
+    aillyConfig.update(SETTINGS.engine, engine);
+    return engine ?? DEFAULT_ENGINE;
+  },
 
-export async function getAillyAwsProfile(): Promise<string> {
-  const aillyConfig = getConfig();
-  const awsProfile = aillyConfig.get<string>(SETTINGS.AWS_PROFILE);
-  return awsProfile ?? process.env["AWS_PROFILE"] ?? "default";
-}
+  async getAillyModel(engineName: string): Promise<string | undefined> {
+    const engine = await getEngine(engineName);
+    const aillyConfig = Settings.getConfig();
+    if (aillyConfig.has(SETTINGS.model)) {
+      const model = aillyConfig.get<string>(SETTINGS.model);
+      if (model) {
+        return model;
+      }
+    }
+    const models = engine.models?.();
+    if (!models) {
+      return;
+    }
+    const model = await vscode.window.showQuickPick(models, {
+      title: "Ailly: Model",
+    });
+    aillyConfig.update(SETTINGS.model, model);
+    return model;
+  },
 
-export async function getAillyAwsRegion(): Promise<string | undefined> {
-  const aillyConfig = getConfig();
-  const awsProfile = aillyConfig.get<string>(SETTINGS.AWS_REGION);
-  return awsProfile ?? (process.env["AWS_REGION"] || undefined);
-}
+  async getAillyAwsProfile(): Promise<string> {
+    const aillyConfig = Settings.getConfig();
+    const awsProfile = aillyConfig.get<string>(SETTINGS.awsProfile);
+    return awsProfile ?? process.env["AWS_PROFILE"] ?? "default";
+  },
 
-export async function prepareBedrock() {
-  process.env["AWS_PROFILE"] = await getAillyAwsProfile();
-  const region = await getAillyAwsRegion();
-  if (region != undefined) {
-    process.env["AWS_REGION"] = region;
-  }
-}
+  async getAillyAwsRegion(): Promise<string | undefined> {
+    const aillyConfig = Settings.getConfig();
+    const awsProfile = aillyConfig.get<string>(SETTINGS.awsRegion);
+    return awsProfile ?? (process.env["AWS_REGION"] || undefined);
+  },
 
-export function getPreferStreamingEdit(): boolean {
-  const aillyConfig = getConfig();
-  const preferStreamingEdit = aillyConfig.get<boolean>(
-    SETTINGS.PREFER_STREAMING_EDIT
-  );
-  return preferStreamingEdit ?? true;
-}
+  async prepareBedrock() {
+    process.env["AWS_PROFILE"] = await Settings.getAillyAwsProfile();
+    const region = await Settings.getAillyAwsRegion();
+    if (region !== undefined) {
+      process.env["AWS_REGION"] = region;
+    }
+  },
 
-function getConfig() {
-  return vscode.workspace.getConfiguration("ailly");
-}
+  getPreferStreamingEdit(): boolean {
+    const aillyConfig = Settings.getConfig();
+    const preferStreamingEdit = aillyConfig.get<boolean>(
+      SETTINGS.preferStreamingEdit
+    );
+    return preferStreamingEdit ?? true;
+  },
+
+  getConfig() {
+    return vscode.workspace.getConfiguration("ailly");
+  },
+};

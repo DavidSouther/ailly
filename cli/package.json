@@ -2,7 +2,6 @@
   "name": "@ailly/cli",
   "version": "1.4.0",
   "description": "",
-  "type": "module",
   "main": "index.js",
   "bin": {
     "ailly": "./index.js"
@@ -23,6 +22,7 @@
   "homepage": "https://github.com/DavidSouther/ailly#readme",
   "scripts": {
     "test": "vitest",
+    "build": "tsc",
     "ci": "npm link ../core && vitest --run --reporter=verbose"
   },
   "dependencies": {

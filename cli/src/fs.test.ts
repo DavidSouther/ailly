@@ -1,12 +1,13 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { cleanState } from "@davidsouther/jiffies/lib/esm/scope/state.js";
-import * as ailly from "@ailly/core";
-import * as cli from "./fs";
+import { cleanState } from "@davidsouther/jiffies/lib/cjs/scope/state.js";
+import * as cli from "./fs.js";
 import {
   FileSystem,
   RecordFileSystemAdapter,
-} from "@davidsouther/jiffies/lib/esm/fs";
-import { makeCLIContent } from "@ailly/core/src/content/content";
+} from "@davidsouther/jiffies/lib/cjs/fs.js";
+import { makeCLIContent } from "@ailly/core/lib/content/content.js";
+import { makePipelineSettings } from "@ailly/core/lib/ailly.js";
+import { loadContent } from "@ailly/core/lib/content/content.js";
 
 describe("makeEdit", () => {
   it("parses line range", () => {
@@ -48,14 +49,14 @@ describe("makeEdit", () => {
 describe("makeCLIContent", () => {
   const state = cleanState(async () => {
     const root = "/root";
-    const settings = await ailly.Ailly.makePipelineSettings({ root });
+    const settings = await makePipelineSettings({ root });
     const fs = new FileSystem(
       new RecordFileSystemAdapter({
         "/root/a": "file a",
         "/root/b": "file b",
       })
     );
-    const context = await ailly.content.load(fs, [], settings);
+    const context = await loadContent(fs, [], settings);
     return { root, settings, context };
   }, beforeEach);
 
@@ -64,7 +65,6 @@ describe("makeCLIContent", () => {
     const argContext = "none";
     const argSystem = "System";
     const edit = undefined;
-    const content = ["/root/a", "/root/b"];
     const view = { prop: "test" };
 
     const cliContent = await makeCLIContent(

@@ -2,9 +2,8 @@ import { join } from "node:path";
 import { LocalIndex } from "vectra/lib/LocalIndex.js";
 import { RAG } from "./rag.js";
 import { Engine } from "../engine/index.js";
-import { PipelineSettings } from "../ailly.js";
+import { LOGGER, PipelineSettings } from "../ailly.js";
 import { Content } from "../content/content.js";
-import { LOGGER } from "../util.js";
 
 function ragDb(path: string) {
   return join(path, ".vectors");

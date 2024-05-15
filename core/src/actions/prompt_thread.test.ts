@@ -1,17 +1,17 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { range } from "@davidsouther/jiffies/lib/esm/range.js";
-import { PromptThread, generateOne, scheduler } from "./prompt_thread";
-import { LOGGER } from "../util";
-import { cleanState } from "@davidsouther/jiffies/lib/esm/scope/state";
-import { loadContent } from "../content/content";
 import {
   FileSystem,
   ObjectFileSystemAdapter,
-} from "@davidsouther/jiffies/lib/esm/fs";
-import { getPlugin, makePipelineSettings } from "../ailly";
-import { getEngine } from "../engine";
-import { LEVEL } from "@davidsouther/jiffies/lib/esm/log";
-import { TIMEOUT } from "../engine/noop";
+} from "@davidsouther/jiffies/lib/cjs/fs.js";
+import { LEVEL } from "@davidsouther/jiffies/lib/cjs/log.js";
+import { range } from "@davidsouther/jiffies/lib/cjs/range.js";
+import { cleanState } from "@davidsouther/jiffies/lib/cjs/scope/state.js";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { LOGGER, makePipelineSettings } from "../ailly.js";
+import { loadContent } from "../content/content.js";
+import { getEngine } from "../engine/index.js";
+import { TIMEOUT } from "../engine/noop.js";
+import { PromptThread, generateOne, scheduler } from "./prompt_thread.js";
+import { getPlugin } from "../plugin/index.js";
 
 describe("scheduler", () => {
   it("limits outstanding tasks", async () => {

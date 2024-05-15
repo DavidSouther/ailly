@@ -1,26 +1,3 @@
-import * as contentModule from "./src/content/content.js";
-import * as aillyModule from "./src/ailly.js";
-import * as engineModule from "./src/engine/index.js";
-import * as pluginModule from "./src/plugin/index.js";
-
-export namespace types {
-  export type Content = contentModule.Content;
-  export type ContentMeta = contentModule.ContentMeta;
-  export type Message = engineModule.Message;
-  export type Summary = engineModule.Summary;
-  export type Plugin = pluginModule.Plugin;
-  export type PluginBuilder = pluginModule.PluginBuilder;
-}
-
-export const content = {
-  load: contentModule.loadContent,
-  write: contentModule.writeContent,
-  makeCLIContent: contentModule.makeCLIContent,
-};
-
-export const Ailly = aillyModule;
-export const version = getVersion(import.meta?.url ?? "file://" + __filename);
-
 // TODO move this to jiffies
 import { execSync } from "node:child_process";
 import { fileURLToPath } from "node:url";

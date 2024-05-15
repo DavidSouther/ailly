@@ -1,8 +1,9 @@
-import { getLogger } from "@davidsouther/jiffies/lib/esm/log.js";
+import { getLogger } from "@davidsouther/jiffies/lib/cjs/log.js";
 import { Content } from "../content/content.js";
-import { LOGGER as ROOT_LOGGER } from "../util.js";
+import { LOGGER as ROOT_LOGGER } from "../ailly.js";
 import { addContentMessages } from "./messages.js";
-import { EngineGenerate } from ".";
+import { EngineGenerate } from "./index.js";
+import { PipelineSettings } from "../ailly.js";
 
 const LOGGER = getLogger("@ailly/core:noop");
 
@@ -28,7 +29,10 @@ export async function format(
   }
 }
 
-export const generate: EngineGenerate = (content: Content, _) => {
+export const generate: EngineGenerate = (
+  content: Content,
+  _: PipelineSettings
+) => {
   LOGGER.level = ROOT_LOGGER.level;
   LOGGER.format = ROOT_LOGGER.format;
 

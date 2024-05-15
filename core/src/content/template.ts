@@ -1,9 +1,9 @@
-import mustache from "mustache";
+const mustache = require("mustache");
 import { Content, View } from "./content.js";
 import { META_PROMPT } from "./template_anthropic_metaprompt.js";
 import { GRUG_PROMPT } from "./template_grug_prompt.js";
 import { EDIT } from "./edit_template.js";
-import { LOGGER } from "../util.js";
+import { LOGGER } from "../ailly.js";
 
 if (!global.structuredClone) {
   // TODO: Drop node 16 support

@@ -1,24 +1,23 @@
-import { EngineGenerate } from "..";
-import type { Content } from "../../content/content.js";
-import * as openai from "../openai.js";
 import { spawn } from "node:child_process";
-import { normalize, join, dirname } from "node:path";
+import { dirname, join, normalize } from "node:path";
+import { PipelineSettings } from "../../ailly.js";
+import type { Content } from "../../content/content.js";
+import { EngineDebug, EngineGenerate } from "../index.js";
+import * as openai from "../openai.js";
 
 const DEFAULT_MODEL = "mistralai/Mistral-7B-v0.1";
-interface MistralDebug {}
+interface MistralDebug extends EngineDebug {}
 
-export const generate: EngineGenerate<MistralDebug> = (c: Content, _) => {
+export const generate: EngineGenerate<MistralDebug> = (
+  c: Content,
+  _: PipelineSettings
+) => {
   const prompt = c.meta?.messages?.map(({ content }) => content).join("\n");
   if (!prompt) {
     throw new Error("No messages in Content");
   }
 
-  let cwd = dirname(
-    (import.meta?.url.replace(/^file:/, "") ?? __filename).replace(
-      "ailly/core/dist",
-      "ailly/core/src"
-    )
-  );
+  let cwd = dirname(__filename.replace("ailly/core/lib", "ailly/core/src"));
   let command = join(cwd, normalize(".venv/bin/python3"));
   let args = [join(cwd, "mistral.py"), prompt];
   let child = spawn(command, args, { cwd });

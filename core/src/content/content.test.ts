@@ -1,17 +1,17 @@
-import { expect, test, describe } from "vitest";
+import { describe, expect, test } from "vitest";
 
 import {
   FileSystem,
   ObjectFileSystemAdapter,
-} from "@davidsouther/jiffies/lib/esm/fs.js";
+} from "@davidsouther/jiffies/lib/cjs/fs.js";
 import {
   Content,
-  loadContent,
-  writeContent,
-  splitOrderedName,
   loadAillyRc,
+  loadContent,
+  splitOrderedName,
+  writeContent,
 } from "./content.js";
-import { GitignoreFs } from "./gitignore_fs";
+import { GitignoreFs } from "./gitignore_fs.js";
 
 test("it loads content", async () => {
   const testFs = new FileSystem(

@@ -1,4 +1,4 @@
-import { DEFAULT_SCHEDULER_LIMIT, PipelineSettings } from "../ailly.js";
+import { DEFAULT_SCHEDULER_LIMIT, LOGGER, PipelineSettings } from "../ailly.js";
 import { View, type Content } from "../content/content.js";
 import type { Engine } from "../engine/index.js";
 import type { Plugin } from "../plugin/index.js";
@@ -7,7 +7,6 @@ import {
   mergeContentViews,
   mergeViews,
 } from "../content/template.js";
-import { LOGGER } from "../util.js";
 
 export interface PromptThreadsSummary {
   totalPrompts: number;

@@ -1,6 +1,6 @@
-import { ObjectFileSystemAdapter } from "@davidsouther/jiffies/lib/esm/fs.js";
-import { GitignoreFs } from "./gitignore_fs";
+import { ObjectFileSystemAdapter } from "@davidsouther/jiffies/lib/cjs/fs.js";
 import { describe, expect, it } from "vitest";
+import { GitignoreFs } from "./gitignore_fs.js";
 
 describe("gitignore fs", () => {
   it("reads while obeying .gitignores", async () => {
