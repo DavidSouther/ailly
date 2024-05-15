@@ -22,6 +22,9 @@ jobs:
       - name: Install dependencies
         run: npm install && npx tsc -p core && npm link ./core -w cli
 
+      - name: Build all workspaces
+        run: npm run build
+
       - name: Run CI script in cli workspace
         run: npm run --workspace cli ci
 
