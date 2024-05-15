@@ -8,7 +8,7 @@ import {
   FileSystem,
   ObjectFileSystemAdapter,
 } from "@davidsouther/jiffies/lib/esm/fs";
-import { getPlugin, makePipelineSettings } from "../ailly";
+import { getPlugin, makePipelineSettings } from "..";
 import { getEngine } from "../engine";
 import { LEVEL } from "@davidsouther/jiffies/lib/esm/log";
 import { TIMEOUT } from "../engine/noop";

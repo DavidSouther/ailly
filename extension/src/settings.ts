@@ -1,7 +1,9 @@
-import * as ailly from "@ailly/core";
-import { DEFAULT_ENGINE, getEngine } from "@ailly/core/src/ailly";
-import { ENGINES } from "@ailly/core/src/engine";
-import { getLogger } from "@davidsouther/jiffies/lib/esm/log";
+import { ENGINES, getEngine } from "@ailly/core/src/engine";
+import {
+  DEFAULT_ENGINE,
+  LOGGER as ROOT_LOGGER,
+} from "@ailly/core/src/index.js";
+import { getLogger } from "@davidsouther/jiffies/lib/cjs/log.js";
 import vscode from "vscode";
 
 export const LOGGER = getLogger("@ailly/extension");
@@ -37,10 +39,9 @@ function aillyLogFormatter<
 export function resetLogger() {
   let level = outputChannel.logLevel - 1;
   if (level < 0) level = 5;
-  ailly.Ailly.LOGGER.level = LOGGER.level = level;
-  ailly.Ailly.LOGGER.format = LOGGER.format = aillyLogFormatter;
-  ailly.Ailly.LOGGER.console = LOGGER.console =
-    outputChannel as unknown as Console;
+  ROOT_LOGGER.level = LOGGER.level = level;
+  ROOT_LOGGER.format = LOGGER.format = aillyLogFormatter;
+  ROOT_LOGGER.console = LOGGER.console = outputChannel as unknown as Console;
 }
 
 const SETTINGS = {

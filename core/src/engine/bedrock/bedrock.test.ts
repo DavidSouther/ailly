@@ -5,7 +5,7 @@ import {
   RecordFileSystemAdapter,
 } from "@davidsouther/jiffies/lib/esm/fs.js";
 import { claude3 } from "./prompt-builder.js";
-import { makePipelineSettings } from "../../ailly";
+import { makePipelineSettings } from "../../index.js";
 import { loadContent } from "../../content/content";
 import { format } from "./bedrock";
 

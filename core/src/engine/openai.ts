@@ -1,7 +1,7 @@
 import { OpenAI, toFile } from "openai";
 import { assertExists } from "@davidsouther/jiffies/lib/esm/assert.js";
 import type { Content } from "../content/content.js";
-import type { PipelineSettings } from "../ailly.js";
+import type { PipelineSettings } from "../index.js";
 import type { EngineGenerate, Message, Summary } from "./index.js";
 import { LOGGER, isDefined } from "../util.js";
 import { encode } from "../encoding.js";

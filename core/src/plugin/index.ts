@@ -1,4 +1,4 @@
-import { PipelineSettings } from "../ailly.js";
+import { PipelineSettings } from "../index.js";
 import type { Content, View } from "../content/content.js";
 import type { Engine } from "../engine/index.js";
 import { RAG } from "./rag.js";

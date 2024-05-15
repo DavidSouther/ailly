@@ -4,7 +4,7 @@ import {
   Thread,
   getEngine,
   getPlugin,
-} from "../ailly.js";
+} from "../index.js";
 import { LOGGER } from "../util.js";
 import { partitionPrompts } from "../content/partition.js";
 import {
