@@ -1,5 +1,5 @@
 #! /usr/bin/env node
-import { GenerateManager } from "@ailly/core/lib/actions/generate_manager.js";
+import { GenerateManager } from "@ailly/core/dist/actions/generate_manager.js";
 import {
   isAillyEditReplace,
   writeContent,
