@@ -45,7 +45,8 @@
             "default": "bedrock",
             "enum": [
               "bedrock",
-              "openai"
+              "openai",
+              "noop"
             ],
             "description": "The Ailly engine to use when making LLM calls."
           },
@@ -64,6 +65,7 @@
           },
           "ailly.awsRegion": {
             "type": "string",
+            "default": "us-east-1",
             "description": "The AWS region to use when making calls to AWS services using the bedrock engine."
           },
           "ailly.openaiApiKey": {

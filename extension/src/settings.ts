@@ -22,16 +22,18 @@ function aillyLogFormatter<
 >(data: D) {
   let base = `${data.name} ${data.message}`;
   if (data.err) {
-    base += ` err: ${JSON.stringify(data.err)}`;
+    base += ` err: ${data.err.message}${
+      data.err.cause ? " " + data.err.cause.message : ""
+    }`;
   }
-  if (data.debug) {
-    base += ` debug: ${JSON.stringify(data.debug)}`;
-  }
-  if (data.prompt) {
-    base += ` prompt: ${JSON.stringify(data.prompt)}`;
-  }
-  if (data.messages) {
-    base += ` prompt: \n${JSON.stringify(data.messages)}`;
+  const debug: Partial<D> = { ...data };
+  delete debug.name;
+  delete debug.message;
+  delete debug.prefix;
+  delete debug.level;
+  delete debug.source;
+  if (Object.keys(debug).length > 0) {
+    base += " " + JSON.stringify(debug);
   }
   return base;
 }
