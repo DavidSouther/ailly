@@ -8,7 +8,7 @@
  * to keep [string, string] data directly in memory and write it to the backing file.
  */
 
-import { DEFAULT_LOGGER } from "@davidsouther/jiffies/lib/esm/log";
+import { DEFAULT_LOGGER } from "@davidsouther/jiffies/lib/cjs/log";
 import { WriteStream } from "fs";
 import { FileHandle, open } from "fs/promises";
 import { join } from "path";

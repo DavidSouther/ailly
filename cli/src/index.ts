@@ -7,8 +7,8 @@ import {
   writeContent,
 } from "@ailly/core/dist/content/content.js";
 import { GitignoreFs } from "@ailly/core/dist/content/gitignore_fs.js";
-import { FileSystem } from "@davidsouther/jiffies/lib/esm/fs.js";
-import { NodeFileSystemAdapter } from "@davidsouther/jiffies/lib/esm/fs_node.js";
+import { FileSystem } from "@davidsouther/jiffies/lib/cjs/fs.js";
+import { NodeFileSystemAdapter } from "@davidsouther/jiffies/lib/cjs/fs_node.js";
 import { createInterface } from "node:readline";
 import { Args, help, makeArgs } from "./args.js";
 import { LOGGER, loadFs } from "./fs.js";

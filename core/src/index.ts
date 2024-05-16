@@ -13,9 +13,6 @@ let dirname;
 try {
   dirname = __dirname;
 } catch (e) {}
-try {
-  dirname = normalize(join(fileURLToPath(import.meta.url), ".."));
-} catch (e) {}
 export const version = dirname ? getVersion(dirname) : "(unknown)";
 
 export const DEFAULT_ENGINE = "bedrock";

@@ -1,4 +1,4 @@
-import { getLogLevel, getLogger } from "@davidsouther/jiffies/lib/esm/log.js";
+import { getLogLevel, getLogger } from "@davidsouther/jiffies/lib/cjs/log.js";
 export const LOGGER = getLogger("@ailly/core");
 
 LOGGER.level = getLogLevel(process.env["AILLY_LOG_LEVEL"]);

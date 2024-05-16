@@ -10,13 +10,13 @@ import {
   LOGGER as ROOT_LOGGER,
   makePipelineSettings,
 } from "@ailly/core/dist/index.js";
-import { assertExists } from "@davidsouther/jiffies/lib/esm/assert.js";
-import { FileSystem } from "@davidsouther/jiffies/lib/esm/fs.js";
+import { assertExists } from "@davidsouther/jiffies/lib/cjs/assert.js";
+import { FileSystem } from "@davidsouther/jiffies/lib/cjs/fs.js";
 import {
   basicLogFormatter,
   getLogLevel,
   getLogger,
-} from "@davidsouther/jiffies/lib/esm/log.js";
+} from "@davidsouther/jiffies/lib/cjs/log.js";
 import { Console } from "node:console";
 import { join, resolve } from "node:path";
 import { parse } from "yaml";

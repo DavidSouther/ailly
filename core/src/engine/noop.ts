@@ -1,4 +1,4 @@
-import { getLogger } from "@davidsouther/jiffies/lib/esm/log.js";
+import { getLogger } from "@davidsouther/jiffies/lib/cjs/log.js";
 import { Content } from "../content/content.js";
 import { LOGGER as ROOT_LOGGER } from "../util.js";
 import { addContentMessages } from "./messages.js";

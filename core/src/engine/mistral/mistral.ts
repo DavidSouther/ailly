@@ -1,8 +1,9 @@
+import { spawn } from "node:child_process";
+import { dirname, join, normalize } from "node:path";
+import { fileURLToPath } from "node:url";
 import { EngineGenerate } from "..";
 import type { Content } from "../../content/content.js";
 import * as openai from "../openai.js";
-import { spawn } from "node:child_process";
-import { normalize, join, dirname } from "node:path";
 
 const DEFAULT_MODEL = "mistralai/Mistral-7B-v0.1";
 interface MistralDebug {}
@@ -13,12 +14,10 @@ export const generate: EngineGenerate<MistralDebug> = (c: Content, _) => {
     throw new Error("No messages in Content");
   }
 
-  const __filename =
-    global.__filename ?? import.meta?.url.replace(/^file:/, "");
-  let cwd = dirname(__filename.replace("ailly/core/dist", "ailly/core/src"));
-  let command = join(cwd, normalize(".venv/bin/python3"));
-  let args = [join(cwd, "mistral.py"), prompt];
-  let child = spawn(command, args, { cwd });
+  const cwd = getMistralDirectory();
+  const command = join(cwd, normalize(".venv/bin/python3"));
+  const args = [join(cwd, "mistral.py"), prompt];
+  const child = spawn(command, args, { cwd });
 
   const stream = new TransformStream();
   const done = Promise.withResolvers<void>();
@@ -69,4 +68,19 @@ export async function tune(
   }: { model: string; apiKey: string; baseURL: string }
 ) {
   return openai.tune(content, context, { model, apiKey, baseURL });
+}
+
+function getMistralDirectory() {
+  if (process.env["AILLY_MISTRAL_ROOT"]) {
+    return process.env["AILLY_MISTRAL_ROOT"];
+  }
+  let filename;
+  try {
+    filename = __filename;
+  } catch (e) {}
+  if (!filename) {
+    throw new Error("Could not determine Mistral root");
+  }
+
+  return dirname(filename.replace("ailly/core/dist", "ailly/core/src"));
 }

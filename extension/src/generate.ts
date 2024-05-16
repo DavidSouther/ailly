@@ -1,6 +1,6 @@
 import vscode from "vscode";
 
-import { FileSystem } from "@davidsouther/jiffies/lib/esm/fs.js";
+import { FileSystem } from "@davidsouther/jiffies/lib/cjs/fs.js";
 import { VSCodeFileSystemAdapter } from "./fs.js";
 import { LOGGER, getAillyEngine, getAillyModel, resetLogger } from "./settings";
 import { dirname } from "node:path";
