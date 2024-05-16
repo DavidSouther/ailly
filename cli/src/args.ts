@@ -57,7 +57,7 @@ export function makeArgs(argv = process.argv) {
       help: { type: "boolean", short: "h", default: false },
       version: { type: "boolean", default: false },
       "log-level": { type: "string", default: undefined },
-      "log-format": { type: "string", default: undefined },
+      "log-format": { type: "string", default: "pretty" },
       verbose: { type: "boolean", default: false, short: "v" },
     },
   });
@@ -106,7 +106,7 @@ export function help() {
     --summary will show a pricing expectation before running and prompt for OK.
     -y, —-yes will skip any prompts.
     -v, --verbose, --log-level v and verbose will set log level to info; --log-level can be a string or number and use jefri/jiffies logging levels. Ailly uses warn for reporting details on errors, info for general runtime progress, and debug for details of requests and responses.
-    --log-format json or pretty; default is pretty when run in a pipe. JSON prints in JSONL format.
+    --log-format json or pretty; default is pretty. JSON prints in JSONL format.
 
     --version will print the cli and core versions
     -h, --help will print this message and exit.

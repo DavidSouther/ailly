@@ -58,14 +58,14 @@ export async function loadFs(
   const isPipe = !hasPositionals && hasPrompt;
   const logLevel =
     args.values["log-level"] ??
-    (args.values.verbose ? "verbose" : isPipe ? "silent" : undefined);
-  const logFormat = args.values["log-format"] ?? (isPipe ? "pretty" : "json");
+    (args.values.verbose ? "verbose" : isPipe ? "silent" : "info");
+  const logFormat = args.values["log-format"];
+  const formatter = logFormat == "json" ? JSON.stringify : basicLogFormatter;
   ROOT_LOGGER.console = LOGGER.console = isPipe
     ? new Console(process.stderr, process.stderr)
     : global.console;
   ROOT_LOGGER.level = LOGGER.level = getLogLevel(logLevel);
-  ROOT_LOGGER.format = LOGGER.format =
-    logFormat == "json" ? JSON.stringify : basicLogFormatter;
+  ROOT_LOGGER.format = LOGGER.format = formatter;
 
   const system = args.values.system ?? "";
   const depth = Number(args.values["max-depth"]);
