@@ -1,5 +1,5 @@
 #!/usr/bin/env node
 
-import { main } from './lib/index.js'
+const { main } = require('./lib/index.js');
 
-await main();
+main();

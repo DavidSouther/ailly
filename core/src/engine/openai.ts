@@ -1,12 +1,12 @@
+import { assertExists } from "@davidsouther/jiffies/lib/cjs/assert.js";
 import { OpenAI, toFile } from "openai";
-import { assertExists } from "@davidsouther/jiffies/lib/esm/assert.js";
+import { ChatCompletionChunk } from "openai/resources/index.js";
+import { Stream } from "openai/streaming.js";
 import type { Content } from "../content/content.js";
-import type { PipelineSettings } from "../index.js";
-import type { EngineGenerate, Message, Summary } from "./index.js";
-import { LOGGER, isDefined } from "../util.js";
 import { encode } from "../encoding.js";
-import { ChatCompletionChunk } from "openai/resources/index.mjs";
-import { Stream } from "openai/streaming.mjs";
+import { LOGGER, type PipelineSettings } from "../index.js";
+import { isDefined } from "../util.js";
+import type { EngineGenerate, Message, Summary } from "./index.js";
 
 export const name = "openai";
 
