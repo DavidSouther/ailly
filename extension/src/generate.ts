@@ -1,18 +1,17 @@
 import vscode from "vscode";
 
-import { FileSystem } from "@davidsouther/jiffies/lib/cjs/fs.js";
-import { VSCodeFileSystemAdapter } from "./fs.js";
-import { LOGGER, getAillyEngine, getAillyModel, resetLogger } from "./settings";
-import { dirname } from "node:path";
-import { prepareBedrock } from "./settings.js";
+import { GenerateManager } from "@ailly/core/lib/actions/generate_manager.js";
 import {
   AillyEdit,
   loadContent,
   writeContent,
-} from "@ailly/core/src/content/content";
-import { makePipelineSettings } from "@ailly/core/src/index";
-import { GenerateManager } from "@ailly/core/src/actions/generate_manager";
-import { withResolvers } from "@ailly/core/lib/util";
+} from "@ailly/core/lib/content/content.js";
+import { makePipelineSettings } from "@ailly/core/lib/index.js";
+import { withResolvers } from "@ailly/core/lib/util.js";
+import { FileSystem } from "@davidsouther/jiffies/lib/cjs/fs.js";
+import { dirname } from "node:path";
+import { VSCodeFileSystemAdapter } from "./fs.js";
+import { LOGGER, SETTINGS, resetLogger } from "./settings.js";
 
 export async function generate(
   path: string,
@@ -25,10 +24,10 @@ export async function generate(
   const root = dirname(path);
   fs.cd(root);
 
-  const engine = await getAillyEngine();
-  const model = await getAillyModel(engine);
-  if (engine == "bedrock") {
-    await prepareBedrock();
+  const engine = await SETTINGS.getAillyEngine();
+  const model = await SETTINGS.getAillyModel(engine);
+  if (engine === "bedrock") {
+    await SETTINGS.prepareBedrock();
   }
 
   const settings = await makePipelineSettings({
@@ -42,7 +41,9 @@ export async function generate(
   // Load content
   const context = await loadContent(fs, [], {}, 1);
   const content = Object.values(context).filter((c) => c.path.startsWith(path));
-  if (content.length == 0) return;
+  if (content.length === 0) {
+    return;
+  }
   if (edit) {
     const editContext: AillyEdit =
       edit.start === edit.end
@@ -78,17 +79,17 @@ export async function generate(
   generator.start();
   await generator.allSettled();
 
-  if (content[0].meta?.debug?.finish! == "failed") {
+  if (content[0].meta?.debug?.finish! === "failed") {
     throw new Error(content[0].meta?.debug?.error?.message ?? "unknown");
   }
 
   // Write
   if (edit && content[0].context.edit) {
-    vscode.window.activeTextEditor?.edit((builder) => {
+    await vscode.window.activeTextEditor?.edit((builder) => {
       builder.replace(
         new vscode.Range(
           new vscode.Position(edit.start, 0),
-          new vscode.Position(edit.end + 1, 0)
+          new vscode.Position(edit.end, 0)
         ),
         (content[0].response ?? "") + "\n"
       );

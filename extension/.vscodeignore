@@ -1,6 +1,7 @@
 .vscode/**
 .vscode-test/**
 src/**
+testing/**
 .gitignore
 .vscode-test.js
 out/**/*.test.js
@@ -10,3 +11,4 @@ tsconfig.tsbuildinfo
 **/*.map
 **/*.ts
 ../**
+*.vsix

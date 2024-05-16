@@ -1,12 +1,48 @@
-name: Package Extension
+name: Extension
 
 on:
   push:
     branches: [main]
+  pull_request:
+    branches: [main]
   workflow_dispatch:
 
 jobs:
-  npm-test:
+  extension-test:
+    name: Test Extension
+    strategy:
+      matrix:
+        os:
+          # - macos-latest,
+          - ubuntu-latest
+          # - windows-latest
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20.x"
+
+      - name: Install dependencies
+        run: npm install && npx tsc -p core && npm link ./core -w extension
+
+      - name: Build all workspaces
+        run: npm run build
+
+      - name: Run CI script in extension workspace (Linux)
+        run: xvfb-run -a npm run --workspace extension ci
+        if: runner.os == 'Linux'
+
+      - name: Run CI script in extension workspace (Windows or macOS)
+        run: npm run --workspace extension ci
+        if: runner.os != 'Linux'
+
+  package-extension:
+    name: Package Extension
+    needs: [extension-test]
     runs-on: ubuntu-latest
 
     steps:
