@@ -1,15 +1,15 @@
-import { describe, it, expect, beforeEach } from "vitest";
-import { cleanState } from "@davidsouther/jiffies/lib/esm/scope/state.js";
-import * as cli from "./fs";
+import {
+  loadContent,
+  makeCLIContent,
+} from "@ailly/core/dist/content/content.js";
+import { makePipelineSettings } from "@ailly/core/dist/index.js";
 import {
   FileSystem,
   RecordFileSystemAdapter,
 } from "@davidsouther/jiffies/lib/esm/fs";
-import { makePipelineSettings } from "@ailly/core/dist/src/ailly.js";
-import {
-  loadContent,
-  makeCLIContent,
-} from "@ailly/core/dist/src/content/content";
+import { cleanState } from "@davidsouther/jiffies/lib/esm/scope/state.js";
+import { beforeEach, describe, expect, it } from "vitest";
+import * as cli from "./fs";
 
 describe("makeEdit", () => {
   it("parses line range", () => {

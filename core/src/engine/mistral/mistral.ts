@@ -13,12 +13,9 @@ export const generate: EngineGenerate<MistralDebug> = (c: Content, _) => {
     throw new Error("No messages in Content");
   }
 
-  let cwd = dirname(
-    (import.meta?.url.replace(/^file:/, "") ?? __filename).replace(
-      "ailly/core/dist",
-      "ailly/core/src"
-    )
-  );
+  const __filename =
+    global.__filename ?? import.meta?.url.replace(/^file:/, "");
+  let cwd = dirname(__filename.replace("ailly/core/dist", "ailly/core/src"));
   let command = join(cwd, normalize(".venv/bin/python3"));
   let args = [join(cwd, "mistral.py"), prompt];
   let child = spawn(command, args, { cwd });

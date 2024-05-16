@@ -1,3 +1,5 @@
+import { join, normalize } from "node:path";
+import { fileURLToPath } from "node:url";
 import { Content, View, ContentMeta } from "./content/content.js";
 export { GitignoreFs } from "./content/gitignore_fs.js";
 export { getPlugin } from "./plugin/index.js";
@@ -5,12 +7,21 @@ import { getEngine } from "./engine/index.js";
 export { getEngine } from "./engine/index.js";
 export * from "./util.js";
 
+import { getVersion } from "./version.js";
+
+let dirname;
+try {
+  dirname = __dirname;
+} catch (e) {}
+try {
+  dirname = normalize(join(fileURLToPath(import.meta.url), ".."));
+} catch (e) {}
+export const version = dirname ? getVersion(dirname) : "(unknown)";
+
 export const DEFAULT_ENGINE = "bedrock";
 export const DEFAULT_PLUGIN = "noop";
 
 export type Thread = Content[];
-
-export { GenerateManager } from "./actions/generate_manager.js";
 
 export const DEFAULT_SCHEDULER_LIMIT = 5;
 

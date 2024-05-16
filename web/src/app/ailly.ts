@@ -1,13 +1,15 @@
 "use server";
 
-import { Ailly, types } from "@ailly/core";
+import { Content } from "@ailly/core/src/content/content";
+import { makePipelineSettings } from "@ailly/core/src/index";
+import { GenerateManager } from "@ailly/core/src/actions/generate_manager";
 
-export async function generateOne(content: types.Content) {
-  const settings = await Ailly.makePipelineSettings({
+export async function generateOne(content: Content) {
+  const settings = await makePipelineSettings({
     root: "/ailly",
     // engine: "noop",
   });
-  const manager = await Ailly.GenerateManager.from(
+  const manager = await GenerateManager.from(
     [content.path],
     { [content.path]: content },
     settings

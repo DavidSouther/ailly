@@ -3,7 +3,7 @@ import * as openai from "./openai.js";
 import * as bedrock from "./bedrock/bedrock.js";
 import * as mistral from "./mistral/mistral.js";
 import * as noop from "./noop.js";
-import { PipelineSettings } from "../ailly.js";
+import { PipelineSettings } from "../index.js";
 
 export interface EngineDebug {
   engine?: string;

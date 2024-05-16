@@ -1,15 +1,15 @@
 import {
-  PipelineSettings,
-  LOGGER as ROOT_LOGGER,
-  makePipelineSettings,
-} from "@ailly/core/dist/src/ailly.js";
-import {
   AillyEdit,
   Content,
   View,
   loadContent,
   makeCLIContent,
-} from "@ailly/core/dist/src/content/content.js";
+} from "@ailly/core/dist/content/content.js";
+import {
+  PipelineSettings,
+  LOGGER as ROOT_LOGGER,
+  makePipelineSettings,
+} from "@ailly/core/dist/index.js";
 import { assertExists } from "@davidsouther/jiffies/lib/esm/assert.js";
 import { FileSystem } from "@davidsouther/jiffies/lib/esm/fs.js";
 import {

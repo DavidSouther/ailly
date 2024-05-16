@@ -1,11 +1,17 @@
 import vscode from "vscode";
 
-import * as ailly from "@ailly/core";
 import { FileSystem } from "@davidsouther/jiffies/lib/esm/fs.js";
 import { VSCodeFileSystemAdapter } from "./fs.js";
 import { LOGGER, getAillyEngine, getAillyModel, resetLogger } from "./settings";
 import { dirname } from "node:path";
 import { prepareBedrock } from "./settings.js";
+import {
+  AillyEdit,
+  loadContent,
+  writeContent,
+} from "@ailly/core/src/content/content";
+import { makePipelineSettings } from "@ailly/core/src/index";
+import { GenerateManager } from "@ailly/core/src/actions/generate_manager";
 
 export async function generate(
   path: string,
@@ -24,7 +30,7 @@ export async function generate(
     await prepareBedrock();
   }
 
-  const settings = await ailly.Ailly.makePipelineSettings({
+  const settings = await makePipelineSettings({
     root,
     out: root,
     context: "folder",
@@ -33,7 +39,7 @@ export async function generate(
   });
 
   // Load content
-  const context = await ailly.content.load(fs, [], {}, 1);
+  const context = await loadContent(fs, [], {}, 1);
   const content = Object.values(context).filter((c) => c.path.startsWith(path));
   if (content.length == 0) return;
   if (edit) {
@@ -62,7 +68,7 @@ export async function generate(
   }
 
   // Generate
-  let generator = await ailly.Ailly.GenerateManager.from(
+  let generator = await GenerateManager.from(
     content.map((c) => c.path),
     context,
     settings
@@ -71,7 +77,7 @@ export async function generate(
   await generator.allSettled();
 
   if (content[0].meta?.debug?.finish! == "failed") {
-    throw new Error(content[0].meta.debug?.error.message);
+    throw new Error(content[0].meta?.debug?.error?.message ?? "unknown");
   }
 
   // Write
@@ -86,6 +92,6 @@ export async function generate(
       );
     });
   } else {
-    ailly.content.write(fs as any, content);
+    writeContent(fs as any, content);
   }
 }
