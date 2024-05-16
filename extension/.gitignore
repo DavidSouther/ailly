@@ -1,1 +1,3 @@
 *.vsix
+lib
+.vscode-test

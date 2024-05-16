@@ -1,4 +1,4 @@
-import { DEFAULT_SCHEDULER_LIMIT, PipelineSettings } from "../index.js";
+import { DEFAULT_SCHEDULER_LIMIT, LOGGER, PipelineSettings } from "../index.js";
 import { View, type Content } from "../content/content.js";
 import type { Engine } from "../engine/index.js";
 import type { Plugin } from "../plugin/index.js";
@@ -7,7 +7,6 @@ import {
   mergeContentViews,
   mergeViews,
 } from "../content/template.js";
-import { LOGGER } from "../util.js";
 
 export interface PromptThreadsSummary {
   totalPrompts: number;
@@ -180,7 +179,9 @@ export function generateOne(
     LOGGER.info(`Skipping ${c.path}`);
     const stream = new TextEncoderStream();
     stream.writable.getWriter().write(c.response ?? "");
-    c.responseStream = stream.readable;
+    c.responseStream.resolve(
+      stream.readable.pipeThrough(new TextDecoderStream())
+    );
     return Promise.resolve();
   }
 
@@ -210,7 +211,7 @@ export function generateOne(
   };
   try {
     const generator = engine.generate(c, settings);
-    c.responseStream = generator.stream;
+    c.responseStream.resolve(generator.stream);
     return generator.done.then(
       () => {
         c.response = generator.message();
@@ -223,5 +224,14 @@ export function generateOne(
   } catch (err) {
     LOGGER.error(`Uncaught error in ${engine.name} generator`, { err });
     return Promise.resolve();
+  }
+}
+
+export async function drain(content: Content) {
+  const stream = await content.responseStream.promise;
+  if (stream.locked) {
+    return;
+  }
+  for await (const _ of stream as unknown as AsyncIterable<string>) {
   }
 }

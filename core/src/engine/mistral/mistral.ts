@@ -1,14 +1,18 @@
 import { spawn } from "node:child_process";
 import { dirname, join, normalize } from "node:path";
-import { fileURLToPath } from "node:url";
-import { EngineGenerate } from "..";
 import type { Content } from "../../content/content.js";
+import { type PipelineSettings } from "../../index.js";
+import { type EngineDebug, type EngineGenerate } from "../index.js";
 import * as openai from "../openai.js";
+import { withResolvers } from "../../util";
 
 const DEFAULT_MODEL = "mistralai/Mistral-7B-v0.1";
-interface MistralDebug {}
+interface MistralDebug extends EngineDebug {}
 
-export const generate: EngineGenerate<MistralDebug> = (c: Content, _) => {
+export const generate: EngineGenerate<MistralDebug> = (
+  c: Content,
+  _: PipelineSettings
+) => {
   const prompt = c.meta?.messages?.map(({ content }) => content).join("\n");
   if (!prompt) {
     throw new Error("No messages in Content");
@@ -20,7 +24,7 @@ export const generate: EngineGenerate<MistralDebug> = (c: Content, _) => {
   const child = spawn(command, args, { cwd });
 
   const stream = new TransformStream();
-  const done = Promise.withResolvers<void>();
+  const done = withResolvers<void>();
 
   let message = "";
   child.on("message", async (m) => {

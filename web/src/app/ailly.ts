@@ -1,10 +1,11 @@
 "use server";
+import { type Content } from "@ailly/core/lib/content/content";
+import { makePipelineSettings } from "@ailly/core/lib/index";
+import { GenerateManager } from "@ailly/core/lib/actions/generate_manager";
 
-import { Content } from "@ailly/core/src/content/content";
-import { makePipelineSettings } from "@ailly/core/src/index";
-import { GenerateManager } from "@ailly/core/src/actions/generate_manager";
-
-export async function generateOne(content: Content) {
+export async function generateOne(
+  content: Content
+): Promise<Omit<Content, "responseStream">> {
   const settings = await makePipelineSettings({
     root: "/ailly",
     // engine: "noop",
@@ -16,6 +17,10 @@ export async function generateOne(content: Content) {
   );
   manager.start();
   await manager.allSettled();
-  // content.response = "Did some stuff";
-  return content;
+
+  const returnedContent: Omit<Content, "responseStream"> & {
+    responseStream?: Content["responseStream"];
+  } = { ...content };
+  delete returnedContent.responseStream;
+  return returnedContent;
 }

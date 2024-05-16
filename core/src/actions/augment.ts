@@ -1,6 +1,6 @@
-import { Content } from "../content/content.js";
+import type { Content } from "../content/content.js";
+import { LOGGER } from "../index.js";
 import { RAG } from "../plugin/rag.js";
-import { LOGGER } from "../util.js";
 
 export async function augment(content: Content[], rag: RAG): Promise<void> {
   const _content = [...content];
