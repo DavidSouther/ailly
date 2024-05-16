@@ -7,7 +7,7 @@ import { Content, View } from "../../content/content.js";
 import { LOGGER as ROOT_LOGGER } from "../../util.js";
 import { EngineGenerate, Summary } from "../index.js";
 import { Models, PromptBuilder } from "./prompt-builder.js";
-import { getLogger } from "@davidsouther/jiffies/lib/esm/log.js";
+import { getLogger } from "@davidsouther/jiffies/lib/cjs/log.js";
 import { fromNodeProviderChain } from "@aws-sdk/credential-providers";
 import { addContentMessages } from "../messages.js";
 

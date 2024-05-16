@@ -1,16 +1,16 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { range } from "@davidsouther/jiffies/lib/esm/range.js";
+import { range } from "@davidsouther/jiffies/lib/cjs/range.js";
 import { PromptThread, generateOne, scheduler } from "./prompt_thread";
 import { LOGGER } from "../util";
-import { cleanState } from "@davidsouther/jiffies/lib/esm/scope/state";
+import { cleanState } from "@davidsouther/jiffies/lib/cjs/scope/state";
 import { loadContent } from "../content/content";
 import {
   FileSystem,
   ObjectFileSystemAdapter,
-} from "@davidsouther/jiffies/lib/esm/fs";
+} from "@davidsouther/jiffies/lib/cjs/fs";
 import { getPlugin, makePipelineSettings } from "..";
 import { getEngine } from "../engine";
-import { LEVEL } from "@davidsouther/jiffies/lib/esm/log";
+import { LEVEL } from "@davidsouther/jiffies/lib/cjs/log";
 import { TIMEOUT } from "../engine/noop";
 
 describe("scheduler", () => {

@@ -6,8 +6,8 @@ import { makePipelineSettings } from "@ailly/core/dist/index.js";
 import {
   FileSystem,
   RecordFileSystemAdapter,
-} from "@davidsouther/jiffies/lib/esm/fs";
-import { cleanState } from "@davidsouther/jiffies/lib/esm/scope/state.js";
+} from "@davidsouther/jiffies/lib/cjs/fs";
+import { cleanState } from "@davidsouther/jiffies/lib/cjs/scope/state.js";
 import { beforeEach, describe, expect, it } from "vitest";
 import * as cli from "./fs";
 

@@ -3,7 +3,7 @@ import { expect, test, describe } from "vitest";
 import {
   FileSystem,
   ObjectFileSystemAdapter,
-} from "@davidsouther/jiffies/lib/esm/fs.js";
+} from "@davidsouther/jiffies/lib/cjs/fs.js";
 import {
   Content,
   loadContent,

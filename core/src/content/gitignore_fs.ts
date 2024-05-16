@@ -1,4 +1,4 @@
-import { FileSystem, SEP } from "@davidsouther/jiffies/lib/esm/fs.js";
+import { FileSystem, SEP } from "@davidsouther/jiffies/lib/cjs/fs.js";
 import { join, normalize } from "path";
 import { contentType } from "mime-types";
 import * as gitignoreParser from "gitignore-parser";
@@ -37,7 +37,7 @@ export class GitignoreFs extends FileSystem {
 
 function isTextExtension(name: string) {
   const overrides = ["go"];
-  if (overrides.includes((name.split(".").pop() || ""))) {
+  if (overrides.includes(name.split(".").pop() || "")) {
     return true;
   }
   const contType = contentType(name) || "";

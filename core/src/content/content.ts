@@ -6,7 +6,7 @@ import {
   Stats,
   basename,
   isAbsolute,
-} from "@davidsouther/jiffies/lib/esm/fs.js";
+} from "@davidsouther/jiffies/lib/cjs/fs.js";
 import matter from "gray-matter";
 import * as YAML from "yaml";
 import { join, dirname } from "path";
