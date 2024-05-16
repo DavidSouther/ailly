@@ -1,12 +1,12 @@
 #! /usr/bin/env node
-import { GenerateManager } from "@ailly/core/dist/actions/generate_manager.js";
+import { GenerateManager } from "@ailly/core/lib/actions/generate_manager.js";
 import {
-  AillyEdit,
-  Content,
   isAillyEditReplace,
   writeContent,
-} from "@ailly/core/dist/content/content.js";
-import { GitignoreFs } from "@ailly/core/dist/content/gitignore_fs.js";
+  type AillyEdit,
+  type Content,
+} from "@ailly/core/lib/content/content.js";
+import { GitignoreFs } from "@ailly/core/lib/content/gitignore_fs.js";
 import { FileSystem } from "@davidsouther/jiffies/lib/cjs/fs.js";
 import { NodeFileSystemAdapter } from "@davidsouther/jiffies/lib/cjs/fs_node.js";
 import { createInterface } from "node:readline";

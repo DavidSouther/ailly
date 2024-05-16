@@ -1,7 +1,5 @@
-import { version as core } from "@ailly/core/dist/index.js";
-import { getRevision, getVersion } from "@ailly/core/dist/version.js";
-import { join, normalize } from "node:path";
-import { fileURLToPath } from "node:url";
+import { version as core } from "@ailly/core/lib/index.js";
+import { getRevision, getVersion } from "@ailly/core/lib/version.js";
 
 export function version() {
   let dirname: string | undefined;

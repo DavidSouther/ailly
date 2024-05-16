@@ -1,10 +1,8 @@
-import { ENGINES, getEngine } from "@ailly/core/src/engine";
-import {
-  DEFAULT_ENGINE,
-  LOGGER as ROOT_LOGGER,
-} from "@ailly/core/src/index.js";
+import { ENGINES, getEngine } from "@ailly/core/lib/engine/index.js";
+import { DEFAULT_ENGINE } from "@ailly/core/lib/index";
+import { LOGGER as ROOT_LOGGER } from "@ailly/core/lib/util.js";
 import { getLogger } from "@davidsouther/jiffies/lib/cjs/log.js";
-import vscode from "vscode";
+import * as vscode from "vscode";
 
 export const LOGGER = getLogger("@ailly/extension");
 const outputChannel = vscode.window.createOutputChannel("Ailly", {

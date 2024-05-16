@@ -1,4 +1,4 @@
-import { expect, test, describe } from "vitest";
+import { describe, expect, test } from "vitest";
 
 import {
   FileSystem,
@@ -6,12 +6,12 @@ import {
 } from "@davidsouther/jiffies/lib/cjs/fs.js";
 import {
   Content,
-  loadContent,
-  writeContent,
-  splitOrderedName,
   loadAillyRc,
+  loadContent,
+  splitOrderedName,
+  writeContent,
 } from "./content.js";
-import { GitignoreFs } from "./gitignore_fs";
+import { GitignoreFs } from "./gitignore_fs.js";
 
 test("it loads content", async () => {
   const testFs = new FileSystem(
@@ -33,7 +33,7 @@ test("it loads content", async () => {
     "/20b/56_part.md",
     "/54_a/12_section.md",
   ]);
-  expect(content).toEqual({
+  expect(content).toMatchObject({
     "/01_start.md": {
       name: "01_start.md",
       path: "/01_start.md",
@@ -132,7 +132,7 @@ test("it loads combined prompt and responses", async () => {
   );
 
   const content = await loadContent(fs);
-  expect(content).toEqual({
+  expect(content).toMatchObject({
     "/content.md": {
       name: "content.md",
       path: "/content.md",
@@ -209,7 +209,7 @@ test("it loads separate prompt and responses", async () => {
   );
 
   const content = await loadContent(fs);
-  expect(content).toEqual({
+  expect(content).toMatchObject({
     "/content.md": {
       name: "content.md",
       path: "/content.md",
@@ -267,7 +267,7 @@ test("it loads separate prompt and responses in different out directors", async 
     root: "/root",
     out: "/out",
   });
-  expect(content).toEqual({
+  expect(content).toMatchObject({
     "/root/content.md": {
       name: "content.md",
       path: "/root/content.md",
@@ -401,7 +401,7 @@ test("it writes deep java prompts and responses", async () => {
     out: "/out",
   });
 
-  expect(content).toEqual({
+  expect(content).toMatchObject({
     "/root/src/com/example/Main.java": {
       name: "Main.java",
       path: "/root/src/com/example/Main.java",
@@ -645,7 +645,7 @@ describe("Load aillyrc", () => {
 
     const content = await loadContent(fs, [], { context: "none" });
 
-    expect(content).toEqual({
+    expect(content).toMatchObject({
       "/root/a": {
         name: "a",
         path: "/root/a",
@@ -701,7 +701,7 @@ describe("Load aillyrc", () => {
 
     const content = await loadContent(fs, [], { context: "folder" });
 
-    expect(content).toEqual({
+    expect(content).toMatchObject({
       "/root/a": {
         name: "a",
         path: "/root/a",

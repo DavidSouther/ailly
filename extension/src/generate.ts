@@ -12,6 +12,7 @@ import {
 } from "@ailly/core/src/content/content";
 import { makePipelineSettings } from "@ailly/core/src/index";
 import { GenerateManager } from "@ailly/core/src/actions/generate_manager";
+import { withResolvers } from "@ailly/core/lib/util";
 
 export async function generate(
   path: string,
@@ -60,6 +61,7 @@ export async function generate(
       name: "ailly",
       outPath: "/dev/ailly",
       prompt: edit.prompt,
+      responseStream: withResolvers(),
     };
     context[content[0].path] = content[0];
     LOGGER.info(`Editing ${content.length} files`);

@@ -9,7 +9,7 @@
     "node": ">=16"
   },
   "scripts": {
-    "vscode:prepublish": "npm run build",
+    "check": "tsc --noEmit",
     "build": "tsc",
     "test": "vitest",
     "ci": "vitest --run --reporter=verbose"

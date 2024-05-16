@@ -7,11 +7,17 @@ import {
   basename,
   isAbsolute,
 } from "@davidsouther/jiffies/lib/cjs/fs.js";
-import matter from "gray-matter";
 import * as YAML from "yaml";
 import { join, dirname } from "path";
 import type { EngineDebug, Message } from "../engine/index.js";
-import { LOGGER, isDefined } from "../util.js";
+import {
+  LOGGER,
+  isDefined,
+  withResolvers,
+  type PromiseWithResolvers,
+} from "../util.js";
+const matter = require("gray-matter");
+// import * as matter from "gray-matter";
 
 export const EXTENSION = ".ailly.md";
 
@@ -31,7 +37,7 @@ export interface Content {
   // The prompt itself
   prompt: string;
   response?: string;
-  responseStream?: ReadableStream;
+  responseStream: PromiseWithResolvers<ReadableStream<string>>;
   context: Context;
   meta?: ContentMeta;
 }
@@ -68,7 +74,6 @@ export interface ContentMeta {
 export type AillyEditReplace = { start: number; end: number; file: string };
 export type AillyEditInsert = { after: number; file: string };
 export type AillyEdit = AillyEditReplace | AillyEditInsert;
-
 export const isAillyEditReplace = (edit: AillyEdit): edit is AillyEditReplace =>
   (edit as AillyEditReplace).start !== undefined;
 
@@ -195,6 +200,7 @@ async function loadFile(
       },
       prompt,
       response,
+      responseStream: withResolvers(),
       meta: {
         ...head,
         ...data,
@@ -457,6 +463,7 @@ export function makeCLIContent(
     outPath: "/dev/stdout",
     path: "/dev/stdout",
     prompt: prompt ?? "",
+    responseStream: withResolvers(),
     context: {
       view,
       predecessor,

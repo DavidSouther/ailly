@@ -4,12 +4,12 @@ import {
   View,
   loadContent,
   makeCLIContent,
-} from "@ailly/core/dist/content/content.js";
+} from "@ailly/core/lib/content/content.js";
 import {
   PipelineSettings,
   LOGGER as ROOT_LOGGER,
   makePipelineSettings,
-} from "@ailly/core/dist/index.js";
+} from "@ailly/core/lib/index.js";
 import { assertExists } from "@davidsouther/jiffies/lib/cjs/assert.js";
 import { FileSystem } from "@davidsouther/jiffies/lib/cjs/fs.js";
 import {
@@ -184,7 +184,7 @@ export async function loadTemplateView(
 }
 
 async function readAll(readable: typeof process.stdin): Promise<string> {
-  return new Promise((resolve, reject) => {
+  return new Promise<string>((resolve, reject) => {
     const chunks: string[] = [];
 
     readable.on("readable", () => {
