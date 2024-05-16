@@ -3,6 +3,7 @@
   "displayName": "Ailly",
   "description": "AI Writer Ally",
   "author": "David Souther <davidsouther@gmail.com>",
+  "publisher": "davidsouther",
   "contributors": [],
   "repository": "http://github.com/davidsouther/ailly",
   "version": "0.1.1",
@@ -16,7 +17,7 @@
     "Other"
   ],
   "activationEvents": [],
-  "main": "./out/main.js",
+  "main": "./out/extension.js",
   "contributes": {
     "commands": [
       {
@@ -82,16 +83,17 @@
   },
   "scripts": {
     "vscode:prepublish": "npm run esbuild-base -- --minify",
-    "esbuild-base": "esbuild ./src/extension.ts --bundle --outfile=out/main.js --external:vscode --format=cjs --platform=node",
+    "esbuild-base": "esbuild ./lib/extension.js --bundle --outfile=out/extension.js --external:vscode --format=cjs --platform=node",
     "esbuild": "npm run esbuild-base -- --sourcemap",
+    "preesbuild": "npm run compile",
     "esbuild-watch": "npm run esbuild-base -- --sourcemap --watch",
-    "test-compile": "tsc -p ./",
     "compile": "tsc -p ./",
     "build": "npm run esbuild",
     "watch": "tsc -watch -p ./",
     "pretest": "npm run compile && npm run lint",
     "lint": "eslint src --ext ts",
-    "test": "node ./out/test/runTest.js",
+    "test": "vscode-test",
+    "ci": "npm run test",
     "prepackage": "npm run vscode:prepublish",
     "package": "vsce package"
   },
@@ -101,7 +103,8 @@
     "@types/vscode": "^1.83.0",
     "@typescript-eslint/eslint-plugin": "^6.7.3",
     "@typescript-eslint/parser": "^6.7.3",
-    "@vscode/test-electron": "^2.3.4",
+    "@vscode/test-cli": "^0.0.9",
+    "@vscode/test-electron": "^2.3.10",
     "@vscode/vsce": "^2.21.1",
     "esbuild": "^0.19.4",
     "eslint": "^8.50.0",

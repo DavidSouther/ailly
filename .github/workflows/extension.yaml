@@ -1,12 +1,14 @@
-name: Package Extension
+name: CI
 
 on:
   push:
     branches: [main]
+  pull_request:
+    branches: [main]
   workflow_dispatch:
 
 jobs:
-  npm-test:
+  extension-test:
     runs-on: ubuntu-latest
 
     steps:
@@ -18,13 +20,10 @@ jobs:
           node-version: "20.x"
 
       - name: Install dependencies
-        run: npm install && npx tsc -p core && npm link ./core -w cli
+        run: npm install && npx tsc -p core && npm link ./core -w extension
 
-      - name: Package Extension
-        run: npm run --workspace extension package
+      - name: Build all workspaces
+        run: npm run build
 
-      - name: Publish extension artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: extension
-          path: extension/ailly-*.vsix
+      - name: Run CI script in extension workspace
+        run: npm run --workspace extension ci
