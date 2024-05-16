@@ -11,6 +11,8 @@
     "isolatedModules": true,
     "jsx": "preserve",
     "incremental": true,
-    "composite": true
+    "composite": true,
+    "sourceMap": true,
+    "declaration": true
   }
 }

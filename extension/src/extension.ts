@@ -3,7 +3,7 @@
 import * as vscode from "vscode";
 import { basename } from "path";
 import { generate } from "./generate.js";
-import { LOGGER, resetLogger } from "./settings";
+import { LOGGER, resetLogger } from "./settings.js";
 
 // This method is called when your extension is activated
 // Your extension is activated the very first time the command is executed
@@ -57,7 +57,9 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.commands.registerCommand(
       "ailly.edit",
       async (uri?: vscode.Uri, ..._args) => {
-        if (!vscode.window.activeTextEditor) return;
+        if (!vscode.window.activeTextEditor) {
+          return;
+        }
         try {
           let path: string;
           if (uri) {
@@ -74,7 +76,9 @@ export function activate(context: vscode.ExtensionContext) {
             prompt: "What edits should Ailly make?",
           });
 
-          if (!prompt) return;
+          if (!prompt) {
+            return;
+          }
 
           const start = vscode.window.activeTextEditor.selection.start.line;
           const end = vscode.window.activeTextEditor.selection.end.line;

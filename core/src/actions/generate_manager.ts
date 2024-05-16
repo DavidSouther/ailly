@@ -14,6 +14,7 @@ import {
   PromptThread,
   PromptThreadSummary,
   PromptThreadsSummary,
+  drain,
 } from "./prompt_thread.js";
 
 export class GenerateManager {
@@ -79,16 +80,7 @@ export class GenerateManager {
   }
 
   drainAll() {
-    this.threads.forEach((thread) =>
-      thread.forEach(async (c) => {
-        const stream = await c.responseStream.promise;
-        if (!stream.locked) {
-          for await (const _ of stream) {
-            // Drain c.responseStream
-          }
-        }
-      })
-    );
+    this.threads.forEach((thread) => thread.forEach(drain));
   }
 
   async allSettled(): Promise<PromiseSettledResult<Content>[]> {
