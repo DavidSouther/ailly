@@ -1,4 +1,4 @@
-import { Message } from "..";
+import { Message } from "../index.js";
 
 export type Models =
   | "anthropic.claude-v2"

@@ -1,9 +1,9 @@
 import { describe, expect, it, beforeEach } from "vitest";
-import { cleanState } from "@davidsouther/jiffies/lib/esm/scope/state.js";
+import { cleanState } from "@davidsouther/jiffies/lib/cjs/scope/state.js";
 import {
   FileSystem,
   RecordFileSystemAdapter,
-} from "@davidsouther/jiffies/lib/esm/fs.js";
+} from "@davidsouther/jiffies/lib/cjs/fs.js";
 import { claude3 } from "./prompt-builder.js";
 import { makePipelineSettings } from "../../index.js";
 import { loadContent } from "../../content/content";

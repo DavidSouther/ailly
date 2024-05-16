@@ -1,20 +1,16 @@
-import { join, normalize } from "node:path";
-import { fileURLToPath } from "node:url";
-import { Content, View, ContentMeta } from "./content/content.js";
+import { getLogLevel, getLogger } from "@davidsouther/jiffies/lib/cjs/log.js";
+import { Content, ContentMeta, View } from "./content/content.js";
+import { getEngine } from "./engine/index.js";
+import { getVersion } from "./version.js";
 export { GitignoreFs } from "./content/gitignore_fs.js";
 export { getPlugin } from "./plugin/index.js";
-import { getEngine } from "./engine/index.js";
-export { getEngine } from "./engine/index.js";
-export * from "./util.js";
 
-import { getVersion } from "./version.js";
+export const LOGGER = getLogger("@ailly/core");
+LOGGER.level = getLogLevel(process.env["AILLY_LOG_LEVEL"]);
 
 let dirname;
 try {
   dirname = __dirname;
-} catch (e) {}
-try {
-  dirname = normalize(join(fileURLToPath(import.meta.url), ".."));
 } catch (e) {}
 export const version = dirname ? getVersion(dirname) : "(unknown)";
 

@@ -1,13 +1,13 @@
 import {
   loadContent,
   makeCLIContent,
-} from "@ailly/core/dist/content/content.js";
-import { makePipelineSettings } from "@ailly/core/dist/index.js";
+} from "@ailly/core/lib/content/content.js";
+import { makePipelineSettings } from "@ailly/core/lib/index.js";
 import {
   FileSystem,
   RecordFileSystemAdapter,
-} from "@davidsouther/jiffies/lib/esm/fs";
-import { cleanState } from "@davidsouther/jiffies/lib/esm/scope/state.js";
+} from "@davidsouther/jiffies/lib/cjs/fs";
+import { cleanState } from "@davidsouther/jiffies/lib/cjs/scope/state.js";
 import { beforeEach, describe, expect, it } from "vitest";
 import * as cli from "./fs";
 
@@ -80,7 +80,7 @@ describe("makeCLIContent", () => {
       false
     );
 
-    expect(cliContent).toEqual({
+    expect(cliContent).toMatchObject({
       name: "stdout",
       outPath: "/dev/stdout",
       path: "/dev/stdout",
@@ -113,7 +113,7 @@ describe("makeCLIContent", () => {
       false
     );
 
-    expect(cliContent).toEqual({
+    expect(cliContent).toMatchObject({
       name: "stdout",
       outPath: "/dev/stdout",
       path: "/dev/stdout",
@@ -146,7 +146,7 @@ describe("makeCLIContent", () => {
       false
     );
 
-    expect(cliContent).toEqual({
+    expect(cliContent).toMatchObject({
       name: "stdout",
       outPath: "/dev/stdout",
       path: "/dev/stdout",
@@ -179,7 +179,7 @@ describe("makeCLIContent", () => {
       false
     );
 
-    expect(cliContent).toEqual({
+    expect(cliContent).toMatchObject({
       name: "stdout",
       outPath: "/dev/stdout",
       path: "/dev/stdout",

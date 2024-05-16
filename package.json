@@ -2,13 +2,11 @@
   "name": "@ailly/ailly",
   "scripts": {
     "webdev": "npm run link && npm run -w web dev",
-    "build-core": "npm run build -w core",
-    "build-cli": "npm run build -w cli",
-    "build": "npm run build-core && npm run build-cli",
-    "postbuild": "npm run link",
-    "link": "npm link -w cli ./core && npm link -w web ./core",
-    "preci": "npm run build",
-    "ci": "npm run ci -w core && npm run ci -w cli && ./integ/integ-noop.sh && npm run ci -w web",
+    "build": "npm run build -w core && npm run build -w cli && npm run build -w extension",
+    "prelink": "npm run build",
+    "link": "npm link -w cli ./core && npm link -w web ./core && npm link -w extension ./core",
+    "pretest": "npm run build",
+    "test": "npm run ci -w core && npm run ci -w cli && ./integ/integ-noop.sh && npm run ci -w web",
     "prepackage": "npm run build-core",
     "package": "npm run --workspace extension package"
   },

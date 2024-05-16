@@ -1,17 +1,23 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { range } from "@davidsouther/jiffies/lib/esm/range.js";
-import { PromptThread, generateOne, scheduler } from "./prompt_thread";
-import { LOGGER } from "../util";
-import { cleanState } from "@davidsouther/jiffies/lib/esm/scope/state";
-import { loadContent } from "../content/content";
 import {
   FileSystem,
   ObjectFileSystemAdapter,
-} from "@davidsouther/jiffies/lib/esm/fs";
+} from "@davidsouther/jiffies/lib/cjs/fs";
+import { LEVEL } from "@davidsouther/jiffies/lib/cjs/log";
+import { range } from "@davidsouther/jiffies/lib/cjs/range.js";
+import { cleanState } from "@davidsouther/jiffies/lib/cjs/scope/state";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { getPlugin, makePipelineSettings } from "..";
-import { getEngine } from "../engine";
-import { LEVEL } from "@davidsouther/jiffies/lib/esm/log";
-import { TIMEOUT } from "../engine/noop";
+import { loadContent } from "../content/content.js";
+import { getEngine } from "../engine/index.js";
+import { TIMEOUT } from "../engine/noop.js";
+import { LOGGER } from "../index.js";
+import { withResolvers } from "../util.js";
+import {
+  PromptThread,
+  drain,
+  generateOne,
+  scheduler,
+} from "./prompt_thread.js";
 
 describe("scheduler", () => {
   it("limits outstanding tasks", async () => {
@@ -19,7 +25,7 @@ describe("scheduler", () => {
       i,
       started: false,
       finished: false,
-      ...Promise.withResolvers<void>(),
+      ...withResolvers<void>(),
     }));
     const runners = tasks.map((task) => async () => {
       console.log(`starting ${task.i}`);
@@ -84,7 +90,7 @@ describe("generateOne", () => {
   });
 
   it("skips some", async () => {
-    generateOne(
+    await generateOne(
       state.context["/a.txt"],
       state.context,
       await makePipelineSettings({ root: "/", overwrite: false }),
@@ -93,7 +99,7 @@ describe("generateOne", () => {
     expect(state.logger.info).toHaveBeenCalledWith("Skipping /a.txt");
     state.logger.info.mockClear();
 
-    generateOne(
+    await generateOne(
       state.context["/b.txt"],
       state.context,
       await makePipelineSettings({ root: "/" }),
@@ -112,6 +118,7 @@ describe("generateOne", () => {
       await makePipelineSettings({ root: "/" }),
       state.engine
     );
+    await drain(content);
     expect(state.logger.info).toHaveBeenCalledWith("Preparing /c.txt");
     expect(state.logger.info).toHaveBeenCalledWith("Calling noop");
     expect(content.response).toMatch(/^noop response for c.txt:/);

@@ -1,27 +1,30 @@
-import { EngineGenerate } from "..";
-import type { Content } from "../../content/content.js";
-import * as openai from "../openai.js";
 import { spawn } from "node:child_process";
-import { normalize, join, dirname } from "node:path";
+import { dirname, join, normalize } from "node:path";
+import type { Content } from "../../content/content.js";
+import { type PipelineSettings } from "../../index.js";
+import { type EngineDebug, type EngineGenerate } from "../index.js";
+import * as openai from "../openai.js";
+import { withResolvers } from "../../util";
 
 const DEFAULT_MODEL = "mistralai/Mistral-7B-v0.1";
-interface MistralDebug {}
+interface MistralDebug extends EngineDebug {}
 
-export const generate: EngineGenerate<MistralDebug> = (c: Content, _) => {
+export const generate: EngineGenerate<MistralDebug> = (
+  c: Content,
+  _: PipelineSettings
+) => {
   const prompt = c.meta?.messages?.map(({ content }) => content).join("\n");
   if (!prompt) {
     throw new Error("No messages in Content");
   }
 
-  const __filename =
-    global.__filename ?? import.meta?.url.replace(/^file:/, "");
-  let cwd = dirname(__filename.replace("ailly/core/dist", "ailly/core/src"));
-  let command = join(cwd, normalize(".venv/bin/python3"));
-  let args = [join(cwd, "mistral.py"), prompt];
-  let child = spawn(command, args, { cwd });
+  const cwd = getMistralDirectory();
+  const command = join(cwd, normalize(".venv/bin/python3"));
+  const args = [join(cwd, "mistral.py"), prompt];
+  const child = spawn(command, args, { cwd });
 
   const stream = new TransformStream();
-  const done = Promise.withResolvers<void>();
+  const done = withResolvers<void>();
 
   let message = "";
   child.on("message", async (m) => {
@@ -69,4 +72,19 @@ export async function tune(
   }: { model: string; apiKey: string; baseURL: string }
 ) {
   return openai.tune(content, context, { model, apiKey, baseURL });
+}
+
+function getMistralDirectory() {
+  if (process.env["AILLY_MISTRAL_ROOT"]) {
+    return process.env["AILLY_MISTRAL_ROOT"];
+  }
+  let filename;
+  try {
+    filename = __filename;
+  } catch (e) {}
+  if (!filename) {
+    throw new Error("Could not determine Mistral root");
+  }
+
+  return dirname(filename.replace("ailly/core/dist", "ailly/core/src"));
 }

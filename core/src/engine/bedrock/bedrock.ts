@@ -3,13 +3,13 @@ import {
   InvokeModelCommand,
   InvokeModelWithResponseStreamCommand,
 } from "@aws-sdk/client-bedrock-runtime";
-import { Content, View } from "../../content/content.js";
-import { LOGGER as ROOT_LOGGER } from "../../util.js";
-import { EngineGenerate, Summary } from "../index.js";
-import { Models, PromptBuilder } from "./prompt-builder.js";
-import { getLogger } from "@davidsouther/jiffies/lib/esm/log.js";
 import { fromNodeProviderChain } from "@aws-sdk/credential-providers";
+import { getLogger } from "@davidsouther/jiffies/lib/cjs/log.js";
+import { Content, View } from "../../content/content.js";
+import { LOGGER as ROOT_LOGGER } from "../../index.js";
+import type { EngineGenerate, Summary } from "../index.js";
 import { addContentMessages } from "../messages.js";
+import { PromptBuilder, type Models } from "./prompt-builder.js";
 
 export const name = "bedrock";
 export const DEFAULT_MODEL = "anthropic.claude-3-sonnet-20240229-v1:0";

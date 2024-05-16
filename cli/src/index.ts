@@ -1,14 +1,14 @@
 #! /usr/bin/env node
-import { GenerateManager } from "@ailly/core/dist/actions/generate_manager.js";
+import { GenerateManager } from "@ailly/core/lib/actions/generate_manager.js";
 import {
-  AillyEdit,
-  Content,
   isAillyEditReplace,
   writeContent,
-} from "@ailly/core/dist/content/content.js";
-import { GitignoreFs } from "@ailly/core/dist/content/gitignore_fs.js";
-import { FileSystem } from "@davidsouther/jiffies/lib/esm/fs.js";
-import { NodeFileSystemAdapter } from "@davidsouther/jiffies/lib/esm/fs_node.js";
+  type AillyEdit,
+  type Content,
+} from "@ailly/core/lib/content/content.js";
+import { GitignoreFs } from "@ailly/core/lib/content/gitignore_fs.js";
+import { FileSystem } from "@davidsouther/jiffies/lib/cjs/fs.js";
+import { NodeFileSystemAdapter } from "@davidsouther/jiffies/lib/cjs/fs_node.js";
 import { createInterface } from "node:readline";
 import { Args, help, makeArgs } from "./args.js";
 import { LOGGER, loadFs } from "./fs.js";
@@ -65,10 +65,8 @@ export async function main() {
         const prompt = loaded.context[last];
         if (args.values.stream) {
           // Lazy spin until the request starts
-          while (prompt.responseStream == undefined) {
-            await Promise.resolve();
-          }
-          for await (const word of prompt.responseStream as unknown as AsyncIterable<string>) {
+          const stream = await prompt.responseStream.promise;
+          for await (const word of stream) {
             process.stdout.write(word);
           }
           await finish(generator);

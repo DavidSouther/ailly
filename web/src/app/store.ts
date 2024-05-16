@@ -2,6 +2,7 @@
 import { Dispatch, MutableRefObject, useMemo, useReducer, useRef } from "react";
 import type { Content } from "@ailly/core/src/content/content";
 import { generateOne } from "./ailly";
+import { withResolvers } from "@ailly/core/src/util";
 
 export interface AillyPageState {
   story: StoryBook[];
@@ -61,6 +62,7 @@ export function makeAillyStore(dispatch: MutableRefObject<AillyStoreDispatch>) {
     context: {
       view: false,
     },
+    responseStream: withResolvers(),
   };
 
   const reducers = {
@@ -124,6 +126,7 @@ export function makeAillyStore(dispatch: MutableRefObject<AillyStoreDispatch>) {
             .map((content) => ({ content, view: {} })),
           view: false,
         },
+        responseStream: withResolvers(),
       };
       generating = true;
       this.update();
