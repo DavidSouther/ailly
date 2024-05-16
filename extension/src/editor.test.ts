@@ -1,10 +1,8 @@
 import * as assert from "assert";
 import { afterEach } from "mocha";
-import { mock } from "node:test";
 import { resolve } from "path";
 import * as vscode from "vscode";
-import { generate } from "./generate.js";
-import { SETTINGS } from "./settings.js";
+import { deleteEdit, insert, updateSelection } from "./editor.js";
 const { assertExists } = require("@davidsouther/jiffies/lib/cjs/assert.js");
 
 async function activate(docUri: vscode.Uri) {
@@ -15,44 +13,40 @@ async function activate(docUri: vscode.Uri) {
   return { doc, editor };
 }
 
-process.env["AILLY_ENGINE"] = "noop";
-process.env["AILLY_NOOP_RESPONSE"] = "Edited\n";
-process.env["AILLY_NOOP_TIMEOUT"] = "0";
-process.env["AILLY_NOOP_STREAM"] = "";
-
-suite("Ailly Extension Generate", () => {
+suite("Ailly Editor", () => {
   afterEach(() =>
     vscode.commands.executeCommand("workbench.action.closeActiveEditor")
   );
 
-  test("generate edit", async () => {
+  test("delete edit", async () => {
     const path = resolve(__dirname, "..", "testing", "edit.txt");
     const docUri = vscode.Uri.file(path);
     await activate(docUri);
-    mock.method(SETTINGS, "getAillyEngine", () => "noop");
-    mock.method(SETTINGS, "getPreferStreamingEdit", () => false);
 
-    await generate(path, { prompt: "Replace with Edited", start: 1, end: 3 });
+    await deleteEdit({ file: "/ailly/dev", start: 1, end: 3 });
 
     const activeWindow = assertExists(vscode.window.activeTextEditor);
-    assert.equal(activeWindow.document.getText(), "Line 1\nEdited\nLine 4");
+    assert.equal(activeWindow.document.getText(), "Line 1\nLine 4");
   });
 
-  test("generate edit streaming", async () => {
+  test("insert", async () => {
     const path = resolve(__dirname, "..", "testing", "edit.txt");
     const docUri = vscode.Uri.file(path);
     await activate(docUri);
-    process.env["AILLY_NOOP_RESPONSE"] = "This text\nwas edited\n";
-    process.env["AILLY_NOOP_STREAM"] = "yes";
-    mock.method(SETTINGS, "getAillyEngine", () => "noop");
-    mock.method(SETTINGS, "getPreferStreamingEdit", () => true);
 
-    await generate(path, { prompt: "Replace with Edited", start: 1, end: 3 });
+    await insert({ file: "/ailly/dev", start: 1, end: 2 }, "", "Line B\n");
 
     const activeWindow = assertExists(vscode.window.activeTextEditor);
     assert.equal(
       activeWindow.document.getText(),
-      "Line 1\nThis text\nwas edited\nLine 4"
+      "Line 1\nLine B\nLine 2\nLine 3\nLine 4"
+    );
+
+    await insert({ file: "/ailly/dev", after: 2 }, "Line ", "DEF ");
+
+    assert.equal(
+      activeWindow.document.getText(),
+      "Line 1\nLine B\nLine 2\nLine DEF 3\nLine 4"
     );
   });
 });

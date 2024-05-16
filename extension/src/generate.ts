@@ -1,27 +1,36 @@
-import vscode from "vscode";
-
-import { GenerateManager } from "@ailly/core/lib/actions/generate_manager.js";
+import * as vscode from "vscode";
 import {
-  AillyEdit,
   loadContent,
   writeContent,
+  type AillyEdit,
+  type Content,
 } from "@ailly/core/lib/content/content.js";
-import { makePipelineSettings } from "@ailly/core/lib/index.js";
-import { withResolvers } from "@ailly/core/lib/util.js";
+import {
+  makePipelineSettings,
+  type PipelineSettings,
+} from "@ailly/core/lib/index.js";
+import { GenerateManager } from "@ailly/core/lib/actions/generate_manager.js";
 import { FileSystem } from "@davidsouther/jiffies/lib/cjs/fs.js";
-import { dirname } from "node:path";
 import { VSCodeFileSystemAdapter } from "./fs.js";
 import { LOGGER, SETTINGS, resetLogger } from "./settings.js";
+import { dirname } from "node:path";
+import { deleteEdit, insert, updateSelection } from "./editor.js";
+import { withResolvers } from "@ailly/core/lib/util";
 
-export async function generate(
-  path: string,
-  edit?: { prompt: string; start: number; end: number }
-) {
+export interface ExtensionEdit {
+  prompt: string;
+  start: number;
+  end: number;
+}
+
+export async function generate(path: string, extensionEdit?: ExtensionEdit) {
   resetLogger();
   LOGGER.info(`Generating for ${path}`);
 
+  // Prepare configuration
   const fs = new FileSystem(new VSCodeFileSystemAdapter());
-  const root = dirname(path);
+  const stat = await fs.stat(path);
+  const root = stat.isFile() ? dirname(path) : path;
   fs.cd(root);
 
   const engine = await SETTINGS.getAillyEngine();
@@ -39,17 +48,114 @@ export async function generate(
   });
 
   // Load content
-  const context = await loadContent(fs, [], {}, 1);
-  const content = Object.values(context).filter((c) => c.path.startsWith(path));
+  const [content, context] = await loadContentParts(
+    fs,
+    path,
+    extensionEdit,
+    settings
+  );
+
   if (content.length === 0) {
     return;
   }
-  if (edit) {
+
+  // Generate
+  let generator = await GenerateManager.from(
+    content.map((c) => c.path),
+    context,
+    settings
+  );
+  generator.start();
+
+  const doEdit = extensionEdit && content[0].context.edit;
+  const doStreaming = doEdit && SETTINGS.getPreferStreamingEdit();
+
+  if (doStreaming) {
+    await executeStreaming(content, content[0].context.edit!);
+  }
+
+  const editor = vscode.window.activeTextEditor;
+  await generator.allSettled();
+  if (content[0].meta?.debug?.finish! === "failed") {
+    throw new Error(
+      content[0].meta?.debug?.error?.message ?? "unknown failure"
+    );
+  }
+
+  // Write
+  if (!doStreaming) {
+    if (doEdit && editor === vscode.window.activeTextEditor) {
+      await executeEdit(content, content[0].context.edit!);
+    } else {
+      writeContent(fs as any, content);
+    }
+  }
+}
+
+async function executeEdit(
+  content: Content[],
+  edit: AillyEdit // { prompt: string; start: number; end: number }
+) {
+  const replace = content[0].response ?? "";
+  await deleteEdit(edit);
+  await insert(edit, "", replace);
+  updateSelection(edit, replace);
+}
+
+async function executeStreaming(content: Content[], edit: AillyEdit) {
+  const editor = vscode.window.activeTextEditor;
+  if (!editor) {
+    return;
+  }
+  editor.selections = [];
+  // Lazy spin until the request starts
+  const stream = await content[0].responseStream.promise;
+  let replace = "";
+  let first = true;
+  for await (let token of stream) {
+    if (vscode.window.activeTextEditor !== editor) {
+      LOGGER.debug(
+        `Active window changed during streaming, stopping future updates.`
+      );
+      return;
+    }
+    if (typeof token !== "string") {
+      token = new TextDecoder().decode(token);
+    }
+    if (first) {
+      token = token.trimStart();
+      await deleteEdit(edit);
+      first = false;
+    }
+    await insert(edit, replace, token);
+    replace += token;
+  }
+  updateSelection(edit, replace);
+}
+
+async function loadContentParts(
+  fs: FileSystem,
+  path: string,
+  extensionEdit: ExtensionEdit | undefined,
+  settings: PipelineSettings
+): Promise<[Content[], Record<string, Content>]> {
+  const context = await loadContent(fs, [], settings, 1);
+  const content: Content[] = Object.values(context).filter((c) =>
+    c.path.startsWith(path)
+  );
+  if (content.length === 0) {
+    return [[], {}];
+  }
+  if (extensionEdit) {
     const editContext: AillyEdit =
-      edit.start === edit.end
-        ? { file: content[0].path, after: edit.start + 1 }
-        : { file: content[0].path, start: edit.start + 1, end: edit.end + 2 };
-    content[0] = {
+      extensionEdit.start === extensionEdit.end
+        ? { file: content[0].path, after: extensionEdit.start + 1 }
+        : {
+            file: content[0].path,
+            start: extensionEdit.start,
+            end: extensionEdit.end,
+          };
+    content.splice(0, content.length, {
       context: {
         view: {},
         folder: [content[0].path],
@@ -61,40 +167,20 @@ export async function generate(
       path: "/dev/ailly",
       name: "ailly",
       outPath: "/dev/ailly",
-      prompt: edit.prompt,
+      prompt: extensionEdit.prompt,
       responseStream: withResolvers(),
-    };
+    });
     context[content[0].path] = content[0];
     LOGGER.info(`Editing ${content.length} files`);
   } else {
     LOGGER.info(`Generating ${content.length} files`);
   }
 
-  // Generate
-  let generator = await GenerateManager.from(
-    content.map((c) => c.path),
-    context,
-    settings
-  );
-  generator.start();
-  await generator.allSettled();
-
-  if (content[0].meta?.debug?.finish! === "failed") {
-    throw new Error(content[0].meta?.debug?.error?.message ?? "unknown");
-  }
-
-  // Write
-  if (edit && content[0].context.edit) {
-    await vscode.window.activeTextEditor?.edit((builder) => {
-      builder.replace(
-        new vscode.Range(
-          new vscode.Position(edit.start, 0),
-          new vscode.Position(edit.end, 0)
-        ),
-        (content[0].response ?? "") + "\n"
-      );
-    });
-  } else {
-    writeContent(fs as any, content);
-  }
+  return [content, context];
 }
+
+export const TEST_ONLY = {
+  loadContentParts,
+  executeEdit,
+  executeStreaming,
+};
