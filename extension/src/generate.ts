@@ -1,6 +1,7 @@
 import * as vscode from "vscode";
 import {
   loadContent,
+  makeCLIContent,
   writeContent,
   type AillyEdit,
   type Content,
@@ -15,7 +16,7 @@ import { VSCodeFileSystemAdapter } from "./fs.js";
 import { LOGGER, SETTINGS, resetLogger } from "./settings.js";
 import { dirname } from "node:path";
 import { deleteEdit, insert, updateSelection } from "./editor.js";
-import { withResolvers } from "@ailly/core/lib/util";
+import type { StatusManager } from "./status_manager";
 
 export interface ExtensionEdit {
   prompt: string;
@@ -23,7 +24,13 @@ export interface ExtensionEdit {
   end: number;
 }
 
-export async function generate(path: string, extensionEdit?: ExtensionEdit) {
+export async function generate(
+  path: string,
+  {
+    extensionEdit,
+    manager,
+  }: { extensionEdit?: ExtensionEdit; manager: StatusManager }
+) {
   resetLogger();
   LOGGER.info(`Generating for ${path}`);
 
@@ -65,30 +72,23 @@ export async function generate(path: string, extensionEdit?: ExtensionEdit) {
     context,
     settings
   );
+  manager.track(generator);
   generator.start();
 
   const doEdit = extensionEdit && content[0].context.edit;
-  const doStreaming = doEdit && SETTINGS.getPreferStreamingEdit();
 
-  if (doStreaming) {
+  if (doEdit) {
     await executeStreaming(content, content[0].context.edit!);
   }
 
-  const editor = vscode.window.activeTextEditor;
   await generator.allSettled();
   if (content[0].meta?.debug?.finish! === "failed") {
-    throw new Error(
-      content[0].meta?.debug?.error?.message ?? "unknown failure"
-    );
+    throw new Error(generator.formatError(content[0]));
   }
 
   // Write
-  if (!doStreaming) {
-    if (doEdit && editor === vscode.window.activeTextEditor) {
-      await executeEdit(content, content[0].context.edit!);
-    } else {
-      writeContent(fs as any, content);
-    }
+  if (!doEdit) {
+    writeContent(fs as any, content);
   }
 }
 
@@ -155,21 +155,18 @@ async function loadContentParts(
             start: extensionEdit.start,
             end: extensionEdit.end,
           };
-    content.splice(0, content.length, {
-      context: {
-        view: {},
-        folder: [content[0].path],
+    content.splice(
+      -1,
+      1,
+      makeCLIContent({
+        prompt: extensionEdit.prompt,
+        argContext: "folder",
+        context,
+        root: dirname(content[0].path),
         edit: editContext,
-      },
-      meta: {
-        text: content[0].meta?.text,
-      },
-      path: "/dev/ailly",
-      name: "ailly",
-      outPath: "/dev/ailly",
-      prompt: extensionEdit.prompt,
-      responseStream: withResolvers(),
-    });
+        isolated: true,
+      })
+    );
     context[content[0].path] = content[0];
     LOGGER.info(`Editing ${content.length} files`);
   } else {

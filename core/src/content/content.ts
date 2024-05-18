@@ -380,7 +380,7 @@ async function writeSingleContent(fs: FileSystem, content: Content) {
   }
   // TODO: Ensure `engine` and `model` are in `debug`
   const meta: ContentMeta = {
-    debug,
+    // debug,
     isolated,
     combined,
   };
@@ -432,16 +432,25 @@ async function mkdirp(fs: FileSystem, dir: string) {
  * Create a "synthetic" Content block with path "/dev/stdout" to serve as the Content root
  * for this Ailly call to the LLM.
  */
-export function makeCLIContent(
-  prompt: string,
-  argContext: "none" | "folder" | "conversation",
-  argSystem: string,
-  context: Record<string, Content>,
-  root: string,
-  edit: AillyEdit | undefined,
-  view: View,
-  isolated: boolean
-): Content {
+export function makeCLIContent({
+  prompt,
+  argContext = "conversation",
+  argSystem = "",
+  context,
+  root,
+  edit,
+  view = {},
+  isolated = true,
+}: {
+  prompt: string;
+  argContext: "none" | "folder" | "conversation";
+  argSystem?: string;
+  context: Record<string, Content>;
+  root?: string;
+  edit?: AillyEdit | undefined;
+  view?: View;
+  isolated?: boolean;
+}): Content {
   const inFolder = Object.keys(context).filter((c) => dirname(c) == root);
   // When argContext is folder, `folder` is all files in context in root.
   const folder =
@@ -499,7 +508,7 @@ export function makeCLIContent(
         edit: { selection },
       },
     };
-    cliContent.prompt = "{{{output.edit}}}";
+    cliContent.prompt = "{{{ output.edit }}}";
   }
   return cliContent;
 }

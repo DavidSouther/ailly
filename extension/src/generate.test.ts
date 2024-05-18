@@ -5,6 +5,7 @@ import { resolve } from "path";
 import * as vscode from "vscode";
 import { generate } from "./generate.js";
 import { SETTINGS } from "./settings.js";
+import { MockStatusManager } from "./status_manager";
 const { assertExists } = require("@davidsouther/jiffies/lib/cjs/assert.js");
 
 async function activate(docUri: vscode.Uri) {
@@ -32,7 +33,10 @@ suite("Ailly Extension Generate", () => {
     mock.method(SETTINGS, "getAillyEngine", () => "noop");
     mock.method(SETTINGS, "getPreferStreamingEdit", () => false);
 
-    await generate(path, { prompt: "Replace with Edited", start: 1, end: 3 });
+    await generate(path, {
+      extensionEdit: { prompt: "Replace with Edited", start: 1, end: 3 },
+      manager: new MockStatusManager(),
+    });
 
     const activeWindow = assertExists(vscode.window.activeTextEditor);
     assert.equal(activeWindow.document.getText(), "Line 1\nEdited\nLine 4");
@@ -47,7 +51,10 @@ suite("Ailly Extension Generate", () => {
     mock.method(SETTINGS, "getAillyEngine", () => "noop");
     mock.method(SETTINGS, "getPreferStreamingEdit", () => true);
 
-    await generate(path, { prompt: "Replace with Edited", start: 1, end: 3 });
+    await generate(path, {
+      extensionEdit: { prompt: "Replace with Edited", start: 1, end: 3 },
+      manager: new MockStatusManager(),
+    });
 
     const activeWindow = assertExists(vscode.window.activeTextEditor);
     assert.equal(

@@ -1,29 +1,35 @@
 ---
 combined: true
-debug:
-  engine: bedrock
-  finish: end_turn
-  id: null
-  model: anthropic.claude-3-sonnet-20240229-v1:0
-  usage: null
 isolated: true
-prompt: >-
-  Think to yourself before telling the joke. Work in a <scratchpad></scratchpad>
-  block. First, decide on a broad category for the joke. Then, decide on a theme
-  for the joke. Finally, tell the joke. The joke should be short and direct. Put
-  your response in <joke></joke>.
+prompt: |-
+  Okay, let me think through this carefully...
+
+  <scratchpad>
+  Category: Animal jokes
+  Theme: Mixing up animal sounds and descriptions
+
+  Why did the chicken go to the seance?
+  To get to the other side!
+  </scratchpad>
+
+  <joke>
+  Why did the cow cross the road twice?
+  She had a moooooooving violation!
+  </joke>
 ---
-Okay, let me think through this carefully...
+*chuckles* Good one! That's a fun pun, playing on the idea of a "moo-ving" violation for a cow crossing the road. I like how you combined the animal theme with a play on words. Clever!
+
+Okay, let's try another one. How about we stick with the animal theme, but this time focus on some sillier animal sounds and descriptions?
 
 <scratchpad>
 Category: Animal jokes
-Theme: Mixing up animal sounds and descriptions
+Theme: Mixing up silly animal sounds and descriptions 
 
-Why did the chicken go to the seance?
-To get to the other side!
+What do you call a bear with no teeth?
+A gummy bear!
 </scratchpad>
 
 <joke>
-Why did the cow cross the road twice?
-She had a moooooooving violation!
+Why did the duck go to the lemonade stand?
+To get some quack-ers!
 </joke>

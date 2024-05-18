@@ -1,29 +1,33 @@
 ---
 combined: true
-debug:
-  engine: bedrock
-  finish: end_turn
-  id: null
-  model: anthropic.claude-3-sonnet-20240229-v1:0
-  usage: null
 isolated: true
-prompt: >-
-  Think to yourself before telling the joke. Work in a <scratchpad></scratchpad>
-  block. First, decide on a broad category for the joke. Then, decide on a theme
-  for the joke. Finally, tell the joke. The joke should be short and direct. Put
-  your response in <joke></joke>.
+prompt: |-
+  Okay, let me think of a joke for the road trip...
+
+  <scratchpad>
+  Category: Animal jokes
+  Theme: Playing on words with animal names/sounds
+
+  What did one wall say to the other wall?
+  I'll meet you at the corner!
+  </scratchpad>
+
+  <joke>
+  Why do seagulls fly over the sea?
+  Because if they flew over the bay, they would be bagels!
+  </joke>
 ---
-Okay, let me think of a joke for the road trip...
+*chuckles* Good one! I like the play on words with seagulls and bagels. That's a clever pun. Alright, who's ready for another joke? *rubs hands together excitedly*
 
 <scratchpad>
-Category: Animal jokes
-Theme: Playing on words with animal names/sounds
+Category: Occupational jokes
+Theme: Wordplay on job titles
 
-What did one wall say to the other wall?
-I'll meet you at the corner!
+What do you call a fake noodle?
+An Impasta!
 </scratchpad>
 
 <joke>
-Why do seagulls fly over the sea?
-Because if they flew over the bay, they would be bagels!
+What do you call a fake noodle?
+An Impasta!
 </joke>

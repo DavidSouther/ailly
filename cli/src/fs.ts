@@ -114,16 +114,16 @@ export async function loadFs(
       content = [];
     }
     const prompt = await readPrompt(args);
-    const cliContent = makeCLIContent(
+    const cliContent = makeCLIContent({
       prompt,
-      settings.context,
-      system,
+      argContext: settings.context,
+      argSystem: system,
       context,
       root,
       edit,
-      settings.templateView,
-      settings.isolated
-    );
+      view: settings.templateView,
+      isolated: settings.isolated,
+    });
     context[cliContent.path] = cliContent;
     content.push(cliContent.path);
   }

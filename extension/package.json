@@ -90,7 +90,7 @@
     "vscode:prepublish": "npm run esbuild -- --minify",
     "esbuild": "esbuild ./lib/extension.js --bundle --outfile=out/extension.js --external:vscode --format=cjs --platform=node",
     "preesbuild": "npm run compile",
-    "esbuild-watch": "npm run esbuild-base -- --sourcemap --watch",
+    "esbuild-watch": "npm run esbuild -- --sourcemap --watch",
     "compile": "tsc -p ./",
     "build": "npm run esbuild",
     "watch": "tsc -watch -p ./",

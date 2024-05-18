@@ -30,7 +30,6 @@ function aillyLogFormatter<
   delete debug.message;
   delete debug.prefix;
   delete debug.level;
-  delete debug.source;
   if (Object.keys(debug).length > 0) {
     base += " " + JSON.stringify(debug);
   }

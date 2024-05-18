@@ -4,6 +4,7 @@ import * as vscode from "vscode";
 import { basename } from "path";
 import { generate } from "./generate.js";
 import { LOGGER, resetLogger } from "./settings.js";
+import { StatusBarStatusManager } from "./status_manager.js";
 
 // This method is called when your extension is activated
 // Your extension is activated the very first time the command is executed
@@ -12,6 +13,8 @@ export function activate(context: vscode.ExtensionContext) {
   // Use the console to output diagnostic information (console.log) and errors (console.error)
   // This line of code will only be executed once when your extension is activated
   LOGGER.info('Congratulations, your extension "ailly" is now active!');
+
+  const statusManager = StatusBarStatusManager.withContext(context);
 
   // The command has been defined in the package.json file
   // Now provide the implementation of the command with registerCommand
@@ -35,7 +38,7 @@ export function activate(context: vscode.ExtensionContext) {
             vscode.window.showInformationMessage(
               `Ailly generating ${basename(path)}`
             );
-            await generate(path);
+            await generate(path, { manager: statusManager });
             vscode.window.showInformationMessage(
               `Ailly generated ${basename(path)}`
             );
@@ -87,7 +90,10 @@ export function activate(context: vscode.ExtensionContext) {
             vscode.window.showInformationMessage(
               `Ailly generating ${basename(path)}`
             );
-            await generate(path, { prompt, start, end });
+            await generate(path, {
+              extensionEdit: { prompt, start, end },
+              manager: statusManager,
+            });
             vscode.window.showInformationMessage(
               `Ailly edited ${basename(path)}`
             );
