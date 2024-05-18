@@ -63,10 +63,10 @@ export const generate: EngineGenerate<OpenAIDebug> = (
           "Failed to get completions and call with rate limit did not itself error"
         );
       }
-      LOGGER.info(`Begin streaming response from Bedrock for ${c.name}`);
+      LOGGER.info(`Begin streaming response from OpenAI for ${c.name}`);
 
       for await (const block of completions) {
-        LOGGER.debug(`Received chunk ${chunkNum++} from Bedrock for ${c.name}`);
+        LOGGER.debug(`Received chunk ${chunkNum++} from OpenAI for ${c.name}`);
         const writer = stream.writable.getWriter();
         await writer.ready;
         const chunk = block.choices[0]?.delta.content;
@@ -76,6 +76,8 @@ export const generate: EngineGenerate<OpenAIDebug> = (
       }
 
       await stream.writable.getWriter().close();
+
+      LOGGER.info(`Finished streaming response from OpenAI for ${c.name}`);
     });
 
     LOGGER.debug(`Response from OpenAI for ${c.name}`, {

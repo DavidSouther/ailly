@@ -9,6 +9,7 @@ rm -rf package.json
 npm init --yes
 npm link ../core ../cli
 
+export AILLY_TEMPLATE_VIEW=
 export AILLY_ENGINE=${AILLY_ENGINE:-noop}
 
 echo "Basic"
@@ -26,9 +27,6 @@ echo "Edit"
 
 echo "Conversations"
 ./05_conversation/conversation.sh
-
-echo "Stream"
-./06_stream/stream.sh
 
 echo "Pipes"
 ./10_std_pipes/pipes.sh

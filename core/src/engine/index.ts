@@ -30,6 +30,7 @@ export interface Engine {
   vector(s: string, parameters: ContentMeta): Promise<number[]>;
   view?(): Promise<View>;
   models?(): string[];
+  formatError?(content: Content): string | undefined;
 }
 
 export interface Message {

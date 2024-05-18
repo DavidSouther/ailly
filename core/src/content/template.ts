@@ -4,6 +4,8 @@ import { META_PROMPT } from "./template_anthropic_metaprompt.js";
 import { GRUG_PROMPT } from "./template_grug_prompt.js";
 import { EDIT } from "./edit_template.js";
 import { LOGGER } from "../index.js";
+import * as YAML from "yaml";
+import type { FileSystem } from "@davidsouther/jiffies/lib/cjs/fs";
 
 if (!global.structuredClone) {
   // TODO: Drop node 16 support
@@ -63,3 +65,27 @@ export const GLOBAL_VIEW: View = {
     meta: META_PROMPT,
   },
 };
+/**
+ * Read, parse, and validate a template view.
+ */
+
+export async function loadTemplateView(
+  fs: FileSystem,
+  ...paths: string[]
+): Promise<View> {
+  if (!paths) return {};
+  let view = /* @type View */ {};
+  for (const path of paths) {
+    try {
+      LOGGER.debug(`Reading template-view at ${path}`);
+      const file = await fs.readFile(path);
+      const parsed = YAML.parse(file);
+      if (parsed && typeof parsed == "object") {
+        view = { ...view, ...parsed };
+      }
+    } catch (err) {
+      LOGGER.warn(`Failed to load template-view at ${path}`, { err });
+    }
+  }
+  return view;
+}

@@ -1,4 +1,4 @@
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 
 import {
   FileSystem,
@@ -12,6 +12,8 @@ import {
   writeContent,
 } from "./content.js";
 import { GitignoreFs } from "./gitignore_fs.js";
+import { LOGGER } from "..";
+import { withResolved, withResolvers } from "../util";
 
 test("it loads content", async () => {
   const testFs = new FileSystem(
@@ -187,6 +189,7 @@ test("it writes combined prompt and responses", async () => {
         view: {},
       },
       meta: { isolated: true, combined: true, root: "/", parent: "root" },
+      responseStream: withResolvers(),
     },
   ];
 
@@ -316,7 +319,7 @@ test("it writes separate prompt and responses", async () => {
     })
   );
 
-  const content = [
+  const content: Content = [
     {
       name: "content.md",
       path: "/content.md",
@@ -328,6 +331,7 @@ test("it writes separate prompt and responses", async () => {
         view: {},
       },
       meta: { isolated: true, combined: false },
+      responseStream: withResolved("Response"),
     },
   ];
 
@@ -817,4 +821,24 @@ test("it loads template-view in .aillyrc", async () => {
   expect(content["/root/content.md"].context.system?.[0].view).toEqual({
     view: "foo",
   });
+});
+
+test("reports errors when it cannot find a prompt", async () => {
+  const fs = new FileSystem(
+    new ObjectFileSystemAdapter({
+      root: {
+        "content.md":
+          "---\ncombined: true\nprompt:\nnot indented so no prompt\n---\n",
+      },
+    })
+  );
+
+  const warn = vi.spyOn(LOGGER, "warn");
+
+  const context = await loadContent(fs, [], {});
+  expect(Object.keys(context)).toEqual([]);
+  expect(warn).toHaveBeenCalledWith(
+    "Error reading prompt and parsing for matter in /root/content.md",
+    { err: expect.anything() }
+  );
 });

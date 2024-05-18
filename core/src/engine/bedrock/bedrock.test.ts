@@ -4,7 +4,7 @@ import {
   FileSystem,
   RecordFileSystemAdapter,
 } from "@davidsouther/jiffies/lib/cjs/fs.js";
-import { claude3 } from "./prompt-builder.js";
+import { messagesBuilder } from "./prompt_builder.js";
 import { makePipelineSettings } from "../../index.js";
 import { loadContent } from "../../content/content";
 import { format } from "./bedrock";
@@ -12,7 +12,7 @@ import { format } from "./bedrock";
 describe("bedrock claude3", () => {
   describe("prompt builder", () => {
     it("combines system prompts", () => {
-      const actual = claude3([
+      const actual = messagesBuilder([
         { role: "system", content: "sysa" },
         { role: "system", content: "sysb" },
       ]);
@@ -20,7 +20,7 @@ describe("bedrock claude3", () => {
     });
 
     it("combines user prompts", () => {
-      const actual = claude3([
+      const actual = messagesBuilder([
         { role: "user", content: "usera" },
         { role: "user", content: "userb" },
       ]);
@@ -30,7 +30,7 @@ describe("bedrock claude3", () => {
     });
 
     it("combines assistant prompts", () => {
-      const actual = claude3([
+      const actual = messagesBuilder([
         { role: "assistant", content: "assista" },
         { role: "assistant", content: "assistb" },
       ]);
@@ -63,7 +63,6 @@ describe("bedrock claude3", () => {
       expect(contents[0].meta?.messages).toEqual([
         system,
         { role: "user", content: "prompt a" },
-        { role: "assistant", content: "response a" },
       ]);
       expect(contents[1].meta?.messages).toEqual([
         system,

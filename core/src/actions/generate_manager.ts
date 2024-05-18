@@ -83,6 +83,15 @@ export class GenerateManager {
     this.threads.forEach((thread) => thread.forEach(drain));
   }
 
+  formatError(content: Content): string | undefined {
+    const error = this.engine.formatError?.(content);
+    if (error !== undefined) {
+      return error;
+    }
+
+    return content.meta?.debug?.error!.message;
+  }
+
   async allSettled(): Promise<PromiseSettledResult<Content>[]> {
     const runners = this.threadRunners.map((r) => r.allSettled());
     const runnersPromises = Promise.all(runners);
@@ -95,5 +104,18 @@ export class GenerateManager {
 
   async updateDatabase(): Promise<void> {
     await this.rag.update(this.threads.flat());
+  }
+
+  errors() {
+    return this.threads
+      .map((thread) =>
+        thread
+          .filter((content) => content.meta?.debug?.finish == "failed")
+          .map((content) => ({
+            content,
+            errorMessage: this.formatError(content) ?? "Unknown Failure",
+          }))
+      )
+      .flat();
   }
 }

@@ -1,10 +1,10 @@
 import {
   AillyEdit,
   Content,
-  View,
   loadContent,
   makeCLIContent,
 } from "@ailly/core/lib/content/content.js";
+import { loadTemplateView } from "@ailly/core/lib/content/template.js";
 import {
   PipelineSettings,
   LOGGER as ROOT_LOGGER,
@@ -13,13 +13,13 @@ import {
 import { assertExists } from "@davidsouther/jiffies/lib/cjs/assert.js";
 import { FileSystem } from "@davidsouther/jiffies/lib/cjs/fs.js";
 import {
+  LEVEL,
   basicLogFormatter,
   getLogLevel,
   getLogger,
 } from "@davidsouther/jiffies/lib/cjs/log.js";
 import { Console } from "node:console";
 import { join, resolve } from "node:path";
-import { parse } from "yaml";
 import { Args } from "./args.js";
 
 export const LOGGER = getLogger("@ailly/cli");
@@ -34,38 +34,54 @@ export async function loadFs(
   const root = resolve(args.values.root ?? ".");
   fs.cd(root);
 
+  const positionals = args.positionals.map((a) => resolve(join(root, a)));
+  const hasPositionals = positionals.length > 0;
+  const hasPrompt = (args.values.prompt ?? "") !== "";
+  const isPipe = !hasPositionals && hasPrompt;
+  const logLevel =
+    args.values["log-level"] ??
+    (args.values.verbose ? "verbose" : isPipe ? "silent" : "info");
+  ROOT_LOGGER.console = LOGGER.console = isPipe
+    ? new Console(process.stderr, process.stderr)
+    : global.console;
+  ROOT_LOGGER.level = LOGGER.level = getLogLevel(
+    logLevel === "trace" ? "0.5" : logLevel
+  );
+  const logFormat = args.values["log-format"];
+  const formatter =
+    logFormat === "json" ||
+    ROOT_LOGGER.level < LEVEL.DEBUG ||
+    args.values.verbose
+      ? JSON.stringify
+      : basicLogFormatter;
+  ROOT_LOGGER.format = LOGGER.format = formatter;
+
+  const argContext =
+    args.values.context ?? (args.values.edit ? "folder" : undefined);
+
+  const out = resolve(args.values.out ?? root);
+
+  const templateView = await loadTemplateView(
+    fs,
+    ...(args.values["template-view"] ?? [])
+  );
+  const isExpensiveModel = args.values.model?.includes("opus") ?? false;
+  const requestLimit =
+    args.values["request-limit"] ?? isExpensiveModel ? 1 : undefined;
+
   const settings = await makePipelineSettings({
     root,
-    out: resolve(args.values.out ?? root),
-    context: args.values.context ?? (args.values.edit ? "folder" : undefined),
+    out,
+    context: argContext,
     isolated: args.values.isolated,
     combined: args.values.combined,
     engine: args.values.engine,
     model: args.values.model,
     plugin: args.values.plugin,
-    templateView: await loadTemplateView(fs, args.values["template-view"]),
+    templateView,
     overwrite: !args.values["no-overwrite"],
-    requestLimit:
-      args.values["request-limit"] ?? args.values.model?.includes("opus")
-        ? 1
-        : undefined,
+    requestLimit,
   });
-
-  const positionals = args.positionals.map((a) => resolve(join(root, a)));
-  const hasPositionals = positionals.length > 0;
-  const hasPrompt =
-    args.values.prompt !== undefined && args.values.prompt !== "";
-  const isPipe = !hasPositionals && hasPrompt;
-  const logLevel =
-    args.values["log-level"] ??
-    (args.values.verbose ? "verbose" : isPipe ? "silent" : "info");
-  const logFormat = args.values["log-format"];
-  const formatter = logFormat == "json" ? JSON.stringify : basicLogFormatter;
-  ROOT_LOGGER.console = LOGGER.console = isPipe
-    ? new Console(process.stderr, process.stderr)
-    : global.console;
-  ROOT_LOGGER.level = LOGGER.level = getLogLevel(logLevel);
-  ROOT_LOGGER.format = LOGGER.format = formatter;
 
   const system = args.values.system ?? "";
   const depth = Number(args.values["max-depth"]);
@@ -157,30 +173,6 @@ export function makeEdit(
     default:
       throw new Error("Edit lines have at least one of start or end");
   }
-}
-
-/**
- * Read, parse, and validate a template view.
- */
-export async function loadTemplateView(
-  fs: FileSystem,
-  paths?: string[]
-): Promise<View> {
-  if (!paths) return {};
-  let view = /* @type View */ {};
-  for (const path of paths) {
-    try {
-      LOGGER.debug(`Reading template-view at ${path}`);
-      const file = await fs.readFile(path);
-      const parsed = parse(file);
-      if (parsed && typeof parsed == "object") {
-        view = { ...view, ...parsed };
-      }
-    } catch (err) {
-      LOGGER.warn(`Failed to load template-view at ${path}`, { err });
-    }
-  }
-  return view;
 }
 
 async function readAll(readable: typeof process.stdin): Promise<string> {

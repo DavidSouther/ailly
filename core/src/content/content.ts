@@ -16,6 +16,7 @@ import {
   type PromiseWithResolvers,
 } from "../util.js";
 import { LOGGER } from "../index.js";
+import { loadTemplateView } from "./template.js";
 const matter = require("gray-matter");
 // import * as matter from "gray-matter";
 
@@ -150,11 +151,12 @@ async function loadFile(
       const parsed = matter(text);
       prompt = parsed.content;
       data = parsed.data;
-    } catch (e) {
+    } catch (err) {
       LOGGER.warn(
         `Error reading prompt and parsing for matter in ${promptPath}`,
-        e as Error
+        { err }
       );
+      return undefined;
     }
 
     let response: string | undefined;
@@ -177,14 +179,21 @@ async function loadFile(
             await fs.readFile(outPath).catch((e) => "")
           ).content;
           data.combined = false;
-        } catch (e) {
+        } catch (err) {
           LOGGER.warn(
             `Error reading response and parsing for matter in ${outPath}`,
-            e as Error
+            { err }
           );
+          return undefined;
         }
       }
     }
+
+    if (prompt == "") {
+      LOGGER.warn(`Could not find a prompt in ${promptPath}`);
+      return undefined;
+    }
+
     if (response?.trim() == "") response = undefined;
 
     const view = data.view === false ? false : data.view ?? {};
@@ -223,13 +232,8 @@ export async function loadAillyRc(
   if (aillyrc === "" && meta.parent === "always") meta.parent = "root";
   const { data, content } = matter(aillyrc);
   if (data["template-view"]) {
-    try {
-      const templateView = await fs.readFile(data["template-view"]);
-      const view = YAML.parse(templateView);
-      data.view = { ...(data.view ?? {}), ...view };
-    } catch (err) {
-      LOGGER.warn("Failed to load template-view", { err });
-    }
+    const view = await loadTemplateView(fs, data["template-view"]);
+    data.view = { ...(data.view ?? {}), ...view };
   }
   const view = data.view ?? {};
   delete data.view;
