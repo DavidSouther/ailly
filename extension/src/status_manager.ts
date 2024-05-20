@@ -44,8 +44,12 @@ export class StatusBarStatusManager implements StatusManager {
   }
 
   updateStatusBarItem() {
-    this.statusBarItem.text = `Ailly: ${this.outstanding}`;
-    this.statusBarItem.show();
+    if (this.outstanding == 0) {
+      this.statusBarItem.hide();
+    } else {
+      this.statusBarItem.text = `Ailly: ${this.outstanding}`;
+      this.statusBarItem.show();
+    }
   }
 }
 
