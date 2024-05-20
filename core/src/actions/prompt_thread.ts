@@ -73,6 +73,8 @@ export class PromptThread {
     engine: Engine,
     rag: Plugin
   ) {
+    settings.isolated =
+      settings.isolated || content.every((c) => c.meta?.isolated);
     const thread = new PromptThread(content, context, settings, engine, rag);
     thread.start();
     return thread;
@@ -144,6 +146,12 @@ export class PromptThread {
       try {
         await this.runOne(content, i);
         results.push({ status: "fulfilled", value: content } as const);
+        if (content.response) {
+          content.meta?.messages?.push({
+            role: "assistant",
+            content: content.response,
+          });
+        }
       } catch (e) {
         results.push({ status: "rejected", reason: e } as const);
       }
@@ -185,22 +193,18 @@ export function generateOne(
     return Promise.resolve();
   }
 
-  LOGGER.info(`Preparing ${c.path}`);
+  LOGGER.info(`Running ${c.path}`);
 
   const meta = c.meta;
   engine.format([c], context);
 
-  LOGGER.info(`Calling ${engine.name}`);
   LOGGER.debug(`Generating response`, {
     engine: engine.name,
-    messages: meta?.messages
-      ?.map((m) => ({
-        role: m.role,
-        content: m.content,
-        // tokens: m.tokens,
-      }))
-      // Skip the last `assistant` message
-      .filter((m, i, a) => !(m.role == "assistant" && i === a.length - 1)),
+    messages: meta?.messages?.map((m) => ({
+      role: m.role,
+      content: m.content,
+      // tokens: m.tokens,
+    })),
   });
   c.meta = {
     ...c.meta,
@@ -223,6 +227,10 @@ export function generateOne(
     );
   } catch (err) {
     LOGGER.error(`Uncaught error in ${engine.name} generator`, { err });
+    if (c.meta?.debug) {
+      c.meta.debug.finish = "failed";
+      c.meta.debug.error = err as Error;
+    }
     return Promise.resolve();
   }
 }

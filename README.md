@@ -6,25 +6,25 @@ Write your outline.
 Prompt Ailly to continue to keep writing.
 Edit its output, and get even more text like that.
 
-Rhymes with *daily*.
+Rhymes with _daily_.
 
 Ailly's best feature is rapid prompt engineering iteration. By keeping your prompts in snippets on the file system, you can make very fine-grained changes to your prompt and immediately see the difference in the output. You can also use all of your normal source control tooling to track changes over time: both your changes, and those from the LLM.
 
-## Quickstart
+## CLI Quickstart
 
-To get started, follow these steps:
+To get started on the command line, follow these steps:
 
-1. Create a folder named `jokes` and `cd` into it.
-2. Create a file named `10_chickens.md` with "Tell me a joke about chickens" as the content.
-3. Run Ailly using NodeJS: `npx @ailly/cli`
+1. Ask for a joke - `npx @ailly/cli --prompt 'Tell me a joke'`
+1. Create a folder named `jokes` and change directory into it.
+1. Create a file named `10_chickens.md` with "Tell me a joke about chickens" as the content.
+1. Run Ailly using NodeJS: `npx @ailly/cli`
    - See the joke in `10_chickens.md.ailly.md`
-2. Create a file named `jokes/.aillyrc` with "You are a farmer writing jokes for your other barnyard animals."
+1. Create a file named `.aillyrc` with "You are a farmer writing jokes for your other barnyard animals."
    - Include other system prompts, level setting expectations. etc.
    - Run Ailly with the same command, and see how the joke changes.
-3. Create more numbered files, such as `jokes/20_knock_knock.md` with "Turn the chicken joke into a knock knock joke."
-4. Run Ailly using NodeJS: `npx @ailly/cli 20_knock_knock.md`
-  - Ailly will send each file to the configured LLM engine and write its result.
-  - `20_knock_knock.md.ailly.md` will have the new knock knock joke based on the chicken joke it first wrote!
+1. Create more numbered files, such as `20_knock_knock.md` with "Turn the chicken joke into a knock knock joke."
+1. Run Ailly using NodeJS: `npx @ailly/cli 20_knock_knock.md`
+   - `20_knock_knock.md.ailly.md` will have the new knock knock joke based on the chicken joke it first wrote!
 
 ### System Context
 

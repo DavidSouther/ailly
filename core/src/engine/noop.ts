@@ -35,9 +35,11 @@ export const generate: EngineGenerate = (
   LOGGER.level = ROOT_LOGGER.level;
   LOGGER.format = ROOT_LOGGER.format;
 
-  const system = content.context.system?.map((s) => s.content).join("\n");
+  const system = content.context.system
+    ?.map((s, i) => `[system ${i}] ${s.content}`)
+    .join("\n");
   const messages = content.meta?.messages
-    ?.map((m) => `${m.role}: ${m.content}`)
+    ?.map((m, i) => `[message ${i}] ${m.role}: ${m.content}`)
     .join("\n");
   const message =
     process.env["AILLY_NOOP_RESPONSE"] ??
@@ -45,7 +47,7 @@ export const generate: EngineGenerate = (
       `noop response for ${content.name}:`,
       system,
       messages,
-      content.prompt,
+      "[response] " + content.prompt,
     ].join("\n");
 
   let error: Error | undefined;
@@ -63,6 +65,8 @@ export const generate: EngineGenerate = (
             first = false;
             await sleep(TIMEOUT.timeout / 10);
           }
+        } else {
+          writer.write(message);
         }
       } finally {
         writer.close();

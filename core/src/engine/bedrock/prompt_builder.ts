@@ -8,20 +8,20 @@ export type Models =
 
 export class PromptBuilder {
   modelBuilders: Record<Models, (m: Message[]) => any> = {
-    "anthropic.claude-v2": claude,
-    "anthropic.claude-3-sonnet-20240229-v1:0": claude3,
-    "anthropic.claude-3-haiku-20240307-v1:0": claude3,
-    "anthropic.claude-3-opus-20240229-v1:0": claude3,
+    "anthropic.claude-v2": conversationBuilder,
+    "anthropic.claude-3-sonnet-20240229-v1:0": messagesBuilder,
+    "anthropic.claude-3-haiku-20240307-v1:0": messagesBuilder,
+    "anthropic.claude-3-opus-20240229-v1:0": messagesBuilder,
   };
 
   constructor(private readonly modelName: Models) {}
 
   build(messages: Message[]) {
-    return this.modelBuilders[this.modelName](messages);
+    return (this.modelBuilders[this.modelName] ?? messagesBuilder)(messages);
   }
 }
 
-export function claude(messages: Message[]): {
+export function conversationBuilder(messages: Message[]): {
   prompt: String;
   max_tokens_to_sample: number;
 } {
@@ -52,7 +52,7 @@ export interface LLMMessage {
   content: string;
 }
 
-export function claude3(messages: Message[]): {
+export function messagesBuilder(messages: Message[]): {
   messages: LLMMessage[];
   system: string;
   max_tokens: number;

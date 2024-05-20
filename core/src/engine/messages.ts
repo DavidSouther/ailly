@@ -13,7 +13,7 @@ export async function addContentMessages(
   else content.meta.messages = getMessagesPredecessor(content, context);
   let messages = content.meta.messages;
   if (messages.at(-1)?.role == "assistant") {
-    messages = messages.slice(0, -1);
+    messages.splice(-1, 1);
   }
   let fence: undefined | string = undefined;
   if (content.context.edit) {

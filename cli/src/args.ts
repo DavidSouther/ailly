@@ -42,7 +42,6 @@ export function makeArgs(argv = process.argv) {
         default: process.env["AILLY_SYSTEM"],
         short: "s",
       },
-      stream: { type: "boolean", default: false },
       "request-limit": {
         type: "string",
         default: process.env["AILLY_REQUEST_LIMIT"],
@@ -57,7 +56,7 @@ export function makeArgs(argv = process.argv) {
       help: { type: "boolean", short: "h", default: false },
       version: { type: "boolean", default: false },
       "log-level": { type: "string", default: undefined },
-      "log-format": { type: "string", default: undefined },
+      "log-format": { type: "string", default: "pretty" },
       verbose: { type: "boolean", default: false, short: "v" },
     },
   });
@@ -89,7 +88,6 @@ export function help() {
       'none' includes no additional content (including no system context) when generating.
       (note: context is separate from isolated. isolated: true with either 'content' or 'folder' will result in the same behavior with either. With 'none', Ailly will send _only_ the prompt when generating.)
 
-    --stream (--prompt only) print responses as they return.
     -e, --edit use Ailly in edit mode. Provide a single file in paths, an edit marker, and a prompt. The path will be updated with the edit marker at the prompt.
     -l, --lines the lines to edit as '[start]:[end]' with start inclusive, and end exclusive. With only '[start]', will insert after. With only ':[end]', will insert before.
 
@@ -106,7 +104,7 @@ export function help() {
     --summary will show a pricing expectation before running and prompt for OK.
     -y, —-yes will skip any prompts.
     -v, --verbose, --log-level v and verbose will set log level to info; --log-level can be a string or number and use jefri/jiffies logging levels. Ailly uses warn for reporting details on errors, info for general runtime progress, and debug for details of requests and responses.
-    --log-format json or pretty; default is pretty when run in a pipe. JSON prints in JSONL format.
+    --log-format json or pretty; default is pretty. JSON prints in JSONL format.
 
     --version will print the cli and core versions
     -h, --help will print this message and exit.

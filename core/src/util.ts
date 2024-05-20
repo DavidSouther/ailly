@@ -16,6 +16,12 @@ export function withResolvers<T = void>(): PromiseWithResolvers<T> {
   return { promise, resolve, reject };
 }
 
+export function withResolved<T = void>(t: T): PromiseWithResolvers<T> {
+  const resolvers = withResolvers<T>();
+  resolvers.resolve(t);
+  return resolvers;
+}
+
 declare global {
   interface ReadableStream<R = any> {
     [Symbol.asyncIterator](): AsyncIterator<R>;

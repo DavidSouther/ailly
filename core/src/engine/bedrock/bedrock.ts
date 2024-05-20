@@ -7,16 +7,16 @@ import { fromNodeProviderChain } from "@aws-sdk/credential-providers";
 import { getLogger } from "@davidsouther/jiffies/lib/cjs/log.js";
 import { Content, View } from "../../content/content.js";
 import { LOGGER as ROOT_LOGGER } from "../../index.js";
-import type { EngineGenerate, Summary } from "../index.js";
+import type { EngineDebug, EngineGenerate, Summary } from "../index.js";
 import { addContentMessages } from "../messages.js";
-import { PromptBuilder, type Models } from "./prompt-builder.js";
+import { PromptBuilder, type Models } from "./prompt_builder.js";
 
 export const name = "bedrock";
-export const DEFAULT_MODEL = "anthropic.claude-3-sonnet-20240229-v1:0";
+export const DEFAULT_MODEL = "haiku";
 
 const LOGGER = getLogger("@ailly/core:bedrock");
 
-export interface BedrockDebug {
+export interface BedrockDebug extends EngineDebug {
   statistics?: {
     inputTokenCount?: number;
     outputTokenCount?: number;
@@ -32,7 +32,20 @@ const MODEL_MAP: Record<string, string> = {
   sonnet: "anthropic.claude-3-sonnet-20240229-v1:0",
   haiku: "anthropic.claude-3-haiku-20240307-v1:0",
   opus: "anthropic.claude-3-opus-20240229-v1:0",
+  "sonnet:48k": "anthropic.claude-3-sonnet-20240229-v1:0:48k",
+  "haiku:48k": "anthropic.claude-3-haiku-20240307-v1:0:48k",
+  "opus:48k": "anthropic.claude-3-opus-20240229-v1:0:48k",
+  "sonnet:200k": "anthropic.claude-3-sonnet-20240229-v1:0:200k",
+  "haiku:200k": "anthropic.claude-3-haiku-20240307-v1:0:200k",
+  "opus:200k": "anthropic.claude-3-opus-20240229-v1:0:200k",
 };
+
+declare module "@davidsouther/jiffies/lib/cjs/log.js" {
+  interface Logger {
+    /** Augment our logger with a `trace` method to trace streaming calls. */
+    trace: Log;
+  }
+}
 
 export const generate: EngineGenerate<BedrockDebug> = (
   c: Content,
@@ -41,13 +54,8 @@ export const generate: EngineGenerate<BedrockDebug> = (
   LOGGER.level = ROOT_LOGGER.level;
   LOGGER.format = ROOT_LOGGER.format;
   LOGGER.console = ROOT_LOGGER.console;
-  const bedrock = new BedrockRuntimeClient({
-    credentials: fromNodeProviderChain({
-      ignoreCache: true,
-      profile: process.env["AWS_PROFILE"],
-    }),
-    ...(process.env["AWS_REGION"] ? { region: process.env["AWS_REGION"] } : {}),
-  });
+  LOGGER.trace = LOGGER.logAt(0.5, "TRACE");
+  const bedrock = makeClient();
   model = MODEL_MAP[model] ?? model;
   let messages = c.meta?.messages ?? [];
   if (!messages.find((m) => m.role == "user")) {
@@ -68,37 +76,46 @@ export const generate: EngineGenerate<BedrockDebug> = (
 
   LOGGER.debug("Bedrock sending prompt", {
     ...prompt,
-    messages: [`...${prompt.messages.length} messages...`],
+    messages: [`...${messages.length} messages...`],
     system: `${prompt.system.slice(0, 20)}...`,
   });
 
   try {
     let message = "";
-    const debug: BedrockDebug = { id: "", finish: "unknown" };
+    const debug: BedrockDebug = {
+      id: "",
+      finish: "unknown",
+      model,
+      engine: "bedrock",
+    };
     const stream = new TransformStream();
     const writer = stream.writable.getWriter();
+    const invokeModelCommand = {
+      modelId: model,
+      contentType: "application/json",
+      accept: "application/json",
+      body: JSON.stringify(prompt),
+    };
+    LOGGER.trace("Sending InvokeModelWithResponseStreamCommand", {
+      invokeModelCommand,
+    });
     const done = bedrock
-      .send(
-        new InvokeModelWithResponseStreamCommand({
-          modelId: model,
-          contentType: "application/json",
-          accept: "application/json",
-          body: JSON.stringify(prompt),
-        })
-      )
+      .send(new InvokeModelWithResponseStreamCommand(invokeModelCommand))
       .then(async (response) => {
-        LOGGER.info(`Begin streaming response from Bedrock for ${c.name}`);
+        LOGGER.debug(`Begin streaming response from Bedrock for ${c.name}`);
 
+        let chunks = 0;
         for await (const block of response.body ?? []) {
           const chunk = JSON.parse(
             new TextDecoder().decode(block.chunk?.bytes)
           );
-          LOGGER.debug(
-            `Received chunk for (${
+          LOGGER.trace(
+            `Received chunk from Bedrock for ${c.name} (${
               chunk.message?.id ?? debug.id
-            }) from Bedrock for ${c.name}`,
+            })`,
             { chunk }
           );
+          chunks += 1;
           switch (chunk.type) {
             case "message_start":
               debug.id = chunk.message.id;
@@ -119,16 +136,25 @@ export const generate: EngineGenerate<BedrockDebug> = (
               break;
           }
         }
+
+        LOGGER.debug(
+          `Finished streaming response from Bedrock for ${c.name} (${debug.id}), total ${chunks} chunks.`
+        );
       })
       .catch((e) => {
         debug.finish = "failed";
         debug.error = e as Error;
-        LOGGER.error(`Error for bedrock response ${debug.id}`, {
-          err: debug.error,
-        });
+        LOGGER.warn(
+          `Error for Bedrock response ${c.name} (${debug.id ?? "no id"})`,
+          {
+            err: debug.error,
+          }
+        );
       })
       .finally(async () => {
-        LOGGER.debug(`Closing write stream for bedrock response ${debug.id}`);
+        LOGGER.debug(
+          `Closing write stream for bedrock response ${c.name} (${debug.id})`
+        );
         await writer.close();
       });
 
@@ -152,6 +178,16 @@ export const generate: EngineGenerate<BedrockDebug> = (
     };
   }
 };
+
+function makeClient() {
+  return new BedrockRuntimeClient({
+    credentials: fromNodeProviderChain({
+      ignoreCache: true,
+      profile: process.env["AWS_PROFILE"],
+    }),
+    ...(process.env["AWS_REGION"] ? { region: process.env["AWS_REGION"] } : {}),
+  });
+}
 
 export async function view(): Promise<View> {
   return {
@@ -198,4 +234,42 @@ export function extractFirstFence(message: string): string {
   const nextTicks = message.indexOf("```", endOfFirstLine + 1);
   message = message.slice(endOfFirstLine + 1, nextTicks + 1);
   return message;
+}
+
+export function formatError(content: Content) {
+  try {
+    const { message } = content.meta!.debug!.error!;
+    const model = content.meta!.debug!.model!;
+    const region = process.env["AWS_REGION"] ?? makeClient().config.region;
+    let base = "There was an error calling Bedrock. ";
+    switch (message) {
+      case "The security token included in the request is invalid.":
+        base += message + " Please refresh your AWS CLI credentials.";
+        break;
+      case "The security token included in the request is expired":
+      case "Could not load credentials from any providers":
+        base += message + ". Please refresh your AWS CLI credentials.";
+        break;
+      case "Could not resolve the foundation model from the provided model identifier.":
+        base += `The model ${model} could not be resolved.`;
+        if (Object.values(MODEL_MAP).includes(model)) {
+          base += ` Please ensure it is enabled in AWS region ${region}, or change your AWS region.`;
+        } else {
+          base += ` Please verify it is the correct identifier for your foundation or custom model.`;
+        }
+        break;
+      case "You don't have access to the model with the specified model ID.":
+        base += `Please enable model access to model with id ${model} in the AWS region ${region}.`;
+        break;
+      case "The provided model identifier is invalid.":
+        base += `The provided model identifier "${model}" is not recognized. Please ensure it is a valid model deployed in AWS region ${region}, or change your AWS region.`;
+        break;
+      default:
+        base += message;
+        break;
+    }
+    return base;
+  } catch (_) {
+    return undefined;
+  }
 }

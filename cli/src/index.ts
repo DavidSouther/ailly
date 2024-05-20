@@ -38,7 +38,6 @@ export async function main() {
     loaded.settings
   );
 
-  const last = loaded.content.at(-1);
   switch (true) {
     case args.values["update-db"]:
       await generator.updateDatabase();
@@ -58,38 +57,48 @@ export async function main() {
     default:
       LOGGER.info(`Starting ${loaded.content.length} requests`);
       generator.start();
-      if (!args.values.stream) {
-        await finish(generator);
-      }
-      if (last == "/dev/stdout") {
-        const prompt = loaded.context[last];
-        if (args.values.stream) {
-          // Lazy spin until the request starts
+
+      if (loaded.content.at(-1) == "/dev/stdout") {
+        loaded.content.splice(-1, 1);
+        const prompt = loaded.context["/dev/stdout"];
+        const edit = prompt.context.edit;
+        if (!edit) {
           const stream = await prompt.responseStream.promise;
           for await (const word of stream) {
             process.stdout.write(word);
           }
-          await finish(generator);
+          process.stdout.write("\n");
         }
-        console.debug(`Finished prompt, final meta`, { meta: prompt.meta });
+        await finish(generator);
+        LOGGER.debug(`Finished prompt, final meta`, { meta: prompt.meta });
         if (prompt.meta?.debug?.finish == "failed") {
-          console.error(prompt.meta.debug.error?.message ?? "Unknown failure", {
-            debug: prompt.meta.debug,
-          });
-          return;
-        }
-        const edit = prompt.context.edit;
-        if (edit) {
+          LOGGER.debug(`Prompt run error`, { debug: prompt.meta.debug });
+          const error = generator.formatError(prompt) ?? "Unknown failure";
+          console.error(error);
+        } else if (edit) {
           await doEdit(fs, loaded, edit, prompt, args.values.yes ?? false);
-        } else {
-          console.log(prompt.response);
         }
-      } else {
-        await writeContent(
-          fs,
-          loaded.content.map((c) => loaded.context[c])
+      }
+
+      await finish(generator);
+      const errors = generator
+        .errors()
+        .filter((c) => c.content.name != "/dev/stdout");
+      if (errors.length > 0) {
+        console.error(
+          [
+            "There were errors when generating responses:",
+            ...errors.map(
+              (err) => `  ${err.content.name}: ${err.errorMessage}`
+            ),
+          ].join("\n")
         );
       }
+
+      const toWrite = loaded.content
+        .map((c) => loaded.context[c])
+        .filter((c) => c.meta?.debug?.finish !== "failed");
+      await writeContent(fs, toWrite);
       break;
   }
 }

@@ -1,4 +1,5 @@
 ---
+parent: always
 isolated: true
 ---
 

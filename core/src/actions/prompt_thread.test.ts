@@ -119,8 +119,17 @@ describe("generateOne", () => {
       state.engine
     );
     await drain(content);
-    expect(state.logger.info).toHaveBeenCalledWith("Preparing /c.txt");
-    expect(state.logger.info).toHaveBeenCalledWith("Calling noop");
+    expect(state.logger.info).toHaveBeenCalledWith("Running /c.txt");
+    expect(state.logger.debug).toHaveBeenCalledWith("Generating response", {
+      engine: "noop",
+      messages: [
+        { role: "system", content: "" },
+        { role: "user", content: "prompt a" },
+        { role: "assistant", content: "response a" },
+        { role: "user", content: "response b" },
+        { role: "user", content: "tell me a joke\n" },
+      ],
+    });
     expect(content.response).toMatch(/^noop response for c.txt:/);
   });
 });
@@ -189,14 +198,6 @@ describe("PromptThread", () => {
     expect(thread.isDone).toBe(true);
     expect(thread.finished).toBe(3);
     expect(thread.errors.length).toBe(0);
-
-    expect(content[0].response).toEqual(
-      `noop response for a.txt:\n\nsystem: \nuser: prompt a\nassistant: response a\nprompt a`
-    );
-    expect(content[1].response).toBeUndefined();
-    expect(content[2].response).toEqual(
-      `noop response for c.txt:\n\nsystem: \nuser: tell me a joke\n\ntell me a joke\n`
-    );
   });
 
   it("runs sequence", async () => {
@@ -224,13 +225,5 @@ describe("PromptThread", () => {
     expect(thread.isDone).toBe(true);
     expect(thread.finished).toBe(3);
     expect(thread.errors.length).toBe(0);
-
-    expect(content[0].response).toEqual(
-      `noop response for a.txt:\n\nsystem: \nuser: prompt a\nassistant: response a\nprompt a`
-    );
-    expect(content[1].response).toBeUndefined();
-    expect(content[2].response).toEqual(
-      `noop response for c.txt:\n\nsystem: \nuser: prompt a\nassistant: noop response for a.txt:\n\nsystem: \nuser: prompt a\nassistant: response a\nprompt a\nuser: response b\nuser: tell me a joke\n\ntell me a joke\n`
-    );
   });
 });

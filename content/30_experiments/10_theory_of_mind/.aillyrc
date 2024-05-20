@@ -1,6 +1,5 @@
 ---
-tuning: false
-skip: true
+parent: root
 ---
 
 You are being interviewed. Keep your answers short.
