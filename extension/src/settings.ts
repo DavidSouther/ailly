@@ -136,6 +136,11 @@ export const SETTINGS = {
     );
     return preferStreamingEdit ?? true;
   },
+
+  /** The duration in ms to wait after completing all threads to hide the Ailly status bar. */
+  getAillyStatusBarHideDelay(): number {
+    return 2000;
+  },
 };
 
 function getConfig() {

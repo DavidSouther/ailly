@@ -1,6 +1,7 @@
 import type { GenerateManager } from "@ailly/core/lib/actions/generate_manager.js";
 import type { StatusBarItem } from "vscode";
 import vscode, { StatusBarAlignment } from "vscode";
+import { SETTINGS } from "./settings";
 
 export interface StatusManager {
   track(manager: GenerateManager): void;
@@ -43,10 +44,17 @@ export class StatusBarStatusManager implements StatusManager {
     this.updateStatusBarItem();
   }
 
+  private clearStatusBarTimeout: NodeJS.Timeout | undefined;
   updateStatusBarItem() {
     if (this.outstanding == 0) {
-      this.statusBarItem.hide();
+      const delay = SETTINGS.getAillyStatusBarHideDelay();
+      this.clearStatusBarTimeout = setTimeout(() => {
+        this.statusBarItem.hide();
+      }, delay);
     } else {
+      if (this.clearStatusBarTimeout) {
+        clearTimeout(this.clearStatusBarTimeout);
+      }
       this.statusBarItem.text = `Ailly: ${this.outstanding}`;
       this.statusBarItem.show();
     }
