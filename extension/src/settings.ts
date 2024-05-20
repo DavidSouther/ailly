@@ -30,7 +30,6 @@ function aillyLogFormatter<
   delete debug.message;
   delete debug.prefix;
   delete debug.level;
-  delete debug.source;
   if (Object.keys(debug).length > 0) {
     base += " " + JSON.stringify(debug);
   }
@@ -136,6 +135,11 @@ export const SETTINGS = {
       SETTINGS_KEYS.preferStreamingEdit
     );
     return preferStreamingEdit ?? true;
+  },
+
+  /** The duration in ms to wait after completing all threads to hide the Ailly status bar. */
+  getAillyStatusBarHideDelay(): number {
+    return 2000;
   },
 };
 

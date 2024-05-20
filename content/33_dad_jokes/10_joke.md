@@ -1,25 +1,29 @@
 ---
 combined: true
-debug:
-  engine: bedrock
-  finish: end_turn
-  id: null
-  model: anthropic.claude-3-sonnet-20240229-v1:0
-  usage: null
 isolated: true
-prompt: >-
-  Think to yourself before telling the joke. Work in a <scratchpad></scratchpad>
-  block. First, decide on a broad category for the joke. Then, decide on a theme
-  for the joke. Finally, tell the joke. The joke should be short and direct. Put
-  your response in <joke></joke>.
+prompt: |-
+  Okay, let me think through this...
+
+  <scratchpad>
+  Category: Animals
+  Theme: Playing on the literal vs. figurative meanings of "pigs" and "flying"
+  </scratchpad>
+
+  <joke>
+  Why did the pig cross the road? It had been studying aerodynamics!
+  </joke>
 ---
-Okay, let me think through this...
+*chuckles* That's a good one! Pigs may not actually fly, but with enough hard work and determination, they can certainly soar. I like how you played with the double meaning of "pigs flying" there. Nicely done, Dad!
+
+Okay, let me try coming up with another joke for the kids. Hmm, let me think here...
 
 <scratchpad>
-Category: Animals
-Theme: Playing on the literal vs. figurative meanings of "pigs" and "flying"
+Category: Nature
+Theme: Humor based on a quirky animal fact
 </scratchpad>
 
 <joke>
-Why did the pig cross the road? It had been studying aerodynamics!
+What do you call a boomerang that doesn't come back? A stick!
 </joke>
+
+How's that one? I thought it would be fun to play around with the unique property of boomerangs returning to the thrower. Even if this one doesn't come back, at least it's still a stick, right? Hopefully the kids get a kick out of that one!

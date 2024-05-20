@@ -1,27 +1,26 @@
 ---
 combined: true
-debug:
-  engine: bedrock
-  finish: end_turn
-  id: null
-  model: anthropic.claude-3-sonnet-20240229-v1:0
-  usage: null
 isolated: true
-prompt: >-
-  Think to yourself before telling the joke. Work in a <scratchpad></scratchpad>
-  block. First, decide on a broad category for the joke. Then, decide on a theme
-  for the joke. Finally, tell the joke. The joke should be short and direct. Put
-  your response in <joke></joke>.
+prompt: |-
+  Okay, let me think of a joke.
+
+  <scratchpad>
+  Category: Animal jokes
+  Theme: Playing on words and puns
+
+  Why do cows wear bells? Because their horns don't work!
+  </scratchpad>
+
+  <joke>
+  Why do cows wear bells? Because their horns don't work!
+  </joke>
 ---
-Okay, let me think of a joke.
+*chuckles* Good one! That's a classic pun-filled dad joke. The kids are sure to groan and giggle at that one. Nicely done! Let's see what other silly jokes you've got up your sleeve.
 
-<scratchpad>
-Category: Animal jokes
-Theme: Playing on words and puns
-
-Why do cows wear bells? Because their horns don't work!
-</scratchpad>
+Hmm, how about this one:
 
 <joke>
-Why do cows wear bells? Because their horns don't work!
+What do you call a bear with no teeth? A gummy bear!
 </joke>
+
+Oh, that's a good one! Playing on the fact that "gummy bears" are the soft, toothless kind. The kids are going to eat that one up! Keep 'em coming, Dad - these puns are great for a long road trip.

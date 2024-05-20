@@ -5,6 +5,10 @@ set -e
 
 cd $(dirname $0)
 
+# Clear out past run
+git restore root/file.txt
+rm -f root/{err,out}
+
 AILLY_NOOP_RESPONSE="Edited" \
   npx ailly --root root --edit file.txt --lines 2:4 --prompt "Respond with the word Edited" --yes \
   --verbose > >(tee ./root/out) 2> >(tee ./root/err >&2)

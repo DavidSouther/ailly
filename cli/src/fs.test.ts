@@ -69,16 +69,15 @@ describe("makeCLIContent", () => {
     const edit = undefined;
     const view = { prop: "test" };
 
-    const cliContent = await makeCLIContent(
+    const cliContent = await makeCLIContent({
       prompt,
       argContext,
       argSystem,
-      state.context,
-      state.root,
+      context: state.context,
+      root: state.root,
       edit,
       view,
-      false
-    );
+    });
 
     expect(cliContent).toMatchObject({
       name: "stdout",
@@ -102,16 +101,15 @@ describe("makeCLIContent", () => {
     const edit = undefined;
     const view = { prop: "test" };
 
-    const cliContent = await makeCLIContent(
+    const cliContent = await makeCLIContent({
       prompt,
       argContext,
       argSystem,
-      state.context,
-      state.root,
+      context: state.context,
+      root: state.root,
       edit,
       view,
-      false
-    );
+    });
 
     expect(cliContent).toMatchObject({
       name: "stdout",
@@ -135,16 +133,15 @@ describe("makeCLIContent", () => {
     const edit = undefined;
     const view = { prop: "test" };
 
-    const cliContent = await makeCLIContent(
+    const cliContent = await makeCLIContent({
       prompt,
       argContext,
       argSystem,
-      state.context,
-      state.root,
+      context: state.context,
+      root: state.root,
       edit,
       view,
-      false
-    );
+    });
 
     expect(cliContent).toMatchObject({
       name: "stdout",
@@ -168,16 +165,15 @@ describe("makeCLIContent", () => {
     const edit = undefined;
     const view = { prop: "test" };
 
-    const cliContent = await makeCLIContent(
+    const cliContent = await makeCLIContent({
       prompt,
       argContext,
       argSystem,
-      state.context,
-      state.root,
+      context: state.context,
+      root: state.root,
       edit,
       view,
-      false
-    );
+    });
 
     expect(cliContent).toMatchObject({
       name: "stdout",
