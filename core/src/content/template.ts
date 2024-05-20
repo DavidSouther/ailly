@@ -74,7 +74,7 @@ export async function loadTemplateView(
   ...paths: string[]
 ): Promise<View> {
   if (!paths) return {};
-  let view = /* @type View */ {};
+  let view: View = {};
   for (const path of paths) {
     try {
       LOGGER.debug(`Reading template-view at ${path}`);

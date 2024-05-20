@@ -42,6 +42,7 @@ const MODEL_MAP: Record<string, string> = {
 
 declare module "@davidsouther/jiffies/lib/cjs/log.js" {
   interface Logger {
+    /** Augment our logger with a `trace` method to trace streaming calls. */
     trace: Log;
   }
 }
