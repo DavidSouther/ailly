@@ -32,6 +32,7 @@ export interface PipelineSettings {
   isolated: boolean;
   combined: boolean | undefined;
   skipHead: boolean;
+  continue: boolean;
   overwrite: boolean;
   templateView: View;
 }
@@ -47,6 +48,7 @@ export async function makePipelineSettings({
   overwrite = true,
   isolated = false,
   skipHead = false,
+  continued = false,
   combined,
   templateView = {},
 }: {
@@ -60,6 +62,7 @@ export async function makePipelineSettings({
   isolated?: boolean;
   combined?: boolean;
   skipHead?: boolean;
+  continued?: boolean;
   requestLimit?: number;
   templateView?: View;
 }): Promise<PipelineSettings> {
@@ -75,6 +78,7 @@ export async function makePipelineSettings({
     requestLimit,
     context: context as NonNullable<ContentMeta["context"]>,
     plugin,
+    continue: continued,
     overwrite,
     isolated,
     combined,

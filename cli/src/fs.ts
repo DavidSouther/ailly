@@ -75,6 +75,7 @@ export async function loadFs(
     context: argContext,
     isolated: args.values.isolated,
     combined: args.values.combined,
+    continued: args.values.continue,
     engine: args.values.engine,
     model: args.values.model,
     plugin: args.values.plugin,
