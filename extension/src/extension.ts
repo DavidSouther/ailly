@@ -12,7 +12,9 @@ export function activate(context: vscode.ExtensionContext) {
   resetLogger();
   // Use the console to output diagnostic information (console.log) and errors (console.error)
   // This line of code will only be executed once when your extension is activated
-  LOGGER.info('Congratulations, your extension "ailly" is now active!');
+  LOGGER.info('Congratulations, your extension "ailly" is now active!', {
+    platform: process.platform,
+  });
 
   const statusManager = StatusBarStatusManager.withContext(context);
 
@@ -24,14 +26,10 @@ export function activate(context: vscode.ExtensionContext) {
       "ailly.generate",
       async (uri?: vscode.Uri, ..._args) => {
         try {
-          let path: string;
-          if (uri) {
-            path = uri.path;
-          } else {
-            path = vscode.window.activeTextEditor?.document.uri.fsPath ?? "";
-            if (!path) {
-              return;
-            }
+          if (!uri) uri = vscode.window.activeTextEditor?.document.uri;
+          const path = uri?.fsPath ?? "";
+          if (!path) {
+            return;
           }
 
           try {
@@ -57,58 +55,51 @@ export function activate(context: vscode.ExtensionContext) {
   );
 
   context.subscriptions.push(
-    vscode.commands.registerCommand(
-      "ailly.edit",
-      async (uri?: vscode.Uri, ..._args) => {
-        if (!vscode.window.activeTextEditor) {
+    vscode.commands.registerCommand("ailly.edit", async (..._args) => {
+      if (!vscode.window.activeTextEditor) {
+        return;
+      }
+      try {
+        const uri = vscode.window.activeTextEditor.document.uri;
+        const path = uri?.fsPath ?? "";
+        if (!path) {
           return;
         }
-        try {
-          let path: string;
-          if (uri) {
-            path = uri.path;
-          } else {
-            path = vscode.window.activeTextEditor.document.uri.fsPath ?? "";
-            if (!path) {
-              return;
-            }
-          }
 
-          const prompt = await vscode.window.showInputBox({
-            title: "Prompt",
-            prompt: "What edits should Ailly make?",
-          });
+        const prompt = await vscode.window.showInputBox({
+          title: "Prompt",
+          prompt: "What edits should Ailly make?",
+        });
 
-          if (!prompt) {
-            return;
-          }
-
-          const start = vscode.window.activeTextEditor.selection.start.line;
-          const end = vscode.window.activeTextEditor.selection.end.line;
-
-          try {
-            vscode.window.showInformationMessage(
-              `Ailly generating ${basename(path)}`
-            );
-            await generate(path, {
-              extensionEdit: { prompt, start, end },
-              manager: statusManager,
-            });
-            vscode.window.showInformationMessage(
-              `Ailly edited ${basename(path)}`
-            );
-          } catch (err) {
-            vscode.window.showWarningMessage(
-              `Ailly failed to generate ${basename(path)}: ${err}`
-            );
-
-            LOGGER.error("Error doing edit", { err });
-          }
-        } catch (err) {
-          LOGGER.error("Unknown error editing", { err });
+        if (!prompt) {
+          return;
         }
+
+        const start = vscode.window.activeTextEditor.selection.start.line;
+        const end = vscode.window.activeTextEditor.selection.end.line;
+
+        try {
+          vscode.window.showInformationMessage(
+            `Ailly generating ${basename(path)}`
+          );
+          await generate(path, {
+            extensionEdit: { prompt, start, end },
+            manager: statusManager,
+          });
+          vscode.window.showInformationMessage(
+            `Ailly edited ${basename(path)}`
+          );
+        } catch (err) {
+          vscode.window.showWarningMessage(
+            `Ailly failed to generate ${basename(path)}: ${err}`
+          );
+
+          LOGGER.error("Error doing edit", { err });
+        }
+      } catch (err) {
+        LOGGER.error("Unknown error editing", { err });
       }
-    )
+    })
   );
 
   context.subscriptions.push(

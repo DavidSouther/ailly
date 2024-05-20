@@ -1,4 +1,4 @@
-import * as vscode from "vscode";
+import { GenerateManager } from "@ailly/core/lib/actions/generate_manager.js";
 import {
   loadContent,
   makeCLIContent,
@@ -6,16 +6,17 @@ import {
   type AillyEdit,
   type Content,
 } from "@ailly/core/lib/content/content.js";
+import { GitignoreFs } from "@ailly/core/lib/content/gitignore_fs.js";
 import {
   makePipelineSettings,
   type PipelineSettings,
 } from "@ailly/core/lib/index.js";
-import { GenerateManager } from "@ailly/core/lib/actions/generate_manager.js";
 import { FileSystem } from "@davidsouther/jiffies/lib/cjs/fs.js";
+import { dirname } from "node:path";
+import * as vscode from "vscode";
+import { deleteEdit, insert, updateSelection } from "./editor.js";
 import { VSCodeFileSystemAdapter } from "./fs.js";
 import { LOGGER, SETTINGS, resetLogger } from "./settings.js";
-import { dirname } from "node:path";
-import { deleteEdit, insert, updateSelection } from "./editor.js";
 import type { StatusManager } from "./status_manager";
 
 export interface ExtensionEdit {
@@ -35,7 +36,7 @@ export async function generate(
   LOGGER.info(`Generating for ${path}`);
 
   // Prepare configuration
-  const fs = new FileSystem(new VSCodeFileSystemAdapter());
+  const fs = new GitignoreFs(new VSCodeFileSystemAdapter());
   const stat = await fs.stat(path);
   const root = stat.isFile() ? dirname(path) : path;
   fs.cd(root);

@@ -6,7 +6,7 @@
   "publisher": "davidsouther",
   "contributors": [],
   "repository": "http://github.com/davidsouther/ailly",
-  "version": "0.1.1",
+  "version": "0.1.3-rc1",
   "engines": {
     "vscode": "^1.83.0"
   },
