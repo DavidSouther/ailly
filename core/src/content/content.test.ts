@@ -4,8 +4,8 @@ import {
   FileSystem,
   ObjectFileSystemAdapter,
 } from "@davidsouther/jiffies/lib/cjs/fs.js";
-import { LOGGER } from "..";
-import { withResolved, withResolvers } from "../util";
+import { LOGGER } from "../index.js";
+import { withResolvers } from "../util.js";
 import {
   Content,
   loadAillyRc,
@@ -15,8 +15,6 @@ import {
   type WritableContent,
 } from "./content.js";
 import { GitignoreFs } from "./gitignore_fs.js";
-import { LOGGER } from "..";
-import { withResolved, withResolvers } from "../util";
 
 test("it loads content", async () => {
   const testFs = new FileSystem(
