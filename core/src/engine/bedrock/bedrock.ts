@@ -32,12 +32,6 @@ const MODEL_MAP: Record<string, string> = {
   sonnet: "anthropic.claude-3-sonnet-20240229-v1:0",
   haiku: "anthropic.claude-3-haiku-20240307-v1:0",
   opus: "anthropic.claude-3-opus-20240229-v1:0",
-  "sonnet:48k": "anthropic.claude-3-sonnet-20240229-v1:0:48k",
-  "haiku:48k": "anthropic.claude-3-haiku-20240307-v1:0:48k",
-  "opus:48k": "anthropic.claude-3-opus-20240229-v1:0:48k",
-  "sonnet:200k": "anthropic.claude-3-sonnet-20240229-v1:0:200k",
-  "haiku:200k": "anthropic.claude-3-haiku-20240307-v1:0:200k",
-  "opus:200k": "anthropic.claude-3-opus-20240229-v1:0:200k",
 };
 
 declare module "@davidsouther/jiffies/lib/cjs/log.js" {
@@ -105,6 +99,7 @@ export const generate: EngineGenerate<BedrockDebug> = (
         LOGGER.debug(`Begin streaming response from Bedrock for ${c.name}`);
 
         let chunks = 0;
+        // This is only for Claude3 https://docs.anthropic.com/en/api/messages-streaming
         for await (const block of response.body ?? []) {
           const chunk = JSON.parse(
             new TextDecoder().decode(block.chunk?.bytes)
@@ -119,6 +114,7 @@ export const generate: EngineGenerate<BedrockDebug> = (
           switch (chunk.type) {
             case "message_start":
               debug.id = chunk.message.id;
+              debug.model = chunk.message.model;
               break;
             case "content_block_start":
               break;

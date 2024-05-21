@@ -4,12 +4,15 @@ import {
   FileSystem,
   ObjectFileSystemAdapter,
 } from "@davidsouther/jiffies/lib/cjs/fs.js";
+import { LOGGER } from "..";
+import { withResolved, withResolvers } from "../util";
 import {
   Content,
   loadAillyRc,
   loadContent,
   splitOrderedName,
   writeContent,
+  type WritableContent,
 } from "./content.js";
 import { GitignoreFs } from "./gitignore_fs.js";
 import { LOGGER } from "..";
@@ -319,7 +322,7 @@ test("it writes separate prompt and responses", async () => {
     })
   );
 
-  const content: Content = [
+  const content: WritableContent[] = [
     {
       name: "content.md",
       path: "/content.md",
@@ -331,7 +334,6 @@ test("it writes separate prompt and responses", async () => {
         view: {},
       },
       meta: { isolated: true, combined: false },
-      responseStream: withResolved("Response"),
     },
   ];
 
@@ -339,8 +341,7 @@ test("it writes separate prompt and responses", async () => {
 
   expect((fs as any).adapter.fs).toEqual({
     "/content.md": "---\ncombined: false\nisolated: true\n---\ncontent",
-    "/content.md.ailly.md":
-      "---\ncombined: false\nisolated: true\n---\nResponse",
+    "/content.md.ailly.md": "---\nisolated: true\n---\nResponse",
   });
 });
 
@@ -372,8 +373,7 @@ test("it writes separate prompt and responses in outPath", async () => {
 
   expect((fs as any).adapter.fs).toEqual({
     "/root/content.md": "---\ncombined: false\nisolated: true\n---\ncontent",
-    "/out/content.md.ailly.md":
-      "---\ncombined: false\nisolated: true\n---\nResponse",
+    "/out/content.md.ailly.md": "---\nisolated: true\n---\nResponse",
   });
 });
 
@@ -434,8 +434,7 @@ test("it writes deep java prompts and responses", async () => {
     "/root/.gitignore": "target",
     "/root/src/com/example/Main.java": "class Main {}\n",
     "/root/target/com/example/Main.class": "0xCAFEBABE",
-    "/out/src/com/example/Main.java.ailly.md":
-      "---\ncombined: false\n---\nResponse",
+    "/out/src/com/example/Main.java.ailly.md": "Response",
   });
 });
 
