@@ -1,6 +1,7 @@
 {
   "name": "@ailly/ailly",
   "scripts": {
+    "clean": "rm -rf **/lib **/out **/.next **/tsconfig.tsbuildinfo **/*.vsix **/node_modules node_modules",
     "webdev": "npm run link && npm run -w web dev",
     "build": "npm run build -w core && npm run build -w cli && npm run build -w extension",
     "prelink": "npm run build",
