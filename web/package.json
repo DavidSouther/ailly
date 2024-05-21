@@ -10,7 +10,7 @@
     "ci": "npm run build"
   },
   "dependencies": {
-    "@ailly/core": "1.5.0-rc1",
+    "@ailly/core": "1.5.0-rc2",
     "@davidsouther/jiffies": "^2.2.4",
     "marked-react": "^2.0.0",
     "react": "^18",

@@ -6,7 +6,7 @@
   "publisher": "davidsouther",
   "contributors": [],
   "repository": "http://github.com/davidsouther/ailly",
-  "version": "1.5.0-rc1",
+  "version": "1.5.0-rc2",
   "engines": {
     "vscode": "^1.83.0"
   },
@@ -117,7 +117,7 @@
     "typescript": "^5.2.2"
   },
   "dependencies": {
-    "@ailly/core": "1.5.0-rc1",
+    "@ailly/core": "1.5.0-rc2",
     "@davidsouther/jiffies": "^2.1.3"
   }
 }
