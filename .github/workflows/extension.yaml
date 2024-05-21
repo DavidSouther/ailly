@@ -1,4 +1,4 @@
-name: Extension Tests
+name: Extension
 
 on:
   push:
@@ -9,7 +9,7 @@ on:
 
 jobs:
   extension-test:
-    name: extension
+    name: integration tests
     strategy:
       matrix:
         os:
@@ -41,7 +41,7 @@ jobs:
         if: runner.os != 'Linux'
 
   package-extension:
-    name: Package Extension
+    name: packaging
     needs: [extension-test]
     runs-on: ubuntu-latest
 

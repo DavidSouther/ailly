@@ -1,4 +1,4 @@
-name: Integration Tests
+name: CLI
 
 on:
   push:
@@ -9,7 +9,7 @@ on:
 
 jobs:
   integration:
-    name: cli
+    name: Integration tests
     strategy:
       matrix:
         os:
