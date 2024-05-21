@@ -46,7 +46,7 @@ export class StatusBarStatusManager implements StatusManager {
 
   private clearStatusBarTimeout: NodeJS.Timeout | undefined;
   updateStatusBarItem() {
-    if (this.outstanding == 0) {
+    if (this.outstanding === 0) {
       const delay = SETTINGS.getAillyStatusBarHideDelay();
       this.clearStatusBarTimeout = setTimeout(() => {
         this.statusBarItem.hide();

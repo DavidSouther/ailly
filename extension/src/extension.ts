@@ -26,7 +26,9 @@ export function activate(context: vscode.ExtensionContext) {
       "ailly.generate",
       async (uri?: vscode.Uri, ..._args) => {
         try {
-          if (!uri) uri = vscode.window.activeTextEditor?.document.uri;
+          if (!uri) {
+            uri = vscode.window.activeTextEditor?.document.uri;
+          }
           const path = uri?.fsPath ?? "";
           if (!path) {
             return;

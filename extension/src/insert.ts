@@ -6,7 +6,9 @@ import {
 
 export function insert(edit: AillyEdit, after: string, token: string) {
   const editor = vscode.window.activeTextEditor;
-  if (!editor) return;
+  if (!editor) {
+    return;
+  }
   const afterArr = after.split("\n");
   const start =
     (isAillyEditReplace(edit) ? edit.start : edit.after) + afterArr.length - 1;
