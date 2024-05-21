@@ -1,12 +1,11 @@
 import * as assert from "assert";
-import { afterEach } from "mocha";
 import { mock } from "node:test";
 import { resolve } from "path";
 import * as vscode from "vscode";
 import { generate } from "./generate.js";
 import { SETTINGS } from "./settings.js";
-import { MockStatusManager } from "./status_manager";
-const { assertExists } = require("@davidsouther/jiffies/lib/cjs/assert.js");
+import { MockStatusManager } from "./status_manager.js";
+import { getNormalizedText } from "./testing/util.js";
 
 async function activate(docUri: vscode.Uri) {
   const ext = vscode.extensions.getExtension("davidsouther.ailly");
@@ -22,10 +21,6 @@ process.env["AILLY_NOOP_TIMEOUT"] = "0";
 process.env["AILLY_NOOP_STREAM"] = "";
 
 suite("Ailly Extension Generate", () => {
-  afterEach(() =>
-    vscode.commands.executeCommand("workbench.action.closeActiveEditor")
-  );
-
   test("generate edit", async () => {
     const path = resolve(__dirname, "..", "testing", "edit.txt");
     const docUri = vscode.Uri.file(path);
@@ -38,8 +33,8 @@ suite("Ailly Extension Generate", () => {
       manager: new MockStatusManager(),
     });
 
-    const activeWindow = assertExists(vscode.window.activeTextEditor);
-    assert.equal(activeWindow.document.getText(), "Line 1\nEdited\nLine 4");
+    assert.equal(getNormalizedText(), "Line 1\nEdited\nLine 4");
+    await vscode.commands.executeCommand("workbench.action.closeActiveEditor");
   });
 
   test("generate edit streaming", async () => {
@@ -56,10 +51,7 @@ suite("Ailly Extension Generate", () => {
       manager: new MockStatusManager(),
     });
 
-    const activeWindow = assertExists(vscode.window.activeTextEditor);
-    assert.equal(
-      activeWindow.document.getText(),
-      "Line 1\nThis text\nwas edited\nLine 4"
-    );
+    assert.equal(getNormalizedText(), "Line 1\nThis text\nwas edited\nLine 4");
+    await vscode.commands.executeCommand("workbench.action.closeActiveEditor");
   });
 });

@@ -1,9 +1,8 @@
 import * as assert from "assert";
-import { afterEach } from "mocha";
 import { resolve } from "path";
 import * as vscode from "vscode";
-import { deleteEdit, insert, updateSelection } from "./editor.js";
-const { assertExists } = require("@davidsouther/jiffies/lib/cjs/assert.js");
+import { deleteEdit, insert } from "./editor.js";
+import { getNormalizedText } from "./testing/util.js";
 
 async function activate(docUri: vscode.Uri) {
   const ext = vscode.extensions.getExtension("davidsouther.ailly");
@@ -14,10 +13,6 @@ async function activate(docUri: vscode.Uri) {
 }
 
 suite("Ailly Editor", () => {
-  afterEach(() =>
-    vscode.commands.executeCommand("workbench.action.closeActiveEditor")
-  );
-
   test("delete edit", async () => {
     const path = resolve(__dirname, "..", "testing", "edit.txt");
     const docUri = vscode.Uri.file(path);
@@ -25,8 +20,8 @@ suite("Ailly Editor", () => {
 
     await deleteEdit({ file: "/ailly/dev", start: 1, end: 3 });
 
-    const activeWindow = assertExists(vscode.window.activeTextEditor);
-    assert.equal(activeWindow.document.getText(), "Line 1\nLine 4");
+    assert.equal(getNormalizedText(), "Line 1\nLine 4");
+    await vscode.commands.executeCommand("workbench.action.closeActiveEditor");
   });
 
   test("insert", async () => {
@@ -36,17 +31,14 @@ suite("Ailly Editor", () => {
 
     await insert({ file: "/ailly/dev", start: 1, end: 2 }, "", "Line B\n");
 
-    const activeWindow = assertExists(vscode.window.activeTextEditor);
-    assert.equal(
-      activeWindow.document.getText(),
-      "Line 1\nLine B\nLine 2\nLine 3\nLine 4"
-    );
+    assert.equal(getNormalizedText(), "Line 1\nLine B\nLine 2\nLine 3\nLine 4");
 
     await insert({ file: "/ailly/dev", after: 2 }, "Line ", "DEF ");
 
     assert.equal(
-      activeWindow.document.getText(),
+      getNormalizedText(),
       "Line 1\nLine B\nLine 2\nLine DEF 3\nLine 4"
     );
+    await vscode.commands.executeCommand("workbench.action.closeActiveEditor");
   });
 });

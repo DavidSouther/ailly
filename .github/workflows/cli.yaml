@@ -1,4 +1,4 @@
-name: Windows Integration Tests
+name: Integration Tests
 
 on:
   push:
@@ -8,8 +8,16 @@ on:
   workflow_dispatch:
 
 jobs:
-  win-integ:
-    runs-on: windows-latest
+  integration:
+    name: cli
+    strategy:
+      matrix:
+        os:
+          # - macos-latest,
+          - ubuntu-latest
+          - windows-latest
+
+    runs-on: ${{ matrix.os }}
 
     steps:
       - uses: actions/checkout@v4
@@ -21,14 +29,19 @@ jobs:
 
       - name: Install dependencies
         run: npm install
-        shell: cmd
 
       - name: Build CLI
         run: npm run build
-        shell: cmd
 
-      - name: Run Integration Tests
+      - name: Run integration tests
         run: ./integ/integ.bat
         shell: cmd
         env:
           AILLY_ENGINE: noop
+        if: runner.os == 'Windows'
+
+      - name: Run integration tests
+        run: ./integ/integ.sh
+        env:
+          AILLY_ENGINE: noop
+        if: runner.os == 'Linux'
