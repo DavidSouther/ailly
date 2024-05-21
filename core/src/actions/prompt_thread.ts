@@ -1,12 +1,13 @@
-import { DEFAULT_SCHEDULER_LIMIT, LOGGER, PipelineSettings } from "../index.js";
-import { View, type Content } from "../content/content.js";
-import type { Engine } from "../engine/index.js";
-import type { Plugin } from "../plugin/index.js";
+import { Temporal } from "temporal-polyfill";
+import { View, type Content, type ContentMeta } from "../content/content.js";
 import {
   GLOBAL_VIEW,
   mergeContentViews,
   mergeViews,
 } from "../content/template.js";
+import type { Engine } from "../engine/index.js";
+import { DEFAULT_SCHEDULER_LIMIT, LOGGER, PipelineSettings } from "../index.js";
+import type { Plugin } from "../plugin/index.js";
 
 export interface PromptThreadsSummary {
   totalPrompts: number;
@@ -211,20 +212,20 @@ export function generateOne(
     debug: {
       engine: settings.engine,
       model: settings.model,
+      lastRun: Temporal.Now.instant(),
     },
   };
   try {
     const generator = engine.generate(c, settings);
     c.responseStream.resolve(generator.stream);
-    return generator.done.then(
-      () => {
+    const updateDebug = () => {
+      c.meta!.debug = { ...c.meta!.debug, ...generator.debug() };
+    };
+    return generator.done
+      .then(() => {
         c.response = generator.message();
-        c.meta!.debug = { ...c.meta!.debug, ...generator.debug() };
-      },
-      (err) => {
-        c.meta!.debug = { ...c.meta!.debug, ...generator.debug() };
-      }
-    );
+      })
+      .finally(updateDebug);
   } catch (err) {
     LOGGER.error(`Uncaught error in ${engine.name} generator`, { err });
     if (c.meta?.debug) {

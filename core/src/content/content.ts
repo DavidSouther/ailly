@@ -7,15 +7,15 @@ import {
   basename,
   isAbsolute,
 } from "@davidsouther/jiffies/lib/cjs/fs.js";
+import { dirname, join } from "path";
 import * as YAML from "yaml";
-import { join, dirname } from "path";
 import type { EngineDebug, Message } from "../engine/index.js";
+import { LOGGER } from "../index.js";
 import {
   isDefined,
   withResolvers,
   type PromiseWithResolvers,
 } from "../util.js";
-import { LOGGER } from "../index.js";
 import { loadTemplateView } from "./template.js";
 const matter = require("gray-matter");
 // import * as matter from "gray-matter";
@@ -354,7 +354,11 @@ export async function loadContent(
   return content;
 }
 
-async function writeSingleContent(fs: FileSystem, content: Content) {
+/** The responseStream is for coordinating generation, not writing, of content. */
+export type WritableContent = Omit<Content, "responseStream"> &
+  Partial<Pick<Content, "responseStream">>;
+
+async function writeSingleContent(fs: FileSystem, content: WritableContent) {
   if (!content.response) return;
   const combined = content.meta?.combined ?? false;
   if (combined && content.outPath != content.path) {
@@ -378,11 +382,17 @@ async function writeSingleContent(fs: FileSystem, content: Content) {
       })
     );
   }
-  // TODO: Ensure `engine` and `model` are in `debug`
+
   const meta: ContentMeta = {
-    // debug,
-    isolated,
-    combined,
+    ...(combined ? { combined: true } : {}),
+    ...(isolated ? { isolated: true } : {}),
+    ...(Object.keys(content.meta?.view || {}).length > 0
+      ? { view: content.meta?.view }
+      : {}),
+    ...(content.meta?.temperature
+      ? { temperature: content.meta.temperature }
+      : {}),
+    debug,
   };
 
   if (combined) {
@@ -394,11 +404,11 @@ async function writeSingleContent(fs: FileSystem, content: Content) {
     lineWidth: 0,
     sortMapEntries: true,
   });
-  const file = `---\n${head}---\n${content.response}`;
+  const file = (head === "{}\n" ? "" : `---\n${head}---\n`) + content.response;
   await fs.writeFile(path, file);
 }
 
-export async function writeContent(fs: FileSystem, content: Content[]) {
+export async function writeContent(fs: FileSystem, content: WritableContent[]) {
   for (const c of Object.values(content)) {
     try {
       await writeSingleContent(fs, c);

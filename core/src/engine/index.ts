@@ -1,15 +1,17 @@
+import type { Temporal } from "temporal-polyfill";
 import { Content, ContentMeta, View } from "../content/content.js";
-import * as openai from "./openai.js";
+import { PipelineSettings } from "../index.js";
 import * as bedrock from "./bedrock/bedrock.js";
 import * as mistral from "./mistral/mistral.js";
 import * as noop from "./noop.js";
-import { PipelineSettings } from "../index.js";
+import * as openai from "./openai.js";
 
 export interface EngineDebug {
   engine?: string;
   model?: string;
   finish?: string;
   error?: Error;
+  lastRun?: Temporal.Instant | string;
 }
 
 export type EngineGenerate<D extends EngineDebug = {}> = (
