@@ -1,3 +1,4 @@
 *
 **/tsconfig.tsbuildinfo
 !*.js
+!**/*.js
