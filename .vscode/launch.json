@@ -25,6 +25,13 @@
       ],
       "outFiles": ["${workspaceFolder}/extension/out/test/**/*.js"],
       "preLaunchTask": "${defaultBuildTask}"
+    },
+    {
+      "name": "Next.js: debug server-side",
+      "type": "node-terminal",
+      "request": "launch",
+      "cwd": "${workspaceFolder}/web",
+      "command": "npm run dev"
     }
   ]
 }

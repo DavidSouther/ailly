@@ -1,6 +1,6 @@
 "use client";
 import { Dispatch, MutableRefObject, useMemo, useReducer, useRef } from "react";
-import type { Content } from "@ailly/core/src/content/content";
+import type { Content, WritableContent } from "@ailly/core/src/content/content";
 import { generateOne } from "./ailly";
 import { withResolvers } from "@ailly/core/src/util";
 
@@ -11,7 +11,7 @@ export interface AillyPageState {
   instruction: string;
   response: Response;
   generating: boolean;
-  content: Content;
+  content: WritableContent;
 }
 
 export interface StoryBook {
@@ -54,7 +54,7 @@ export function makeAillyStore(dispatch: MutableRefObject<AillyStoreDispatch>) {
   let instruction = "";
   let response = { content: "" };
   let generating = true;
-  let content: Content = {
+  let content: WritableContent = {
     name: "dev",
     path: "/ailly/dev",
     outPath: "/ailly/dev",
@@ -62,7 +62,6 @@ export function makeAillyStore(dispatch: MutableRefObject<AillyStoreDispatch>) {
     context: {
       view: false,
     },
-    responseStream: withResolvers(),
   };
 
   const reducers = {
@@ -126,7 +125,6 @@ export function makeAillyStore(dispatch: MutableRefObject<AillyStoreDispatch>) {
             .map((content) => ({ content, view: {} })),
           view: false,
         },
-        responseStream: withResolvers(),
       };
       generating = true;
       this.update();

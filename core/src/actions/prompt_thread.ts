@@ -1,5 +1,5 @@
 import { Temporal } from "temporal-polyfill";
-import { View, type Content, type ContentMeta } from "../content/content.js";
+import { View, type Content } from "../content/content.js";
 import {
   GLOBAL_VIEW,
   mergeContentViews,
@@ -218,14 +218,10 @@ export function generateOne(
   try {
     const generator = engine.generate(c, settings);
     c.responseStream.resolve(generator.stream);
-    const updateDebug = () => {
+    return generator.done.finally(() => {
+      c.response = generator.message();
       c.meta!.debug = { ...c.meta!.debug, ...generator.debug() };
-    };
-    return generator.done
-      .then(() => {
-        c.response = generator.message();
-      })
-      .finally(updateDebug);
+    });
   } catch (err) {
     LOGGER.error(`Uncaught error in ${engine.name} generator`, { err });
     if (c.meta?.debug) {
