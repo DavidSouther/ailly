@@ -59,6 +59,7 @@ export function makeArgs(argv = process.argv) {
       "log-format": { type: "string", default: "pretty" },
       verbose: { type: "boolean", default: false, short: "v" },
       "skip-head": { type: "boolean", default: false },
+      clean: { type: "boolean", default: false },
     },
   });
 
@@ -89,6 +90,7 @@ export function help() {
       'none' includes no additional content (including no system context) when generating.
       (note: context is separate from isolated. isolated: true with either 'content' or 'folder' will result in the same behavior with either. With 'none', Ailly will send _only_ the prompt when generating.)
 
+    --clean resets all your ailly files to have no debug, no response, and minimal head matter settings.
     -e, --edit use Ailly in edit mode. Provide a single file in paths, an edit marker, and a prompt. The path will be updated with the edit marker at the prompt.
     -l, --lines the lines to edit as '[start]:[end]' with start inclusive, and end exclusive. With only '[start]', will insert after. With only ':[end]', will insert before.
     --skip-head when printing 

@@ -25,6 +25,10 @@
         "title": "Ailly: Run"
       },
       {
+        "command": "ailly.clean",
+        "title": "Ailly: Clean"
+      },
+      {
         "command": "ailly.edit",
         "title": "Ailly: Edit"
       }
@@ -33,6 +37,10 @@
       "explorer/context": [
         {
           "command": "ailly.generate",
+          "group": "3_generate"
+        },
+        {
+          "command": "ailly.clean",
           "group": "3_generate"
         }
       ]

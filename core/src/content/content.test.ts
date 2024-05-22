@@ -495,6 +495,49 @@ test("writes content and skips head", async () => {
     "/without-head.md.ailly.md": "Without Head",
   });
 });
+test("writes clean content", async () => {
+  const fs = new FileSystem(
+    new ObjectFileSystemAdapter({
+      "other.md": "other",
+      "other.md.ailly.md": "Response",
+    })
+  );
+
+  const content: WritableContent[] = [
+    {
+      name: "content.md",
+      path: "/content.md",
+      outPath: "/content.md",
+      prompt: "content",
+      response: "Response",
+      context: {
+        system: [],
+        view: { foo: "bar" },
+      },
+      meta: { combined: true, root: "/", debug: { engine: "test" } },
+    },
+    {
+      name: "other.md",
+      path: "/other.md",
+      outPath: "/other.md.ailly.md",
+      prompt: "other",
+      response: "Response",
+      context: {
+        system: [],
+        view: {},
+      },
+      meta: { root: "/", debug: { engine: "test" } },
+    },
+  ];
+
+  await writeContent(fs, content, { clean: true });
+
+  expect((fs as any).adapter.fs).toEqual({
+    "/content.md":
+      "---\ncombined: true\nprompt: content\nview:\n  foo: bar\n---\n",
+    "/other.md": "other",
+  });
+});
 
 describe("Load aillyrc", () => {
   describe("parent = root (default)", () => {
