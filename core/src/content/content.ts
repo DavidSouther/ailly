@@ -295,6 +295,7 @@ export async function loadContent(
   meta: ContentMeta = {},
   depth: number = Number.MAX_SAFE_INTEGER
 ): Promise<Record<string, Content>> {
+  if (depth < 0) throw new Error("Depth in loadContent cannot be negative");
   if (depth < 1) return {};
   LOGGER.debug(`Loading content from ${fs.cwd()}`);
   [system, meta] = await loadAillyRc(fs, system, meta);

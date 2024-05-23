@@ -25,8 +25,18 @@
         "title": "Ailly: Run"
       },
       {
+        "command": "ailly.generate.all",
+        "title": "Ailly: Run All",
+        "enablement": "explorerViewletFocus"
+      },
+      {
         "command": "ailly.clean",
         "title": "Ailly: Clean"
+      },
+      {
+        "command": "ailly.clean.all",
+        "title": "Ailly: Clean",
+        "enablement": "explorerViewletFocus"
       },
       {
         "command": "ailly.edit",
@@ -40,7 +50,15 @@
           "group": "3_generate"
         },
         {
+          "command": "ailly.generate.all",
+          "group": "3_generate"
+        },
+        {
           "command": "ailly.clean",
+          "group": "3_generate"
+        },
+        {
+          "command": "ailly.clean.all",
           "group": "3_generate"
         }
       ]

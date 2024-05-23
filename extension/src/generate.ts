@@ -31,10 +31,12 @@ export async function generate(
     extensionEdit,
     manager,
     clean = false,
+    depth = 1,
   }: {
     extensionEdit?: ExtensionEdit;
     manager: StatusManager;
     clean?: boolean;
+    depth?: number;
   }
 ) {
   resetLogger();
@@ -66,6 +68,7 @@ export async function generate(
     path,
     extensionEdit,
     settings,
+    depth,
   });
 
   if (content.length === 0) {
@@ -149,13 +152,15 @@ async function loadContentParts({
   path,
   extensionEdit,
   settings,
+  depth = 1,
 }: {
   fs: FileSystem;
   path: string;
-  extensionEdit?: ExtensionEdit;
+  extensionEdit: ExtensionEdit | undefined;
   settings: PipelineSettings;
+  depth: number;
 }): Promise<[Content[], Record<string, Content>]> {
-  const context = await loadContent(fs, [], settings, 1);
+  const context = await loadContent(fs, [], settings, depth);
   const content: Content[] = Object.values(context).filter((c) =>
     c.path.startsWith(path)
   );
@@ -191,9 +196,3 @@ async function loadContentParts({
 
   return [content, context];
 }
-
-export const TEST_ONLY = {
-  loadContentParts,
-  executeEdit,
-  executeStreaming,
-};
