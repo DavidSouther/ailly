@@ -104,6 +104,18 @@ test("it loads content", async () => {
   });
 });
 
+test("it loads prompt from head in combined: false", async () => {
+  const testFs = new FileSystem(
+    new ObjectFileSystemAdapter({
+      "a.md": "---\nprompt: prompt\n---\n",
+    })
+  );
+
+  const content = await loadContent(testFs, [], { combined: false });
+
+  expect(content["/a.md"].prompt).toBe("prompt");
+});
+
 test("it loads responses", async () => {
   const testFs = new FileSystem(
     new ObjectFileSystemAdapter({
