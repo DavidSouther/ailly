@@ -22,7 +22,7 @@
     "commands": [
       {
         "command": "ailly.generate",
-        "title": "Ailly: Generate"
+        "title": "Ailly: run"
       },
       {
         "command": "ailly.edit",
