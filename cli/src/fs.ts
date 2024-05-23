@@ -81,6 +81,7 @@ export async function loadFs(
     templateView,
     overwrite: !args.values["no-overwrite"],
     requestLimit,
+    skipHead: args.values["skip-head"],
   });
 
   const system = args.values.system ?? "";
