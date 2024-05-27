@@ -369,13 +369,23 @@ export async function loadContent(
 export type WritableContent = Omit<Content, "responseStream"> &
   Partial<Pick<Content, "responseStream">>;
 
-async function writeSingleContent(fs: FileSystem, content: WritableContent) {
+async function writeSingleContent(
+  fs: FileSystem,
+  content: WritableContent,
+  options?: { clean?: boolean }
+) {
   if (!content.response) return;
   const combined = content.meta?.combined ?? false;
   if (combined && content.outPath != content.path) {
     throw new Error(
       `Mismatch path and output for ${content.path} vs ${content.outPath}`
     );
+  }
+
+  const clean = options?.clean ?? false;
+  if (clean && !combined) {
+    await fs.rm(content.outPath);
+    return;
   }
 
   const dir = dirname(content.outPath);
@@ -385,7 +395,7 @@ async function writeSingleContent(fs: FileSystem, content: WritableContent) {
   LOGGER.info(`Writing response for ${filename}`);
   const path = join(dir, filename);
   const { debug, isolated } = content.meta ?? {};
-  if (content.context.augment) {
+  if (content.context.augment && !clean) {
     (debug as { augment: unknown[] }).augment = content.context.augment.map(
       ({ score, name }) => ({
         score,
@@ -397,17 +407,21 @@ async function writeSingleContent(fs: FileSystem, content: WritableContent) {
   const meta: ContentMeta = {
     ...(combined ? { combined: true } : {}),
     ...(isolated ? { isolated: true } : {}),
-    ...(Object.keys(content.meta?.view || {}).length > 0
-      ? { view: content.meta?.view }
+    ...(Object.keys(content.context?.view || {}).length > 0
+      ? { view: content.context?.view }
       : {}),
     ...(content.meta?.temperature
       ? { temperature: content.meta.temperature }
       : {}),
-    debug,
+    ...(!clean ? { debug } : {}),
   };
 
   if (combined) {
     meta.prompt = content.meta?.prompt ?? content.prompt;
+  }
+
+  if (clean) {
+    content.response = "";
   }
 
   const head = YAML.stringify(meta, {
@@ -422,10 +436,14 @@ async function writeSingleContent(fs: FileSystem, content: WritableContent) {
   await fs.writeFile(path, file);
 }
 
-export async function writeContent(fs: FileSystem, content: WritableContent[]) {
+export async function writeContent(
+  fs: FileSystem,
+  content: WritableContent[],
+  options?: { clean?: boolean }
+) {
   for (const c of Object.values(content)) {
     try {
-      await writeSingleContent(fs, c);
+      await writeSingleContent(fs, c, options);
     } catch (e) {
       LOGGER.error(`Failed to write content ${c.name}`, e as Error);
     }

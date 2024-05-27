@@ -30,8 +30,12 @@ export async function generate(
   {
     extensionEdit,
     manager,
-    depth = 1,
-  }: { extensionEdit?: ExtensionEdit; manager: StatusManager, depth?: number }
+    clean = false,
+  }: {
+    extensionEdit?: ExtensionEdit;
+    manager: StatusManager;
+    clean?: boolean;
+  }
 ) {
   resetLogger();
   LOGGER.info(`Generating for ${path}`);
@@ -62,36 +66,40 @@ export async function generate(
     path,
     extensionEdit,
     settings,
-    depth
   });
 
   if (content.length === 0) {
     return;
   }
 
-  // Generate
-  let generator = await GenerateManager.from(
-    content.map((c) => c.path),
-    context,
-    settings
-  );
-  manager.track(generator);
-  generator.start();
-
   const doEdit = extensionEdit && content[0].context.edit;
+  switch (true) {
+    case clean:
+      break;
 
-  if (doEdit) {
-    await executeStreaming(content, content[0].context.edit!);
-  }
+    default:
+      // Generate
+      let generator = await GenerateManager.from(
+        content.map((c) => c.path),
+        context,
+        settings
+      );
+      manager.track(generator);
+      generator.start();
 
-  await generator.allSettled();
-  if (content[0].meta?.debug?.finish! === "failed") {
-    throw new Error(generator.formatError(content[0]));
+      if (doEdit) {
+        await executeStreaming(content, content[0].context.edit!);
+      }
+
+      await generator.allSettled();
+      if (content[0].meta?.debug?.finish! === "failed") {
+        throw new Error(generator.formatError(content[0]));
+      }
   }
 
   // Write
   if (!doEdit) {
-    writeContent(fs as any, content);
+    writeContent(fs as any, content, { clean });
   }
 }
 
@@ -136,16 +144,18 @@ async function executeStreaming(content: Content[], edit: AillyEdit) {
   updateSelection(edit, replace);
 }
 
-async function loadContentParts(
-  {fs, path, extensionEdit, settings, depth = 1}:{
-  fs: FileSystem,
-  path: string,
-  extensionEdit?: ExtensionEdit,
-  settings: PipelineSettings
-  depth?: number
-  },
-): Promise<[Content[], Record<string, Content>]> {
-  const context = await loadContent(fs, [], settings, depth);
+async function loadContentParts({
+  fs,
+  path,
+  extensionEdit,
+  settings,
+}: {
+  fs: FileSystem;
+  path: string;
+  extensionEdit?: ExtensionEdit;
+  settings: PipelineSettings;
+}): Promise<[Content[], Record<string, Content>]> {
+  const context = await loadContent(fs, [], settings, 1);
   const content: Content[] = Object.values(context).filter((c) =>
     c.path.startsWith(path)
   );

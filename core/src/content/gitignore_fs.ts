@@ -9,6 +9,7 @@ export class GitignoreFs extends FileSystem {
     const [drive, ...dirs] = this.cwd().split("/");
     const gitignores: Array<{
       path: string;
+      gitignore: string;
       accepts: ReturnType<typeof gitignoreParser.compile>["accepts"];
     }> = [];
     for (let i = 1; i <= dirs.length; i++) {
@@ -19,6 +20,7 @@ export class GitignoreFs extends FileSystem {
       const parser = gitignoreParser.compile(gitignore);
       gitignores.push({
         path: gitignorePath,
+        gitignore,
         accepts: (input) => parser.accepts(input),
       });
     }
@@ -36,7 +38,7 @@ export class GitignoreFs extends FileSystem {
 }
 
 function isTextExtension(name: string) {
-  const overrides = ["go"];
+  const overrides = ["go", "ts"];
   if (overrides.includes(name.split(".").pop() || "")) {
     return true;
   }

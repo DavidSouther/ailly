@@ -42,6 +42,13 @@ export async function main() {
     case args.values["update-db"]:
       await generator.updateDatabase();
       break;
+    case args.values["clean"]:
+      writeContent(
+        fs,
+        loaded.content.map((name) => loaded.context[name]),
+        { clean: true }
+      );
+      break;
     case Number(args.values["query-db"]?.length) > 0:
       // const engine = await getEngine(loaded.settings.engine);
       // const builder = await getPlugin(loaded.settings.plugin);

@@ -31,8 +31,15 @@ export function activate(context: vscode.ExtensionContext) {
     manager: statusManager,
     gerund: "editing",
     pastpart: "edited",
-    infinitive: "edit",
     edit: true,
+  });
+
+  registerGenerateCommand(context, {
+    name: "clean",
+    manager: statusManager,
+    gerund: "cleaning",
+    pastpart: "cleaned",
+    clean: true,
   });
 
   context.subscriptions.push(
@@ -56,19 +63,19 @@ export function registerGenerateCommand(
   {
     name,
     manager,
-    deep = false,
     edit = false,
+    clean = false,
     gerund,
     pastpart,
-    infinitive,
+    infinitive = name,
   }: {
     name: string;
     manager: StatusManager;
-    deep?: boolean;
+    clean?: boolean;
     edit?: boolean;
     gerund: string;
     pastpart: string;
-    infinitive: string;
+    infinitive?: string;
   }
 ) {
   context.subscriptions.push(
@@ -109,7 +116,7 @@ export function registerGenerateCommand(
             vscode.window.showInformationMessage(`Ailly ${gerund} ${base}`);
             await generate(path, {
               manager,
-              depth: deep ? Number.MAX_SAFE_INTEGER : 1,
+              clean,
               extensionEdit,
             });
             vscode.window.showInformationMessage(`Ailly ${pastpart} ${base}`);
