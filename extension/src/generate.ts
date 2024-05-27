@@ -30,7 +30,8 @@ export async function generate(
   {
     extensionEdit,
     manager,
-  }: { extensionEdit?: ExtensionEdit; manager: StatusManager }
+    depth = 1,
+  }: { extensionEdit?: ExtensionEdit; manager: StatusManager, depth?: number }
 ) {
   resetLogger();
   LOGGER.info(`Generating for ${path}`);
@@ -56,12 +57,13 @@ export async function generate(
   });
 
   // Load content
-  const [content, context] = await loadContentParts(
+  const [content, context] = await loadContentParts({
     fs,
     path,
     extensionEdit,
-    settings
-  );
+    settings,
+    depth
+  });
 
   if (content.length === 0) {
     return;
@@ -135,12 +137,15 @@ async function executeStreaming(content: Content[], edit: AillyEdit) {
 }
 
 async function loadContentParts(
+  {fs, path, extensionEdit, settings, depth = 1}:{
   fs: FileSystem,
   path: string,
-  extensionEdit: ExtensionEdit | undefined,
+  extensionEdit?: ExtensionEdit,
   settings: PipelineSettings
+  depth?: number
+  },
 ): Promise<[Content[], Record<string, Content>]> {
-  const context = await loadContent(fs, [], settings, 1);
+  const context = await loadContent(fs, [], settings, depth);
   const content: Content[] = Object.values(context).filter((c) =>
     c.path.startsWith(path)
   );

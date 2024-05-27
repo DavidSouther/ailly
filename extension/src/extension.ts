@@ -2,107 +2,38 @@
 // Import the module and reference it with the alias vscode in your code below
 import * as vscode from "vscode";
 import { basename } from "path";
-import { generate } from "./generate.js";
+import { generate, type ExtensionEdit } from "./generate.js";
 import { LOGGER, resetLogger } from "./settings.js";
-import { StatusBarStatusManager } from "./status_manager.js";
+import {
+  StatusBarStatusManager,
+  type StatusManager,
+} from "./status_manager.js";
 
-// This method is called when your extension is activated
-// Your extension is activated the very first time the command is executed
 export function activate(context: vscode.ExtensionContext) {
   resetLogger();
-  // Use the console to output diagnostic information (console.log) and errors (console.error)
-  // This line of code will only be executed once when your extension is activated
+
   LOGGER.info('Congratulations, your extension "ailly" is now active!', {
     platform: process.platform,
   });
 
   const statusManager = StatusBarStatusManager.withContext(context);
 
-  // The command has been defined in the package.json file
-  // Now provide the implementation of the command with registerCommand
-  // The commandId parameter must match the command field in package.json
-  context.subscriptions.push(
-    vscode.commands.registerCommand(
-      "ailly.generate",
-      async (uri?: vscode.Uri, ..._args) => {
-        try {
-          if (!uri) {
-            uri = vscode.window.activeTextEditor?.document.uri;
-          }
-          const path = uri?.fsPath ?? "";
-          if (!path) {
-            return;
-          }
+  registerGenerateCommand(context, {
+    name: "generate",
+    manager: statusManager,
+    gerund: "running",
+    pastpart: "ran",
+    infinitive: "run",
+  });
 
-          try {
-            vscode.window.showInformationMessage(
-              `Ailly generating ${basename(path)}`
-            );
-            await generate(path, { manager: statusManager });
-            vscode.window.showInformationMessage(
-              `Ailly generated ${basename(path)}`
-            );
-          } catch (err) {
-            vscode.window.showWarningMessage(
-              `Ailly failed to generate ${basename(path)}: ${err}`
-            );
-
-            LOGGER.error("Failed to generate", { err });
-          }
-        } catch (err) {
-          LOGGER.error("Unknown failure", { err });
-        }
-      }
-    )
-  );
-
-  context.subscriptions.push(
-    vscode.commands.registerCommand("ailly.edit", async (..._args) => {
-      if (!vscode.window.activeTextEditor) {
-        return;
-      }
-      try {
-        const uri = vscode.window.activeTextEditor.document.uri;
-        const path = uri?.fsPath ?? "";
-        if (!path) {
-          return;
-        }
-
-        const prompt = await vscode.window.showInputBox({
-          title: "Prompt",
-          prompt: "What edits should Ailly make?",
-        });
-
-        if (!prompt) {
-          return;
-        }
-
-        const start = vscode.window.activeTextEditor.selection.start.line;
-        const end = vscode.window.activeTextEditor.selection.end.line;
-
-        try {
-          vscode.window.showInformationMessage(
-            `Ailly generating ${basename(path)}`
-          );
-          await generate(path, {
-            extensionEdit: { prompt, start, end },
-            manager: statusManager,
-          });
-          vscode.window.showInformationMessage(
-            `Ailly edited ${basename(path)}`
-          );
-        } catch (err) {
-          vscode.window.showWarningMessage(
-            `Ailly failed to generate ${basename(path)}: ${err}`
-          );
-
-          LOGGER.error("Error doing edit", { err });
-        }
-      } catch (err) {
-        LOGGER.error("Unknown error editing", { err });
-      }
-    })
-  );
+  registerGenerateCommand(context, {
+    name: "edit",
+    manager: statusManager,
+    gerund: "editing",
+    pastpart: "edited",
+    infinitive: "edit",
+    edit: true,
+  });
 
   context.subscriptions.push(
     vscode.commands.registerCommand("ailly.set-engine", async () => {
@@ -119,3 +50,80 @@ export function activate(context: vscode.ExtensionContext) {
 
 // This method is called when your extension is deactivated
 export function deactivate() {}
+
+export function registerGenerateCommand(
+  context: vscode.ExtensionContext,
+  {
+    name,
+    manager,
+    deep = false,
+    edit = false,
+    gerund,
+    pastpart,
+    infinitive,
+  }: {
+    name: string;
+    manager: StatusManager;
+    deep?: boolean;
+    edit?: boolean;
+    gerund: string;
+    pastpart: string;
+    infinitive: string;
+  }
+) {
+  context.subscriptions.push(
+    vscode.commands.registerCommand(
+      `ailly.${name}`,
+      async (uri?: vscode.Uri, ..._args) => {
+        if (edit && !vscode.window.activeTextEditor) {
+          return;
+        }
+        try {
+          if (!uri) {
+            uri = vscode.window.activeTextEditor?.document.uri;
+          }
+          const path = uri?.fsPath ?? "";
+          if (!path) {
+            return;
+          }
+
+          const base = basename(path);
+
+          let extensionEdit: ExtensionEdit | undefined;
+          if (edit) {
+            const prompt = await vscode.window.showInputBox({
+              title: "Prompt",
+              prompt: "What edits should Ailly make?",
+            });
+
+            if (!prompt) {
+              return;
+            }
+
+            const start = vscode.window.activeTextEditor!.selection.start.line;
+            const end = vscode.window.activeTextEditor!.selection.end.line;
+            extensionEdit = { prompt, start, end };
+          }
+
+          try {
+            vscode.window.showInformationMessage(`Ailly ${gerund} ${base}`);
+            await generate(path, {
+              manager,
+              depth: deep ? Number.MAX_SAFE_INTEGER : 1,
+              extensionEdit,
+            });
+            vscode.window.showInformationMessage(`Ailly ${pastpart} ${base}`);
+          } catch (err) {
+            vscode.window.showWarningMessage(
+              `Ailly failed to ${infinitive} ${base}`
+            );
+
+            LOGGER.error(`Failed to ${infinitive}`, { err });
+          }
+        } catch (err) {
+          LOGGER.error("Unknown failure", { err });
+        }
+      }
+    )
+  );
+}
