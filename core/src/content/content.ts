@@ -161,13 +161,23 @@ async function loadFile(
 
     let response: string | undefined;
     let outPath: string;
-    if (data.prompt) {
+    const combined = head.combined ?? data.combined;
+    if (data.prompt && combined !== false) {
       outPath = promptPath;
       response = prompt;
       data.combined = true;
       prompt = data.prompt;
       delete data.prompt;
     } else {
+      if (data.prompt !== undefined) {
+        if (prompt.trim().length > 0) {
+          LOGGER.warn(`Head and body both have prompt, skipping ${file.name}`);
+          data.skip = true;
+        } else {
+          prompt = data.prompt;
+        }
+      }
+
       outPath =
         head.out === undefined || head.root === head.out
           ? promptPath
