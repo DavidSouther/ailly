@@ -39,6 +39,10 @@
         "enablement": "explorerViewletFocus"
       },
       {
+        "command": "ailly.continue",
+        "title": "Ailly: Continue"
+      },
+      {
         "command": "ailly.edit",
         "title": "Ailly: Edit"
       }
@@ -52,6 +56,11 @@
         {
           "command": "ailly.generate.all",
           "group": "3_generate"
+        },
+        {
+          "command": "ailly.continue",
+          "group": "1_modification",
+          "when": "!explorerResourceIsFolder"
         },
         {
           "command": "ailly.clean",

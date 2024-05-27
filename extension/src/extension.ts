@@ -36,6 +36,14 @@ export function activate(context: vscode.ExtensionContext) {
   });
 
   registerGenerateCommand(context, {
+    name: "continue",
+    manager: statusManager,
+    continued: true,
+    gerund: "continuing",
+    pastpart: "continued",
+  });
+
+  registerGenerateCommand(context, {
     name: "clean",
     manager: statusManager,
     gerund: "cleaning",
@@ -84,6 +92,7 @@ export function registerGenerateCommand(
     edit = false,
     clean = false,
     deep = false,
+    continued = false,
     gerund,
     pastpart,
     infinitive = name,
@@ -93,6 +102,7 @@ export function registerGenerateCommand(
     clean?: boolean;
     edit?: boolean;
     deep?: boolean;
+    continued?: boolean;
     gerund: string;
     pastpart: string;
     infinitive?: string;
@@ -137,6 +147,8 @@ export function registerGenerateCommand(
             await generate(path, {
               manager,
               clean,
+              depth: deep ? Number.MAX_SAFE_INTEGER : 1,
+              continued,
               extensionEdit,
             });
             vscode.window.showInformationMessage(`Ailly ${pastpart} ${base}`);

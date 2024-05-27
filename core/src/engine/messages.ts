@@ -12,14 +12,15 @@ export async function addContentMessages(
     content.meta.messages = getMessagesFolder(content, context);
   else content.meta.messages = getMessagesPredecessor(content, context);
   let messages = content.meta.messages;
-  if (messages.at(-1)?.role == "assistant") {
+  if (
+    messages.at(-1)?.role == "assistant" &&
+    (content.context.edit || !content.meta.continue)
+  ) {
     messages.splice(-1, 1);
   }
-  let fence: undefined | string = undefined;
   if (content.context.edit) {
     const lang = content.context.edit.file.split(".").at(-1) ?? "";
-    fence = "```" + lang;
-    messages.push({ role: "assistant", content: fence });
+    messages.push({ role: "assistant", content: "```" + lang });
   }
 }
 

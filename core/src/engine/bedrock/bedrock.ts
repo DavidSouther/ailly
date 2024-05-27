@@ -75,7 +75,7 @@ export const generate: EngineGenerate<BedrockDebug> = (
   });
 
   try {
-    let message = "";
+    let message = c.meta?.continue ? c.response ?? "" : "";
     const debug: BedrockDebug = {
       id: "",
       finish: "unknown",

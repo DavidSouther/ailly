@@ -49,7 +49,7 @@ export const generate: EngineGenerate<OpenAIDebug> = (
   };
 
   try {
-    let message = "";
+    let message = c.meta?.continue ? c.response ?? "" : "";
     let chunkNum = 0;
     const stream = new TransformStream();
 

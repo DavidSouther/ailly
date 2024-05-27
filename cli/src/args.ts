@@ -11,6 +11,7 @@ export function makeArgs(argv = process.argv) {
       out: { type: "string", short: "o" },
       isolated: { type: "boolean", default: false, short: "i" },
       combined: { type: "boolean", default: false },
+      continue: { type: "boolean", default: false },
       "no-overwrite": { type: "boolean", default: false },
       edit: { type: "boolean", default: false, short: "e" },
       lines: { type: "string", default: "", short: "l" },
@@ -89,6 +90,7 @@ export function help() {
       'folder' includes all files in the folder at the same level as the current file when generating. Default with --edit.
       'none' includes no additional content (including no system context) when generating.
       (note: context is separate from isolated. isolated: true with either 'content' or 'folder' will result in the same behavior with either. With 'none', Ailly will send _only_ the prompt when generating.)
+    --continue when a response is present, will include that response as the "assistant" message to begin inference from.
 
     --clean resets all your ailly files to have no debug, no response, and minimal head matter settings.
     -e, --edit use Ailly in edit mode. Provide a single file in paths, an edit marker, and a prompt. The path will be updated with the edit marker at the prompt.

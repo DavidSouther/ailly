@@ -31,11 +31,13 @@ export async function generate(
     extensionEdit,
     manager,
     clean = false,
+    continued = false,
     depth = 1,
   }: {
     extensionEdit?: ExtensionEdit;
     manager: StatusManager;
     clean?: boolean;
+    continued?: boolean;
     depth?: number;
   }
 ) {
@@ -58,6 +60,7 @@ export async function generate(
     root,
     out: root,
     context: "folder",
+    continued,
     engine,
     model,
   });

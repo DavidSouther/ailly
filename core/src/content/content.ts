@@ -62,6 +62,7 @@ export interface ContentMeta {
   text?: string;
   context?: "conversation" | "folder" | "none";
   parent?: "root" | "always" | "never";
+  continue?: boolean;
   messages?: Message[];
   skip?: boolean;
   skipHead?: boolean;
