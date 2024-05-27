@@ -64,6 +64,7 @@ export interface ContentMeta {
   parent?: "root" | "always" | "never";
   messages?: Message[];
   skip?: boolean;
+  skipHead?: boolean;
   isolated?: boolean;
   combined?: boolean;
   debug?: EngineDebug;
@@ -414,7 +415,10 @@ async function writeSingleContent(fs: FileSystem, content: WritableContent) {
     lineWidth: 0,
     sortMapEntries: true,
   });
-  const file = (head === "{}\n" ? "" : `---\n${head}---\n`) + content.response;
+  const file =
+    (!combined && (content.meta?.skipHead || head === "{}\n")
+      ? ""
+      : `---\n${head}---\n`) + content.response;
   await fs.writeFile(path, file);
 }
 

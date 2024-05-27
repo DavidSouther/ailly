@@ -31,6 +31,7 @@ export interface PipelineSettings {
   plugin: string;
   isolated: boolean;
   combined: boolean | undefined;
+  skipHead: boolean;
   overwrite: boolean;
   templateView: View;
 }
@@ -45,6 +46,7 @@ export async function makePipelineSettings({
   plugin = DEFAULT_PLUGIN,
   overwrite = true,
   isolated = false,
+  skipHead = false,
   combined,
   templateView = {},
 }: {
@@ -57,6 +59,7 @@ export async function makePipelineSettings({
   overwrite?: boolean;
   isolated?: boolean;
   combined?: boolean;
+  skipHead?: boolean;
   requestLimit?: number;
   templateView?: View;
 }): Promise<PipelineSettings> {
@@ -75,6 +78,7 @@ export async function makePipelineSettings({
     overwrite,
     isolated,
     combined,
+    skipHead,
     templateView,
   };
 }

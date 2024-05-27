@@ -58,6 +58,7 @@ export function makeArgs(argv = process.argv) {
       "log-level": { type: "string", default: undefined },
       "log-format": { type: "string", default: "pretty" },
       verbose: { type: "boolean", default: false, short: "v" },
+      "skip-head": { type: "boolean", default: false },
     },
   });
 
@@ -90,6 +91,7 @@ export function help() {
 
     -e, --edit use Ailly in edit mode. Provide a single file in paths, an edit marker, and a prompt. The path will be updated with the edit marker at the prompt.
     -l, --lines the lines to edit as '[start]:[end]' with start inclusive, and end exclusive. With only '[start]', will insert after. With only ':[end]', will insert before.
+    --skip-head when printing 
 
     --engine will set the default engine. Can be set with AILLY_ENGINE environment variable. Default is bedrock. bedrock calls AWS Bedrock. noop is available for testing. (Probably? Check the code.)
     --model will set the model from the engine. Can be set with AILLY_MODEL environment variable. Default depends on the engine; bedrock is anthropic.claude-3-sonnet-20240229-v1:0, OpenAI is gpt-4-0613. (Probably? Check the code.)

@@ -448,6 +448,54 @@ test("it writes deep java prompts and responses", async () => {
   });
 });
 
+test("writes content and skips head", async () => {
+  const fs = new FileSystem(new ObjectFileSystemAdapter({}));
+
+  const content: WritableContent[] = [
+    {
+      name: "with-head.md",
+      path: "/with-head.md",
+      outPath: "/with-head.md.ailly.md",
+      prompt: "with-head",
+      response: "With Head",
+      context: { view: {} },
+      meta: { root: "/", debug: { engine: "test" } },
+    },
+    {
+      name: "without-head.md",
+      path: "/without-head.md",
+      outPath: "/without-head.md.ailly.md",
+      prompt: "without-head",
+      response: "Without Head",
+      context: { view: {} },
+      meta: { root: "/", debug: { engine: "test" }, skipHead: true },
+    },
+    {
+      name: "combined.md",
+      path: "/combined.md",
+      outPath: "/combined.md",
+      prompt: "combined",
+      response: "Combined",
+      context: { view: {} },
+      meta: {
+        combined: true,
+        root: "/",
+        debug: { engine: "test" },
+        skipHead: true,
+      },
+    },
+  ];
+
+  await writeContent(fs, content);
+
+  expect((fs as any).adapter.fs).toEqual({
+    "/combined.md":
+      "---\ncombined: true\ndebug:\n  engine: test\nprompt: combined\n---\nCombined",
+    "/with-head.md.ailly.md": "---\ndebug:\n  engine: test\n---\nWith Head",
+    "/without-head.md.ailly.md": "Without Head",
+  });
+});
+
 describe("Load aillyrc", () => {
   describe("parent = root (default)", () => {
     test("at root with no .aillyrc in cwd", async () => {
