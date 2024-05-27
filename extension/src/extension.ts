@@ -27,11 +27,12 @@ export function activate(context: vscode.ExtensionContext) {
   });
 
   registerGenerateCommand(context, {
-    name: "edit",
+    name: "generate.all",
     manager: statusManager,
-    gerund: "editing",
-    pastpart: "edited",
-    edit: true,
+    gerund: "running all in",
+    pastpart: "ran all in",
+    infinitive: "run all in",
+    deep: true,
   });
 
   registerGenerateCommand(context, {
@@ -40,6 +41,23 @@ export function activate(context: vscode.ExtensionContext) {
     gerund: "cleaning",
     pastpart: "cleaned",
     clean: true,
+  });
+
+  registerGenerateCommand(context, {
+    name: "clean.all",
+    manager: statusManager,
+    gerund: "cleaning all in",
+    pastpart: "cleaned all in",
+    clean: true,
+    deep: true,
+  });
+
+  registerGenerateCommand(context, {
+    name: "edit",
+    manager: statusManager,
+    gerund: "editing",
+    pastpart: "edited",
+    edit: true,
   });
 
   context.subscriptions.push(
@@ -65,6 +83,7 @@ export function registerGenerateCommand(
     manager,
     edit = false,
     clean = false,
+    deep = false,
     gerund,
     pastpart,
     infinitive = name,
@@ -73,6 +92,7 @@ export function registerGenerateCommand(
     manager: StatusManager;
     clean?: boolean;
     edit?: boolean;
+    deep?: boolean;
     gerund: string;
     pastpart: string;
     infinitive?: string;
