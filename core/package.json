@@ -2,8 +2,8 @@
   "name": "@ailly/core",
   "version": "1.5.0-rc2",
   "description": "",
-  "main": "dist/index.js",
-  "types": "dist/index.d.ts",
+  "main": "lib/index.js",
+  "types": "lib/index.d.ts",
   "type": "commonjs",
   "engines": {
     "node": ">=16"

@@ -1,31 +1,29 @@
 ---
 combined: true
+debug:
+  engine: bedrock
+  finish: end_turn
+  id: msg_01Dj779o6nJBSEiRCAYi7Lsk
+  lastRun: 2024-05-28T01:34:37.491Z
+  model: claude-3-haiku-48k-20240307
+  statistics:
+    firstByteLatency: 303
+    inputTokenCount: 114
+    invocationLatency: 1278
+    outputTokenCount: 89
 isolated: true
-prompt: |-
-  Okay, let me think of a joke...
-
-  <scratchpad>
-  Category: Word play
-  Theme: Puns about foods
-
-  What kind of dog loves baseball?
-  A hot-dog!
-  </scratchpad>
-
-  <joke>
-  What kind of dog loves baseball? A hot-dog!
-  </joke>
+prompt: Think to yourself before telling the joke. Work in a <scratchpad></scratchpad> block. First, decide on a broad category for the joke. Then, decide on a theme for the joke. Finally, tell the joke. The joke should be short and direct. Put your response in <joke></joke>.
 ---
-*chuckles* Good one! Hot dogs and baseball, a classic pun combo. Alright, how about this one:
+
+Okay, let's try this!
 
 <scratchpad>
-Category: Wordplay
-Theme: Puns about cooking 
+Broad category: Food
+Theme: Sandwiches
 
-Why did the tomato turn red?
-Because it saw the salad dressing!
+Joke: What did the bread say to the other bread? "I'm a-loaf of you!"
 </scratchpad>
 
 <joke>
-Why did the tomato turn red? Because it saw the salad dressing!
+What did the bread say to the other bread? "I'm a-loaf of you!"
 </joke>

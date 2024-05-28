@@ -1,32 +1,27 @@
 ---
 combined: true
+debug:
+  engine: bedrock
+  finish: end_turn
+  id: msg_01HBCcvh1ortqq4RzYyEsGey
+  lastRun: 2024-05-28T01:34:35.971Z
+  model: claude-3-haiku-48k-20240307
+  statistics:
+    firstByteLatency: 312
+    inputTokenCount: 114
+    invocationLatency: 1305
+    outputTokenCount: 66
 isolated: true
-prompt: |-
-  Okay, let me think of a joke for the road trip...
-
-  <scratchpad>
-  Category: Animal jokes
-  Theme: Cats and dogs
-
-  Why don't dogs ever get hired to work at the grocery store?
-  Because they can't stop mauling over the biscuit aisle!
-  </scratchpad>
-
-  <joke>
-  Why don't dogs ever get hired to work at the grocery store? Because they can't stop mauling over the biscuit aisle!
-  </joke>
+prompt: Think to yourself before telling the joke. Work in a <scratchpad></scratchpad> block. First, decide on a broad category for the joke. Then, decide on a theme for the joke. Finally, tell the joke. The joke should be short and direct. Put your response in <joke></joke>.
 ---
-*chuckles* Good one! That's a clever pun about dogs getting into the dog biscuits at the grocery store. I'm sure the kids will get a kick out of that. Alright, let me try coming up with another joke for the road trip...
+
+Okay, let's try this!
 
 <scratchpad>
-Category: Food jokes 
-Theme: Fruit
-
-What do you call a fake noodle? An impasta!
+Broad category: Animals
+Theme: Puns about birds
 </scratchpad>
 
 <joke>
-What do you call a fake noodle? An impasta!
+Why did the chicken cross the road? To get to the other side... of the beak!
 </joke>
-
-How's that one? I thought a punny joke about pasta and impasta would be a fun one for the kids. Puns are always a hit on these road trips, don't you think?

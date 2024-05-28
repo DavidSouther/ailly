@@ -1,4 +1,5 @@
 ---
+skip: true
 combined: true
 debug:
   engine: bedrock
@@ -9,6 +10,7 @@ debug:
 isolated: false
 prompt: Summarize CHAPTER XVI. THE TENIMBER ISLANDS.
 ---
+
 Here is a summary of Chapter XVI: The Tenimber Islands:
 
 This chapter describes the author's continued journey among the Tenimber Islands after leaving Serra. He travels by small boat and tender, stopping at various smaller islands like Maling, Laboba, and Wau along the way.

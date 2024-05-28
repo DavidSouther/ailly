@@ -1,4 +1,5 @@
 ---
+skip: true
 combined: true
 debug:
   engine: bedrock
@@ -9,9 +10,10 @@ debug:
 isolated: false
 prompt: Summarize CHAPTER II. TIMOR.
 ---
+
 Here is a summary of Chapter II: Timor:
 
-This chapter describes the author's stop at the island of Timor during his voyage. He arrives at the Portuguese settlement of Dilli on the northwest coast. 
+This chapter describes the author's stop at the island of Timor during his voyage. He arrives at the Portuguese settlement of Dilli on the northwest coast.
 
 The author depicts Dilli as a poverty-stricken town whose residents, including the Portuguese colonial officials, live in extremely modest conditions. He recounts being received shabbily by the Portuguese governor.
 

@@ -7,7 +7,7 @@ import {
   type Content,
 } from "@ailly/core/lib/content/content.js";
 import { GitignoreFs } from "@ailly/core/lib/content/gitignore_fs.js";
-import { FileSystem } from "@davidsouther/jiffies/lib/cjs/fs.js";
+import type { FileSystem } from "@davidsouther/jiffies/lib/cjs/fs.js";
 import { NodeFileSystemAdapter } from "@davidsouther/jiffies/lib/cjs/fs_node.js";
 import { createInterface } from "node:readline";
 import { Args, help, makeArgs } from "./args.js";

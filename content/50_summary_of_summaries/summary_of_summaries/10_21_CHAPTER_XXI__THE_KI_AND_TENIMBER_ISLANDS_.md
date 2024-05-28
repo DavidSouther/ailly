@@ -1,4 +1,5 @@
 ---
+skip: true
 combined: true
 debug:
   engine: bedrock
@@ -9,6 +10,7 @@ debug:
 isolated: false
 prompt: Summarize CHAPTER XXI. THE KI AND TENIMBER ISLANDS.
 ---
+
 Here is a summary of Chapter XXI: The Ki and Tenimber Islands:
 
 This final chapter describes the author's return voyage from New Guinea, stopping first at the Ki Islands located between New Guinea and the Tenimber Islands.

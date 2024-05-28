@@ -1,4 +1,5 @@
 ---
+skip: true
 combined: true
 debug:
   engine: bedrock
@@ -9,6 +10,7 @@ debug:
 isolated: false
 prompt: Summarize CHAPTER V. MOA AND ROMA.
 ---
+
 Here is a summary of Chapter V: Moa and Roma:
 
 This chapter recounts the author's visits to the islands of Moa and Roma, which are part of the Serwatty or Southwest Islands group.

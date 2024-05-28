@@ -2,7 +2,10 @@ import { getLogLevel, getLogger } from "@davidsouther/jiffies/lib/cjs/log.js";
 import { Content, ContentMeta, View } from "./content/content.js";
 import { getEngine } from "./engine/index.js";
 import { getVersion } from "./version.js";
+export { GenerateManager } from "./actions/generate_manager.js";
+export * as content from "./content/content.js";
 export { GitignoreFs } from "./content/gitignore_fs.js";
+export { getEngine } from "./engine/index.js";
 export { getPlugin } from "./plugin/index.js";
 
 export const LOGGER = getLogger("@ailly/core");

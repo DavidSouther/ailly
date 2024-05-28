@@ -1,4 +1,5 @@
 ---
+skip: true
 combined: true
 debug:
   engine: bedrock
@@ -9,9 +10,10 @@ debug:
 isolated: false
 prompt: Summarize CHAPTER XVIII. GORAM AND THE ARRU ISLANDS.
 ---
+
 Here is a summary of Chapter XVIII: Goram and the Arru Islands:
 
-This chapter provides more details about the author's time in the Goram Islands and his return visit to the Arru Islands. 
+This chapter provides more details about the author's time in the Goram Islands and his return visit to the Arru Islands.
 
 In Goram, he describes the different islands in the group like Manovolko and Salawatta. He notes their agricultural production, lack of major settlements, and dispersed populations including refugees from conflicts elsewhere in the region.
 

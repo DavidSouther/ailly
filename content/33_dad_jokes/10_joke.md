@@ -1,29 +1,27 @@
 ---
 combined: true
+debug:
+  engine: bedrock
+  finish: end_turn
+  id: msg_01Uzff1p4QMWZuBDj16uYY73
+  lastRun: 2024-05-28T01:34:35.967Z
+  model: claude-3-haiku-48k-20240307
+  statistics:
+    firstByteLatency: 223
+    inputTokenCount: 114
+    invocationLatency: 1508
+    outputTokenCount: 84
 isolated: true
-prompt: |-
-  Okay, let me think through this...
-
-  <scratchpad>
-  Category: Animals
-  Theme: Playing on the literal vs. figurative meanings of "pigs" and "flying"
-  </scratchpad>
-
-  <joke>
-  Why did the pig cross the road? It had been studying aerodynamics!
-  </joke>
+prompt: Think to yourself before telling the joke. Work in a <scratchpad></scratchpad> block. First, decide on a broad category for the joke. Then, decide on a theme for the joke. Finally, tell the joke. The joke should be short and direct. Put your response in <joke></joke>.
 ---
-*chuckles* That's a good one! Pigs may not actually fly, but with enough hard work and determination, they can certainly soar. I like how you played with the double meaning of "pigs flying" there. Nicely done, Dad!
 
-Okay, let me try coming up with another joke for the kids. Hmm, let me think here...
+Okay, let's try this!
 
 <scratchpad>
-Category: Nature
-Theme: Humor based on a quirky animal fact
+Broad category: Nature
+Theme: Flowers
+
+Joke: Why didn't the flower go to the dance? It had a "pollen" to attend!
 </scratchpad>
 
-<joke>
-What do you call a boomerang that doesn't come back? A stick!
-</joke>
-
-How's that one? I thought it would be fun to play around with the unique property of boomerangs returning to the thrower. Even if this one doesn't come back, at least it's still a stick, right? Hopefully the kids get a kick out of that one!
+<joke>Why didn't the flower go to the dance? It had a "pollen" to attend!</joke>

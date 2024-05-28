@@ -1,26 +1,27 @@
 ---
 combined: true
+debug:
+  engine: bedrock
+  finish: end_turn
+  id: msg_011kfqWpjAu9zGd4rae49mtR
+  lastRun: 2024-05-28T01:34:38.849Z
+  model: claude-3-haiku-48k-20240307
+  statistics:
+    firstByteLatency: 288
+    inputTokenCount: 114
+    invocationLatency: 1523
+    outputTokenCount: 97
 isolated: true
-prompt: |-
-  Okay, let me think this through first.
-
-  <scratchpad>
-  Category: Animals
-  Theme: Cows and dairy products
-
-  What do you call a cow that just had a calf? De-calffinated!
-  </scratchpad>
-
-  <joke>
-  What do you call a cow that just had a calf? De-calffinated!
-  </joke>
+prompt: Think to yourself before telling the joke. Work in a <scratchpad></scratchpad> block. First, decide on a broad category for the joke. Then, decide on a theme for the joke. Finally, tell the joke. The joke should be short and direct. Put your response in <joke></joke>.
 ---
-*laughs* Oh, that's a good one! I love a good pun, especially when it's all about our bovine friends. Nicely done, dad!
 
-Alright, let me see what other punny jokes I can come up with about cows and dairy... Hmm, how about this one:
+Okay, let's try some family-friendly jokes! I'll use a <scratchpad></scratchpad> block to work through the process.
 
-<joke>
-Why did the cow cross the road? To get to the udder side!
-</joke>
+<scratchpad>
+Broad category: Animals
+Theme: Puns about animals
 
-*chuckles* Gets 'em every time! Cows and their udderly delightful antics. I'm sure the kids will be mooooved by that one. Okay, one more before we hit the road - what else ya got?
+Joke: What do you call a sleeping bull? A bulldozer!
+</scratchpad>
+
+<joke>What do you call a sleeping bull? A bulldozer!</joke>

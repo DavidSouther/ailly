@@ -141,7 +141,7 @@ async function loadFile(
 ): Promise<Content | undefined> {
   const ordering = splitOrderedName(file.name);
   const cwd = fs.cwd();
-  if (ordering.type == "prompt") {
+  if (ordering.type === "prompt") {
     head.root = head.root ?? cwd;
     const promptPath = join(cwd, file.name);
 
@@ -186,17 +186,26 @@ async function loadFile(
           : promptPath.replace(head.root, head.out);
       if (!head.combined) {
         outPath += EXTENSION;
+        data.combined = false;
         try {
-          response = matter(
-            await fs.readFile(outPath).catch((e) => "")
-          ).content;
-          data.combined = false;
-        } catch (err) {
-          LOGGER.warn(
-            `Error reading response and parsing for matter in ${outPath}`,
-            { err }
-          );
-          return undefined;
+          const outStat = await fs.stat(outPath);
+          if (outStat.isFile()) {
+            try {
+              const outFile = await fs.readFile(outPath).catch((e) => "");
+              const parsedResponse = matter(outFile);
+              response = parsedResponse.content;
+              data.meta = data.meta ?? {};
+              data.meta.debug = parsedResponse.meta?.debug ?? {};
+            } catch (err) {
+              LOGGER.warn(
+                `Error reading response and parsing for matter in ${outPath}`,
+                { err }
+              );
+              return undefined;
+            }
+          }
+        } catch (_) {
+          // Noop
         }
       }
     }
@@ -306,9 +315,9 @@ export async function loadContent(
   }
 
   const dir = await loadDir(fs).catch((e) => defaultPartitionedDirectory());
-  const files: Content[] = (
-    await Promise.all(dir.files.map((file) => loadFile(fs, file, system, meta)))
-  ).filter(isDefined);
+  const loaders = dir.files.map((file) => loadFile(fs, file, system, meta));
+  const allFiles = await Promise.all(loaders);
+  const files: Content[] = allFiles.filter(isDefined);
 
   const isIsolated = Boolean(meta.isolated);
   const context: NonNullable<ContentMeta["context"]> =
@@ -396,7 +405,7 @@ async function writeSingleContent(
   const filename = content.name + (combined ? "" : EXTENSION);
   LOGGER.info(`Writing response for ${filename}`);
   const path = join(dir, filename);
-  const { debug, isolated } = content.meta ?? {};
+  const { debug, isolated, skip } = content.meta ?? {};
   if (content.context.augment && !clean) {
     (debug as { augment: unknown[] }).augment = content.context.augment.map(
       ({ score, name }) => ({
@@ -407,8 +416,9 @@ async function writeSingleContent(
   }
 
   const meta: ContentMeta = {
-    ...(combined ? { combined: true } : {}),
-    ...(isolated ? { isolated: true } : {}),
+    ...(skip ? { skip } : {}),
+    ...(combined ? { combined } : {}),
+    ...(isolated ? { isolated } : {}),
     ...(Object.keys(content.context?.view || {}).length > 0
       ? { view: content.context?.view }
       : {}),

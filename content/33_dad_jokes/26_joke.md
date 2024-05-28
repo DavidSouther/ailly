@@ -1,31 +1,27 @@
 ---
 combined: true
+debug:
+  engine: bedrock
+  finish: end_turn
+  id: msg_01BwFK37i2kM2n5WW7YnCFPc
+  lastRun: 2024-05-28T01:34:39.837Z
+  model: claude-3-haiku-48k-20240307
+  statistics:
+    firstByteLatency: 119
+    inputTokenCount: 114
+    invocationLatency: 1279
+    outputTokenCount: 67
 isolated: true
-prompt: |-
-  Okay, let me think through this:
-
-  <scratchpad>
-  Category: Animals
-  Theme: Dogs love to chase things
-
-  Here's a punny joke related to that:
-  </scratchpad>
-
-  <joke>
-  Why did the dog chase his tail?
-  He was trying to make ends meet!
-  </joke>
+prompt: Think to yourself before telling the joke. Work in a <scratchpad></scratchpad> block. First, decide on a broad category for the joke. Then, decide on a theme for the joke. Finally, tell the joke. The joke should be short and direct. Put your response in <joke></joke>.
 ---
-Good one! That's a clever pun. Dogs chasing their tails is a classic silly animal behavior, and the pun about "making ends meet" ties that to the dog's financial situation. Simple but effective dad joke. Nice work!
 
-Okay, let's try another one. Take your time to brainstorm a new joke idea in the scratchpad.
+Okay, let's try this!
 
 <scratchpad>
-Category: Food
-Theme: Different ways to cook eggs
+Broad category: Wordplay
+Theme: Homophones
 </scratchpad>
 
 <joke>
-What do you call a boiled egg in the morning?
-Breakfast!
+Why did the kid bring a ladder to school? Because she wanted to bring her high-notes!
 </joke>

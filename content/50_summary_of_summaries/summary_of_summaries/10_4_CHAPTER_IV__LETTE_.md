@@ -1,4 +1,5 @@
 ---
+skip: true
 combined: true
 debug:
   engine: bedrock
@@ -9,6 +10,7 @@ debug:
 isolated: false
 prompt: Summarize CHAPTER IV. LETTE.
 ---
+
 Here is a summary of Chapter IV: Lette:
 
 This chapter focuses on the author's visit to the island of Lette, part of the Serwatty or Southwest Islands group. He arrives at the village of Tombra after departing Kissa.

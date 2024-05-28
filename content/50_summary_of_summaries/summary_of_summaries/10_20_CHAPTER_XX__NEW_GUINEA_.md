@@ -1,4 +1,5 @@
 ---
+skip: true
 combined: true
 debug:
   engine: bedrock
@@ -9,6 +10,7 @@ debug:
 isolated: false
 prompt: Summarize CHAPTER XX. NEW GUINEA.
 ---
+
 Here is a summary of Chapter XX: New Guinea:
 
 This chapter continues the account of the author's attempts to explore the coast of New Guinea. After the tense encounter with hostile natives described in the previous chapter, the author decides to make another attempt at going ashore.

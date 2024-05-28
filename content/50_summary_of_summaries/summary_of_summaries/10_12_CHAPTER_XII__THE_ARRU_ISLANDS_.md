@@ -1,4 +1,5 @@
 ---
+skip: true
 combined: true
 debug:
   engine: bedrock
@@ -9,6 +10,7 @@ debug:
 isolated: false
 prompt: Summarize CHAPTER XII. THE ARRU ISLANDS.
 ---
+
 Here is a summary of Chapter XII: The Arru Islands:
 
 This chapter continues the author's account of his time in the Arru Islands. He describes holding meetings and ceremonies with the village chiefs and residents of islands like Wokan, Wama, and Maykor.

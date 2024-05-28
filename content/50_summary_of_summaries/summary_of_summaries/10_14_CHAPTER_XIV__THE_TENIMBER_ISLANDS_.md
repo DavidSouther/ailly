@@ -1,4 +1,5 @@
 ---
+skip: true
 combined: true
 debug:
   engine: bedrock
@@ -9,9 +10,10 @@ debug:
 isolated: false
 prompt: Summarize CHAPTER XIV. THE TENIMBER ISLANDS.
 ---
+
 Here is a summary of Chapter XIV: The Tenimber Islands:
 
-This chapter focuses on the author's visit to the Tenimber island of Vordate. He describes the warm welcome he received from the native inhabitants, who were eager to renew ties with the Dutch after a long absence. 
+This chapter focuses on the author's visit to the Tenimber island of Vordate. He describes the warm welcome he received from the native inhabitants, who were eager to renew ties with the Dutch after a long absence.
 
 The author provides details about the physical geography of Vordate and the other Tenimber islands, portraying them as fertile with abundant crops and livestock. He depicts the natives' style of dress, adornments, and warrior traditions.
 
