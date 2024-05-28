@@ -9,6 +9,7 @@ debug:
 isolated: false
 prompt: Summarize CHAPTER VIII. LUAN.
 ---
+
 Here is a summary of Chapter VIII: Luan:
 
 This chapter describes the author's visit to the small island of Luan, part of the Southwest Islands group. He has difficulty navigating his ship through the hazardous reefs to reach an anchorage off Luan's coast.

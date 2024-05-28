@@ -1,4 +1,5 @@
 ---
+skip: true
 combined: true
 debug:
   engine: bedrock
@@ -9,6 +10,7 @@ debug:
 isolated: false
 prompt: Summarize CHAPTER III. THE SERWATTY ISLANDS.
 ---
+
 Here is a summary of Chapter III: The Serwatty Islands:
 
 This chapter describes the author's visit to the Serwatty or Southwest Islands, located north of Timor. He first goes ashore at the village of Sau on the island of Wetta.

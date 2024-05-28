@@ -1,4 +1,5 @@
 ---
+skip: true
 combined: true
 debug:
   engine: bedrock
@@ -9,6 +10,7 @@ debug:
 isolated: false
 prompt: Summarize CHAPTER XVII. THE CERAM-LAUT AND GORAM ISLANDS.
 ---
+
 Here is a summary of Chapter XVII: The Ceram-Laut and Goram Islands:
 
 This chapter describes the author's visit to the Ceram-Laut and Goram island groups east of Ceram. He provides background on the islands' inhabitants, who were descended from Ceramese or were refugees from other islands.

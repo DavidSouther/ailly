@@ -1,37 +1,27 @@
 ---
 combined: true
+debug:
+  engine: bedrock
+  finish: end_turn
+  id: msg_01C4dcEWJHCojkP8JXsrBAYX
+  lastRun: 2024-05-28T01:34:35.97Z
+  model: claude-3-haiku-48k-20240307
+  statistics:
+    firstByteLatency: 322
+    inputTokenCount: 114
+    invocationLatency: 1228
+    outputTokenCount: 82
 isolated: true
-prompt: |-
-  Okay, let me think of a joke.
-
-  <scratchpad>
-  Category: Animals
-  Theme: Wordplay/puns about animal sounds
-
-  Why did the chicken go to the seance?
-  To get to the other side.
-  </scratchpad>
-
-  <joke>
-  Why did the chicken go to the seance?
-  To get to the other side!
-  </joke>
+prompt: Think to yourself before telling the joke. Work in a <scratchpad></scratchpad> block. First, decide on a broad category for the joke. Then, decide on a theme for the joke. Finally, tell the joke. The joke should be short and direct. Put your response in <joke></joke>.
 ---
-*chuckles* That's a good one! I like the clever play on words there. Chickens going to the seance to get to the "other side" - very punny! The kids will get a kick out of that.
 
-Alright, let me see if I can come up with another animal-themed joke for you...
+Okay, let's try this:
 
 <scratchpad>
-Category: Animals 
-Theme: Silly animal behaviors
+Broad category: Animals
+Theme: Cats
 
-Why did the duck go to the lemonade stand?
-To get some quackers!
+Joke: Why did the cat cross the road? To get to the other side! Meow!
 </scratchpad>
 
-<joke>
-Why did the duck go to the lemonade stand?
-To get some quackers!
-</joke>
-
-How's that one? I tried to play around with a silly duck-related pun this time. Ducks going to a lemonade stand to get "quackers" - get it? I thought the kids might enjoy that one too. Puns are always a hit on road trips!
+<joke>Why did the cat cross the road? To get to the other side! Meow!</joke>

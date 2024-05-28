@@ -1,4 +1,5 @@
 ---
+skip: true
 combined: true
 debug:
   engine: bedrock
@@ -9,6 +10,7 @@ debug:
 isolated: false
 prompt: Summarize CHAPTER IX. BABA.
 ---
+
 Here is a summary of Chapter IX: Baba:
 
 This chapter covers the author's visit to the island of Baba, part of a group of islands southeast of the Banda Islands. He has difficulty navigating his ship through the treacherous reefs surrounding Baba.

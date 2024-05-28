@@ -1,24 +1,17 @@
 ---
 combined: true
-skip: true
 debug:
   engine: bedrock
   finish: end_turn
   id: null
   model: anthropic.claude-3-sonnet-20240229-v1:0
   usage: null
-isolated: false
-prompt: >
-  ``` 
-  #!/bin/bash
-
-  package_name="@ailly/cli" package_version=latest
-  ```
-  Finish this script. It should check to see if the package_version of package_name
-  is installed globally with npm. package_version should be used to augment the package_name.
-
+prompt: |
+  ```  #!/bin/bash
+  package_name="@ailly/cli" package_version=latest ``` Finish this script. It should check to see if the package_version of package_name is installed globally with npm. package_version should be used to augment the package_name.
   If the package is not installed, it should install it.
 ---
+
 Here's the completed script that checks if the specified package is installed globally with npm, and installs it if it's not:
 
   ```bash

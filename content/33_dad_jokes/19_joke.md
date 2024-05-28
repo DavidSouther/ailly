@@ -1,33 +1,29 @@
 ---
 combined: true
+debug:
+  engine: bedrock
+  finish: end_turn
+  id: msg_01YYmZ5Hw5uXH1sacMBnFZFk
+  lastRun: 2024-05-28T01:34:37.724Z
+  model: claude-3-haiku-48k-20240307
+  statistics:
+    firstByteLatency: 246
+    inputTokenCount: 114
+    invocationLatency: 1246
+    outputTokenCount: 86
 isolated: true
-prompt: |-
-  Okay, here is my thought process:
-
-  <scratchpad>
-  Category: Animals
-  Theme: A play on words related to different animals
-
-  What kind of animal goes "oink"?
-  A pig!
-  What kind of animal goes "woof"?
-  A dog!
-  What kind of animal goes "stu-stu-stu"?
-  A pig with a studder!
-  </scratchpad>
-
-  <joke>
-  What kind of animal goes "stu-stu-stu"?
-  A pig with a studder!
-  </joke>
+prompt: Think to yourself before telling the joke. Work in a <scratchpad></scratchpad> block. First, decide on a broad category for the joke. Then, decide on a theme for the joke. Finally, tell the joke. The joke should be short and direct. Put your response in <joke></joke>.
 ---
-Haha, good one! I love a good animal pun. That one about the pig with a stutter is clever. The kids are sure to get a kick out of that one. Keep 'em coming, dad!
 
-Here's another animal-themed pun for the kids:
+Okay, let's come up with a dad joke for the kids!
+
+<scratchpad>
+Broad category: Wordplay
+Theme: Homonyms
+
+Joke: Why did the bicycle fall over? Because it was two-tired!
+</scratchpad>
 
 <joke>
-Why did the chicken cross the playground? 
-To get to the other slide!
+Why did the bicycle fall over? Because it was two-tired!
 </joke>
-
-These puns are so punny! The kids will groan but they'll be laughing on the inside. Dad jokes are the best.

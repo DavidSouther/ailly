@@ -1,31 +1,27 @@
 ---
 combined: true
+debug:
+  engine: bedrock
+  finish: end_turn
+  id: msg_01S2fm9EJRtAJc9H9qX2B9LV
+  lastRun: 2024-05-28T01:34:39.504Z
+  model: claude-3-haiku-48k-20240307
+  statistics:
+    firstByteLatency: 304
+    inputTokenCount: 114
+    invocationLatency: 1105
+    outputTokenCount: 61
 isolated: true
-prompt: |-
-  Okay, here's a dad joke:
-
-  <scratchpad>
-  Category: Animal jokes
-  Theme: Bears
-  </scratchpad>
-
-  <joke>
-  What kind of bear has no teeth?
-  A gummy bear!
-  </joke>
+prompt: Think to yourself before telling the joke. Work in a <scratchpad></scratchpad> block. First, decide on a broad category for the joke. Then, decide on a theme for the joke. Finally, tell the joke. The joke should be short and direct. Put your response in <joke></joke>.
 ---
-*chuckles* Good one! That's a classic dad joke. Gummy bears definitely don't have any teeth. Nice pun there. The kids will get a kick out of that one. Keep 'em coming, Dad!
 
-Here's another one for you:
+Okay, let's try this!
 
 <scratchpad>
-Category: Animal jokes 
-Theme: Frogs
+Broad category: Food
+Theme: Puns
 </scratchpad>
 
 <joke>
-Why did the frog cross the road?
-To get to the other side!
+Why did the tomato turn red? Because it saw the salad dressing!
 </joke>
-
-*laughs* I know, I know, it's an old classic. But the kids always love a good frog joke, don't they? The simplicity of it is part of the charm. Alright, what else you got, Dad?

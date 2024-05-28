@@ -166,3 +166,27 @@ This is a bit of an experimental / trial by doing issue.
 Generally, late 2024 LLMs (Llama, Claude, ChatGPT) respond with "around" 700 words.
 Similarly, while their context sizes vary, they seem to work best with "up to" 16,000 words.
 Based on these limits, up to about 5 layers of folder depth and at most 20 files per folder generate the most reliably "good" results, but your milage will vary.
+
+## Statistics on prior runs
+
+This node.js script shows how to load the previously run Ailly content and extract its meta and debug information to perform statistics. For instance, reviewing the statistics of a recent run of the entire content/ directory using Haiku, we found that R=0.9995 correlation between input token count to first token response latency.
+
+```
+const ailly = require('@ailly/core');
+const { NodeFileSystemAdapter } = require('@davidsouther/jiffies/lib/cjs/fs_node.js');
+const fs = new ailly.GitignoreFs(new NodeFileSystemAdapter());
+fs.cd(process.cwd());
+ailly.LOGGER.level = 3; // Turn off logging
+loaded = await ailly.content.loadContent(fs, [], {}, Number.MAX_SAFE_INTEGER);
+content = Object.values(loaded)
+content.filter(c => !c.skip && c.meta?.debug?.id).map(c => ({ id: c.meta.debug.id, ...c.meta.debug.statistics }));
+```
+
+input:first 1.000
+input:invocation 0.995
+input:delta 0.926
+output:first 0.938
+output:invocation 0.961
+output:delta 0.987
+
+https://docs.google.com/spreadsheets/d/1qqCvNvivJutGnppln2xHpc8lqJlwIjb8erSt-upVo-Y/view

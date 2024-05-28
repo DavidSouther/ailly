@@ -1,31 +1,27 @@
 ---
 combined: true
+debug:
+  engine: bedrock
+  finish: end_turn
+  id: msg_01Fu7uSB5dEJKJDALntmb1dK
+  lastRun: 2024-05-28T01:34:37.566Z
+  model: claude-3-haiku-48k-20240307
+  statistics:
+    firstByteLatency: 279
+    inputTokenCount: 114
+    invocationLatency: 1239
+    outputTokenCount: 84
 isolated: true
-prompt: |-
-  <scratchpad>
-  Category: Word play/puns
-  Theme: Baking and cooking
-
-  Why couldn't the baker open the refrigerator door? Because he kneaded dough!
-  </scratchpad>
-
-  <joke>
-  Why couldn't the baker open the refrigerator door? Because he kneaded dough!
-  </joke>
+prompt: Think to yourself before telling the joke. Work in a <scratchpad></scratchpad> block. First, decide on a broad category for the joke. Then, decide on a theme for the joke. Finally, tell the joke. The joke should be short and direct. Put your response in <joke></joke>.
 ---
-*chuckles* Good one! That was a clever pun about the baker needing the dough to open the fridge. I like how you played on the words "kneaded" and "dough" there. Puns can be so punny!
 
-Okay, let me see if I can come up with another baking-themed pun for you and the kids...
+Okay, let's try this:
 
 <scratchpad>
-Category: Word play/puns 
-Theme: Baking
+Broad category: Animals
+Theme: Cats
 
-Why did the cookie go to the doctor? Because it felt crumby!
+Joke: Why did the cat go to the vet? Because it was a little purr-ly!
 </scratchpad>
 
-<joke>
-Why did the cookie go to the doctor? Because it felt crumby!
-</joke>
-
-How's that one? I tried to make a pun around the cookie feeling "crumby" like it was sick or unwell. Baking puns can be a lot of fun to come up with. Let me know if you need any more dad joke material for the road trip!
+<joke>Why did the cat go to the vet? Because it was a little purr-ly!</joke>

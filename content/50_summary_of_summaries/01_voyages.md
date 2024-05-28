@@ -1,7 +1,11 @@
 ---
-skip: true
+combined: true
 prompt: The text of the Project Gutenberg eBook of Voyages of the Dutch brig of war Dourga
+skip: true
 ---
+
+
+
 
 VOYAGES
 

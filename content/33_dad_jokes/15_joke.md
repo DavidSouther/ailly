@@ -1,34 +1,28 @@
 ---
 combined: true
+debug:
+  engine: bedrock
+  finish: end_turn
+  id: msg_017cXDksTupSLb9DDDdUJpfR
+  lastRun: 2024-05-28T01:34:37.233Z
+  model: claude-3-haiku-48k-20240307
+  statistics:
+    firstByteLatency: 326
+    inputTokenCount: 114
+    invocationLatency: 1222
+    outputTokenCount: 71
 isolated: true
-prompt: |-
-  Okay, here's my thought process:
-
-  <scratchpad>
-  Category: Food
-  Theme: Fruit and puns
-
-  What kind of fruit can tell jokes? A pun-kin!
-  </scratchpad>
-
-  <joke>
-  What kind of fruit can tell jokes? A pun-kin!
-  </joke>
+prompt: Think to yourself before telling the joke. Work in a <scratchpad></scratchpad> block. First, decide on a broad category for the joke. Then, decide on a theme for the joke. Finally, tell the joke. The joke should be short and direct. Put your response in <joke></joke>.
 ---
-*chuckles* Good one! That's a real knee-slapper. I bet the kids will get a kick out of that pun-kin joke. Alright, let's keep this pun train rolling. What other fruit-related puns do you have up your sleeve?
 
-How about this one:
+Okay, let's see what kind of joke I can come up with for the kids!
 
-<joke>
-What do you call a fruit that's good at karate? A kung-pao melon!
-</joke>
-
-*laughs* Get it? Kung-pao melon? Like the kung pao chicken dish, but with a melon! I just can't resist a good pun, especially when it involves tasty fruits.
-
-Okay, here's another one:
+<scratchpad>
+Broad category: Puns
+Theme: Fruit
+</scratchpad>
 
 <joke>
-What do you call a fruit that's an expert at computer programming? A digital apple!
+What kind of music do planets listen to? 
+Neptunes!
 </joke>
-
-*laughs* Because, you know, a digital apple would be an expert at coding and algorithms and all that tech stuff. Pretty punny, right? The kids are gonna love these fruit-themed puns!

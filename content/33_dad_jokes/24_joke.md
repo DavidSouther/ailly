@@ -1,33 +1,27 @@
 ---
 combined: true
+debug:
+  engine: bedrock
+  finish: end_turn
+  id: msg_01K3TeBzotc6kekWVEg8qzU2
+  lastRun: 2024-05-28T01:34:39.074Z
+  model: claude-3-haiku-48k-20240307
+  statistics:
+    firstByteLatency: 141
+    inputTokenCount: 114
+    invocationLatency: 952
+    outputTokenCount: 78
 isolated: true
-prompt: |-
-  Okay, let me think of a joke for the road trip...
-
-  <scratchpad>
-  Category: Animal jokes
-  Theme: Playing on words with animal names/sounds
-
-  What did one wall say to the other wall?
-  I'll meet you at the corner!
-  </scratchpad>
-
-  <joke>
-  Why do seagulls fly over the sea?
-  Because if they flew over the bay, they would be bagels!
-  </joke>
+prompt: Think to yourself before telling the joke. Work in a <scratchpad></scratchpad> block. First, decide on a broad category for the joke. Then, decide on a theme for the joke. Finally, tell the joke. The joke should be short and direct. Put your response in <joke></joke>.
 ---
-*chuckles* Good one! I like the play on words with seagulls and bagels. That's a clever pun. Alright, who's ready for another joke? *rubs hands together excitedly*
+
+Okay, let's try this!
 
 <scratchpad>
-Category: Occupational jokes
-Theme: Wordplay on job titles
+Broad category: Food
+Theme: Vegetables
 
-What do you call a fake noodle?
-An Impasta!
+Joke: Why did the tomato turn red? Because it saw the salad dressing!
 </scratchpad>
 
-<joke>
-What do you call a fake noodle?
-An Impasta!
-</joke>
+<joke>Why did the tomato turn red? Because it saw the salad dressing!</joke>

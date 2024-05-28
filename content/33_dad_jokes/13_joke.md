@@ -1,35 +1,29 @@
 ---
 combined: true
+debug:
+  engine: bedrock
+  finish: end_turn
+  id: msg_01JgAuDyffFBqg44iVkaVeu3
+  lastRun: 2024-05-28T01:34:35.971Z
+  model: claude-3-haiku-48k-20240307
+  statistics:
+    firstByteLatency: 396
+    inputTokenCount: 114
+    invocationLatency: 1377
+    outputTokenCount: 76
 isolated: true
-prompt: |-
-  Okay, let me think through this carefully...
-
-  <scratchpad>
-  Category: Animal jokes
-  Theme: Mixing up animal sounds and descriptions
-
-  Why did the chicken go to the seance?
-  To get to the other side!
-  </scratchpad>
-
-  <joke>
-  Why did the cow cross the road twice?
-  She had a moooooooving violation!
-  </joke>
+prompt: Think to yourself before telling the joke. Work in a <scratchpad></scratchpad> block. First, decide on a broad category for the joke. Then, decide on a theme for the joke. Finally, tell the joke. The joke should be short and direct. Put your response in <joke></joke>.
 ---
-*chuckles* Good one! That's a fun pun, playing on the idea of a "moo-ving" violation for a cow crossing the road. I like how you combined the animal theme with a play on words. Clever!
 
-Okay, let's try another one. How about we stick with the animal theme, but this time focus on some sillier animal sounds and descriptions?
+Okay, let's try this!
 
 <scratchpad>
-Category: Animal jokes
-Theme: Mixing up silly animal sounds and descriptions 
+Broad category: Nature
+Theme: Animals
 
-What do you call a bear with no teeth?
-A gummy bear!
+Joke: What do you call a bear with no teeth? A gummy bear!
 </scratchpad>
 
 <joke>
-Why did the duck go to the lemonade stand?
-To get some quack-ers!
+What do you call a bear with no teeth? A gummy bear!
 </joke>

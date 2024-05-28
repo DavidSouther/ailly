@@ -1,4 +1,5 @@
 ---
+skip: true
 combined: true
 debug:
   engine: bedrock
@@ -9,6 +10,7 @@ debug:
 isolated: false
 prompt: Summarize CHAPTER XIX. NEW GUINEA.
 ---
+
 Here is a summary of Chapter XIX: New Guinea:
 
 This chapter recounts the author's voyage and attempted exploration of the southern coast of New Guinea. After departing the Arru Islands, he sails southwest towards the Bartholomeus River on the New Guinea coast.

@@ -1,4 +1,5 @@
 ---
+skip: true
 combined: true
 debug:
   engine: bedrock
@@ -9,6 +10,7 @@ debug:
 isolated: false
 prompt: Summarize CHAPTER VII. LAKOR.
 ---
+
 Here is a summary of Chapter VII: Lakor:
 
 This chapter covers the author's visit to the small coral island of Lakor, part of the Southwest Islands group. He has difficulty anchoring his ship close to the low-lying island due to hazardous reefs.

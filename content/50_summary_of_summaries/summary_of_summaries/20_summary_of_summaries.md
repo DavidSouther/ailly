@@ -9,11 +9,12 @@ debug:
 isolated: false
 prompt: Summarize the book
 ---
+
 Here is a summary of the entire book:
 
 The book is an account of the voyages and expeditions undertaken by the Dutch colonial official and explorer Kolff in the early 19th century throughout the islands of the modern-day Indonesian archipelago.
 
-It begins with Kolff recounting his initial experiences upon arriving in the Dutch East Indies, including military campaigns against insurgents in the Moluccas and efforts to re-establish Dutch control over territories like Palembang after the Napoleonic Wars. 
+It begins with Kolff recounting his initial experiences upon arriving in the Dutch East Indies, including military campaigns against insurgents in the Moluccas and efforts to re-establish Dutch control over territories like Palembang after the Napoleonic Wars.
 
 The bulk of the book focuses on Kolff's extended voyages from 1825-1830 through the lesser-explored islands east of Java - the Southwest Islands near Timor, the Banda Islands, the Aru Islands, the Tenimber Islands, the islands near New Guinea like Goram and Ceram-Laut, and along the New Guinea coast itself.
 

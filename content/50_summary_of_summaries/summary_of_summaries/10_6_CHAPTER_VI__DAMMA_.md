@@ -1,4 +1,5 @@
 ---
+skip: true
 combined: true
 debug:
   engine: bedrock
@@ -9,6 +10,7 @@ debug:
 isolated: false
 prompt: Summarize CHAPTER VI. DAMMA.
 ---
+
 Here is a summary of Chapter VI: Damma:
 
 This chapter focuses on the author's visit to the island of Damma, part of the Southwest Islands group. He arrives at the village of Selat on the north coast.

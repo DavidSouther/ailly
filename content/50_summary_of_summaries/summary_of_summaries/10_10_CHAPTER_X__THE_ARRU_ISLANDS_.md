@@ -1,4 +1,5 @@
 ---
+skip: true
 combined: true
 debug:
   engine: bedrock
@@ -9,11 +10,12 @@ debug:
 isolated: false
 prompt: Summarize CHAPTER X. THE ARRU ISLANDS.
 ---
+
 Here is a summary of Chapter X: The Arru Islands:
 
-This chapter describes the author's arrival at the Arru Islands, a group of islands west of New Guinea. He provides details about the islands' geography, noting they are low-lying limestone and coral islands. 
+This chapter describes the author's arrival at the Arru Islands, a group of islands west of New Guinea. He provides details about the islands' geography, noting they are low-lying limestone and coral islands.
 
-The chapter goes into depth about the native Arafura people who inhabit the islands. It describes their customs, way of life, lack of organized religion, treatment of the dead, marriages, laws and system of making amends through fines paid in goods. 
+The chapter goes into depth about the native Arafura people who inhabit the islands. It describes their customs, way of life, lack of organized religion, treatment of the dead, marriages, laws and system of making amends through fines paid in goods.
 
 It notes the Arafuras' skill with bows and arrows and lack of hostility, living peacefully with no centralized authority beyond village elders. The author expresses surprise at their civility and respect for property rights despite their isolated existence.
 

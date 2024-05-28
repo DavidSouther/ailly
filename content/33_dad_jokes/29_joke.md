@@ -1,30 +1,29 @@
 ---
 combined: true
+debug:
+  engine: bedrock
+  finish: end_turn
+  id: msg_01KQDSsoVMc8rFzwSw3gn3Gj
+  lastRun: 2024-05-28T01:34:40.463Z
+  model: claude-3-haiku-48k-20240307
+  statistics:
+    firstByteLatency: 298
+    inputTokenCount: 114
+    invocationLatency: 1255
+    outputTokenCount: 81
 isolated: true
-prompt: |-
-  Okay, let me think of a joke appropriate for kids on a road trip.
-
-  <scratchpad>
-  Category: Animals
-  Theme: Why did the chicken cross the road?
-
-  <joke>
-  Why did the chicken cross the road?
-  To prove to the possum it could make it to the other side!
-  </joke>
+prompt: Think to yourself before telling the joke. Work in a <scratchpad></scratchpad> block. First, decide on a broad category for the joke. Then, decide on a theme for the joke. Finally, tell the joke. The joke should be short and direct. Put your response in <joke></joke>.
 ---
-Haha, good one! That chicken sure showed that possum. Kids always love a classic "why did the chicken cross the road" joke. The twist of the chicken proving it to a possum makes it even more fun. Nice job coming up with a silly, family-friendly pun there. I'm sure the little ones will get a kick out of that one on the road trip.
 
-Alright, let me try coming up with another kid-friendly joke for the drive. Let me think here...
+Okay, let's see what joke I can come up with!
 
 <scratchpad>
-Category: Food
-Theme: Puns about snacks
+Broad category: Animals
+Theme: Funny names of animals
+
+Okay, here's a good one!
 </scratchpad>
 
 <joke>
-Why did the cookie go to the doctor?
-Because it felt crumby!
+Why did the duck go to the lemonade stand? To get some quackers!
 </joke>
-
-How's that one? Puns about snacks and treats are always a hit with the younger crowd. I tried to keep it light and punny, without anything too silly or inappropriate. Let me know if you'd like me to try a different type of joke next!

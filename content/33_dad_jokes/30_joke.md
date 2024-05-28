@@ -1,26 +1,29 @@
 ---
 combined: true
+debug:
+  engine: bedrock
+  finish: end_turn
+  id: msg_01WzGFpLAqP9Yfbzaa4DejNC
+  lastRun: 2024-05-28T01:34:40.697Z
+  model: claude-3-haiku-48k-20240307
+  statistics:
+    firstByteLatency: 279
+    inputTokenCount: 114
+    invocationLatency: 1431
+    outputTokenCount: 88
 isolated: true
-prompt: |-
-  Okay, let me think of a joke.
-
-  <scratchpad>
-  Category: Animal jokes
-  Theme: Playing on words and puns
-
-  Why do cows wear bells? Because their horns don't work!
-  </scratchpad>
-
-  <joke>
-  Why do cows wear bells? Because their horns don't work!
-  </joke>
+prompt: Think to yourself before telling the joke. Work in a <scratchpad></scratchpad> block. First, decide on a broad category for the joke. Then, decide on a theme for the joke. Finally, tell the joke. The joke should be short and direct. Put your response in <joke></joke>.
 ---
-*chuckles* Good one! That's a classic pun-filled dad joke. The kids are sure to groan and giggle at that one. Nicely done! Let's see what other silly jokes you've got up your sleeve.
 
-Hmm, how about this one:
+Okay, let's see what kind of joke I can come up with for the kids.
+
+<scratchpad>
+Broad category: Puns
+Theme: Animals
+
+Okay, here's a silly pun about animals:
+</scratchpad>
 
 <joke>
-What do you call a bear with no teeth? A gummy bear!
+Why did the jaguar cross the road? To get to the other side... of the jungle!
 </joke>
-
-Oh, that's a good one! Playing on the fact that "gummy bears" are the soft, toothless kind. The kids are going to eat that one up! Keep 'em coming, Dad - these puns are great for a long road trip.

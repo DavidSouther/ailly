@@ -1,33 +1,27 @@
 ---
 combined: true
+debug:
+  engine: bedrock
+  finish: end_turn
+  id: msg_01Bwe1XecAaiukLZNaZWBbHQ
+  lastRun: 2024-05-28T01:34:35.972Z
+  model: claude-3-haiku-48k-20240307
+  statistics:
+    firstByteLatency: 222
+    inputTokenCount: 114
+    invocationLatency: 1039
+    outputTokenCount: 78
 isolated: true
-prompt: |-
-  Okay, let me think of a good joke for the kids...
-
-  <scratchpad>
-  Category: Animal jokes
-  Theme: Playing on words/puns involving different animals
-
-  What do you call a bear with no teeth?
-  A gummy bear!
-  </scratchpad>
-
-  <joke>
-  What do you call a bear with no teeth? A gummy bear!
-  </joke>
+prompt: Think to yourself before telling the joke. Work in a <scratchpad></scratchpad> block. First, decide on a broad category for the joke. Then, decide on a theme for the joke. Finally, tell the joke. The joke should be short and direct. Put your response in <joke></joke>.
 ---
-Haha, that's a great one! The kids will definitely get a kick out of that pun. Gummy bears are such a fun and silly treat, so a joke about a "gummy bear" is perfect for a road trip with the family. Nice job coming up with a clever animal-themed joke that plays on words. The little ones are sure to laugh at that one.
 
-Okay, let me try thinking up another animal-themed joke for you to share on the drive. Hmm, what else can we come up with?
+Okay, let's try this!
 
 <scratchpad>
-Category: Animal jokes
-Theme: Comparing different animals
+Broad category: Food
+Theme: Cooking
 
-Why did the chicken cross the road?
-To get to the other side!
+Joke: Why did the tomato turn red? Because it saw the salad dressing!
 </scratchpad>
 
-<joke>
-Why did the chicken cross the road? To get to the other side!
-</joke>
+<joke>Why did the tomato turn red? Because it saw the salad dressing!</joke>

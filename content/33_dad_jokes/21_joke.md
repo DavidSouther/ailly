@@ -1,33 +1,29 @@
 ---
 combined: true
+debug:
+  engine: bedrock
+  finish: end_turn
+  id: msg_017CHxKKBybdu46duywpLQfx
+  lastRun: 2024-05-28T01:34:38.552Z
+  model: claude-3-haiku-48k-20240307
+  statistics:
+    firstByteLatency: 263
+    inputTokenCount: 114
+    invocationLatency: 1188
+    outputTokenCount: 94
 isolated: true
-prompt: |-
-  Okay, let me think of a joke for the road trip...
-
-  <scratchpad>
-  Category: Wordplay/Puns
-  Theme: Animals
-
-  What did the duck say when he dropped the baseball?
-  Oops, I fowl-ed!
-  </scratchpad>
-
-  <joke>
-  What did the duck say when he dropped the baseball?
-  Oops, I fowl-ed!
-  </joke>
+prompt: Think to yourself before telling the joke. Work in a <scratchpad></scratchpad> block. First, decide on a broad category for the joke. Then, decide on a theme for the joke. Finally, tell the joke. The joke should be short and direct. Put your response in <joke></joke>.
 ---
-*laughs* Good one, kids! That's a real quacker. Okay, let me see if I can come up with another pun for the road trip...
+
+Okay, let's see what kind of joke I can come up with for the kids.
 
 <scratchpad>
-Category: Wordplay/Puns
-Theme: Food
+Broad category: Animals
+Theme: Cats
 
-Why did the scarecrow win an award?
-Because he was outstanding in his field!
+Joke: Why did the cat go to the vet? To get a CAT-scan!
 </scratchpad>
 
 <joke>
-Why did the scarecrow win an award? 
-Because he was outstanding in his field!
+Why did the cat go to the vet? To get a CAT-scan!
 </joke>

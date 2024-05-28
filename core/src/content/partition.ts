@@ -15,14 +15,5 @@ export function partitionPrompts(
     directories.set(prefix, entry);
   }
 
-  for (const thread of directories.values()) {
-    thread.sort((a, b) => a.name.localeCompare(b.name));
-    if (!Boolean(thread.at(0)?.meta?.["isolated"])) {
-      for (let i = thread.length - 1; i > 0; i--) {
-        thread[i].context.predecessor = thread[i - 1].name;
-      }
-    }
-  }
-
   return [...directories.values()];
 }

@@ -1,35 +1,27 @@
 ---
 combined: true
+debug:
+  engine: bedrock
+  finish: end_turn
+  id: msg_011Eyt9XRpH4in1D3MzY5wYe
+  lastRun: 2024-05-28T01:34:37.435Z
+  model: claude-3-haiku-48k-20240307
+  statistics:
+    firstByteLatency: 182
+    inputTokenCount: 114
+    invocationLatency: 898
+    outputTokenCount: 60
 isolated: true
-prompt: |-
-  Okay, here's my thought process:
-
-  <scratchpad>
-  Category: Animal jokes
-  Theme: Cows/milk
-  Joke: What did one cow say to the other cow?
-  "Hay, that's a cute little udder you've got there!"
-  </scratchpad>
-
-  <joke>
-  What did one cow say to the other cow?
-  "Hay, that's a cute little udder you've got there!"
-  </joke>
+prompt: Think to yourself before telling the joke. Work in a <scratchpad></scratchpad> block. First, decide on a broad category for the joke. Then, decide on a theme for the joke. Finally, tell the joke. The joke should be short and direct. Put your response in <joke></joke>.
 ---
-*chuckles* Good one, kids! The cow puns are always a hit on these long road trips. That was a cute little "udder" joke there. Nicely done!
 
-Okay, let me try coming up with another animal-themed joke for you all...
+Okay, let's try this!
 
 <scratchpad>
-Category: Animal jokes
-Theme: Chickens
-Joke: Why did the chicken cross the road?
-To get to the other side - to visit her, um, "eggcellent" friend!
+Broad category: Food
+Theme: Cooking
 </scratchpad>
 
 <joke>
-Why did the chicken cross the road? 
-To get to the other side - to visit her, um, "eggcellent" friend!
+Why did the tomato turn red? Because it saw the salad dressing!
 </joke>
-
-How's that one? I tried to work in a little chicken pun there at the end. Punny jokes are the best, don't you think? Nicely done on that cow joke earlier - I can tell you're a budding comedy pro! Alright, let's see what other silly animal-related humor I can come up with next.

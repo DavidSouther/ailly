@@ -1,4 +1,5 @@
 ---
+skip: true
 combined: true
 debug:
   engine: bedrock
@@ -9,9 +10,10 @@ debug:
 isolated: false
 prompt: Summarize CHAPTER I. EXPEDITIONS IN THE MOLUCCA AND JAVA SEAS.
 ---
+
 Here is a summary of Chapter I: Expeditions in the Molucca and Java Seas:
 
-The chapter begins with the author's outward voyage from the Netherlands to India in 1817 aboard the corvette Venus. He describes stopping at the island of Tristan D'Acunha and encountering an English settlement there. 
+The chapter begins with the author's outward voyage from the Netherlands to India in 1817 aboard the corvette Venus. He describes stopping at the island of Tristan D'Acunha and encountering an English settlement there.
 
 He then recounts various expeditions he took part in upon arriving in the Dutch East Indies, including against insurgents in the Molucca Islands, to Palembang on Sumatra to help re-establish Dutch control there after the Napoleonic Wars, and an expedition against Macassar on the island of Celebes. He provides details on the fighting against the Macassars, praising the bravery of the Dutch sailors and soldiers despite being outnumbered.
 
