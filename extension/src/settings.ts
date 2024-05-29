@@ -53,6 +53,7 @@ const SETTINGS_KEYS = {
   awsProfile: "awsProfile",
   awsRegion: "awsRegion",
   preferStreamingEdit: "preferStreamingEdit",
+  templateViews: "templateViews",
 };
 export const SETTINGS = {
   async getOpenAIKey(): Promise<string | undefined> {
@@ -135,6 +136,14 @@ export const SETTINGS = {
       SETTINGS_KEYS.preferStreamingEdit
     );
     return preferStreamingEdit ?? true;
+  },
+
+  getTemplateViews(): string[] {
+    const aillyConfig = getConfig();
+    const aillyTemplateViews = aillyConfig.get<string[]>(
+      SETTINGS_KEYS.templateViews
+    );
+    return aillyTemplateViews ?? [];
   },
 
   /** The duration in ms to wait after completing all threads to hide the Ailly status bar. */

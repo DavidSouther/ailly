@@ -1,4 +1,5 @@
 import { GenerateManager } from "@ailly/core/lib/actions/generate_manager.js";
+import { loadTemplateView } from "@ailly/core/lib/content/template.js";
 import {
   loadContent,
   makeCLIContent,
@@ -13,7 +14,7 @@ import {
 } from "@ailly/core/lib/index.js";
 import { assertExists } from "@davidsouther/jiffies/lib/cjs/assert.js";
 import { FileSystem } from "@davidsouther/jiffies/lib/cjs/fs.js";
-import { dirname } from "node:path";
+import { dirname, normalize, resolve } from "node:path";
 import * as vscode from "vscode";
 import { deleteEdit, insert, updateSelection } from "./editor.js";
 import { VSCodeFileSystemAdapter } from "./fs.js";
@@ -47,6 +48,11 @@ export async function generate(
 
   // Prepare configuration
   const fs = new GitignoreFs(new VSCodeFileSystemAdapter());
+  (fs as any).p = (path: string) =>
+    (FileSystem.prototype as any).p.call(
+      fs,
+      path.replace("~", process.env["HOME"] ?? "~")
+    );
   const stat = await fs.stat(path);
   const root = stat.isFile() ? dirname(path) : path;
   fs.cd(root);
@@ -57,6 +63,11 @@ export async function generate(
     await SETTINGS.prepareBedrock();
   }
 
+  const templateView = await loadTemplateView(
+    fs,
+    ...SETTINGS.getTemplateViews()
+  );
+
   const settings = await makePipelineSettings({
     root,
     out: root,
@@ -64,6 +75,7 @@ export async function generate(
     continued,
     engine,
     model,
+    templateView,
   });
 
   // Load content
