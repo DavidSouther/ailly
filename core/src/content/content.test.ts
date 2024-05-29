@@ -16,6 +16,7 @@ import {
   makeCLIContent,
   splitOrderedName,
   writeContent,
+  type Context,
   type WritableContent,
 } from "./content.js";
 import { GitignoreFs } from "./gitignore_fs.js";
@@ -443,7 +444,7 @@ describe("Loading", () => {
         },
         meta: { combined: false, root: "/", parent: "root", text: "dog." },
       },
-    });
+    } satisfies Record<string, Content>);
   });
 
   test("it loads prompt from head in combined: false", async () => {
@@ -469,6 +470,27 @@ describe("Loading", () => {
 
     expect(content["/01_start.md"].prompt).toEqual("The quick brown");
     expect(content["/01_start.md"].response).toEqual("fox jumped");
+  });
+
+  test("it loads folder context when set in .aillyrc", async () => {
+    const testFs = new FileSystem(
+      new ObjectFileSystemAdapter({
+        ".aillyrc": "---\ncontext: folder\n---\n",
+        "01_start.md": "The quick brown",
+        "02_next.md": "Jumped over",
+      })
+    );
+
+    const content = await loadContent(testFs);
+
+    expect(content).toMatchObject({
+      "/01_start.md": {
+        context: { view: {}, folder: ["/01_start.md", "/02_next.md"] },
+      },
+      "/02_next.md": {
+        context: { view: {}, folder: ["/01_start.md", "/02_next.md"] },
+      },
+    } satisfies Record<string, Partial<Content>>);
   });
 
   test("it loads template views for prompts", async () => {
