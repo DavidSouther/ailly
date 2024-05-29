@@ -1,8 +1,9 @@
 import {
+  FileSystem,
   type FileSystemAdapter,
   type Stats,
 } from "@davidsouther/jiffies/lib/cjs/fs.js";
-import { basename } from "path";
+import { basename, normalize } from "path";
 import { FileType, Uri, workspace } from "vscode";
 
 export class VSCodeFileSystemAdapter implements FileSystemAdapter {

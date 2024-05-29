@@ -76,6 +76,10 @@
       {
         "title": "Ailly",
         "properties": {
+          "ailly.templateViews": {
+            "type": "array",
+            "description": "List of local files to load as template views."
+          },
           "ailly.engine": {
             "type": "string",
             "default": "bedrock",
@@ -92,7 +96,7 @@
               "null"
             ],
             "default": "haiku",
-            "description": "The default model to use when making LLM calls."
+            "description": "The model to use when making LLM calls."
           },
           "ailly.awsProfile": {
             "type": "string",
