@@ -35,7 +35,7 @@
       },
       {
         "command": "ailly.clean.all",
-        "title": "Ailly: Clean",
+        "title": "Ailly: Clean All",
         "enablement": "explorerViewletFocus"
       },
       {
@@ -55,7 +55,8 @@
         },
         {
           "command": "ailly.generate.all",
-          "group": "3_generate"
+          "group": "3_generate",
+          "when": "explorerResourceIsFolder"
         },
         {
           "command": "ailly.continue",
@@ -68,7 +69,8 @@
         },
         {
           "command": "ailly.clean.all",
-          "group": "3_generate"
+          "group": "3_generate",
+          "when": "explorerResourceIsFolder"
         }
       ]
     },
