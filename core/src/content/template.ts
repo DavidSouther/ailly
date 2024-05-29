@@ -1,11 +1,31 @@
-const mustache = require("mustache");
+import * as YAML from "yaml";
+
+import type { FileSystem } from "@davidsouther/jiffies/lib/cjs/fs.js";
+
+import { LOGGER } from "../index.js";
 import { Content, View } from "./content.js";
+import { EDIT } from "./edit_template.js";
 import { META_PROMPT } from "./template_anthropic_metaprompt.js";
 import { GRUG_PROMPT } from "./template_grug_prompt.js";
-import { EDIT } from "./edit_template.js";
-import { LOGGER } from "../index.js";
-import * as YAML from "yaml";
-import type { FileSystem } from "@davidsouther/jiffies/lib/cjs/fs";
+
+const mustache = require("mustache");
+
+export const GLOBAL_VIEW: View = {
+  output: {
+    explain: "Explain your thought process each step of the way.",
+    verbatim:
+      "Please respond verbatim, without commentary. Skip the preamble. Do not explain your reasoning.",
+    prose: "Your output should be prose, with no additional formatting.",
+    markdown: "Your output should use full markdown syntax.",
+    python:
+      "Your output should only contain Python code, within a markdown code fence:\n\n```py\n#<your code>\n```",
+    edit: EDIT,
+  },
+  persona: {
+    grug: GRUG_PROMPT,
+    meta: META_PROMPT,
+  },
+};
 
 if (!global.structuredClone) {
   // TODO: Drop node 16 support
@@ -49,26 +69,9 @@ export function mergeContentViews(
   );
 }
 
-export const GLOBAL_VIEW: View = {
-  output: {
-    explain: "Explain your thought process each step of the way.",
-    verbatim:
-      "Please respond verbatim, without commentary. Skip the preamble. Do not explain your reasoning.",
-    prose: "Your output should be prose, with no additional formatting.",
-    markdown: "Your output should use full markdown syntax.",
-    python:
-      "Your output should only contain Python code, within a markdown code fence:\n\n```py\n#<your code>\n```",
-    edit: EDIT,
-  },
-  persona: {
-    grug: GRUG_PROMPT,
-    meta: META_PROMPT,
-  },
-};
 /**
  * Read, parse, and validate a template view.
  */
-
 export async function loadTemplateView(
   fs: FileSystem,
   ...paths: string[]

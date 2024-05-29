@@ -1,4 +1,5 @@
-#! /usr/bin/env node
+import { createInterface } from "node:readline";
+
 import { GenerateManager } from "@ailly/core/lib/actions/generate_manager.js";
 import {
   isAillyEditReplace,
@@ -7,9 +8,10 @@ import {
   type Content,
 } from "@ailly/core/lib/content/content.js";
 import { GitignoreFs } from "@ailly/core/lib/content/gitignore_fs.js";
+import { assertExists } from "@davidsouther/jiffies/lib/cjs/assert.js";
 import type { FileSystem } from "@davidsouther/jiffies/lib/cjs/fs.js";
 import { NodeFileSystemAdapter } from "@davidsouther/jiffies/lib/cjs/fs_node.js";
-import { createInterface } from "node:readline";
+
 import { Args, help, makeArgs } from "./args.js";
 import { LOGGER, loadFs } from "./fs.js";
 import { version } from "./version.js";
@@ -70,7 +72,7 @@ export async function main() {
         const prompt = loaded.context["/dev/stdout"];
         const edit = prompt.context.edit;
         if (!edit) {
-          const stream = await prompt.responseStream.promise;
+          const stream = await assertExists(prompt.responseStream).promise;
           for await (const word of stream) {
             process.stdout.write(word);
           }

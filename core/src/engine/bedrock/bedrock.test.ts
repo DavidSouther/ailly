@@ -1,13 +1,15 @@
-import { describe, expect, it, beforeEach } from "vitest";
-import { cleanState } from "@davidsouther/jiffies/lib/cjs/scope/state.js";
+import { beforeEach, describe, expect, it } from "vitest";
+
 import {
   FileSystem,
   RecordFileSystemAdapter,
 } from "@davidsouther/jiffies/lib/cjs/fs.js";
-import { messagesBuilder } from "./prompt_builder.js";
-import { makePipelineSettings } from "../../index.js";
+import { cleanState } from "@davidsouther/jiffies/lib/cjs/scope/state.js";
+
 import { loadContent } from "../../content/content";
+import { makePipelineSettings } from "../../index.js";
 import { format } from "./bedrock";
+import { messagesBuilder } from "./prompt_builder.js";
 
 describe("bedrock claude3", () => {
   describe("prompt builder", () => {

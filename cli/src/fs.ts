@@ -1,3 +1,6 @@
+import { Console } from "node:console";
+import { join, resolve } from "node:path";
+
 import {
   AillyEdit,
   Content,
@@ -18,8 +21,7 @@ import {
   getLogLevel,
   getLogger,
 } from "@davidsouther/jiffies/lib/cjs/log.js";
-import { Console } from "node:console";
-import { join, resolve } from "node:path";
+
 import { Args } from "./args.js";
 
 export const LOGGER = getLogger("@ailly/cli");

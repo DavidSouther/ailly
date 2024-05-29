@@ -1,6 +1,7 @@
+import { dirname } from "node:path";
+
 import { Content } from "../content/content";
-import { partitionPrompts } from "../content/partition.js";
-import { Engine, getEngine } from "../engine";
+import { Engine, getEngine } from "../engine/index.js";
 import {
   DEFAULT_ENGINE,
   LOGGER,
@@ -118,4 +119,20 @@ export class GenerateManager {
       )
       .flat();
   }
+}
+
+export function partitionPrompts(
+  content: string[],
+  context: Record<string, Content>
+): Content[][] {
+  const directories = new Map<string, Content[]>();
+  for (const c of content) {
+    if (!context[c]) continue;
+    const prefix = dirname(c);
+    const entry = directories.get(prefix) ?? [];
+    entry.push(context[c]);
+    directories.set(prefix, entry);
+  }
+
+  return [...directories.values()];
 }

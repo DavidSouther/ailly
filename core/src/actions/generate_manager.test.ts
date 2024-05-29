@@ -1,6 +1,6 @@
 import { test, expect } from "vitest";
-import { partitionPrompts } from "./partition.js";
-import { Content } from "./content.js";
+import { Content } from "../content/content.js";
+import { partitionPrompts } from "./generate_manager.js";
 
 /*
 
