@@ -3,4 +3,6 @@ export const EDIT = `You are replacing this section:
 {{edit.selection}}
 \`\`\`
 
+Do not repeat any existing content.
+
 {{request.prompt}}`;

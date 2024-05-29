@@ -11,6 +11,7 @@ import {
   makePipelineSettings,
   type PipelineSettings,
 } from "@ailly/core/lib/index.js";
+import { assertExists } from "@davidsouther/jiffies/lib/cjs/assert.js";
 import { FileSystem } from "@davidsouther/jiffies/lib/cjs/fs.js";
 import { dirname } from "node:path";
 import * as vscode from "vscode";
@@ -126,7 +127,7 @@ async function executeStreaming(content: Content[], edit: AillyEdit) {
   }
   editor.selections = [];
   // Lazy spin until the request starts
-  const stream = await content[0].responseStream.promise;
+  const stream = await assertExists(content[0].responseStream).promise;
   let replace = "";
   let first = true;
   for await (let token of stream) {

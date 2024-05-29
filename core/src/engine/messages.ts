@@ -1,4 +1,5 @@
 import { dirname } from "node:path";
+
 import { Content } from "../content/content.js";
 import { isDefined } from "../util.js";
 import { Message } from "./index.js";
@@ -38,18 +39,13 @@ export function getMessagesPredecessor(
   }
   history.reverse();
   const augment = history
-    .map<Array<Message | undefined>>(
-      (c) =>
-        (c.context.augment ?? []).map<Message>(({ content }) => ({
-          role: "user",
-          content:
-            "Use this code block as background information for format and style, but not for functionality:\n```\n" +
-            content +
-            "\n```\n",
-        })) ?? []
+    .map<Array<Message>>((c) =>
+      (c.context.augment ?? []).map<Message>(({ content }) => ({
+        role: "user",
+        content,
+      }))
     )
-    .flat()
-    .filter(isDefined);
+    .flat();
   const parts = history
     .map<Array<Message | undefined>>((content) => [
       {
@@ -69,6 +65,7 @@ export function getMessagesFolder(
   content: Content,
   context: Record<string, Content>
 ): Message[] {
+  // TODO: move this to a template
   const system =
     (content.context.system ?? []).map((s) => s.content).join("\n") +
     "\n" +

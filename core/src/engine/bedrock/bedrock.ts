@@ -5,6 +5,7 @@ import {
 } from "@aws-sdk/client-bedrock-runtime";
 import { fromNodeProviderChain } from "@aws-sdk/credential-providers";
 import { getLogger } from "@davidsouther/jiffies/lib/cjs/log.js";
+
 import { Content, View } from "../../content/content.js";
 import { LOGGER as ROOT_LOGGER } from "../../index.js";
 import type { EngineDebug, EngineGenerate, Summary } from "../index.js";
@@ -221,15 +222,6 @@ export async function vector(inputText: string, {}: {}): Promise<number[]> {
   const body = JSON.parse(td.decode(response.body));
 
   return body.embedding;
-}
-
-export function extractFirstFence(message: string): string {
-  const firstTicks = message.indexOf("```");
-  if (firstTicks != 0) LOGGER.warn("First code fence is not at index 0");
-  const endOfFirstLine = message.indexOf("\n", firstTicks);
-  const nextTicks = message.indexOf("```", endOfFirstLine + 1);
-  message = message.slice(endOfFirstLine + 1, nextTicks + 1);
-  return message;
 }
 
 export function formatError(content: Content) {

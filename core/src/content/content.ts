@@ -1,3 +1,7 @@
+import matter, { type GrayMatterFile } from "gray-matter";
+import { dirname, join } from "node:path";
+import * as YAML from "yaml";
+
 import {
   FileSystem,
   PLATFORM_PARTS,
@@ -7,8 +11,7 @@ import {
   basename,
   isAbsolute,
 } from "@davidsouther/jiffies/lib/cjs/fs.js";
-import { dirname, join } from "path";
-import * as YAML from "yaml";
+
 import type { EngineDebug, Message } from "../engine/index.js";
 import { LOGGER } from "../index.js";
 import {
@@ -17,12 +20,11 @@ import {
   type PromiseWithResolvers,
 } from "../util.js";
 import { loadTemplateView } from "./template.js";
-const matter = require("gray-matter");
-// import * as matter from "gray-matter";
 
 export const EXTENSION = ".ailly.md";
+const END_REGEX = new RegExp(EXTENSION + "$");
 
-type TODOGrayMatterData = Record<string, any> | ContentMeta;
+type GrayMatterData = GrayMatterFile<string>["data"];
 
 // Content is ordered on the file system using NN_name folders and nnp_name.md files.
 // The Content needs to keep track of where in the file system it is, so that a Prompt can write a Response.
@@ -37,8 +39,9 @@ export interface Content {
 
   // The prompt itself
   prompt: string;
+  // Any loaded or generated response
   response?: string;
-  responseStream: PromiseWithResolvers<ReadableStream<string>>;
+  responseStream?: PromiseWithResolvers<ReadableStream<string>>;
   context: Context;
   meta?: ContentMeta;
 }
@@ -88,56 +91,136 @@ export interface System {
   view: false | View;
 }
 
-interface PartitionedDirectory {
-  files: Stats[];
-  folders: Stats[];
-}
-
-function defaultPartitionedDirectory(): PartitionedDirectory {
-  return {
-    files: [],
-    folders: [],
-  };
-}
-
-function partitionDirectory(stats: Stats[]): PartitionedDirectory {
-  return stats.reduce((dir, stats) => {
-    if (stats.isDirectory()) dir.folders.push(stats);
-    if (stats.isFile()) dir.files.push(stats);
-    return dir;
-  }, defaultPartitionedDirectory());
-}
-
-async function loadDir(fs: FileSystem): Promise<PartitionedDirectory> {
-  const dir = await fs.readdir(".");
-  const entries = await Promise.all(dir.map((s) => fs.stat(s)));
-  return partitionDirectory(entries);
-}
-
 export type Ordering =
   | { id: string; type: "prompt" | "response" }
   | { id: string; type: "system" }
   | { type: "ignore" };
 
-export function splitOrderedName(name: string): Ordering {
-  if (name.startsWith(".aillyrc")) {
-    return { type: "system", id: name };
+export const splitOrderedName = (name: string): Ordering =>
+  name === ".aillyrc"
+    ? { type: "system", id: name }
+    : name.endsWith(EXTENSION)
+    ? { type: "response", id: name.replace(END_REGEX, "") }
+    : { type: "prompt", id: name };
+
+interface PartitionedDirectory {
+  files: Stats[];
+  folders: Stats[];
+}
+
+/**
+ * 1. When the file is .aillyrc.md
+ *    1. Parse it into [matter, prompt]
+ *    2. Use matter as the meta data base, and put prompt in the system messages.
+ * 2. When the file name is `<name>.<ext>` (but not `<name>.<ext>.ailly`)
+ *    1. Read <name>.<ext>.ailly as the response
+ *    1. Write the output to `<name>.<ext>.ailly`
+ * 3. If it is a folder
+ *    1. Find all files that are not denied by .gitignore
+ *    2. Apply the above logic.
+ * @param fs the file system abstraction.
+ * @param system the system message chain.
+ * @param meta current head matter & settings.
+ * @param depth maximum depth to load. `1` loads only the cwd; 0 or negative loads no content.
+ * @returns
+ */
+export async function loadContent(
+  fs: FileSystem,
+  system: System[] = [],
+  meta: ContentMeta = {},
+  depth: number = Number.MAX_SAFE_INTEGER
+): Promise<Record<string, Content>> {
+  if (depth < 0) throw new Error("Depth in loadContent cannot be negative");
+  if (depth < 1) return {};
+  LOGGER.debug(`Loading content from ${fs.cwd()}`);
+  [system, meta] = await loadAillyRc(fs, system, meta);
+  if (meta.skip) {
+    LOGGER.debug(`Skipping content from ${fs.cwd()} based on head of .aillyrc`);
+    return {};
   }
-  if (name.startsWith("_")) {
-    return { type: "ignore" };
+
+  const dir = await loadDir(fs).catch((e) => ({ files: [], folders: [] }));
+  const loaders = dir.files.map((file) => loadFile(fs, file, system, meta));
+  const allFiles = await Promise.all(loaders);
+  const files: Content[] = allFiles.filter(isDefined);
+
+  const isIsolated = Boolean(meta.isolated);
+  const context: NonNullable<ContentMeta["context"]> =
+    meta.context ?? "conversation";
+  switch (context) {
+    case "conversation":
+      if (isIsolated) break;
+      files.sort((a, b) => a.name.localeCompare(b.name));
+      for (let i = files.length - 1; i > 0; i--) {
+        files[i].context.predecessor = files[i - 1].path;
+      }
+      break;
+    case "none":
+      for (const file of files) {
+        delete file.context.system;
+      }
+      break;
+    case "folder":
+      if (isIsolated) {
+        for (const file of files) {
+          file.context.folder = [file.path];
+        }
+      } else {
+        const folder = files.map((f) => f.path);
+        for (const file of files) {
+          file.context.folder = folder;
+        }
+      }
+      break;
   }
-  if (name.endsWith(EXTENSION)) {
-    const id = name.replace(new RegExp(EXTENSION + "$"), "");
-    return { type: "response", id };
+
+  const folders: Record<string, Content> = {};
+  if (context != "none") {
+    for (const folder of dir.folders) {
+      if (folder.name == ".vectors") continue;
+      fs.pushd(folder.name);
+      let contents = await loadContent(
+        fs,
+        system,
+        meta,
+        depth ? depth - 1 : undefined
+      );
+      Object.assign(folders, contents);
+      fs.popd();
+    }
   }
-  return { type: "prompt", id: name };
+
+  const content: Record<string, Content> = {
+    ...files.reduce(
+      (c, f) => ((c[f.path] = f), c),
+      {} as Record<string, Content>
+    ),
+    ...folders,
+  };
+  LOGGER.debug(`Found ${Object.keys(content).length} at or below ${fs.cwd()}`);
+  return content;
+}
+
+async function loadDir(fs: FileSystem): Promise<PartitionedDirectory> {
+  const dir = await fs.readdir(".");
+  const entries = await Promise.all(dir.map((s) => fs.stat(s)));
+
+  const partitioned = entries.reduce(
+    (dir: PartitionedDirectory, stats) => {
+      if (stats.isDirectory()) dir.folders.push(stats);
+      if (stats.isFile()) dir.files.push(stats);
+      return dir;
+    },
+    { files: [], folders: [] }
+  );
+  return partitioned;
 }
 
 async function loadFile(
   fs: FileSystem,
   file: Stats,
   system: System[],
-  head: TODOGrayMatterData
+  head: GrayMatterData
 ): Promise<Content | undefined> {
   const ordering = splitOrderedName(file.name);
   const cwd = fs.cwd();
@@ -192,10 +275,10 @@ async function loadFile(
           if (outStat.isFile()) {
             try {
               const outFile = await fs.readFile(outPath).catch((e) => "");
-              const parsedResponse = matter(outFile);
+              const parsedResponse: GrayMatterFile<string> = matter(outFile);
               response = parsedResponse.content;
               data.meta = data.meta ?? {};
-              data.meta.debug = parsedResponse.meta?.debug ?? {};
+              data.meta.debug = parsedResponse.data.meta?.debug ?? {};
             } catch (err) {
               LOGGER.warn(
                 `Error reading response and parsing for matter in ${outPath}`,
@@ -284,205 +367,6 @@ export async function loadAillyRc(
 }
 
 /**
- * 1. When the file is .aillyrc.md
- *    1. Parse it into [matter, prompt]
- *    2. Use matter as the meta data base, and put prompt in the system messages.
- * 2. When the file name is `<name>.<ext>` (but not `<name>.<ext>.ailly`)
- *    1. Read <name>.<ext>.ailly as the response
- *    1. Write the output to `<name>.<ext>.ailly`
- * 3. If it is a folder
- *    1. Find all files that are not denied by .gitignore
- *    2. Apply the above logic.
- * @param fs the file system abstraction.
- * @param system the system message chain.
- * @param meta current head matter & settings.
- * @param depth maximum depth to load. `1` loads only the cwd; 0 or negative loads no content.
- * @returns
- */
-export async function loadContent(
-  fs: FileSystem,
-  system: System[] = [],
-  meta: ContentMeta = {},
-  depth: number = Number.MAX_SAFE_INTEGER
-): Promise<Record<string, Content>> {
-  if (depth < 0) throw new Error("Depth in loadContent cannot be negative");
-  if (depth < 1) return {};
-  LOGGER.debug(`Loading content from ${fs.cwd()}`);
-  [system, meta] = await loadAillyRc(fs, system, meta);
-  if (meta.skip) {
-    LOGGER.debug(`Skipping content from ${fs.cwd()} based on head of .aillyrc`);
-    return {};
-  }
-
-  const dir = await loadDir(fs).catch((e) => defaultPartitionedDirectory());
-  const loaders = dir.files.map((file) => loadFile(fs, file, system, meta));
-  const allFiles = await Promise.all(loaders);
-  const files: Content[] = allFiles.filter(isDefined);
-
-  const isIsolated = Boolean(meta.isolated);
-  const context: NonNullable<ContentMeta["context"]> =
-    meta.context ?? "conversation";
-  switch (context) {
-    case "conversation":
-      if (isIsolated) break;
-      files.sort((a, b) => a.name.localeCompare(b.name));
-      for (let i = files.length - 1; i > 0; i--) {
-        files[i].context.predecessor = files[i - 1].path;
-      }
-      break;
-    case "none":
-      for (const file of files) {
-        delete file.context.system;
-      }
-      break;
-    case "folder":
-      if (isIsolated) {
-        for (const file of files) {
-          file.context.folder = [file.path];
-        }
-      } else {
-        const folder = files.map((f) => f.path);
-        for (const file of files) {
-          file.context.folder = folder;
-        }
-      }
-      break;
-  }
-
-  const folders: Record<string, Content> = {};
-  if (context != "none") {
-    for (const folder of dir.folders) {
-      if (folder.name == ".vectors") continue;
-      fs.pushd(folder.name);
-      let contents = await loadContent(
-        fs,
-        system,
-        meta,
-        depth ? depth - 1 : undefined
-      );
-      Object.assign(folders, contents);
-      fs.popd();
-    }
-  }
-
-  const content: Record<string, Content> = {
-    ...files.reduce(
-      (c, f) => ((c[f.path] = f), c),
-      {} as Record<string, Content>
-    ),
-    ...folders,
-  };
-  LOGGER.debug(`Found ${Object.keys(content).length} at or below ${fs.cwd()}`);
-  return content;
-}
-
-/** The responseStream is for coordinating generation, not writing, of content. */
-export type WritableContent = Omit<Content, "responseStream"> &
-  Partial<Pick<Content, "responseStream">>;
-
-async function writeSingleContent(
-  fs: FileSystem,
-  content: WritableContent,
-  options?: { clean?: boolean }
-) {
-  if (!content.response) return;
-  const combined = content.meta?.combined ?? false;
-  if (combined && content.outPath != content.path) {
-    throw new Error(
-      `Mismatch path and output for ${content.path} vs ${content.outPath}`
-    );
-  }
-
-  const clean = options?.clean ?? false;
-  if (clean && !combined) {
-    await fs.rm(content.outPath);
-    return;
-  }
-
-  const dir = dirname(content.outPath);
-  await mkdirp(fs, dir);
-
-  const filename = content.name + (combined ? "" : EXTENSION);
-  LOGGER.info(`Writing response for ${filename}`);
-  const path = join(dir, filename);
-  const { debug, isolated, skip } = content.meta ?? {};
-  if (content.context.augment && !clean) {
-    (debug as { augment: unknown[] }).augment = content.context.augment.map(
-      ({ score, name }) => ({
-        score,
-        name,
-      })
-    );
-  }
-
-  const meta: ContentMeta = {
-    ...(skip ? { skip } : {}),
-    ...(combined ? { combined } : {}),
-    ...(isolated ? { isolated } : {}),
-    ...(Object.keys(content.context?.view || {}).length > 0
-      ? { view: content.context?.view }
-      : {}),
-    ...(content.meta?.temperature
-      ? { temperature: content.meta.temperature }
-      : {}),
-    ...(!clean ? { debug } : {}),
-  };
-
-  if (combined) {
-    meta.prompt = content.meta?.prompt ?? content.prompt;
-  }
-
-  if (clean) {
-    content.response = "";
-  }
-
-  const head = YAML.stringify(meta, {
-    blockQuote: "literal",
-    lineWidth: 0,
-    sortMapEntries: true,
-  });
-  const file =
-    (!combined && (content.meta?.skipHead || head === "{}\n")
-      ? ""
-      : `---\n${head}---\n`) + content.response;
-  await fs.writeFile(path, file);
-}
-
-export async function writeContent(
-  fs: FileSystem,
-  content: WritableContent[],
-  options?: { clean?: boolean }
-) {
-  for (const c of Object.values(content)) {
-    try {
-      await writeSingleContent(fs, c, options);
-    } catch (e) {
-      LOGGER.error(`Failed to write content ${c.name}`, e as Error);
-    }
-  }
-}
-
-const IS_WINDOWS = PLATFORM_PARTS == PLATFORM_PARTS_WIN;
-async function mkdirp(fs: FileSystem, dir: string) {
-  if (!isAbsolute(dir)) {
-    LOGGER.warn(`Cannot mkdirp on non-absolute path ${dir}`);
-    return;
-  }
-  const parts = dir.split(SEP);
-  for (let i = 1; i < parts.length; i++) {
-    let path = join(SEP, ...parts.slice(1, i + 1));
-    if (IS_WINDOWS) {
-      path = parts[0] + SEP + path;
-    }
-    try {
-      await fs.stat(path);
-    } catch {
-      await fs.mkdir(path);
-    }
-  }
-}
-
-/**
  * Create a "synthetic" Content block with path "/dev/stdout" to serve as the Content root
  * for this Ailly call to the LLM.
  */
@@ -565,4 +449,110 @@ export function makeCLIContent({
     cliContent.prompt = "{{{ output.edit }}}";
   }
   return cliContent;
+}
+
+/** The responseStream is for coordinating generation, not writing, of content. */
+export type WritableContent = Omit<Content, "responseStream"> &
+  Partial<Pick<Content, "responseStream">>;
+
+export async function writeContent(
+  fs: FileSystem,
+  content: WritableContent[],
+  options?: { clean?: boolean }
+) {
+  for (const c of Object.values(content)) {
+    try {
+      await writeSingleContent(fs, c, options);
+    } catch (e) {
+      LOGGER.error(`Failed to write content ${c.name}`, e as Error);
+    }
+  }
+}
+
+async function writeSingleContent(
+  fs: FileSystem,
+  content: WritableContent,
+  options?: { clean?: boolean }
+) {
+  if (!content.response) return;
+  const combined = content.meta?.combined ?? false;
+  if (combined && content.outPath != content.path) {
+    throw new Error(
+      `Mismatch path and output for ${content.path} vs ${content.outPath}`
+    );
+  }
+
+  const clean = options?.clean ?? false;
+  if (clean && !combined) {
+    await fs.rm(content.outPath);
+    return;
+  }
+
+  const dir = dirname(content.outPath);
+  await mkdirp(fs, dir);
+
+  const filename = content.name + (combined ? "" : EXTENSION);
+  LOGGER.info(`Writing response for ${filename}`);
+  const path = join(dir, filename);
+  const { debug, isolated, skip } = content.meta ?? {};
+  if (content.context.augment && !clean) {
+    (debug as { augment: unknown[] }).augment = content.context.augment.map(
+      ({ score, name }) => ({
+        score,
+        name,
+      })
+    );
+  }
+
+  const meta: ContentMeta = {
+    ...(skip ? { skip } : {}),
+    ...(combined ? { combined } : {}),
+    ...(isolated ? { isolated } : {}),
+    ...(Object.keys(content.context?.view || {}).length > 0
+      ? { view: content.context?.view }
+      : {}),
+    ...(content.meta?.temperature
+      ? { temperature: content.meta.temperature }
+      : {}),
+    ...(!clean ? { debug } : {}),
+  };
+
+  if (combined) {
+    meta.prompt = content.meta?.prompt ?? content.prompt;
+  }
+
+  if (clean) {
+    content.response = "";
+  }
+
+  const head = YAML.stringify(meta, {
+    blockQuote: "literal",
+    lineWidth: 0,
+    sortMapEntries: true,
+  });
+  const file =
+    (!combined && (content.meta?.skipHead || head === "{}\n")
+      ? ""
+      : `---\n${head}---\n`) + content.response;
+  await fs.writeFile(path, file);
+}
+
+const IS_WINDOWS = PLATFORM_PARTS == PLATFORM_PARTS_WIN;
+async function mkdirp(fs: FileSystem, dir: string) {
+  if (!isAbsolute(dir)) {
+    LOGGER.warn(`Cannot mkdirp on non-absolute path ${dir}`);
+    return;
+  }
+  const parts = dir.split(SEP);
+  for (let i = 1; i < parts.length; i++) {
+    let path = join(SEP, ...parts.slice(1, i + 1));
+    if (IS_WINDOWS) {
+      path = parts[0] + SEP + path;
+    }
+    try {
+      await fs.stat(path);
+    } catch {
+      await fs.mkdir(path);
+    }
+  }
 }

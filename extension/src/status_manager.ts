@@ -1,4 +1,5 @@
 import type { GenerateManager } from "@ailly/core/lib/actions/generate_manager.js";
+import { assertExists } from "@davidsouther/jiffies/lib/cjs/assert.js";
 import type { StatusBarItem } from "vscode";
 import vscode, { StatusBarAlignment } from "vscode";
 import { SETTINGS } from "./settings";
@@ -29,7 +30,7 @@ export class StatusBarStatusManager implements StatusManager {
     manager.threads.forEach((thread) =>
       thread.forEach(async (content) => {
         this.addOutstanding();
-        await content.responseStream.promise;
+        await assertExists(content.responseStream).promise;
         this.finishOutstanding();
       })
     );

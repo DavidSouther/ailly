@@ -1,4 +1,7 @@
 import { Temporal } from "temporal-polyfill";
+
+import { assertExists } from "@davidsouther/jiffies/lib/cjs/assert.js";
+
 import { View, type Content } from "../content/content.js";
 import {
   GLOBAL_VIEW,
@@ -188,7 +191,7 @@ export function generateOne(
     LOGGER.info(`Skipping ${c.path}`);
     const stream = new TextEncoderStream();
     stream.writable.getWriter().write(c.response ?? "");
-    c.responseStream.resolve(
+    assertExists(c.responseStream).resolve(
       stream.readable.pipeThrough(new TextDecoderStream())
     );
     return Promise.resolve();
@@ -207,6 +210,7 @@ export function generateOne(
       // tokens: m.tokens,
     })),
   });
+
   c.meta = {
     ...c.meta,
     debug: {
@@ -215,9 +219,10 @@ export function generateOne(
       lastRun: Temporal.Now.instant(),
     },
   };
+
   try {
     const generator = engine.generate(c, settings);
-    c.responseStream.resolve(generator.stream);
+    assertExists(c.responseStream).resolve(generator.stream);
     return generator.done.finally(() => {
       c.response = generator.message();
       c.meta!.debug = { ...c.meta!.debug, ...generator.debug() };
@@ -233,10 +238,11 @@ export function generateOne(
 }
 
 export async function drain(content: Content) {
-  const stream = await content.responseStream.promise;
+  const stream = await assertExists(content.responseStream).promise;
   if (stream.locked) {
     return;
   }
   for await (const _ of stream) {
+    // Do nothing, just need to run the AsyncIterable
   }
 }

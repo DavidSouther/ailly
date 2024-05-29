@@ -1,5 +1,10 @@
 import { Message } from "../index.js";
 
+export interface LLMMessage {
+  role: "user" | "assistant";
+  content: string;
+}
+
 export type Models =
   | "anthropic.claude-v2"
   | "anthropic.claude-3-opus-20240229-v1:0"
@@ -45,11 +50,6 @@ export function conversationBuilder(messages: Message[]): {
   });
 
   return { prompt: output + "\n\nAssistant:", max_tokens_to_sample: 8191 };
-}
-
-export interface LLMMessage {
-  role: "user" | "assistant";
-  content: string;
 }
 
 export function messagesBuilder(messages: Message[]): {
