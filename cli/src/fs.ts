@@ -2,14 +2,14 @@ import { Console } from "node:console";
 import { join, resolve } from "node:path";
 
 import {
-  AillyEdit,
-  Content,
+  type AillyEdit,
+  type Content,
   loadContent,
   makeCLIContent,
 } from "@ailly/core/lib/content/content.js";
 import { loadTemplateView } from "@ailly/core/lib/content/template.js";
 import {
-  PipelineSettings,
+  type PipelineSettings,
   LOGGER as ROOT_LOGGER,
   makePipelineSettings,
 } from "@ailly/core/lib/index.js";

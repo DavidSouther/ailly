@@ -46,3 +46,12 @@ This is powered by [Next.js](https://nextjs.org/) using App Router.
    - Or send a PR with a better way to load the key safely.
 1. Right Click a file or folder -> Ailly: Generate
 1. Open a file -> Cmd+P -> Ailly: Generate
+
+# Publishing a new version
+
+1. Bump the versions with `npm version -ws [version]`
+2. Submit PR with only updated `package.json`s
+3. Tag merge pr with `v[version]`.
+4. Publish to NPM with `npm publish -w core -w cli`
+5. Prepare a new release in GitHub
+6. Add the built extension .vsix to the release.
