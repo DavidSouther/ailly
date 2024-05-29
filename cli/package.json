@@ -1,6 +1,6 @@
 {
   "name": "@ailly/cli",
-  "version": "1.5.0-rc2",
+  "version": "1.5.0-rc3",
   "description": "",
   "type": "commonjs",
   "main": "index.js",
@@ -29,7 +29,7 @@
     "ci": "vitest --run --reporter=verbose src"
   },
   "dependencies": {
-    "@ailly/core": "1.5.0-rc2",
+    "@ailly/core": "1.5.0-rc3",
     "@davidsouther/jiffies": "^2.2.4",
     "yaml": "^2.4.1"
   },
