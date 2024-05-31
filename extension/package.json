@@ -51,7 +51,8 @@
       "explorer/context": [
         {
           "command": "ailly.generate",
-          "group": "3_generate"
+          "group": "3_generate",
+          "when": "!explorerResourceIsFolder"
         },
         {
           "command": "ailly.generate.all",
@@ -60,12 +61,13 @@
         },
         {
           "command": "ailly.continue",
-          "group": "1_modification",
+          "group": "3_generate",
           "when": "!explorerResourceIsFolder"
         },
         {
           "command": "ailly.clean",
-          "group": "3_generate"
+          "group": "3_generate",
+          "when": "!explorerResourceIsFolder"
         },
         {
           "command": "ailly.clean.all",

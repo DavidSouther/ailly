@@ -46,6 +46,12 @@ export async function generate(
   resetLogger();
   LOGGER.info(`Generating for ${path}`);
 
+  const engine = await SETTINGS.getAillyEngine();
+  const model = await SETTINGS.getAillyModel(engine);
+  if (engine === "bedrock") {
+    await SETTINGS.prepareBedrock();
+  }
+
   // Prepare configuration
   const fs = new GitignoreFs(new VSCodeFileSystemAdapter());
   (fs as any).p = (path: string) =>
@@ -53,20 +59,15 @@ export async function generate(
       fs,
       path.replace("~", process.env["HOME"] ?? "~")
     );
-  const stat = await fs.stat(path);
-  const root = stat.isFile() ? dirname(path) : path;
-  fs.cd(root);
-
-  const engine = await SETTINGS.getAillyEngine();
-  const model = await SETTINGS.getAillyModel(engine);
-  if (engine === "bedrock") {
-    await SETTINGS.prepareBedrock();
-  }
 
   const templateView = await loadTemplateView(
     fs,
     ...SETTINGS.getTemplateViews()
   );
+
+  const stat = await fs.stat(path);
+  const root = stat.isFile() ? dirname(path) : path;
+  fs.cd(root);
 
   const settings = await makePipelineSettings({
     root,
@@ -120,16 +121,6 @@ export async function generate(
   if (!doEdit) {
     writeContent(fs as any, content, { clean });
   }
-}
-
-async function executeEdit(
-  content: Content[],
-  edit: AillyEdit // { prompt: string; start: number; end: number }
-) {
-  const replace = content[0].response ?? "";
-  await deleteEdit(edit);
-  await insert(edit, "", replace);
-  updateSelection(edit, replace);
 }
 
 async function executeStreaming(content: Content[], edit: AillyEdit) {

@@ -10,6 +10,53 @@ Rhymes with _daily_.
 
 Ailly's best feature is rapid prompt engineering iteration. By keeping your prompts in snippets on the file system, you can make very fine-grained changes to your prompt and immediately see the difference in the output. You can also use all of your normal source control tooling to track changes over time: both your changes, and those from the LLM.
 
+## VSCode extension
+
+The VSCode extension provides several commands.
+
+`Ailly: Run` runs Ailly on a file. You can activate it with either the right-click context menu or the command palette.
+
+- When you run Ailly from the context menu, it runs on the file with its parent folder as the root.
+- When you run Ailly from the command palette, it runs on the current active file (or does nothing if there's no active file).
+
+`Ailly: Run All` runs Ailly on a folder and all files below it in the file system.
+
+`Ailly: Continue` sends the response as an `Assistant` message, to have the LLM continue generating.
+This is especially useful when a request ends before the LLM is 'finished', for instance, asking it to repeat and edit a long document.
+
+`Ailly: Clean` and `Ailly: Clean All` on a file or folder clean Ailly details from the file. This includes removing debug data from the metadata of each prompt file and removing the response contents.
+
+`Ailly: Edit` runs from the command palette on the current active file (or does nothing if there's no active file).
+
+- `Ailly: Edit` uses the current file and its root, in the `folder` context, and includes the current highlighted selection as the edit range.
+- With multiple selections, it only uses the first selection.
+
+### Installing the Ailly extension
+
+1. Download the extension's `.vsix` file from the [latest release](https://github.com/DavidSouther/ailly/releases/latest).
+2. Open the VSCode Extensions side panel (Cmd/Ctrl + Shift + X).
+3. From the Extensions side panel top three-dot menu, choose "Install from VSIX..."
+4. Select the `.vsix` file downloaded in step 1.
+
+### The Ailly extension and Bedrock
+
+When using the Bedrock engine, the Ailly extension uses your current [AWS configuration](https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-files.html).
+Ailly also exposes two settings, `Ailly: AWS Profile` and `Ailly: AWS Region`, to choose which profile and (optionally) which Region to use for Bedrock requests.
+Use `aws configure` or the equivalent command to configure `~/.aws/config` and `~/.aws/credentials`.
+If Ailly shows a credentials error, check this configuration first.
+
+### Ailly Getting Started
+
+1. Install Ailly (see above).
+2. Authenticate with Bedrock, or set the Ailly OpenAI API key.
+3. Create a new folder, open it with VSCode, and create a file named `10_chickens.md` that contains the following text: "Tell me a joke about chickens!"
+4. In the explorer view on the left, right-click `10_chickens.md` and choose `Ailly: Run`.
+5. When Ailly finishes, laugh at the joke in `10_chickens.md.ailly.md`!
+6. Create a file named `.aillyrc` that contains the following text: "You are a farmer writing jokes for your other barnyard animals."
+7. Create a file named `20_knock_knock.md` that contains the following text: "Turn the chicken joke into a knock knock joke."
+8. Right-click the folder in the Explorer view, and choose `Ailly: Run All`.
+9. Review the new jokes!
+
 ## CLI Quickstart
 
 To get started on the command line, follow these steps:
@@ -22,9 +69,11 @@ To get started on the command line, follow these steps:
 1. Create a file named `.aillyrc` with "You are a farmer writing jokes for your other barnyard animals."
    - Include other system prompts, level setting expectations. etc.
    - Run Ailly with the same command, and see how the joke changes.
-1. Create more numbered files, such as `20_knock_knock.md` with "Turn the chicken joke into a knock knock joke."
+1. Create more numbered files, such as `20_knock_knock.md` that contains teh following text: "Turn the chicken joke into a knock-knock joke."
 1. Run Ailly using NodeJS: `npx @ailly/cli 20_knock_knock.md`
-   - `20_knock_knock.md.ailly.md` will have the new knock knock joke based on the chicken joke it first wrote!
+   - `20_knock_knock.md.ailly.md` now contains the new knock knock joke based on the updated chicken joke it wrote!
+
+To use Ailly more easily, install the latest version with `npm install @ailly/cli`, after which the command `ailly` will run Ailly.
 
 ### System Context
 
@@ -75,42 +124,6 @@ PLAN to use Ailly effectively. Iterate often. Provide context. Put words in Aill
   - Each model behaves differently, so the default forematter might not work for a particular model. In that case, either open an issue or poke around in `./core/src/engine/bedrock`.
 
 To choose an engine, export `AILLY_ENGINE=[bedrock|openai]` or provide `ailly --engine` on the command line.
-
-## VSCode extension
-
-The VSCode extension provides two commands, `Generate` and `Edit`.
-
-`Generate` runs Ailly on a file or folder. You can activate it with either the right-click context menu or the command palette.
-
-- When you run Ailly from the context menu, it runs on the file with its parent folder as the root, or on an entire folder using the folder as the root.
-
-- When you run Ailly from the command prompt, it runs on the current active file (or does nothing if there's no active editor).
-
-`Edit` runs from the command prompt on the current active file (or does nothing if there's no active editor).
-
-- `Edit` uses the current file and its root, in the `folder` context, and includes the current highlighted selection as the edit range.
-
-- With multiple selections, it only uses the first selection.
-
-### Installing the Ailly extension
-
-**Update** May 8, 2024: The extension is available as an artifact in the most recent [workflow run](https://github.com/DavidSouther/ailly/actions/workflows/extension.yaml).
-
-To install the Ailly extension:
-
-- Clone the repo and install dependencies.
-  - `git clone https://github.com/davidsouther/ailly.git ; cd ailly ; npm install`
-- Package the extension with `npm run package`.
-- In VSCode extensions, install `./extension/ailly-0.*.*.vsix` from vsix.
-- Right-click a file in the content explorer and select `Ailly: Generate`.
-- Make a selection and edit it with `Ailly: Edit` in the command palette.
-
-### The Ailly extension and Bedrock
-
-When using the Bedrock engine, the Ailly extension uses your current [AWS configuration](https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-files.html).
-It also exposes two settings, `Ailly: Aws Profile` and `Ailly: Aws Region`, to choose which profile and (optionally) which Region to use for Bedrock requests.
-Use `aws configure` or the equivalent command to configure `~/.aws/config` and `~/.aws/credentials`.
-If Ailly shows a credentials error, check this setting first.
 
 ### Developing
 
