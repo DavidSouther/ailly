@@ -1,7 +1,7 @@
 // The module 'vscode' contains the VS Code extensibility API
 // Import the module and reference it with the alias vscode in your code below
 import * as vscode from "vscode";
-import { basename } from "path";
+import path, { basename } from "path";
 import { generate, type ExtensionEdit } from "./generate.js";
 import { LOGGER, resetLogger } from "./settings.js";
 import {
@@ -111,20 +111,21 @@ export function registerGenerateCommand(
   context.subscriptions.push(
     vscode.commands.registerCommand(
       `ailly.${name}`,
-      async (uri?: vscode.Uri, ..._args) => {
+      async (contextSelection?: vscode.Uri, allSelections?: vscode.Uri[]) => {
         if (edit && !vscode.window.activeTextEditor) {
           return;
         }
         try {
-          if (!uri) {
-            uri = vscode.window.activeTextEditor?.document.uri;
+          if (!contextSelection) {
+            contextSelection = vscode.window.activeTextEditor?.document.uri;
+            allSelections = contextSelection ? [contextSelection] : [];
           }
-          const path = uri?.fsPath ?? "";
-          if (!path) {
+          let paths = allSelections?.map((path) => path.fsPath) ?? [];
+          if (paths.length === 0) {
             return;
           }
 
-          const base = basename(path);
+          const base = basename(contextSelection?.fsPath ?? paths[0]);
 
           let extensionEdit: ExtensionEdit | undefined;
           if (edit) {
@@ -144,13 +145,17 @@ export function registerGenerateCommand(
 
           try {
             vscode.window.showInformationMessage(`Ailly ${gerund} ${base}`);
-            await generate(path, {
-              manager,
-              clean,
-              depth: deep ? Number.MAX_SAFE_INTEGER : 1,
-              continued,
-              extensionEdit,
-            });
+            await Promise.all(
+              paths.map((path) =>
+                generate(path, {
+                  manager,
+                  clean,
+                  depth: deep ? Number.MAX_SAFE_INTEGER : 1,
+                  continued,
+                  extensionEdit,
+                })
+              )
+            );
             vscode.window.showInformationMessage(`Ailly ${pastpart} ${base}`);
           } catch (err) {
             vscode.window.showWarningMessage(
