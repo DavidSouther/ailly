@@ -169,14 +169,12 @@ In `path/to/javascript-prompt.yaml` there is a `code.tests` property with inform
 code:
   tests: |
       <tests>
-        When implementing test behaviors, be very careful not to assume any additional behaviors. Only write
-        tests for the behaviors explicitly requested.
         For writing unit tests remember that we are using Vitest. Do not import any mocking libraries other than those provided by vitest. Vitest requires that test methods (describe, it, expect, etc.) are explicitly imported. They are not added to the global environment. If you're not sure about the vitest API at any time, please let me know rather than making assumptions. Be sure to use the latest EcmaScript, not Typescript.
         While vitest allows for globals, we must explicitly import any vitest functions.
         
         Be judicious in your mocking. For example, things like "path.join" probably don't need to be mocked
         because it's a pure function with no i/o.
-...
+      </tests>
 ```
 
 That context can be added to a prompt by passing the file path to `--template-view` and using [mustache](https://mustache.github.io/) syntax in the prompt:
