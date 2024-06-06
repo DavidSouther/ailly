@@ -40,6 +40,7 @@ export async function main() {
     loaded.settings
   );
 
+  const isStdOut = loaded.content.at(-1) == "/dev/stdout";
   switch (true) {
     case args.values["update-db"]:
       await generator.updateDatabase();
@@ -67,7 +68,7 @@ export async function main() {
       LOGGER.info(`Starting ${loaded.content.length} requests`);
       generator.start();
 
-      if (loaded.content.at(-1) == "/dev/stdout") {
+      if (isStdOut) {
         loaded.content.splice(-1, 1);
         const prompt = loaded.context["/dev/stdout"];
         const edit = prompt.context.edit;
@@ -93,7 +94,7 @@ export async function main() {
       const errors = generator
         .errors()
         .filter((c) => c.content.name != "/dev/stdout");
-      if (errors.length > 0) {
+      if (errors.length > 0 && !isStdOut) {
         console.error(
           [
             "There were errors when generating responses:",

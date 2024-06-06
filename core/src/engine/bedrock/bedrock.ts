@@ -26,6 +26,7 @@ export interface BedrockDebug extends EngineDebug {
   };
   finish?: string;
   error?: Error;
+  region?: string;
   id: string;
 }
 
@@ -83,6 +84,7 @@ export const generate: EngineGenerate<BedrockDebug> = (
       model,
       engine: "bedrock",
     };
+    bedrock.config.region().then((region) => (debug.region = region));
     const stream = new TransformStream();
     const writer = stream.writable.getWriter();
     const invokeModelCommand = {
@@ -228,7 +230,10 @@ export function formatError(content: Content) {
   try {
     const { message } = content.meta!.debug!.error!;
     const model = content.meta!.debug!.model!;
-    const region = process.env["AWS_REGION"] ?? makeClient().config.region;
+    const region =
+      process.env["AWS_REGION"] ??
+      (content.meta?.debug as BedrockDebug | undefined)?.region ??
+      "unknown region";
     let base = "There was an error calling Bedrock. ";
     switch (message) {
       case "The security token included in the request is invalid.":
