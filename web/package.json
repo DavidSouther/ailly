@@ -1,6 +1,6 @@
 {
   "name": "@ailly/web",
-  "version": "1.5.0",
+  "version": "1.5.1",
   "private": true,
   "scripts": {
     "dev": "next dev",
@@ -10,7 +10,7 @@
     "ci": "npm run build"
   },
   "dependencies": {
-    "@ailly/core": "1.5.0",
+    "@ailly/core": "1.5.1",
     "@davidsouther/jiffies": "^2.2.4",
     "marked-react": "^2.0.0",
     "react": "^18",
