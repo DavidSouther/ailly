@@ -1,6 +1,6 @@
 import { FileSystem, SEP } from "@davidsouther/jiffies/lib/cjs/fs.js";
 import { join, normalize } from "path";
-import { contentType } from "mime-types";
+import { isText } from "istextorbinary";
 import * as gitignoreParser from "gitignore-parser";
 
 export class GitignoreFs extends FileSystem {
@@ -25,9 +25,10 @@ export class GitignoreFs extends FileSystem {
       });
     }
     const paths = await this.adapter.scandir(path);
+    const nameFilter = [".gitignore", ".git"];
     const filtered = paths.filter(
       (p) =>
-        p.name !== ".git" &&
+        !nameFilter.includes(p.name) &&
         (p.isDirectory() || isTextExtension(p.name)) &&
         gitignores.every((g) =>
           p.isDirectory() ? g.accepts(p.name + "/") : g.accepts(p.name)
@@ -38,10 +39,5 @@ export class GitignoreFs extends FileSystem {
 }
 
 function isTextExtension(name: string) {
-  const overrides = ["go", "ts"];
-  if (overrides.includes(name.split(".").pop() || "")) {
-    return true;
-  }
-  const contType = contentType(name) || "";
-  return contType.startsWith("text") || contType.startsWith("application");
+  return isText(name);
 }
