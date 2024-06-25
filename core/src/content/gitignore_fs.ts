@@ -29,15 +29,11 @@ export class GitignoreFs extends FileSystem {
     const filtered = paths.filter(
       (p) =>
         !nameFilter.includes(p.name) &&
-        (p.isDirectory() || isTextExtension(p.name)) &&
+        (p.isDirectory() || isText(p.name)) &&
         gitignores.every((g) =>
           p.isDirectory() ? g.accepts(p.name + "/") : g.accepts(p.name)
         )
     );
     return filtered.map((p) => p.name);
   }
-}
-
-function isTextExtension(name: string) {
-  return isText(name);
 }
