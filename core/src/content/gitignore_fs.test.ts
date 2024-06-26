@@ -3,6 +3,16 @@ import { describe, expect, it } from "vitest";
 import { GitignoreFs } from "./gitignore_fs.js";
 
 describe("gitignore fs", () => {
+  it("skips files with no extension", async () => {
+    const fs = new GitignoreFs(
+      new ObjectFileSystemAdapter({
+        "file.txt": "abc",
+        skip: "skip",
+      })
+    );
+
+    expect(await fs.readdir("/")).toEqual(["file.txt"]);
+  });
   it("reads while obeying .gitignores", async () => {
     const fs = new GitignoreFs(
       new ObjectFileSystemAdapter({
