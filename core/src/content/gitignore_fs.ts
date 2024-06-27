@@ -1,6 +1,5 @@
 import { FileSystem, SEP } from "@davidsouther/jiffies/lib/cjs/fs.js";
 import { join, normalize } from "path";
-import { contentType } from "mime-types";
 import * as gitignoreParser from "gitignore-parser";
 
 export class GitignoreFs extends FileSystem {
@@ -25,9 +24,10 @@ export class GitignoreFs extends FileSystem {
       });
     }
     const paths = await this.adapter.scandir(path);
+    const ignoredNames = [".git", ".gitignore"];
     const filtered = paths.filter(
       (p) =>
-        p.name !== ".git" &&
+        !ignoredNames.includes(p.name) &&
         (p.isDirectory() || isTextExtension(p.name)) &&
         gitignores.every((g) =>
           p.isDirectory() ? g.accepts(p.name + "/") : g.accepts(p.name)
@@ -38,10 +38,29 @@ export class GitignoreFs extends FileSystem {
 }
 
 function isTextExtension(name: string) {
-  const overrides = ["go", "ts"];
-  if (overrides.includes(name.split(".").pop() || "")) {
-    return true;
+  // If theres no extension, err on the side
+  // of caution and don't include it in the context.
+  if (!name.includes(".")) {
+    return false;
   }
-  const contType = contentType(name) || "";
-  return contType.startsWith("text") || contType.startsWith("application");
+
+  // From https://github.com/bevry/binaryextensions/blob/master/source/index.ts
+  const binaryExtensions = [
+    "dds",
+    "eot",
+    "gif",
+    "ico",
+    "jar",
+    "jpeg",
+    "jpg",
+    "pdf",
+    "png",
+    "swf",
+    "tga",
+    "ttf",
+    "zip",
+  ];
+
+  const ext = name.split(".").pop() || "";
+  return !binaryExtensions.includes(ext);
 }
