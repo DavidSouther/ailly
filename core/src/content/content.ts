@@ -128,7 +128,7 @@ export async function loadContent(
   fs: FileSystem,
   system: System[] = [],
   meta: ContentMeta = {},
-  depth: number = Number.MAX_SAFE_INTEGER
+  depth: number = Number.MAX_SAFE_INTEGER,
 ): Promise<Record<string, Content>> {
   if (depth < 0) throw new Error("Depth in loadContent cannot be negative");
   if (depth < 1) return {};
@@ -183,7 +183,7 @@ export async function loadContent(
         fs,
         system,
         meta,
-        depth ? depth - 1 : undefined
+        depth ? depth - 1 : undefined,
       );
       Object.assign(folders, contents);
       fs.popd();
@@ -193,7 +193,7 @@ export async function loadContent(
   const content: Record<string, Content> = {
     ...files.reduce(
       (c, f) => ((c[f.path] = f), c),
-      {} as Record<string, Content>
+      {} as Record<string, Content>,
     ),
     ...folders,
   };
@@ -211,7 +211,7 @@ async function loadDir(fs: FileSystem): Promise<PartitionedDirectory> {
       if (stats.isFile()) dir.files.push(stats);
       return dir;
     },
-    { files: [], folders: [] }
+    { files: [], folders: [] },
   );
   return partitioned;
 }
@@ -220,7 +220,7 @@ async function loadFile(
   fs: FileSystem,
   file: Stats,
   system: System[],
-  head: GrayMatterData
+  head: GrayMatterData,
 ): Promise<Content | undefined> {
   const ordering = splitOrderedName(file.name);
   const cwd = fs.cwd();
@@ -239,7 +239,7 @@ async function loadFile(
     } catch (err) {
       LOGGER.warn(
         `Error reading prompt and parsing for matter in ${promptPath}`,
-        { err }
+        { err },
       );
       return undefined;
     }
@@ -282,7 +282,7 @@ async function loadFile(
             } catch (err) {
               LOGGER.warn(
                 `Error reading response and parsing for matter in ${outPath}`,
-                { err }
+                { err },
               );
               return undefined;
             }
@@ -328,7 +328,7 @@ async function loadFile(
 export async function loadAillyRc(
   fs: FileSystem,
   system: System[],
-  meta: ContentMeta
+  meta: ContentMeta,
 ): Promise<[System[], ContentMeta]> {
   meta.parent = meta.parent ?? "root";
   const aillyrc = await fs.readFile(".aillyrc").catch((e) => "");
@@ -458,7 +458,7 @@ export type WritableContent = Omit<Content, "responseStream"> &
 export async function writeContent(
   fs: FileSystem,
   content: WritableContent[],
-  options?: { clean?: boolean }
+  options?: { clean?: boolean },
 ) {
   for (const c of Object.values(content)) {
     try {
@@ -472,13 +472,13 @@ export async function writeContent(
 async function writeSingleContent(
   fs: FileSystem,
   content: WritableContent,
-  options?: { clean?: boolean }
+  options?: { clean?: boolean },
 ) {
   if (!content.response) return;
   const combined = content.meta?.combined ?? false;
   if (combined && content.outPath != content.path) {
     throw new Error(
-      `Mismatch path and output for ${content.path} vs ${content.outPath}`
+      `Mismatch path and output for ${content.path} vs ${content.outPath}`,
     );
   }
 
@@ -500,7 +500,7 @@ async function writeSingleContent(
       ({ score, name }) => ({
         score,
         name,
-      })
+      }),
     );
   }
 

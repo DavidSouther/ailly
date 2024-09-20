@@ -35,7 +35,7 @@ const MODEL_MAP: Record<string, string> = {
   haiku: "us.anthropic.claude-3-haiku-20240307-v1:0",
   opus: "us.anthropic.claude-3-opus-20240229-v1:0",
   nova_lite: "us.amazon.nova-lite-v1:0",
-  nova_pro: "us.amazon.nova-pro-v1:0"
+  nova_pro: "us.amazon.nova-pro-v1:0",
 };
 
 declare module "@davidsouther/jiffies/lib/cjs/log.js" {

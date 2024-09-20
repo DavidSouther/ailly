@@ -1,7 +1,13 @@
-import { FileSystem, SEP } from "@davidsouther/jiffies/lib/cjs/fs.js";
+import {
+  FileSystem,
+  SEP,
+  type Stats,
+} from "@davidsouther/jiffies/lib/cjs/fs.js";
 import { join, normalize } from "path";
 import * as gitignoreParser from "gitignore-parser";
+import { isAscii } from "buffer";
 
+const IGNORED_NAMES = [".git", ".gitignore"];
 export class GitignoreFs extends FileSystem {
   async readdir(path: string): Promise<string[]> {
     path = (this as unknown as { p(p: string): string }).p(path);
@@ -13,7 +19,7 @@ export class GitignoreFs extends FileSystem {
     }> = [];
     for (let i = 1; i <= dirs.length; i++) {
       const gitignorePath = normalize(
-        drive + SEP + join(...dirs.slice(0, i), ".gitignore")
+        drive + SEP + join(...dirs.slice(0, i), ".gitignore"),
       );
       const gitignore = await this.readFile(gitignorePath).catch((e) => "");
       const parser = gitignoreParser.compile(gitignore);
@@ -24,16 +30,32 @@ export class GitignoreFs extends FileSystem {
       });
     }
     const paths = await this.adapter.scandir(path);
-    const ignoredNames = [".git", ".gitignore"];
-    const filtered = paths.filter(
-      (p) =>
-        !ignoredNames.includes(p.name) &&
-        (p.isDirectory() || isTextExtension(p.name)) &&
-        gitignores.every((g) =>
-          p.isDirectory() ? g.accepts(p.name + "/") : g.accepts(p.name)
-        )
+    const filtered: Stats[] = [];
+    await Promise.all(
+      paths.map(async (stats) => {
+        const include =
+          !IGNORED_NAMES.includes(stats.name) &&
+          (stats.isDirectory() || (await this.isTextFile(stats))) && // This test was intended to limit us to text files only
+          gitignores.every((g) =>
+            stats.isDirectory()
+              ? g.accepts(stats.name + "/")
+              : g.accepts(stats.name),
+          );
+        if (include) {
+          filtered.push(stats);
+        }
+      }),
     );
     return filtered.map((p) => p.name);
+  }
+
+  private async isTextFile(p: Stats): Promise<boolean> {
+    try {
+      let content = await this.readFile(p.name);
+      return isAscii(Buffer.from(content.slice(0, 5), "utf-8"));
+    } catch (e) {
+      return false;
+    }
   }
 }
 

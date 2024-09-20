@@ -27,7 +27,7 @@ import { Args } from "./args.js";
 export const LOGGER = getLogger("@ailly/cli");
 export async function loadFs(
   fs: FileSystem,
-  args: Args
+  args: Args,
 ): Promise<{
   context: Record<string, Content>;
   content: string[];
@@ -47,7 +47,7 @@ export async function loadFs(
     ? new Console(process.stderr, process.stderr)
     : global.console;
   ROOT_LOGGER.level = LOGGER.level = getLogLevel(
-    logLevel === "trace" ? "0.5" : logLevel
+    logLevel === "trace" ? "0.5" : logLevel,
   );
   const logFormat = args.values["log-format"];
   const formatter =
@@ -65,11 +65,9 @@ export async function loadFs(
 
   const templateView = await loadTemplateView(
     fs,
-    ...(args.values["template-view"] ?? [])
+    ...(args.values["template-view"] ?? []),
   );
-  const isExpensiveModel = args.values.model?.includes("opus") ?? false;
-  const requestLimit =
-    args.values["request-limit"] ?? isExpensiveModel ? 1 : undefined;
+  const requestLimit = Number(args.values["request-limit"] ?? 5);
 
   const settings = await makePipelineSettings({
     root,
@@ -94,7 +92,7 @@ export async function loadFs(
     fs,
     system ? [{ content: system, view: {} }] : [],
     settings,
-    depth
+    depth,
   );
 
   let content: string[] = [];
@@ -106,7 +104,7 @@ export async function loadFs(
   } else {
     if (!hasPositionals) positionals.push(root);
     content = Object.keys(context).filter((c) =>
-      positionals.some((p) => c.startsWith(p))
+      positionals.some((p) => c.startsWith(p)),
     );
   }
 
@@ -152,7 +150,7 @@ function readPrompt(args: Args): Promise<string> {
 export function makeEdit(
   lines: string | undefined,
   content: string[],
-  hasPrompt: boolean
+  hasPrompt: boolean,
 ): AillyEdit | undefined {
   if (!lines) return undefined;
   if (content.length != 1) {
