@@ -127,7 +127,10 @@ To choose an engine, export `AILLY_ENGINE=[bedrock|openai]` or provide `ailly --
 
 ### Developing
 
-See [DEVELOPING.md](./DEVELOPING.md) for details on how to run and debug various Ailly components.
+* See [ARCHITECTURE.md](./ARCHITECTURE.md) for an overview of the packages and components in Ailly.
+* See [DEVELOPING.md](./DEVELOPING.md) for details on how to run and debug various Ailly components.
+* See [CONTRIBUTING.md](./CONTRIBUTING.md) for instructions on making a pull request. (There are no special instructions at this time.)
+* See [DESIGN.md](./DESIGN.md) for historical notes on why some decisions were made. (Not exhaustive, but hopefully interesting.)
 
 ## Ailly plugins
 

@@ -75,7 +75,10 @@ export async function main() {
         if (!edit) {
           const stream = await assertExists(prompt.responseStream).promise;
           for await (const word of stream) {
-            process.stdout.write(word);
+            if (word) {
+              // ChatGPT sends a final `undefined`
+              process.stdout.write(word);
+            }
           }
           process.stdout.write("\n");
         }
