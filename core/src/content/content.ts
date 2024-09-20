@@ -26,7 +26,7 @@ const END_REGEX = new RegExp(EXTENSION + "$");
 
 type GrayMatterData = GrayMatterFile<string>["data"];
 
-// Content is ordered on the file system using NN_name folders and nnp_name.md files.
+// Content is ordered on the file system using NN_name folders and nn_name.md[.ailly.md] files.
 // The Content needs to keep track of where in the file system it is, so that a Prompt can write a Response.
 // It also needs the predecessor Content at the same level of the file system to build the larger context of its message pairs.
 export interface Content {

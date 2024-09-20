@@ -12,7 +12,8 @@ export const name = "openai";
 
 // const MODEL = "gpt-3.5-turbo-0613";
 // const FT_MODEL = process.env["OPENAI_FT_MODEL"];
-const MODEL = "gpt-4-0613";
+// const MODEL = "gpt-4-0613";
+const MODEL = "gpt-4o";
 // const MODEL = `ft:${BASE_MODEL}:personal::${FT_MODEL}`;
 // const MODEL = "gpt-3.5-turbo-16k-0613";
 const EMBEDDING_MODEL = "text-embedding-ada-002";
@@ -70,8 +71,10 @@ export const generate: EngineGenerate<OpenAIDebug> = (
         const writer = stream.writable.getWriter();
         await writer.ready;
         const chunk = block.choices[0]?.delta.content;
-        message += chunk;
-        await writer.write(chunk);
+        if (chunk) {
+          message += chunk;
+          await writer.write(chunk);
+        }
         writer.releaseLock();
       }
 

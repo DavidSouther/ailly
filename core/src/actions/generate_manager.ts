@@ -48,6 +48,7 @@ export class GenerateManager {
     this.threads = partitionPrompts(content, context);
     LOGGER.debug(`Ready to generate ${this.threads.length} messages`);
   }
+
   start() {
     this.started = true;
     this.threadRunners = this.threads.map((t) =>
