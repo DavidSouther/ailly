@@ -21,7 +21,7 @@ export async function addContentMessages(
   }
   if (content.context.edit) {
     const lang = content.context.edit.file.split(".").at(-1) ?? "";
-    messages.push({ role: "assistant", content: "```" + lang });
+    messages.push({ role: "assistant", content: "```" + lang, tokens: NaN });
   }
 }
 
@@ -43,6 +43,7 @@ export function getMessagesPredecessor(
       (c.context.augment ?? []).map<Message>(({ content }) => ({
         role: "user",
         content,
+        tokens: NaN,
       }))
     )
     .flat();
@@ -51,14 +52,19 @@ export function getMessagesPredecessor(
       {
         role: "user",
         content: content.prompt,
+        tokens: NaN,
       },
       content.response
-        ? { role: "assistant", content: content.response }
+        ? { role: "assistant", content: content.response, tokens: NaN }
         : undefined,
     ])
     .flat()
     .filter(isDefined);
-  return [{ role: "system", content: system }, ...augment, ...parts];
+  return [
+    { role: "system", content: system, tokens: NaN },
+    ...augment,
+    ...parts,
+  ];
 }
 
 export function getMessagesFolder(
@@ -90,12 +96,17 @@ export function getMessagesFolder(
       {
         role: "user",
         content: content.prompt,
+        tokens: NaN,
       },
       content.response
-        ? { role: "assistant", content: content.response }
+        ? { role: "assistant", content: content.response, tokens: NaN }
         : undefined,
     ])
     .flat()
     .filter(isDefined);
-  return [{ role: "system", content: system }, ...augment, ...parts];
+  return [
+    { role: "system", content: system, tokens: NaN },
+    ...augment,
+    ...parts,
+  ];
 }

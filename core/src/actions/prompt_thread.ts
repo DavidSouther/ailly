@@ -154,6 +154,7 @@ export class PromptThread {
           content.meta?.messages?.push({
             role: "assistant",
             content: content.response,
+            tokens: NaN,
           });
         }
       } catch (e) {

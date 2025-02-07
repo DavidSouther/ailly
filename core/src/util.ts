@@ -1,5 +1,8 @@
 export const isDefined = <T>(t: T | undefined): t is T => t !== undefined;
 
+export const promiseTimeout = (sleep: number) =>
+  new Promise<void>((resolve) => setTimeout(resolve, sleep));
+
 export interface PromiseWithResolvers<T> {
   resolve: (t: T | PromiseLike<T>) => void;
   reject: (reason?: any) => void;

@@ -1,26 +1,22 @@
 import type { Content } from "../content/content.js";
 import { LOGGER } from "../index.js";
 import { RAG } from "../plugin/rag.js";
+import { promiseTimeout } from "../util";
 
 export async function augment(content: Content[], rag: RAG): Promise<void> {
-  const _content = [...content];
-  return new Promise(async (resolve, reject) => {
-    const nextPiece = async () => {
-      const piece = _content.pop()!;
-      if (!piece) {
-        return resolve();
-      }
-      try {
-        LOGGER.info(`Sending for augment ${piece.name} (${piece.path})`);
-        await rag.augment(piece);
-        LOGGER.info(`Completed augmenting ${piece.name} (${piece.path})`);
-        LOGGER.debug(piece.context.augment ?? []);
-      } catch (e) {
-        LOGGER.warn(`Error augmenting ${piece.name} (${piece.path})`);
-        LOGGER.info(`${e}`);
-      }
-      setTimeout(nextPiece, 20);
-    };
-    nextPiece();
-  });
+  while (content) {
+    const piece = content.pop()!;
+
+    try {
+      LOGGER.info(`Sending for augment ${piece.name} (${piece.path})`);
+      await rag.augment(piece);
+      LOGGER.info(`Completed augmenting ${piece.name} (${piece.path})`);
+      LOGGER.debug(piece.context.augment ?? []);
+    } catch (e) {
+      LOGGER.warn(`Error augmenting ${piece.name} (${piece.path})`);
+      LOGGER.info(`${e}`);
+    }
+
+    await promiseTimeout(20);
+  }
 }

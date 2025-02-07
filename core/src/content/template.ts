@@ -4,9 +4,9 @@ import type { FileSystem } from "@davidsouther/jiffies/lib/cjs/fs.js";
 
 import { LOGGER } from "../index.js";
 import { Content, View } from "./content.js";
-import { EDIT } from "./edit_template.js";
-import { META_PROMPT } from "./template_anthropic_metaprompt.js";
-import { GRUG_PROMPT } from "./template_grug_prompt.js";
+import { EDIT } from "./templates/edit.js";
+import { META_PROMPT } from "./templates/anthropic_metaprompt.js";
+import { GRUG_PROMPT } from "./templates/grug.js";
 
 const mustache = require("mustache");
 
