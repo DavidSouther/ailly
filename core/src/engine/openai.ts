@@ -182,6 +182,7 @@ export function getMessages(
         (c.context.augment ?? []).map<Message>(({ content }) => ({
           role: "user",
           content: "Background information: " + content,
+          tokens: NaN,
         })) ?? []
     )
     .flat()
@@ -192,14 +193,19 @@ export function getMessages(
       {
         role: "user",
         content: content.prompt,
+        tokens: NaN,
       },
       content.response
-        ? { role: "assistant", content: content.response }
+        ? { role: "assistant", content: content.response, tokens: NaN }
         : undefined,
     ])
     .flat()
     .filter(isDefined);
-  return [{ role: "system", content: system }, ...augment, ...parts];
+  return [
+    { role: "system", content: system, tokens: NaN },
+    ...augment,
+    ...parts,
+  ];
 }
 
 export async function tune(

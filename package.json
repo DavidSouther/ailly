@@ -17,5 +17,8 @@
     "extension",
     "web",
     "cli"
-  ]
+  ],
+  "dependencies": {
+    "@aws-sdk/client-bedrock-runtime": "^3.743.0"
+  }
 }

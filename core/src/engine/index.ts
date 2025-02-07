@@ -38,7 +38,7 @@ export interface Engine {
 export interface Message {
   role: "system" | "user" | "assistant";
   content: string;
-  tokens?: number;
+  tokens: number;
 }
 
 export interface Summary {
