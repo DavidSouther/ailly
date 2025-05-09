@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, test, vi } from "vitest";
 
 import {
   FileSystem,
+  type FileSystemAdapter,
   ObjectFileSystemAdapter,
   RecordFileSystemAdapter,
 } from "@davidsouther/jiffies/lib/cjs/fs.js";
@@ -10,16 +11,19 @@ import { cleanState } from "@davidsouther/jiffies/lib/cjs/scope/state.js";
 import { LOGGER, makePipelineSettings } from "../index.js";
 import { withResolvers } from "../util.js";
 import {
-  Content,
+  type Content,
+  type WritableContent,
   loadAillyRc,
   loadContent,
   makeCLIContent,
   splitOrderedName,
   writeContent,
-  type Context,
-  type WritableContent,
 } from "./content.js";
 import { GitignoreFs } from "./gitignore_fs.js";
+
+interface FsAdapterTest {
+  adapter: { fs: Record<string, string> };
+}
 
 describe("Prompt filename split", () => {
   test.each([
@@ -37,7 +41,7 @@ describe("Loading aillyrc", () => {
       const fs = new FileSystem(
         new ObjectFileSystemAdapter({
           root: {},
-        })
+        }),
       );
       fs.cd("/root");
 
@@ -52,7 +56,7 @@ describe("Loading aillyrc", () => {
           root: {
             ".aillyrc": "system",
           },
-        })
+        }),
       );
       fs.cd("/root");
 
@@ -68,14 +72,14 @@ describe("Loading aillyrc", () => {
             ".aillyrc": "system",
             below: {},
           },
-        })
+        }),
       );
       fs.cd("/root/below");
 
       const [system] = await loadAillyRc(
         fs,
         [{ content: "root", view: {} }],
-        {}
+        {},
       );
 
       expect(system.map((s) => s.content)).toEqual(["root"]);
@@ -90,14 +94,14 @@ describe("Loading aillyrc", () => {
               ".aillyrc": "below",
             },
           },
-        })
+        }),
       );
       fs.cd("/root/below");
 
       const [system] = await loadAillyRc(
         fs,
         [{ content: "root", view: {} }],
-        {}
+        {},
       );
 
       expect(system.map((s) => s.content)).toEqual(["root", "below"]);
@@ -114,7 +118,7 @@ describe("Loading aillyrc", () => {
               ".aillyrc": "below",
             },
           },
-        })
+        }),
       );
       fs.cd("/root/below");
 
@@ -135,7 +139,7 @@ describe("Loading aillyrc", () => {
               },
             },
           },
-        })
+        }),
       );
       fs.cd("/root/below/deep");
 
@@ -155,7 +159,7 @@ describe("Loading aillyrc", () => {
               },
             },
           },
-        })
+        }),
       );
       fs.cd("/root/below/deep");
 
@@ -175,7 +179,7 @@ describe("Loading aillyrc", () => {
               },
             },
           },
-        })
+        }),
       );
       fs.cd("/root/below/deep");
 
@@ -197,7 +201,7 @@ describe("Loading aillyrc", () => {
               ".aillyrc": "below",
             },
           },
-        })
+        }),
       );
       fs.cd("/root/below");
 
@@ -214,7 +218,7 @@ describe("Loading aillyrc", () => {
           root: {
             below: {},
           },
-        })
+        }),
       );
       fs.cd("/root/below");
 
@@ -235,11 +239,14 @@ describe("Loading aillyrc", () => {
           "a.ailly.md": "aa",
           b: "b",
         },
-      })
+      }),
     );
     fs.cd("/root");
 
-    const content = await loadContent(fs, [], { context: "none" });
+    const content = await loadContent(fs, {
+      system: [],
+      meta: { context: "none" },
+    });
 
     expect(content).toMatchObject({
       "/root/a": {
@@ -291,11 +298,11 @@ describe("Loading aillyrc", () => {
           c: "c",
           "c.ailly.md": "cc",
         },
-      })
+      }),
     );
     fs.cd("/root");
 
-    const content = await loadContent(fs, [], { context: "folder" });
+    const content = await loadContent(fs, { meta: { context: "folder" } });
 
     expect(content).toMatchObject({
       "/root/a": {
@@ -369,7 +376,7 @@ describe("Loading", () => {
           "56_part.md": "over the lazy",
         },
         "54_a/12_section.md": "dog.",
-      })
+      }),
     );
     const content = await loadContent(testFs);
 
@@ -451,10 +458,10 @@ describe("Loading", () => {
     const testFs = new FileSystem(
       new ObjectFileSystemAdapter({
         "a.md": "---\nprompt: prompt\n---\n",
-      })
+      }),
     );
 
-    const content = await loadContent(testFs, [], { combined: false });
+    const content = await loadContent(testFs, { meta: { combined: false } });
 
     expect(content["/a.md"].prompt).toBe("prompt");
   });
@@ -464,7 +471,7 @@ describe("Loading", () => {
       new ObjectFileSystemAdapter({
         "01_start.md": "The quick brown",
         "01_start.md.ailly.md": "fox jumped",
-      })
+      }),
     );
     const content = await loadContent(testFs);
 
@@ -478,7 +485,7 @@ describe("Loading", () => {
         ".aillyrc": "---\ncontext: folder\n---\n",
         "01_start.md": "The quick brown",
         "02_next.md": "Jumped over",
-      })
+      }),
     );
 
     const content = await loadContent(testFs);
@@ -500,13 +507,13 @@ describe("Loading", () => {
           "content.md":
             "---\nview:\n  foo: bar\n---\n{{output.prose}}\nBrainstorm an ad campaign.",
         },
-      })
+      }),
     );
 
-    const content = await loadContent(fs, [], {});
+    const content = await loadContent(fs);
 
     expect(content["/root/content.md"].prompt).toEqual(
-      "{{output.prose}}\nBrainstorm an ad campaign."
+      "{{output.prose}}\nBrainstorm an ad campaign.",
     );
     expect(content["/root/content.md"].context.view).toEqual({ foo: "bar" });
   });
@@ -519,13 +526,13 @@ describe("Loading", () => {
           "content.md":
             "---\nview:\n  foo: bar\n---\n{{output.prose}}\nBrainstorm an ad campaign.",
         },
-      })
+      }),
     );
 
-    const content = await loadContent(fs, [], {});
+    const content = await loadContent(fs);
 
     expect(content["/root/content.md"].context.system?.[0].content).toEqual(
-      "prompt"
+      "prompt",
     );
     expect(content["/root/content.md"].context.system?.[0].view).toEqual({
       whiz: 12,
@@ -540,7 +547,7 @@ describe("Loading", () => {
           "content.md": "{{view}}",
         },
         "view.yaml": "view: foo",
-      })
+      }),
     );
     const content = await loadContent(fs);
 
@@ -556,16 +563,16 @@ describe("Loading", () => {
           "content.md":
             "---\ncombined: true\nprompt:\nnot indented so no prompt\n---\n",
         },
-      })
+      }),
     );
 
     const warn = vi.spyOn(LOGGER, "warn");
 
-    const context = await loadContent(fs, [], {});
+    const context = await loadContent(fs);
     expect(Object.keys(context)).toEqual([]);
     expect(warn).toHaveBeenCalledWith(
       "Error reading prompt and parsing for matter in /root/content.md",
-      { err: expect.anything() }
+      { err: expect.anything() },
     );
   });
 });
@@ -591,12 +598,14 @@ describe("Writing", () => {
             },
           },
         },
-      })
+      }),
     );
 
-    const content = await loadContent(fs, [], {
-      root: "/root",
-      out: "/out",
+    const content = await loadContent(fs, {
+      meta: {
+        root: "/root",
+        out: "/out",
+      },
     });
 
     expect(content).toMatchObject({
@@ -624,7 +633,7 @@ describe("Writing", () => {
 
     await writeContent(fs, [...Object.values(content)]);
 
-    expect((fs as any).adapter.fs).toEqual({
+    expect((fs as unknown as FsAdapterTest).adapter.fs).toEqual({
       "/root/.gitignore": "target",
       "/root/src/com/example/Main.java": "class Main {}\n",
       "/root/target/com/example/Main.class": "0xCAFEBABE",
@@ -672,7 +681,7 @@ describe("Writing", () => {
 
     await writeContent(fs, content);
 
-    expect((fs as any).adapter.fs).toEqual({
+    expect((fs as unknown as FsAdapterTest).adapter.fs).toEqual({
       "/combined.md":
         "---\ncombined: true\ndebug:\n  engine: test\nprompt: combined\n---\nCombined",
       "/with-head.md.ailly.md": "---\ndebug:\n  engine: test\n---\nWith Head",
@@ -684,7 +693,7 @@ describe("Writing", () => {
       new ObjectFileSystemAdapter({
         "other.md": "other",
         "other.md.ailly.md": "Response",
-      })
+      }),
     );
 
     const content: WritableContent[] = [
@@ -716,7 +725,7 @@ describe("Writing", () => {
 
     await writeContent(fs, content, { clean: true });
 
-    expect((fs as any).adapter.fs).toEqual({
+    expect((fs as unknown as FsAdapterTest).adapter.fs).toEqual({
       "/content.md":
         "---\ncombined: true\nprompt: content\nview:\n  foo: bar\n---\n",
       "/other.md": "other",
@@ -730,7 +739,7 @@ describe("combined vs separate", () => {
         ".aillyrc": "---\nisolated: true\n---",
         "prompt.md": "---\nprompt: prompt\n---",
         "content.md": "---\nprompt: content\n---\nResponse",
-      })
+      }),
     );
 
     const content = await loadContent(fs);
@@ -795,7 +804,7 @@ describe("combined vs separate", () => {
 
     await writeContent(fs, content);
 
-    expect((fs as any).adapter.fs).toEqual({
+    expect((fs as unknown as FsAdapterTest).adapter.fs).toEqual({
       "/content.md":
         "---\ncombined: true\nisolated: true\nprompt: content\n---\nResponse",
     });
@@ -808,7 +817,7 @@ describe("combined vs separate", () => {
         "prompt.md": "prompt",
         "content.md": "content",
         "content.md.ailly.md": "Response",
-      })
+      }),
     );
 
     const content = await loadContent(fs);
@@ -863,12 +872,14 @@ describe("combined vs separate", () => {
         out: {
           "content.md.ailly.md": "Response",
         },
-      })
+      }),
     );
 
-    const content = await loadContent(fs, [], {
-      root: "/root",
-      out: "/out",
+    const content = await loadContent(fs, {
+      meta: {
+        root: "/root",
+        out: "/out",
+      },
     });
     expect(content).toMatchObject({
       "/root/content.md": {
@@ -916,7 +927,7 @@ describe("combined vs separate", () => {
     const fs = new FileSystem(
       new ObjectFileSystemAdapter({
         "content.md": "---\ncombined: false\nisolated: true\n---\ncontent",
-      })
+      }),
     );
 
     const content: WritableContent[] = [
@@ -936,7 +947,7 @@ describe("combined vs separate", () => {
 
     await writeContent(fs, content);
 
-    expect((fs as any).adapter.fs).toEqual({
+    expect((fs as unknown as FsAdapterTest).adapter.fs).toEqual({
       "/content.md": "---\ncombined: false\nisolated: true\n---\ncontent",
       "/content.md.ailly.md": "---\nisolated: true\n---\nResponse",
     });
@@ -948,7 +959,7 @@ describe("combined vs separate", () => {
         root: {
           "content.md": "---\ncombined: false\nisolated: true\n---\ncontent",
         },
-      })
+      }),
     );
 
     const content = [
@@ -968,7 +979,7 @@ describe("combined vs separate", () => {
 
     await writeContent(fs, content);
 
-    expect((fs as any).adapter.fs).toEqual({
+    expect((fs as unknown as FsAdapterTest).adapter.fs).toEqual({
       "/root/content.md": "---\ncombined: false\nisolated: true\n---\ncontent",
       "/out/content.md.ailly.md": "---\nisolated: true\n---\nResponse",
     });
@@ -983,9 +994,9 @@ describe("makeCLIContent", () => {
       new RecordFileSystemAdapter({
         "/root/a": "file a",
         "/root/b": "file b",
-      })
+      }),
     );
-    const context = await loadContent(fs, [], settings);
+    const context = await loadContent(fs, { meta: settings });
     return { root, settings, context };
   }, beforeEach);
 

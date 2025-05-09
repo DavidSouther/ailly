@@ -17,21 +17,21 @@ function aillyLogFormatter<
     message: string;
     source: string;
     err?: Error;
-  }
+  },
 >(data: D) {
   let base = `${data.name} ${data.message}`;
   if (data.err) {
     base += ` err: ${data.err.message}${
-      data.err.cause ? " " + (data.err.cause as Error).message : ""
+      data.err.cause ? ` ${(data.err.cause as Error).message}` : ""
     }`;
   }
   const debug: Partial<D> = { ...data };
-  delete debug.name;
-  delete debug.message;
-  delete debug.prefix;
-  delete debug.level;
+  debug.name = undefined;
+  debug.message = undefined;
+  debug.prefix = undefined;
+  debug.level = undefined;
   if (Object.keys(debug).length > 0) {
-    base += " " + JSON.stringify(debug);
+    base += ` ${JSON.stringify(debug)}`;
   }
   return base;
 }
@@ -57,10 +57,10 @@ const SETTINGS_KEYS = {
 };
 export const SETTINGS = {
   async getOpenAIKey(): Promise<string | undefined> {
-    if (process.env["OPENAI_API_KEY"]) {
-      return process.env["OPENAI_API_KEY"];
+    if (process.env.OPENAI_API_KEY) {
+      return process.env.OPENAI_API_KEY;
     }
-    let aillyConfig = getConfig();
+    const aillyConfig = getConfig();
     if (aillyConfig.has(SETTINGS_KEYS.openApiKey)) {
       const key = aillyConfig.get<string>(SETTINGS_KEYS.openApiKey);
       if (key) {
@@ -113,27 +113,27 @@ export const SETTINGS = {
   async getAillyAwsProfile(): Promise<string> {
     const aillyConfig = getConfig();
     const awsProfile = aillyConfig.get<string>(SETTINGS_KEYS.awsProfile);
-    return awsProfile ?? process.env["AWS_PROFILE"] ?? "default";
+    return awsProfile ?? process.env.AWS_PROFILE ?? "default";
   },
 
   async getAillyAwsRegion(): Promise<string | undefined> {
     const aillyConfig = getConfig();
     const awsProfile = aillyConfig.get<string>(SETTINGS_KEYS.awsRegion);
-    return awsProfile ?? (process.env["AWS_REGION"] || undefined);
+    return awsProfile ?? (process.env.AWS_REGION || undefined);
   },
 
   async prepareBedrock() {
-    process.env["AWS_PROFILE"] = await SETTINGS.getAillyAwsProfile();
+    process.env.AWS_PROFILE = await SETTINGS.getAillyAwsProfile();
     const region = await SETTINGS.getAillyAwsRegion();
     if (region !== undefined) {
-      process.env["AWS_REGION"] = region;
+      process.env.AWS_REGION = region;
     }
   },
 
   getPreferStreamingEdit(): boolean {
     const aillyConfig = getConfig();
     const preferStreamingEdit = aillyConfig.get<boolean>(
-      SETTINGS_KEYS.preferStreamingEdit
+      SETTINGS_KEYS.preferStreamingEdit,
     );
     return preferStreamingEdit ?? true;
   },
@@ -141,7 +141,7 @@ export const SETTINGS = {
   getTemplateViews(): string[] {
     const aillyConfig = getConfig();
     const aillyTemplateViews = aillyConfig.get<string[]>(
-      SETTINGS_KEYS.templateViews
+      SETTINGS_KEYS.templateViews,
     );
     return aillyTemplateViews ?? [];
   },

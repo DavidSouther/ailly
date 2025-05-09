@@ -1,15 +1,16 @@
+import { isAscii } from "node:buffer";
+import { join, normalize } from "node:path";
 import {
   FileSystem,
   SEP,
   type Stats,
 } from "@davidsouther/jiffies/lib/cjs/fs.js";
-import { join, normalize } from "path";
 import * as gitignoreParser from "gitignore-parser";
-import { isAscii } from "buffer";
 
 const IGNORED_NAMES = [".git", ".gitignore"];
 export class GitignoreFs extends FileSystem {
   async readdir(path: string): Promise<string[]> {
+    // biome-ignore lint/style/noParameterAssign: update path based on CWD
     path = (this as unknown as { p(p: string): string }).p(path);
     const [drive, ...dirs] = this.cwd().split("/");
     const gitignores: Array<{
@@ -38,7 +39,7 @@ export class GitignoreFs extends FileSystem {
           (stats.isDirectory() || (await this.isTextFile(stats))) && // This test was intended to limit us to text files only
           gitignores.every((g) =>
             stats.isDirectory()
-              ? g.accepts(stats.name + "/")
+              ? g.accepts(`${stats.name}/`)
               : g.accepts(stats.name),
           );
         if (include) {
@@ -51,7 +52,7 @@ export class GitignoreFs extends FileSystem {
 
   private async isTextFile(p: Stats): Promise<boolean> {
     try {
-      let content = await this.readFile(p.name);
+      const content = await this.readFile(p.name);
       return isAscii(Buffer.from(content.slice(0, 5), "utf-8"));
     } catch (e) {
       return false;

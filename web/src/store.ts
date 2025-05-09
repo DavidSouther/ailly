@@ -8,10 +8,10 @@
  * to keep [string, string] data directly in memory and write it to the backing file.
  */
 
+import type { WriteStream } from "node:fs";
+import { type FileHandle, open } from "node:fs/promises";
+import { join } from "node:path";
 import { DEFAULT_LOGGER } from "@davidsouther/jiffies/lib/cjs/log";
-import { WriteStream } from "fs";
-import { FileHandle, open } from "fs/promises";
-import { join } from "path";
 
 // The lifecycle states a MemBackedStore goes through. It starts ready. It goes in and out
 // of compacting when `compact` gets called. `closing` and `closed` means that the instance
@@ -31,7 +31,7 @@ export class MemBackedStore extends Map<string, string> {
     const data = await readDbFile(path);
 
     try {
-      let file = await open(path, "a+");
+      const file = await open(path, "a+");
       return new MemBackedStore(data, path, file);
     } catch (e) {
       console.error(`Failed to open ${path} for 'a+'`);
@@ -49,7 +49,7 @@ export class MemBackedStore extends Map<string, string> {
   private constructor(
     data: [string, string][],
     private readonly path: string,
-    private handle: FileHandle
+    private handle: FileHandle,
   ) {
     // The Map constructor is defined in terms of calling `self.set`, which would
     // of course call this instances' `set`, which would trigger `check` before
@@ -57,7 +57,9 @@ export class MemBackedStore extends Map<string, string> {
     // backing file on every load. So we take the hit and call super.set ourselves.
     // The alternative is having an internal map and delegating to that. It's 50/50.
     super();
-    data.forEach(([k, v]) => super.set(k, v));
+    for (const [k, v] of data) {
+      super.set(k, v);
+    }
     this.stream = this.handle.createWriteStream();
     process.on("beforeExit", () => this.close());
   }
@@ -65,9 +67,9 @@ export class MemBackedStore extends Map<string, string> {
   // Called from the public modifying methods. Throws an Error if the Store isn't
   // in the `ready` state.
   private check() {
-    if (this.status != "ready") {
+    if (this.status !== "ready") {
       throw new Error(
-        `MemBackedStore is not ready, instead it is ${this.status}`
+        `MemBackedStore is not ready, instead it is ${this.status}`,
       );
     }
   }
@@ -76,7 +78,7 @@ export class MemBackedStore extends Map<string, string> {
     // this.check(); // DO NOT CALL CHECK HERE! Write gets called during compaction, so instead keep `write` private.
     if (!this.stream?.writable) {
       console.warn(
-        "MemBackedStore lost the write stream, not persisting changes"
+        "MemBackedStore lost the write stream, not persisting changes",
       );
     } else {
       this.stream.write(`${k}=${v}\n`);
@@ -112,7 +114,7 @@ export class MemBackedStore extends Map<string, string> {
       this.stream.close((e) => {
         if (e) reject(e);
         else resolve();
-      })
+      }),
     );
     await this.handle.close();
     this._status = "closed";
@@ -158,7 +160,7 @@ export class MemBackedStore extends Map<string, string> {
 // Lines are read in order, and set in order. Therefore, later key entries will overwrite
 // earlier entries when creating the next MemBackedStore.
 async function readDbFile(path: string): Promise<[string, string][]> {
-  let file;
+  let file: FileHandle;
   try {
     file = await open(path, "r+");
   } catch (e) {

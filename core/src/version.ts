@@ -1,7 +1,7 @@
 // TODO move this to jiffies
 import { execSync } from "node:child_process";
-import { normalize, join } from "node:path";
 import { readFileSync } from "node:fs";
+import { join, normalize } from "node:path";
 
 export function getVersion(...root: string[]) {
   try {

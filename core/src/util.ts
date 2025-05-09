@@ -5,13 +5,13 @@ export const promiseTimeout = (sleep: number) =>
 
 export interface PromiseWithResolvers<T> {
   resolve: (t: T | PromiseLike<T>) => void;
-  reject: (reason?: any) => void;
+  reject: (reason?: unknown) => void;
   promise: Promise<T>;
 }
 
 export function withResolvers<T = void>(): PromiseWithResolvers<T> {
   let resolve: (t: T | PromiseLike<T>) => void = () => {};
-  let reject: (reason?: any) => void = () => {};
+  let reject: (reason?: unknown) => void = () => {};
   const promise = new Promise<T>((r, j) => {
     resolve = r;
     reject = j;
@@ -26,7 +26,7 @@ export function withResolved<T = void>(t: T): PromiseWithResolvers<T> {
 }
 
 declare global {
-  interface ReadableStream<R = any> {
+  interface ReadableStream<R> {
     [Symbol.asyncIterator](): AsyncIterator<R>;
   }
 }

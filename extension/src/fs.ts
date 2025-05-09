@@ -1,9 +1,9 @@
+import { basename, normalize } from "node:path";
 import {
   FileSystem,
   type FileSystemAdapter,
   type Stats,
 } from "@davidsouther/jiffies/lib/cjs/fs.js";
-import { basename, normalize } from "path";
 import { FileType, Uri, workspace } from "vscode";
 
 export class VSCodeFileSystemAdapter implements FileSystemAdapter {
@@ -20,7 +20,7 @@ export class VSCodeFileSystemAdapter implements FileSystemAdapter {
     return Promise.resolve(
       workspace.fs
         .readFile(Uri.file(path))
-        .then((f) => new TextDecoder().decode(f))
+        .then((f) => new TextDecoder().decode(f)),
     );
   }
 
@@ -28,7 +28,7 @@ export class VSCodeFileSystemAdapter implements FileSystemAdapter {
     return workspace.fs.readDirectory(Uri.file(path)).then((dir) =>
       dir.map(([name, fileType]) => {
         return basename(name);
-      })
+      }),
     ) as Promise<string[]>;
   }
 
@@ -43,8 +43,8 @@ export class VSCodeFileSystemAdapter implements FileSystemAdapter {
           name,
           isDirectory: () => fileType === FileType.Directory,
           isFile: () => fileType === FileType.File,
-        }))
-      )
+        })),
+      ),
     );
   }
 
@@ -54,13 +54,16 @@ export class VSCodeFileSystemAdapter implements FileSystemAdapter {
         name: basename(path),
         isDirectory: () => stat.type === FileType.Directory,
         isFile: () => stat.type === FileType.File,
-      }))
+      })),
     );
   }
 
   writeFile(path: string, contents: string): Promise<void> {
     return Promise.resolve(
-      workspace.fs.writeFile(Uri.file(path), new TextEncoder().encode(contents))
+      workspace.fs.writeFile(
+        Uri.file(path),
+        new TextEncoder().encode(contents),
+      ),
     );
   }
 }

@@ -9,7 +9,9 @@
     "node": ">=16"
   },
   "scripts": {
-    "check": "tsc --noEmit",
+    "check": "biome check src && tsc --noEmit",
+    "fix": "biome check --write --unsafe src",
+    "prebuild": "npm run check",
     "build": "tsc",
     "test": "vitest",
     "ci": "vitest --run --reporter=verbose"
@@ -30,16 +32,19 @@
     "@aws-sdk/credential-providers": "^3.572.0",
     "@davidsouther/jiffies": "^2.2.5",
     "@dqbd/tiktoken": "^1.0.7",
+    "esbuild": "0.25.4",
     "gitignore-parser": "^0.0.2",
     "gray-matter": "^4.0.3",
     "mustache": "^4.2.0",
     "openai": "^4.11.1",
     "temporal-polyfill": "^0.2.4",
-    "vectra": "^0.6.0",
+    "vectra": "^0.11.0",
     "yaml": "^2.4.1"
   },
+  "overrides": {
+    "whatwg-url": "^14.0.0"
+  },
   "devDependencies": {
-    "@types/mustache": "^4.2.5",
-    "vitest": "^1.5.0"
+    "@types/mustache": "^4.2.5"
   }
 }

@@ -1,17 +1,17 @@
 import { spawn } from "node:child_process";
 import { dirname, join, normalize } from "node:path";
 import type { Content } from "../../content/content.js";
-import { type PipelineSettings } from "../../index.js";
-import { type EngineDebug, type EngineGenerate } from "../index.js";
-import * as openai from "../openai.js";
+import type { PipelineSettings } from "../../index.js";
 import { withResolvers } from "../../util";
+import type { EngineDebug, EngineGenerate } from "../index.js";
+import * as openai from "../openai.js";
 
 const DEFAULT_MODEL = "mistralai/Mistral-7B-v0.1";
 interface MistralDebug extends EngineDebug {}
 
 export const generate: EngineGenerate<MistralDebug> = (
   c: Content,
-  _: PipelineSettings
+  _: PipelineSettings,
 ) => {
   const prompt = c.meta?.messages?.map(({ content }) => content).join("\n");
   if (!prompt) {
@@ -45,7 +45,7 @@ export const generate: EngineGenerate<MistralDebug> = (
 
   const onError = (cause: unknown) => {
     stream.writable.abort(
-      `child_process had a problem ${JSON.stringify(cause)}`
+      `child_process had a problem ${JSON.stringify(cause)}`,
     );
     done.reject(cause);
   };
@@ -67,18 +67,18 @@ export async function tune(
   context: Record<string, Content>,
   {
     model = DEFAULT_MODEL,
-    apiKey = process.env["OPENAI_API_KEY"] ?? "",
+    apiKey = process.env.OPENAI_API_KEY ?? "",
     baseURL = "http://localhost:8000/v1",
-  }: { model: string; apiKey: string; baseURL: string }
+  }: { model: string; apiKey: string; baseURL: string },
 ) {
   return openai.tune(content, context, { model, apiKey, baseURL });
 }
 
 function getMistralDirectory() {
-  if (process.env["AILLY_MISTRAL_ROOT"]) {
-    return process.env["AILLY_MISTRAL_ROOT"];
+  if (process.env.AILLY_MISTRAL_ROOT) {
+    return process.env.AILLY_MISTRAL_ROOT;
   }
-  let filename;
+  let filename: string | undefined;
   try {
     filename = __filename;
   } catch (e) {}

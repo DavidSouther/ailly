@@ -22,8 +22,10 @@
   },
   "homepage": "https://github.com/DavidSouther/ailly#readme",
   "scripts": {
+    "check": "biome check src && tsc --noEmit",
+    "fix": "biome check --write --unsafe src",
+    "prebuild": "npm link ../core && npm run check",
     "build": "tsc",
-    "prebuild": "npm link ../core",
     "preci": "npm run build",
     "test": "vitest src",
     "ci": "vitest --run --reporter=verbose src"
@@ -34,6 +36,6 @@
     "yaml": "^2.4.1"
   },
   "devDependencies": {
-    "vitest": "^1.5.0"
+    "vitest": "^3.1.3"
   }
 }

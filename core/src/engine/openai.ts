@@ -1,7 +1,7 @@
 import { assertExists } from "@davidsouther/jiffies/lib/cjs/assert.js";
 import { OpenAI, toFile } from "openai";
-import { ChatCompletionChunk } from "openai/resources/index.js";
-import { Stream } from "openai/streaming.js";
+import type { ChatCompletionChunk } from "openai/resources/index.js";
+import type { Stream } from "openai/streaming.js";
 import type { Content } from "../content/content.js";
 import { encode } from "../encoding.js";
 import { LOGGER, type PipelineSettings } from "../index.js";
@@ -24,20 +24,20 @@ export interface OpenAIDebug {
 }
 export const generate: EngineGenerate<OpenAIDebug> = (
   c: Content,
-  { model = MODEL }: PipelineSettings
+  { model = MODEL }: PipelineSettings,
 ) => {
   const apiKey = assertExists(
-    process.env["OPENAI_API_KEY"],
-    "Missing OPENAI_API_KEY"
+    process.env.OPENAI_API_KEY,
+    "Missing OPENAI_API_KEY",
   );
-  const baseURL = process.env["OPENAI_BASE_URL"];
+  const baseURL = process.env.OPENAI_BASE_URL;
   const openai = new OpenAI({ apiKey, baseURL });
 
   let messages = c.meta?.messages ?? [];
   if (messages.length < 2) {
     throw new Error("Not enough messages");
   }
-  if (messages.at(-1)?.role == "assistant") {
+  if (messages.at(-1)?.role === "assistant") {
     messages = messages.slice(0, -1);
   }
 
@@ -50,7 +50,7 @@ export const generate: EngineGenerate<OpenAIDebug> = (
   };
 
   try {
-    let message = c.meta?.continue ? c.response ?? "" : "";
+    let message = c.meta?.continue ? (c.response ?? "") : "";
     let chunkNum = 0;
     const stream = new TransformStream();
 
@@ -61,7 +61,7 @@ export const generate: EngineGenerate<OpenAIDebug> = (
       });
       if (!completions) {
         throw new Error(
-          "Failed to get completions and call with rate limit did not itself error"
+          "Failed to get completions and call with rate limit did not itself error",
         );
       }
       LOGGER.info(`Begin streaming response from OpenAI for ${c.name}`);
@@ -114,21 +114,27 @@ export const generate: EngineGenerate<OpenAIDebug> = (
 
 async function callOpenAiWithRateLimit(
   openai: OpenAI,
-  content: OpenAI.Chat.Completions.ChatCompletionCreateParamsStreaming
+  content: OpenAI.Chat.Completions.ChatCompletionCreateParamsStreaming,
 ): Promise<Stream<ChatCompletionChunk> | undefined> {
   let retry = 3;
   while (retry > 0) {
     retry -= 1;
     try {
       return openai.chat.completions.create(content);
-    } catch (e: any) {
-      LOGGER.warn("Error calling openai", e.message);
-      if (retry == 0) {
+    } catch (e: unknown) {
+      LOGGER.warn("Error calling openai", (e as Error).message);
+      if (retry === 0) {
         throw new Error("Failed 3 times to call openai" /*, { cause: e }*/);
       }
-      if (e.error.code == "rate_limit_exceeded") {
+      if (
+        (e as { error: { code: string } }).error?.code === "rate_limit_exceeded"
+      ) {
         await new Promise((resolve) => {
-          const wait = Number(e.headers["retry-after-ms"]);
+          const wait = Number(
+            (e as { headers: Record<string, string> }).headers[
+              "retry-after-ms"
+            ],
+          );
           LOGGER.info(`Waiting ${wait}ms...`);
           setTimeout(resolve, wait);
         });
@@ -139,7 +145,7 @@ async function callOpenAiWithRateLimit(
 
 export async function format(
   contents: Content[],
-  context: Record<string, Content>
+  context: Record<string, Content>,
 ): Promise<Summary> {
   const summary: Summary = { prompts: contents.length, tokens: 0 };
   for (const content of contents) {
@@ -150,7 +156,7 @@ export async function format(
 
 async function addContentMeta(
   content: Content,
-  context: Record<string, Content>
+  context: Record<string, Content>,
 ) {
   content.meta ??= {};
   content.meta.messages = getMessages(content, context);
@@ -165,7 +171,7 @@ async function addContentMeta(
 
 export function getMessages(
   content: Content,
-  context: Record<string, Content>
+  context: Record<string, Content>,
 ): Message[] {
   const system: string = (content.context.system ?? [])
     .map((s) => s.content)
@@ -173,36 +179,35 @@ export function getMessages(
   const history: Content[] = [];
   while (content) {
     history.push(content);
-    content = context[content.context.predecessor!];
+    // biome-ignore lint/style/noParameterAssign: collate complete content
+    content = context[content.context.predecessor ?? -1];
   }
   history.reverse();
-  const augment = history
-    .map<Array<Message | undefined>>(
+  const augment: Message[] = history
+    .flatMap<Message | undefined>(
       (c) =>
         (c.context.augment ?? []).map<Message>(({ content }) => ({
           role: "user",
-          content: "Background information: " + content,
-          tokens: NaN,
-        })) ?? []
+          content: `Background information: ${content}`,
+          tokens: Number.NaN,
+        })) ?? [],
     )
-    .flat()
     .filter(isDefined)
     .slice(0, 1);
-  const parts = history
-    .map<Array<Message | undefined>>((content) => [
+  const parts: Message[] = history
+    .flatMap<Message | undefined>((content) => [
       {
         role: "user",
         content: content.prompt,
-        tokens: NaN,
+        tokens: Number.NaN,
       },
       content.response
-        ? { role: "assistant", content: content.response, tokens: NaN }
+        ? { role: "assistant", content: content.response, tokens: Number.NaN }
         : undefined,
     ])
-    .flat()
     .filter(isDefined);
   return [
-    { role: "system", content: system, tokens: NaN },
+    { role: "system", content: system, tokens: Number.NaN },
     ...augment,
     ...parts,
   ];
@@ -213,9 +218,9 @@ export async function tune(
   context: Record<string, Content>,
   {
     model = MODEL,
-    apiKey = process.env["OPENAI_API_KEY"] ?? "",
+    apiKey = process.env.OPENAI_API_KEY ?? "",
     baseURL,
-  }: { model: string; apiKey: string; baseURL: string }
+  }: { model: string; apiKey: string; baseURL: string },
 ) {
   const openai = new OpenAI({ apiKey, baseURL });
   await format(content, context); // fill in content parts
@@ -227,7 +232,7 @@ export async function tune(
           role,
           content,
         })),
-      })
+      }),
     )
     .join("\n");
   const trainingFile = await openai.files.create({
@@ -244,7 +249,7 @@ export async function tune(
 
   LOGGER.info("Started fine-tuning job", fineTune);
   LOGGER.info(
-    `New fine tuning model should be ft:${fineTune.model}:${fineTune.organization_id}::${fineTune.id}`
+    `New fine tuning model should be ft:${fineTune.model}:${fineTune.organization_id}::${fineTune.id}`,
   );
 }
 
@@ -252,9 +257,9 @@ export async function vector(
   input: string,
   {
     model = EMBEDDING_MODEL,
-    apiKey = process.env["OPENAI_API_KEY"] ?? "",
+    apiKey = process.env.OPENAI_API_KEY ?? "",
     baseURL,
-  }: { model: string; apiKey: string; baseURL?: string }
+  }: { model: string; apiKey: string; baseURL?: string },
 ): Promise<number[]> {
   const openai = new OpenAI({ apiKey, baseURL });
 

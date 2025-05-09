@@ -1,28 +1,32 @@
-import matter, { type GrayMatterFile } from "gray-matter";
 import { dirname, join } from "node:path";
+import matter, { type GrayMatterFile } from "gray-matter";
 import * as YAML from "yaml";
 
 import {
-  FileSystem,
+  type FileSystem,
   PLATFORM_PARTS,
   PLATFORM_PARTS_WIN,
   SEP,
-  Stats,
+  type Stats,
   basename,
   isAbsolute,
 } from "@davidsouther/jiffies/lib/cjs/fs.js";
 
+import {
+  assertExists,
+  checkExhaustive,
+} from "@davidsouther/jiffies/lib/cjs/assert";
 import type { EngineDebug, Message } from "../engine/index.js";
 import { LOGGER } from "../index.js";
 import {
+  type PromiseWithResolvers,
   isDefined,
   withResolvers,
-  type PromiseWithResolvers,
 } from "../util.js";
 import { loadTemplateView } from "./template.js";
 
 export const EXTENSION = ".ailly.md";
-const END_REGEX = new RegExp(EXTENSION + "$");
+const END_REGEX = new RegExp(`${EXTENSION}$`);
 
 type GrayMatterData = GrayMatterFile<string>["data"];
 
@@ -75,6 +79,7 @@ export interface ContentMeta {
   view?: false | View;
   prompt?: string;
   temperature?: number;
+  maxTokens?: number;
 }
 
 export type AillyEditReplace = { start: number; end: number; file: string };
@@ -100,8 +105,8 @@ export const splitOrderedName = (name: string): Ordering =>
   name === ".aillyrc"
     ? { type: "system", id: name }
     : name.endsWith(EXTENSION)
-    ? { type: "response", id: name.replace(END_REGEX, "") }
-    : { type: "prompt", id: name };
+      ? { type: "response", id: name.replace(END_REGEX, "") }
+      : { type: "prompt", id: name };
 
 interface PartitionedDirectory {
   files: Stats[];
@@ -126,14 +131,17 @@ interface PartitionedDirectory {
  */
 export async function loadContent(
   fs: FileSystem,
-  system: System[] = [],
-  meta: ContentMeta = {},
+  parent: { system?: System[]; meta?: ContentMeta } = { system: [], meta: {} },
   depth: number = Number.MAX_SAFE_INTEGER,
 ): Promise<Record<string, Content>> {
   if (depth < 0) throw new Error("Depth in loadContent cannot be negative");
   if (depth < 1) return {};
   LOGGER.debug(`Loading content from ${fs.cwd()}`);
-  [system, meta] = await loadAillyRc(fs, system, meta);
+  const [system, meta] = await loadAillyRc(
+    fs,
+    parent.system ?? [],
+    parent.meta ?? {},
+  );
   if (meta.skip) {
     LOGGER.debug(`Skipping content from ${fs.cwd()} based on head of .aillyrc`);
     return {};
@@ -157,7 +165,7 @@ export async function loadContent(
       break;
     case "none":
       for (const file of files) {
-        delete file.context.system;
+        file.context.system = undefined;
       }
       break;
     case "folder":
@@ -175,14 +183,13 @@ export async function loadContent(
   }
 
   const folders: Record<string, Content> = {};
-  if (context != "none") {
+  if (context !== "none") {
     for (const folder of dir.folders) {
-      if (folder.name == ".vectors") continue;
+      if (folder.name === ".vectors") continue;
       fs.pushd(folder.name);
-      let contents = await loadContent(
+      const contents = await loadContent(
         fs,
-        system,
-        meta,
+        { system, meta },
         depth ? depth - 1 : undefined,
       );
       Object.assign(folders, contents);
@@ -192,7 +199,10 @@ export async function loadContent(
 
   const content: Record<string, Content> = {
     ...files.reduce(
-      (c, f) => ((c[f.path] = f), c),
+      (c, f) => {
+        c[f.path] = f;
+        return c;
+      },
       {} as Record<string, Content>,
     ),
     ...folders,
@@ -228,9 +238,9 @@ async function loadFile(
     head.root = head.root ?? cwd;
     const promptPath = join(cwd, file.name);
 
-    let text: string = "";
-    let prompt: string = "";
-    let data: Record<string, any> = {};
+    let text = "";
+    let prompt = "";
+    let data: Record<string, unknown> = {};
     try {
       text = await fs.readFile(promptPath).catch((e) => "");
       const parsed = matter(text);
@@ -251,15 +261,15 @@ async function loadFile(
       outPath = promptPath;
       response = prompt;
       data.combined = true;
-      prompt = data.prompt;
-      delete data.prompt;
+      prompt = data.prompt as string;
+      data.prompt = undefined;
     } else {
       if (data.prompt !== undefined) {
         if (prompt.trim().length > 0) {
           LOGGER.warn(`Head and body both have prompt, skipping ${file.name}`);
           data.skip = true;
         } else {
-          prompt = data.prompt;
+          prompt = data.prompt as string;
         }
       }
 
@@ -278,7 +288,8 @@ async function loadFile(
               const parsedResponse: GrayMatterFile<string> = matter(outFile);
               response = parsedResponse.content;
               data.meta = data.meta ?? {};
-              data.meta.debug = parsedResponse.data.meta?.debug ?? {};
+              (data.meta as { debug: object }).debug =
+                parsedResponse.data.meta?.debug ?? {};
             } catch (err) {
               LOGGER.warn(
                 `Error reading response and parsing for matter in ${outPath}`,
@@ -293,15 +304,18 @@ async function loadFile(
       }
     }
 
-    if (prompt == "") {
+    if (prompt === "") {
       LOGGER.warn(`Could not find a prompt in ${promptPath}`);
       return undefined;
     }
 
-    if (response?.trim() == "") response = undefined;
+    if (response?.trim() === "") response = undefined;
 
-    const view = data.view === false ? false : data.view ?? {};
-    delete data.view;
+    const view: false | View =
+      data.view === false
+        ? false
+        : ((data.view as View) ?? ({} satisfies View));
+    data.view = undefined;
 
     return {
       name: ordering.id,
@@ -320,9 +334,8 @@ async function loadFile(
         text,
       },
     };
-  } else {
-    return undefined;
   }
+  return undefined;
 }
 
 export async function loadAillyRc(
@@ -340,29 +353,47 @@ export async function loadAillyRc(
     data.view = { ...(data.view ?? {}), ...view };
   }
   const view = data.view ?? {};
-  delete data.view;
-  meta = { ...meta, ...data };
+  data.view = undefined;
+  return mergeAillyRc(meta, data, content, view, system, fs);
+}
+
+async function mergeAillyRc(
+  content_meta: ContentMeta,
+  data: { [key: string]: unknown },
+  content: string,
+  view: View,
+  system: System[],
+  fs: FileSystem,
+): Promise<[System[], ContentMeta]> {
+  const meta = { ...{ parent: "root" as const }, ...content_meta, ...data };
   switch (meta.parent) {
     case "root":
-      if (!(content == "" && Object.keys(view).length == 0))
-        system = [...system, { content, view }];
+      if (!(content === "" && Object.keys(view).length === 0))
+        system.push({ content, view });
       break;
     case "never":
-      if (content != "") {
-        system = [{ content, view }];
+      if (content) {
+        system.splice(0, system.length, { content, view });
       } else {
-        system = [];
+        system.splice(0, system.length);
       }
       break;
     case "always":
-      if (system.length == 0 && fs.cwd() !== "/") {
+      if (system.length === 0 && fs.cwd() !== "/") {
         fs.pushd("..");
-        system = [...(await loadAillyRc(fs, [], meta))[0]];
+        const [rcBlocks, _] = await loadAillyRc(fs, [], meta);
+        for (const rcBlock of rcBlocks) {
+          system.push(rcBlock);
+        }
         fs.popd();
       }
-      if (content != "") system = [...system, { content, view }];
+      if (content) {
+        system.push({ content, view });
+      }
+      break;
+    default:
+      checkExhaustive(meta.parent);
   }
-
   return [system, meta];
 }
 
@@ -389,20 +420,20 @@ export function makeCLIContent({
   view?: View;
   isolated?: boolean;
 }): Content {
-  const inFolder = Object.keys(context).filter((c) => dirname(c) == root);
+  const inFolder = Object.keys(context).filter((c) => dirname(c) === root);
   // When argContext is folder, `folder` is all files in context in root.
   const folder =
-    argContext == "folder"
+    argContext === "folder"
       ? isolated && edit
         ? [edit?.file]
         : inFolder
       : undefined;
   // When argContext is `conversation`, `predecessor` is the last item in the root folder.
   const predecessor =
-    argContext == "conversation" ? inFolder.at(-1) : undefined;
+    argContext === "conversation" ? inFolder.at(-1) : undefined;
   // When argContext is none, system is empty; otherwise, system is argSystem + predecessor's system.
   const system =
-    argContext == "none"
+    argContext === "none"
       ? []
       : [
           { content: argSystem ?? "", view: {} },
@@ -476,7 +507,7 @@ async function writeSingleContent(
 ) {
   if (!content.response) return;
   const combined = content.meta?.combined ?? false;
-  if (combined && content.outPath != content.path) {
+  if (combined && content.outPath !== content.path) {
     throw new Error(
       `Mismatch path and output for ${content.path} vs ${content.outPath}`,
     );
@@ -508,12 +539,13 @@ async function writeSingleContent(
     ...(skip ? { skip } : {}),
     ...(combined ? { combined } : {}),
     ...(isolated ? { isolated } : {}),
-    ...(Object.keys(content.context?.view || {}).length > 0
+    ...(Object.keys(content.context?.view ?? {}).length > 0
       ? { view: content.context?.view }
       : {}),
     ...(content.meta?.temperature
       ? { temperature: content.meta.temperature }
       : {}),
+    ...(content.meta?.maxTokens ? { maxTokens: content.meta.maxTokens } : {}),
     ...(!clean ? { debug } : {}),
   };
 
@@ -537,7 +569,7 @@ async function writeSingleContent(
   await fs.writeFile(path, file);
 }
 
-const IS_WINDOWS = PLATFORM_PARTS == PLATFORM_PARTS_WIN;
+const IS_WINDOWS = PLATFORM_PARTS === PLATFORM_PARTS_WIN;
 async function mkdirp(fs: FileSystem, dir: string) {
   if (!isAbsolute(dir)) {
     LOGGER.warn(`Cannot mkdirp on non-absolute path ${dir}`);

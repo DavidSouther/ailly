@@ -3,12 +3,12 @@ import { describe, expect, it } from "vitest";
 import { GitignoreFs } from "./gitignore_fs.js";
 
 describe("gitignore fs", () => {
-  it("skips files with no extension", async () => {
+  it("skips files that look like binary", async () => {
     const fs = new GitignoreFs(
       new ObjectFileSystemAdapter({
         "file.txt": "abc",
         skip: "skip",
-      })
+      }),
     );
 
     expect(await fs.readdir("/")).toEqual(["file.txt"]);
@@ -39,7 +39,7 @@ describe("gitignore fs", () => {
         skipdir: {
           "file.txt": "abc",
         },
-      })
+      }),
     );
 
     expect(await fs.readdir("/")).toEqual(["dir", "file.txt"]);
@@ -50,7 +50,7 @@ describe("gitignore fs", () => {
     const fs = new GitignoreFs(
       new ObjectFileSystemAdapter({
         "test.go": "gogo",
-      })
+      }),
     );
 
     expect(await fs.readdir("/")).toEqual(["test.go"]);

@@ -7,7 +7,7 @@ export const Copy = (props: { contents: string }) => {
   }, [props.contents]);
 
   return (
-    <button className={styles.button} onClick={copy}>
+    <button className={styles.button} onClick={copy} type="button">
       <span className="material-symbols-outlined">content_copy</span>
     </button>
   );

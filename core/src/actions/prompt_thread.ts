@@ -2,14 +2,18 @@ import { Temporal } from "temporal-polyfill";
 
 import { assertExists } from "@davidsouther/jiffies/lib/cjs/assert.js";
 
-import { View, type Content } from "../content/content.js";
+import type { Content, View } from "../content/content.js";
 import {
   GLOBAL_VIEW,
   mergeContentViews,
   mergeViews,
 } from "../content/template.js";
 import type { Engine } from "../engine/index.js";
-import { DEFAULT_SCHEDULER_LIMIT, LOGGER, PipelineSettings } from "../index.js";
+import {
+  DEFAULT_SCHEDULER_LIMIT,
+  LOGGER,
+  type PipelineSettings,
+} from "../index.js";
 import type { Plugin } from "../plugin/index.js";
 
 export interface PromptThreadsSummary {
@@ -25,17 +29,17 @@ export interface PromptThreadSummary extends PromptThreadsSummary {
 
 export async function scheduler<T>(
   taskQueue: Array<() => Promise<T>>,
-  limit: number = DEFAULT_SCHEDULER_LIMIT
+  limit: number = DEFAULT_SCHEDULER_LIMIT,
 ): Promise<PromiseSettledResult<T>[]> {
-  taskQueue = [...taskQueue].reverse();
-  let finished: Array<Promise<T>> = [];
-  let outstanding = new Set<Promise<T>>();
-  while (taskQueue.length > 0) {
+  const taskQueueRev = [...taskQueue].reverse();
+  const finished: Array<Promise<T>> = [];
+  const outstanding = new Set<Promise<T>>();
+  while (taskQueueRev.length > 0) {
     if (outstanding.size >= limit) {
       // Wait for something in outstanding to finish
       await Promise.race([...outstanding]);
     } else {
-      const task = taskQueue.pop();
+      const task = taskQueueRev.pop();
       if (task) {
         const run = task();
         finished.push(run);
@@ -48,9 +52,9 @@ export async function scheduler<T>(
 }
 
 export class PromptThread {
-  finished: number = 0;
-  isolated: boolean = false;
-  private done: boolean = false;
+  finished = 0;
+  isolated = false;
+  private done = false;
   runner?: Promise<PromiseSettledResult<Content>[]>;
   // Results holds a list of errors that occurred and the index the occurred at.
   // If the thread is isolated, this can have many entries. If the thread is not
@@ -62,7 +66,7 @@ export class PromptThread {
     return this.done;
   }
   get isSuccess() {
-    return this.done && this.errors.length == 0;
+    return this.done && this.errors.length === 0;
   }
   get isError() {
     return this.done && this.errors.length > 0;
@@ -75,7 +79,7 @@ export class PromptThread {
     context: Record<string, Content>,
     settings: PipelineSettings,
     engine: Engine,
-    rag: Plugin
+    rag: Plugin,
   ) {
     settings.isolated =
       settings.isolated || content.every((c) => c.meta?.isolated);
@@ -89,7 +93,7 @@ export class PromptThread {
     private readonly context: Record<string, Content>,
     private settings: PipelineSettings,
     private engine: Engine,
-    private plugin: Plugin
+    private plugin: Plugin,
   ) {
     this.content = content;
     this.isolated = Boolean(settings.isolated ?? false);
@@ -110,7 +114,7 @@ export class PromptThread {
         GLOBAL_VIEW,
         engineView,
         pluginView,
-        this.settings.templateView
+        this.settings.templateView,
       );
     }
     try {
@@ -136,13 +140,15 @@ export class PromptThread {
     LOGGER.debug(`Running thread for ${this.content.length} isolated prompts`);
     return scheduler(
       this.content.map((c, i) => () => this.runOne(c, i)),
-      this.settings.requestLimit
-    ).finally(() => (this.done = true));
+      this.settings.requestLimit,
+    ).finally(() => {
+      this.done = true;
+    });
   }
 
   private async runSequence(): Promise<PromiseSettledResult<Content>[]> {
     LOGGER.debug(
-      `Running thread for sequence of ${this.content.length} prompts`
+      `Running thread for sequence of ${this.content.length} prompts`,
     );
     const results: PromiseSettledResult<Content>[] = [];
     for (let i = 0; i < this.content.length; i++) {
@@ -154,7 +160,7 @@ export class PromptThread {
           content.meta?.messages?.push({
             role: "assistant",
             content: content.response,
-            tokens: NaN,
+            tokens: Number.NaN,
           });
         }
       } catch (e) {
@@ -184,7 +190,7 @@ export function generateOne(
   c: Content,
   context: Record<string, Content>,
   settings: PipelineSettings,
-  engine: Engine
+  engine: Engine,
 ): Promise<void> {
   const has_response = (c.response?.length ?? 0) > 0;
 
@@ -193,7 +199,7 @@ export function generateOne(
     const stream = new TextEncoderStream();
     stream.writable.getWriter().write(c.response ?? "");
     assertExists(c.responseStream).resolve(
-      stream.readable.pipeThrough(new TextDecoderStream())
+      stream.readable.pipeThrough(new TextDecoderStream()),
     );
     return Promise.resolve();
   }
@@ -203,7 +209,7 @@ export function generateOne(
   const meta = c.meta;
   engine.format([c], context);
 
-  LOGGER.debug(`Generating response`, {
+  LOGGER.debug("Generating response", {
     engine: engine.name,
     messages: meta?.messages?.map((m) => ({
       role: m.role,
@@ -226,7 +232,7 @@ export function generateOne(
     assertExists(c.responseStream).resolve(generator.stream);
     return generator.done.finally(() => {
       c.response = generator.message();
-      c.meta!.debug = { ...c.meta!.debug, ...generator.debug() };
+      assertExists(c.meta).debug = { ...c.meta?.debug, ...generator.debug() };
     });
   } catch (err) {
     LOGGER.error(`Uncaught error in ${engine.name} generator`, { err });

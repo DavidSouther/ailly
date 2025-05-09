@@ -1,5 +1,5 @@
 import { getLogLevel, getLogger } from "@davidsouther/jiffies/lib/cjs/log.js";
-import { Content, ContentMeta, View } from "./content/content.js";
+import type { Content, ContentMeta, View } from "./content/content.js";
 import { getEngine } from "./engine/index.js";
 import { getVersion } from "./version.js";
 export { GenerateManager } from "./actions/generate_manager.js";
@@ -9,9 +9,9 @@ export { getEngine } from "./engine/index.js";
 export { getPlugin } from "./plugin/index.js";
 
 export const LOGGER = getLogger("@ailly/core");
-LOGGER.level = getLogLevel(process.env["AILLY_LOG_LEVEL"]);
+LOGGER.level = getLogLevel(process.env.AILLY_LOG_LEVEL);
 
-let dirname;
+let dirname: string | undefined;
 try {
   dirname = __dirname;
 } catch (e) {}

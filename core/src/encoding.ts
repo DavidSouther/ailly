@@ -1,11 +1,12 @@
-let get_encoding: any;
-let encoding: any;
+import type { Tiktoken, get_encoding as get_encoding_fn } from "@dqbd/tiktoken";
+let get_encoding: typeof get_encoding_fn | undefined;
+let encoding: Tiktoken | undefined;
 export async function encode(src: string) {
   try {
-    if (!get_encoding) {
-      get_encoding = await import("@dqbd/tiktoken");
-    }
     if (!encoding) {
+      if (!get_encoding) {
+        get_encoding = (await import("@dqbd/tiktoken")).get_encoding;
+      }
       encoding = get_encoding("cl100k_base");
     }
     return encoding.encode(src);

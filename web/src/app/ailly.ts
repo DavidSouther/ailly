@@ -1,11 +1,11 @@
 "use server";
-import { type WritableContent } from "@ailly/core/lib/content/content";
-import { makePipelineSettings } from "@ailly/core/lib/index";
 import { GenerateManager } from "@ailly/core/lib/actions/generate_manager";
+import type { WritableContent } from "@ailly/core/lib/content/content";
+import { makePipelineSettings } from "@ailly/core/lib/index";
 import { withResolvers } from "@ailly/core/src/util";
 
 export async function generateOne(
-  content: WritableContent
+  content: WritableContent,
 ): Promise<WritableContent> {
   const settings = await makePipelineSettings({
     root: "/ailly",
@@ -13,7 +13,7 @@ export async function generateOne(
   const manager = await GenerateManager.from(
     [content.path],
     { [content.path]: { ...content, responseStream: withResolvers() } },
-    settings
+    settings,
   );
   manager.start();
   await manager.allSettled();
@@ -21,10 +21,10 @@ export async function generateOne(
   const returnedContent: WritableContent = { ...manager.threads[0][0] };
   if (returnedContent.meta?.debug) {
     returnedContent.meta.debug.lastRun = String(
-      returnedContent.meta.debug.lastRun ?? ""
+      returnedContent.meta.debug.lastRun ?? "",
     );
   }
   returnedContent.meta;
-  delete returnedContent.responseStream;
+  returnedContent.responseStream = undefined;
   return returnedContent;
 }

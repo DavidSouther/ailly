@@ -15,37 +15,37 @@ export function makeArgs(argv = process.argv) {
       "no-overwrite": { type: "boolean", default: false },
       edit: { type: "boolean", default: false, short: "e" },
       lines: { type: "string", default: "", short: "l" },
-      engine: { type: "string", default: process.env["AILLY_ENGINE"] },
-      model: { type: "string", default: process.env["AILLY_MODEL"] },
+      engine: { type: "string", default: process.env.AILLY_ENGINE },
+      model: { type: "string", default: process.env.AILLY_MODEL },
       plugin: {
         type: "string",
-        default: process.env["AILLY_PLUGIN"] ?? "noop",
+        default: process.env.AILLY_PLUGIN ?? "noop",
       },
       context: {
         type: "string",
-        default: process.env["AILLY_CONTEXT"],
+        default: process.env.AILLY_CONTEXT,
         short: "c",
       },
       "template-view": {
         type: "string",
-        default: process.env["AILLY_TEMPLATE_VIEW"]
-          ? [process.env["AILLY_TEMPLATE_VIEW"]]
+        default: process.env.AILLY_TEMPLATE_VIEW
+          ? [process.env.AILLY_TEMPLATE_VIEW]
           : [],
         multiple: true,
       },
       prompt: {
         type: "string",
-        default: process.env["AILLY_PROMPT"],
+        default: process.env.AILLY_PROMPT,
         short: "p",
       },
       system: {
         type: "string",
-        default: process.env["AILLY_SYSTEM"],
+        default: process.env.AILLY_SYSTEM,
         short: "s",
       },
       "request-limit": {
         type: "string",
-        default: process.env["AILLY_REQUEST_LIMIT"],
+        default: process.env.AILLY_REQUEST_LIMIT,
       },
       "max-depth": { type: "string", default: "1" },
       temperature: { type: "string", default: "" },

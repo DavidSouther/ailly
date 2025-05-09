@@ -1,8 +1,8 @@
 import { expect, test, vi } from "vitest";
-import { mergeContentViews, mergeViews } from "./template.js";
-import { Content } from "./content.js";
 import { LOGGER } from "../index.js";
 import { withResolvers } from "../util";
+import type { Content } from "./content.js";
+import { mergeContentViews, mergeViews } from "./template.js";
 
 test("merge views", () => {
   const c = mergeViews({ a: "a", c: "1" }, { b: "b" }, { c: "2" });
@@ -65,6 +65,6 @@ test("recursion convergence limit", () => {
   mergeContentViews(content, {}, {});
   expect(content.prompt).toBe("{{foo}}");
   expect(spy).toHaveBeenCalledWith(
-    "Reached TEMPLATE_RECURSION_CONVERGENCE limit of 10"
+    "Reached TEMPLATE_RECURSION_CONVERGENCE limit of 10",
   );
 });

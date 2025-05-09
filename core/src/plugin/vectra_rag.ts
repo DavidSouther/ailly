@@ -1,9 +1,10 @@
 import { join } from "node:path";
+import { assertExists } from "@davidsouther/jiffies/lib/cjs/assert";
 import { LocalIndex } from "vectra/lib/LocalIndex.js";
+import type { Content } from "../content/content.js";
+import type { Engine } from "../engine/index.js";
+import { LOGGER, type PipelineSettings } from "../index.js";
 import { RAG } from "./rag.js";
-import { Engine } from "../engine/index.js";
-import { LOGGER, PipelineSettings } from "../index.js";
-import { Content } from "../content/content.js";
 
 function ragDb(path: string) {
   return join(path, ".vectors");
@@ -14,14 +15,17 @@ export class VectraRAG extends RAG {
 
   static async build(
     engine: Engine,
-    { root: path }: PipelineSettings
+    { root: path }: PipelineSettings,
   ): Promise<RAG> {
     const rag = new VectraRAG(engine, ragDb(path));
     if (!(await rag.index.isIndexCreated())) await rag.index.createIndex();
     return rag;
   }
 
-  protected constructor(readonly engine: Engine, path: string) {
+  protected constructor(
+    readonly engine: Engine,
+    path: string,
+  ) {
     super(engine);
     this.index = new LocalIndex(path);
   }
@@ -38,9 +42,9 @@ export class VectraRAG extends RAG {
   override async update(content: Content[]) {
     const _content = [...content];
     await this.index.beginUpdate();
-    await new Promise<void>(async (resolve, reject) => {
+    await new Promise<void>((resolve, reject) => {
       const nextPiece = async () => {
-        const piece = _content.pop()!;
+        const piece = assertExists(_content.pop());
         if (!piece) {
           return resolve();
         }
@@ -61,7 +65,7 @@ export class VectraRAG extends RAG {
 
   override async query(data: string, results = 3) {
     const vector = await this.engine.vector(data, {});
-    const query = await this.index.queryItems(vector, results);
+    const query = await this.index.queryItems(vector, data, results);
     return query.map(({ score, item }) => ({
       score,
       content: item.metadata.text as string,

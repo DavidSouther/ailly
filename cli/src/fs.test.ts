@@ -26,15 +26,15 @@ describe("makeEdit", () => {
 
   it("requires a single content", () => {
     expect(() => makeEdit("10:20", [], true)).toThrow(
-      /Edit requires exactly 1 path/
+      /Edit requires exactly 1 path/,
     );
     expect(() => makeEdit("10:20", ["/a", "/b"], true)).toThrow(
-      /Edit requires exactly 1 path/
+      /Edit requires exactly 1 path/,
     );
   });
   it("must have prompt", () => {
     expect(() => makeEdit("10:20", ["/a"], false)).toThrow(
-      /Edit requires a prompt/
+      /Edit requires a prompt/,
     );
   });
 });

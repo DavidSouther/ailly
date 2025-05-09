@@ -1,5 +1,5 @@
-import { test, expect } from "vitest";
-import { Content } from "../content/content.js";
+import { expect, test } from "vitest";
+import type { Content } from "../content/content.js";
 import { partitionPrompts } from "./generate_manager.js";
 
 /*
@@ -87,9 +87,12 @@ test("partitioning", () => {
   const actual = partitionPrompts(
     content.map((c) => c.path),
     content.reduce(
-      (a, c) => ((a[c.path] = c), a),
-      {} as Record<string, Content>
-    )
+      (a, c) => {
+        a[c.path] = c;
+        return a;
+      },
+      {} as Record<string, Content>,
+    ),
   );
   expect(actual).toEqual([[b, c], [h], [e, f]]);
 });

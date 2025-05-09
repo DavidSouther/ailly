@@ -9,7 +9,7 @@ export interface StatusManager {
 }
 
 export class StatusBarStatusManager implements StatusManager {
-  outstanding: number = 0;
+  outstanding = 0;
   statusBarItem: StatusBarItem;
 
   static withContext({ subscriptions }: vscode.ExtensionContext) {
@@ -21,22 +21,24 @@ export class StatusBarStatusManager implements StatusManager {
   private constructor() {
     this.statusBarItem = vscode.window.createStatusBarItem(
       "ailly.statusBarItem",
-      StatusBarAlignment.Right
+      StatusBarAlignment.Right,
     );
     this.updateStatusBarItem();
   }
 
   track(manager: GenerateManager) {
-    manager.threads.forEach((thread) =>
-      thread.forEach(async (content) => {
-        this.addOutstanding();
-        await assertExists(content.responseStream).promise;
-        this.finishOutstanding();
-      })
-    );
+    for (const thread of manager.threads) {
+      for (const content of thread) {
+        (async () => {
+          this.addOutstanding();
+          await assertExists(content.responseStream).promise;
+          this.finishOutstanding();
+        })();
+      }
+    }
   }
 
-  addOutstanding(count: number = 1) {
+  addOutstanding(count = 1) {
     this.outstanding += count;
     this.updateStatusBarItem();
   }

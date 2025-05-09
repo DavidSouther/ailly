@@ -1,7 +1,8 @@
 "use client";
 import { useMemo, useRef } from "react";
-import { useAillyPageStore } from "./store";
+import type { useAillyPageStore } from "./store";
 
+import { assertExists } from "@davidsouther/jiffies/lib/cjs/assert";
 import styles from "./storyboard.module.css";
 
 const INPUT_DELAY = 900;
@@ -15,13 +16,13 @@ export const Storyboard = (store: ReturnType<typeof useAillyPageStore>) => {
       if (state.story[block].select === "multi") {
         timer.current = setTimeout(
           () => actions.select(block, opt),
-          INPUT_DELAY
+          INPUT_DELAY,
         );
       } else {
         actions.select(block, opt);
       }
     };
-  }, [timer, actions, state.story]);
+  }, [actions, state.story]);
 
   const editTimer = useRef<ReturnType<typeof globalThis.setTimeout>>();
   const onEdit = useMemo(() => {
@@ -29,10 +30,10 @@ export const Storyboard = (store: ReturnType<typeof useAillyPageStore>) => {
       clearTimeout(editTimer.current);
       editTimer.current = setTimeout(
         () => actions.select(block, opt),
-        INPUT_DELAY
+        INPUT_DELAY,
       );
     };
-  }, [editTimer, actions]);
+  }, [actions]);
 
   return (
     <section>
@@ -46,9 +47,9 @@ export const Storyboard = (store: ReturnType<typeof useAillyPageStore>) => {
                 <ol>
                   <p>{item.about}</p>
                   {item.options.map((option, opt) => {
-                    const name = item.slug + "-" + option.slug;
+                    const name = `${item.slug}-${option.slug}`;
                     const input =
-                      item.select == "single" ? "radio" : "checkbox";
+                      item.select === "single" ? "radio" : "checkbox";
                     const checked =
                       state.selections[block]?.includes(opt) ?? false;
                     if (option.slug === "custom") {
@@ -74,11 +75,12 @@ export const Storyboard = (store: ReturnType<typeof useAillyPageStore>) => {
                                       content: value,
                                     });
                                   } else {
-                                    item.options.at(-1)!.content = value;
+                                    assertExists(item.options.at(-1)).content =
+                                      value;
                                   }
                                   onEdit(block, item.options.length - 1);
                                 }}
-                              ></textarea>
+                              />
                             </label>
                           </li>
                         );

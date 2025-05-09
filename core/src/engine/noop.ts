@@ -1,7 +1,7 @@
 import { getLogger } from "@davidsouther/jiffies/lib/cjs/log.js";
-import { Content } from "../content/content.js";
-import { LOGGER as ROOT_LOGGER, type PipelineSettings } from "../index.js";
-import { EngineGenerate } from "./index.js";
+import type { Content } from "../content/content.js";
+import { type PipelineSettings, LOGGER as ROOT_LOGGER } from "../index.js";
+import type { EngineGenerate } from "./index.js";
 import { addContentMessages } from "./messages.js";
 
 const LOGGER = getLogger("@ailly/core:noop");
@@ -13,7 +13,7 @@ export const TIMEOUT = {
     TIMEOUT.timeout = timeout;
   },
   resetTimeout() {
-    TIMEOUT.setTimeout(Number(process.env["AILLY_NOOP_TIMEOUT"] ?? 750));
+    TIMEOUT.setTimeout(Number(process.env.AILLY_NOOP_TIMEOUT ?? 750));
   },
 };
 TIMEOUT.resetTimeout();
@@ -21,7 +21,7 @@ export const name = "noop";
 
 export async function format(
   contents: Content[],
-  context: Record<string, Content>
+  context: Record<string, Content>,
 ): Promise<void> {
   for (const content of contents) {
     addContentMessages(content, context);
@@ -30,7 +30,7 @@ export async function format(
 
 export const generate: EngineGenerate = (
   content: Content,
-  _: PipelineSettings
+  _: PipelineSettings,
 ) => {
   LOGGER.level = ROOT_LOGGER.level;
   LOGGER.format = ROOT_LOGGER.format;
@@ -42,12 +42,12 @@ export const generate: EngineGenerate = (
     ?.map((m, i) => `[message ${i}] ${m.role}: ${m.content}`)
     .join("\n");
   const message =
-    process.env["AILLY_NOOP_RESPONSE"] ??
+    process.env.AILLY_NOOP_RESPONSE ??
     [
       `noop response for ${content.name}:`,
       system,
       messages,
-      "[response] " + content.prompt,
+      `[response] ${content.prompt}`,
     ].join("\n");
 
   let error: Error | undefined;
@@ -58,7 +58,7 @@ export const generate: EngineGenerate = (
       const writer = await stream.writable.getWriter();
       try {
         await writer.ready;
-        if (process.env["AILLY_NOOP_STREAM"]) {
+        if (process.env.AILLY_NOOP_STREAM) {
           let first = true;
           for (const word of message.split(" ")) {
             await writer.write((first ? "" : " ") + word);
@@ -85,7 +85,7 @@ export const generate: EngineGenerate = (
 };
 
 function sleep(duration: number) {
-  if (isFinite(duration) && duration > 16)
+  if (Number.isFinite(duration) && duration > 16)
     return new Promise<void>((resolve) => {
       setTimeout(() => resolve(), duration);
     });
