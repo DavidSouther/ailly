@@ -1,11 +1,12 @@
+import { assertExists } from "@davidsouther/jiffies/lib/cjs/assert";
 import type { Content } from "../content/content.js";
 import { LOGGER } from "../index.js";
-import { RAG } from "../plugin/rag.js";
+import type { RAG } from "../plugin/rag.js";
 import { promiseTimeout } from "../util";
 
 export async function augment(content: Content[], rag: RAG): Promise<void> {
   while (content) {
-    const piece = content.pop()!;
+    const piece = assertExists(content.pop());
 
     try {
       LOGGER.info(`Sending for augment ${piece.name} (${piece.path})`);

@@ -9,12 +9,12 @@ import { cleanState } from "@davidsouther/jiffies/lib/cjs/scope/state.js";
 import { loadContent } from "../../content/content";
 import { makePipelineSettings } from "../../index.js";
 import { format } from "./bedrock";
-import { messagesBuilder } from "./prompt_builder.js";
+import { converseBuilder } from "./prompt_builder.js";
 
 describe("bedrock claude3", () => {
   describe("prompt builder", () => {
     it("combines system prompts", () => {
-      const actual = messagesBuilder([
+      const actual = converseBuilder([
         { role: "system", content: "sysa" },
         { role: "system", content: "sysb" },
       ]);
@@ -22,7 +22,7 @@ describe("bedrock claude3", () => {
     });
 
     it("combines user prompts", () => {
-      const actual = messagesBuilder([
+      const actual = converseBuilder([
         { role: "user", content: "usera" },
         { role: "user", content: "userb" },
       ]);
@@ -32,7 +32,7 @@ describe("bedrock claude3", () => {
     });
 
     it("combines assistant prompts", () => {
-      const actual = messagesBuilder([
+      const actual = converseBuilder([
         { role: "assistant", content: "assista" },
         { role: "assistant", content: "assistb" },
       ]);
@@ -51,9 +51,9 @@ describe("bedrock claude3", () => {
           "/root/a": "prompt a",
           "/root/a.ailly.md": "response a",
           "/root/b": "prompt b",
-        })
+        }),
       );
-      const context = await loadContent(fs, [], settings, 2);
+      const context = await loadContent(fs, { meta: settings }, 2);
       return { root, settings, context };
     }, beforeEach);
 

@@ -1,8 +1,8 @@
+import { basename } from "node:path";
 // The module 'vscode' contains the VS Code extensibility API
 // Import the module and reference it with the alias vscode in your code below
 import * as vscode from "vscode";
-import { basename } from "path";
-import { generate, type ExtensionEdit } from "./generate.js";
+import { type ExtensionEdit, generate } from "./generate.js";
 import { LOGGER, resetLogger } from "./settings.js";
 import {
   StatusBarStatusManager,
@@ -70,14 +70,14 @@ export function activate(context: vscode.ExtensionContext) {
 
   context.subscriptions.push(
     vscode.commands.registerCommand("ailly.set-engine", async () => {
-      vscode.window.showInformationMessage(`Ailly setting engine`);
-    })
+      vscode.window.showInformationMessage("Ailly setting engine");
+    }),
   );
 
   context.subscriptions.push(
     vscode.commands.registerCommand("ailly.set-model", async () => {
-      vscode.window.showInformationMessage(`Ailly setting model`);
-    })
+      vscode.window.showInformationMessage("Ailly setting model");
+    }),
   );
 }
 
@@ -106,7 +106,7 @@ export function registerGenerateCommand(
     gerund: string;
     pastpart: string;
     infinitive?: string;
-  }
+  },
 ) {
   context.subscriptions.push(
     vscode.commands.registerCommand(
@@ -117,10 +117,12 @@ export function registerGenerateCommand(
         }
         try {
           if (!contextSelection) {
+            // biome-ignore lint/style/noParameterAssign: delayed parameter binding
             contextSelection = vscode.window.activeTextEditor?.document.uri;
+            // biome-ignore lint/style/noParameterAssign: delayed parameter binding
             allSelections = contextSelection ? [contextSelection] : [];
           }
-          let paths = allSelections?.map((path) => path.fsPath) ?? [];
+          const paths = allSelections?.map((path) => path.fsPath) ?? [];
           if (paths.length === 0) {
             return;
           }
@@ -138,8 +140,13 @@ export function registerGenerateCommand(
               return;
             }
 
-            const start = vscode.window.activeTextEditor!.selection.start.line;
-            const end = vscode.window.activeTextEditor!.selection.end.line;
+            const start = vscode.window.activeTextEditor?.selection.start.line;
+            const end = vscode.window.activeTextEditor?.selection.end.line;
+            if (start === undefined || end === undefined) {
+              throw new Error("Could not determine start or end", {
+                cause: { selection: vscode.window.activeTextEditor?.selection },
+              });
+            }
             extensionEdit = { prompt, start, end };
           }
 
@@ -153,13 +160,13 @@ export function registerGenerateCommand(
                   depth: deep ? Number.MAX_SAFE_INTEGER : 1,
                   continued,
                   extensionEdit,
-                })
-              )
+                }),
+              ),
             );
             vscode.window.showInformationMessage(`Ailly ${pastpart} ${base}`);
           } catch (err) {
             vscode.window.showWarningMessage(
-              `Ailly failed to ${infinitive} ${base}`
+              `Ailly failed to ${infinitive} ${base}`,
             );
 
             LOGGER.error(`Failed to ${infinitive}`, { err });
@@ -167,7 +174,7 @@ export function registerGenerateCommand(
         } catch (err) {
           LOGGER.error("Unknown failure", { err });
         }
-      }
-    )
+      },
+    ),
   );
 }

@@ -1,5 +1,5 @@
-import * as assert from "assert";
-import { resolve } from "path";
+import * as assert from "node:assert";
+import { resolve } from "node:path";
 import * as vscode from "vscode";
 import { deleteEdit, insert } from "./editor.js";
 import { getNormalizedText } from "./testing/util.js";
@@ -37,7 +37,7 @@ suite("Ailly Editor", () => {
 
     assert.equal(
       getNormalizedText(),
-      "Line 1\nLine B\nLine 2\nLine DEF 3\nLine 4"
+      "Line 1\nLine B\nLine 2\nLine DEF 3\nLine 4",
     );
     await vscode.commands.executeCommand("workbench.action.closeActiveEditor");
   });

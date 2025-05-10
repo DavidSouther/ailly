@@ -1,7 +1,7 @@
 import {
   Children,
-  PropsWithChildren,
-  ReactNode,
+  type PropsWithChildren,
+  type ReactNode,
   cloneElement,
   useId,
   useState,
@@ -15,14 +15,20 @@ export const Tab = (
     parent?: string;
     checked?: boolean;
     onSelect?: () => void;
-  }>
+  }>,
 ) => {
   const id = useId();
   const tab = `tab-${id}`;
   const panel = `panel-${id}`;
   return (
     <>
-      <div role="tab" className={style.tab} id={tab} aria-controls={panel}>
+      <div
+        role="tab"
+        tabIndex={-1}
+        className={style.tab}
+        id={tab}
+        aria-controls={panel}
+      >
         <label>
           {props.title}
           <input
@@ -31,7 +37,7 @@ export const Tab = (
             aria-controls={panel}
             value={tab}
             checked={props.checked}
-            onChange={(e) => e.target.checked == true && props.onSelect!()}
+            onChange={(e) => e.target.checked === true && props.onSelect?.()}
           />
         </label>
       </div>
@@ -65,7 +71,7 @@ export const TabList = (props: { children: ReturnType<typeof Tab>[] }) => {
             setSelectedIndex(index);
             child.props?.onSelect?.();
           },
-        })
+        }),
       )}
     </section>
   );

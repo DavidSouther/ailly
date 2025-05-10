@@ -2,29 +2,29 @@ import { createInterface } from "node:readline";
 
 import { GenerateManager } from "@ailly/core/lib/actions/generate_manager.js";
 import {
-  isAillyEditReplace,
-  writeContent,
   type AillyEdit,
   type Content,
+  isAillyEditReplace,
+  writeContent,
 } from "@ailly/core/lib/content/content.js";
 import { GitignoreFs } from "@ailly/core/lib/content/gitignore_fs.js";
 import { assertExists } from "@davidsouther/jiffies/lib/cjs/assert.js";
 import type { FileSystem } from "@davidsouther/jiffies/lib/cjs/fs.js";
 import { NodeFileSystemAdapter } from "@davidsouther/jiffies/lib/cjs/fs_node.js";
 
-import { Args, help, makeArgs } from "./args.js";
+import { type Args, help, makeArgs } from "./args.js";
 import { LOGGER, loadFs } from "./fs.js";
 import { version } from "./version.js";
 
 export async function main() {
   const args = makeArgs(process.argv);
 
-  if (args.values["help"]) {
+  if (args.values.help) {
     help();
     process.exit(0);
   }
 
-  if (args.values["version"]) {
+  if (args.values.version) {
     version();
     process.exit(0);
   }
@@ -34,22 +34,22 @@ export async function main() {
 
   await check_should_run(args, loaded);
 
-  let generator = await GenerateManager.from(
+  const generator = await GenerateManager.from(
     loaded.content,
     loaded.context,
-    loaded.settings
+    loaded.settings,
   );
 
-  const isStdOut = loaded.content.at(-1) == "/dev/stdout";
+  const isStdOut = loaded.content.at(-1) === "/dev/stdout";
   switch (true) {
     case args.values["update-db"]:
       await generator.updateDatabase();
       break;
-    case args.values["clean"]:
+    case args.values.clean:
       writeContent(
         fs,
         loaded.content.map((name) => loaded.context[name]),
-        { clean: true }
+        { clean: true },
       );
       break;
     case Number(args.values["query-db"]?.length) > 0:
@@ -64,7 +64,7 @@ export async function main() {
       //   }))
       // );
       break;
-    default:
+    default: {
       LOGGER.info(`Starting ${loaded.content.length} requests`);
       generator.start();
 
@@ -83,9 +83,9 @@ export async function main() {
           process.stdout.write("\n");
         }
         await finish(generator);
-        LOGGER.debug(`Finished prompt, final meta`, { meta: prompt.meta });
-        if (prompt.meta?.debug?.finish == "failed") {
-          LOGGER.debug(`Prompt run error`, { debug: prompt.meta.debug });
+        LOGGER.debug("Finished prompt, final meta", { meta: prompt.meta });
+        if (prompt.meta?.debug?.finish === "failed") {
+          LOGGER.debug("Prompt run error", { debug: prompt.meta.debug });
           const error = generator.formatError(prompt) ?? "Unknown failure";
           console.error(error);
         } else if (edit) {
@@ -96,15 +96,15 @@ export async function main() {
       await finish(generator);
       const errors = generator
         .errors()
-        .filter((c) => c.content.name != "/dev/stdout");
+        .filter((c) => c.content.name !== "/dev/stdout");
       if (errors.length > 0 && !isStdOut) {
         console.error(
           [
             "There were errors when generating responses:",
             ...errors.map(
-              (err) => `  ${err.content.name}: ${err.errorMessage}`
+              (err) => `  ${err.content.name}: ${err.errorMessage}`,
             ),
-          ].join("\n")
+          ].join("\n"),
         );
       }
 
@@ -113,6 +113,7 @@ export async function main() {
         .filter((c) => c.meta?.debug?.finish !== "failed");
       await writeContent(fs, toWrite);
       break;
+    }
   }
 }
 
@@ -122,7 +123,7 @@ async function finish(generator: GenerateManager) {
   const doneSummary = generator.summary();
   LOGGER.info(`All ${doneSummary.totalPrompts} requests finished`);
   if (doneSummary.errors) {
-    LOGGER.warn(`Finished with errors`, { errors: doneSummary.errors });
+    LOGGER.warn("Finished with errors", { errors: doneSummary.errors });
   }
 }
 
@@ -131,7 +132,7 @@ async function doEdit(
   loaded: Awaited<ReturnType<typeof loadFs>>,
   edit: AillyEdit,
   prompt: Content,
-  yes: boolean
+  yes: boolean,
 ) {
   const out = loaded.context[edit.file];
   const responseLines = (out.meta?.text ?? out.prompt)?.split("\n") ?? [];
@@ -140,7 +141,7 @@ async function doEdit(
     edit,
     out.name,
     responseLines,
-    replaceLines
+    replaceLines,
   );
   console.log(editValue);
   if (!yes) {
@@ -159,7 +160,7 @@ function makeEditConfirmMessage(
   edit: AillyEdit,
   name: string,
   responseLines: string[],
-  replaceLines: string[]
+  replaceLines: string[],
 ) {
   return (
     isAillyEditReplace(edit)
@@ -196,11 +197,11 @@ function makeEditConfirmMessage(
 
 async function check_should_run(
   args: Args,
-  { content }: { content: string[] }
+  { content }: { content: string[] },
 ) {
   if (args.values.summary) {
     console.log(
-      `Found ${content.length} items, estimated cost TODO: CALCULATE`
+      `Found ${content.length} items, estimated cost TODO: CALCULATE`,
     );
     if (!args.values.yes) {
       await check_or_exit("Continue with generating these prompts? (y/N) ");
@@ -214,7 +215,7 @@ async function check_or_exit(prompt: string) {
     output: process.stdout,
   });
   const answer = await new Promise<string>((resolve) =>
-    rl.question(prompt, resolve)
+    rl.question(prompt, resolve),
   );
   if (!answer.toUpperCase().startsWith("Y")) {
     process.exit(0);

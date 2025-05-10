@@ -1,20 +1,20 @@
+import { dirname, normalize, resolve } from "node:path";
 import { GenerateManager } from "@ailly/core/lib/actions/generate_manager.js";
-import { loadTemplateView } from "@ailly/core/lib/content/template.js";
 import {
+  type AillyEdit,
+  type Content,
   loadContent,
   makeCLIContent,
   writeContent,
-  type AillyEdit,
-  type Content,
 } from "@ailly/core/lib/content/content.js";
 import { GitignoreFs } from "@ailly/core/lib/content/gitignore_fs.js";
+import { loadTemplateView } from "@ailly/core/lib/content/template.js";
 import {
-  makePipelineSettings,
   type PipelineSettings,
+  makePipelineSettings,
 } from "@ailly/core/lib/index.js";
 import { assertExists } from "@davidsouther/jiffies/lib/cjs/assert.js";
 import { FileSystem } from "@davidsouther/jiffies/lib/cjs/fs.js";
-import { dirname, normalize, resolve } from "node:path";
 import * as vscode from "vscode";
 import { deleteEdit, insert, updateSelection } from "./editor.js";
 import { VSCodeFileSystemAdapter } from "./fs.js";
@@ -41,7 +41,7 @@ export async function generate(
     clean?: boolean;
     continued?: boolean;
     depth?: number;
-  }
+  },
 ) {
   resetLogger();
   LOGGER.info(`Generating for ${path}`);
@@ -54,15 +54,17 @@ export async function generate(
 
   // Prepare configuration
   const fs = new GitignoreFs(new VSCodeFileSystemAdapter());
+  // biome-ignore lint/suspicious/noExplicitAny: Monkey patching
   (fs as any).p = (path: string) =>
+    // biome-ignore lint/suspicious/noExplicitAny: Monkey patching
     (FileSystem.prototype as any).p.call(
       fs,
-      path.replace("~", process.env["HOME"] ?? "~")
+      path.replace("~", process.env.HOME ?? "~"),
     );
 
   const templateView = await loadTemplateView(
     fs,
-    ...SETTINGS.getTemplateViews()
+    ...SETTINGS.getTemplateViews(),
   );
 
   const stat = await fs.stat(path);
@@ -97,29 +99,30 @@ export async function generate(
     case clean:
       break;
 
-    default:
+    default: {
       // Generate
-      let generator = await GenerateManager.from(
+      const generator = await GenerateManager.from(
         content.map((c) => c.path),
         context,
-        settings
+        settings,
       );
       manager.track(generator);
       generator.start();
 
       if (doEdit) {
-        await executeStreaming(content, content[0].context.edit!);
+        await executeStreaming(content, assertExists(content[0].context.edit));
       }
 
       await generator.allSettled();
-      if (content[0].meta?.debug?.finish! === "failed") {
+      if (content[0].meta?.debug?.finish === "failed") {
         throw new Error(generator.formatError(content[0]));
       }
+    }
   }
 
   // Write
   if (!doEdit) {
-    writeContent(fs as any, content, { clean });
+    writeContent(fs, content, { clean });
   }
 }
 
@@ -136,7 +139,7 @@ async function executeStreaming(content: Content[], edit: AillyEdit) {
   for await (let token of stream) {
     if (vscode.window.activeTextEditor !== editor) {
       LOGGER.debug(
-        `Active window changed during streaming, stopping future updates.`
+        "Active window changed during streaming, stopping future updates.",
       );
       return;
     }
@@ -167,9 +170,9 @@ async function loadContentParts({
   settings: PipelineSettings;
   depth: number;
 }): Promise<[Content[], Record<string, Content>]> {
-  const context = await loadContent(fs, [], settings, depth);
+  const context = await loadContent(fs, { meta: settings }, depth);
   const content: Content[] = Object.values(context).filter((c) =>
-    c.path.startsWith(path)
+    c.path.startsWith(path),
   );
   if (content.length === 0) {
     return [[], {}];
@@ -193,7 +196,7 @@ async function loadContentParts({
         root: dirname(content[0].path),
         edit: editContext,
         isolated: true,
-      })
+      }),
     );
     context[content[0].path] = content[0];
     LOGGER.info(`Editing ${content.length} files`);

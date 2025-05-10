@@ -2,10 +2,10 @@
   "name": "@ailly/ailly",
   "scripts": {
     "clean": "rm -rf **/lib **/out **/.next **/tsconfig.tsbuildinfo **/*.vsix **/node_modules node_modules",
-    "webdev": "npm run link && npm run -w web dev",
+    "webdev": "npm run link -w web && npm run -w web dev",
+    "check": "npm run check -w core && npm run check -w cli && npm run check -w extension && npm run check -w web",
     "build": "npm run build -w core && npm run build -w cli && npm run build -w extension",
-    "prelink": "npm run build",
-    "link": "npm link -w cli ./core && npm link -w web ./core && npm link -w extension ./core",
+    "fix": "npm run fix -w core && npm run fix -w cli && npm run fix -w extension && npm run fix -w web",
     "pretest": "npm run build",
     "test:cli": "npm run ci -w core && npm run ci -w cli && ./integ/integ-noop.sh",
     "test": "npm run test:cli && npm run ci -w web && npm run ci -w extension",
@@ -18,7 +18,8 @@
     "web",
     "cli"
   ],
-  "dependencies": {
-    "@aws-sdk/client-bedrock-runtime": "^3.743.0"
+  "devDependencies": {
+    "@biomejs/biome": "^1.9.4",
+    "vitest": "^3.1.3"
   }
 }

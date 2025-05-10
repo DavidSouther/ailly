@@ -1,8 +1,8 @@
-import vscode from "vscode";
 import {
-  isAillyEditReplace,
   type AillyEdit,
+  isAillyEditReplace,
 } from "@ailly/core/lib/content/content.js";
+import vscode from "vscode";
 
 export function insert(edit: AillyEdit, after: string, token: string) {
   const editor = vscode.window.activeTextEditor;

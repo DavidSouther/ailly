@@ -1,6 +1,6 @@
 import type { Temporal } from "temporal-polyfill";
-import { Content, ContentMeta, View } from "../content/content.js";
-import { PipelineSettings } from "../index.js";
+import type { Content, ContentMeta, View } from "../content/content.js";
+import type { PipelineSettings } from "../index.js";
 import * as bedrock from "./bedrock/bedrock.js";
 import * as mistral from "./mistral/mistral.js";
 import * as noop from "./noop.js";
@@ -14,9 +14,9 @@ export interface EngineDebug {
   lastRun?: Temporal.Instant | string;
 }
 
-export type EngineGenerate<D extends EngineDebug = {}> = (
+export type EngineGenerate<D extends EngineDebug = object> = (
   c: Content,
-  parameters: PipelineSettings
+  parameters: PipelineSettings,
 ) => {
   stream: ReadableStream;
   message(): string;
@@ -38,7 +38,7 @@ export interface Engine {
 export interface Message {
   role: "system" | "user" | "assistant";
   content: string;
-  tokens: number;
+  tokens?: number;
 }
 
 export interface Summary {

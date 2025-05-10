@@ -1,35 +1,35 @@
 import { dirname } from "node:path";
 
-import { Content } from "../content/content";
-import { Engine, getEngine } from "../engine/index.js";
+import type { Content } from "../content/content";
+import { type Engine, getEngine } from "../engine/index.js";
 import {
   DEFAULT_ENGINE,
   LOGGER,
-  PipelineSettings,
-  Thread,
+  type PipelineSettings,
+  type Thread,
   getPlugin,
 } from "../index.js";
 import type { Plugin } from "../plugin/index.js";
-import { withResolvers, type PromiseWithResolvers } from "../util.js";
+import { type PromiseWithResolvers, withResolvers } from "../util.js";
 import {
   PromptThread,
-  PromptThreadSummary,
-  PromptThreadsSummary,
+  type PromptThreadSummary,
+  type PromptThreadsSummary,
   drain,
 } from "./prompt_thread.js";
 
 export class GenerateManager {
-  done: boolean = false;
+  done = false;
   settled: PromiseWithResolvers<PromiseSettledResult<Content>[]> =
     withResolvers();
-  started: boolean = false;
+  started = false;
   threads: Thread[];
   threadRunners: PromptThread[] = [];
 
   static async from(
     content: string[],
     context: Record<string, Content>,
-    settings: PipelineSettings
+    settings: PipelineSettings,
   ): Promise<GenerateManager> {
     const engineName = settings?.engine ?? DEFAULT_ENGINE;
     const engine = await getEngine(engineName);
@@ -43,7 +43,7 @@ export class GenerateManager {
     private context: Record<string, Content>,
     private settings: PipelineSettings,
     private engine: Engine,
-    private rag: Plugin
+    private rag: Plugin,
   ) {
     this.threads = partitionPrompts(content, context);
     LOGGER.debug(`Ready to generate ${this.threads.length} messages`);
@@ -52,7 +52,7 @@ export class GenerateManager {
   start() {
     this.started = true;
     this.threadRunners = this.threads.map((t) =>
-      PromptThread.run(t, this.context, this.settings, this.engine, this.rag)
+      PromptThread.run(t, this.context, this.settings, this.engine, this.rag),
     );
 
     this.settled.promise.then(() => {
@@ -77,12 +77,16 @@ export class GenerateManager {
         errors: 0,
         finished: 0,
         done: true,
-      } as PromptThreadsSummary
+      } as PromptThreadsSummary,
     );
   }
 
   drainAll() {
-    this.threads.forEach((thread) => thread.forEach(drain));
+    for (const thread of this.threads) {
+      for (const fiber of thread) {
+        drain(fiber);
+      }
+    }
   }
 
   formatError(content: Content): string | undefined {
@@ -91,7 +95,7 @@ export class GenerateManager {
       return error;
     }
 
-    return content.meta?.debug?.error!.message;
+    return content.meta?.debug?.error?.message;
   }
 
   async allSettled(): Promise<PromiseSettledResult<Content>[]> {
@@ -109,22 +113,20 @@ export class GenerateManager {
   }
 
   errors() {
-    return this.threads
-      .map((thread) =>
-        thread
-          .filter((content) => content.meta?.debug?.finish == "failed")
-          .map((content) => ({
-            content,
-            errorMessage: this.formatError(content) ?? "Unknown Failure",
-          }))
-      )
-      .flat();
+    return this.threads.flatMap((thread) =>
+      thread
+        .filter((content) => content.meta?.debug?.finish === "failed")
+        .map((content) => ({
+          content,
+          errorMessage: this.formatError(content) ?? "Unknown Failure",
+        })),
+    );
   }
 }
 
 export function partitionPrompts(
   content: string[],
-  context: Record<string, Content>
+  context: Record<string, Content>,
 ): Content[][] {
   const directories = new Map<string, Content[]>();
   for (const c of content) {

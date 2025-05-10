@@ -1,6 +1,6 @@
-import * as assert from "assert";
+import * as assert from "node:assert";
+import { resolve } from "node:path";
 import { mock } from "node:test";
-import { resolve } from "path";
 import * as vscode from "vscode";
 import { generate } from "./generate.js";
 import { SETTINGS } from "./settings.js";
@@ -15,10 +15,10 @@ async function activate(docUri: vscode.Uri) {
   return { doc, editor };
 }
 
-process.env["AILLY_ENGINE"] = "noop";
-process.env["AILLY_NOOP_RESPONSE"] = "Edited\n";
-process.env["AILLY_NOOP_TIMEOUT"] = "0";
-process.env["AILLY_NOOP_STREAM"] = "";
+process.env.AILLY_ENGINE = "noop";
+process.env.AILLY_NOOP_RESPONSE = "Edited\n";
+process.env.AILLY_NOOP_TIMEOUT = "0";
+process.env.AILLY_NOOP_STREAM = "";
 
 suite("Ailly Extension Generate", () => {
   test("generate edit", async () => {
@@ -41,8 +41,8 @@ suite("Ailly Extension Generate", () => {
     const path = resolve(__dirname, "..", "testing", "edit.txt");
     const docUri = vscode.Uri.file(path);
     await activate(docUri);
-    process.env["AILLY_NOOP_RESPONSE"] = "This text\nwas edited\n";
-    process.env["AILLY_NOOP_STREAM"] = "yes";
+    process.env.AILLY_NOOP_RESPONSE = "This text\nwas edited\n";
+    process.env.AILLY_NOOP_STREAM = "yes";
     mock.method(SETTINGS, "getAillyEngine", () => "noop");
     mock.method(SETTINGS, "getPreferStreamingEdit", () => true);
 

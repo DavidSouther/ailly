@@ -18,7 +18,7 @@ export class RAG {
 
   query(
     data: string,
-    results?: number
+    results?: number,
   ): Promise<{ score: number; content: string; name: string }[]> {
     return Promise.resolve([]);
   }

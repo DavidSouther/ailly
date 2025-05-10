@@ -3,9 +3,9 @@ import * as YAML from "yaml";
 import type { FileSystem } from "@davidsouther/jiffies/lib/cjs/fs.js";
 
 import { LOGGER } from "../index.js";
-import { Content, View } from "./content.js";
-import { EDIT } from "./templates/edit.js";
+import type { Content, View } from "./content.js";
 import { META_PROMPT } from "./templates/anthropic_metaprompt.js";
+import { EDIT } from "./templates/edit.js";
 import { GRUG_PROMPT } from "./templates/grug.js";
 
 const mustache = require("mustache");
@@ -43,7 +43,7 @@ const TEMPLATE_RECURSION_CONVERGENCE = 10;
 export function mergeContentViews(
   c: Content,
   base: View,
-  context: Record<string, Content>
+  context: Record<string, Content>,
 ) {
   if (c.context.view === false) return;
   c.meta = c.meta ?? {};
@@ -60,12 +60,12 @@ export function mergeContentViews(
   view = mergeViews(view, c.context.view || {});
   let i = TEMPLATE_RECURSION_CONVERGENCE;
   while (i-- > 0) {
-    let old = c.prompt;
+    const old = c.prompt;
     c.prompt = mustache.render(old, view);
-    if (old == c.prompt) return;
+    if (old === c.prompt) return;
   }
   LOGGER.warn(
-    `Reached TEMPLATE_RECURSION_CONVERGENCE limit of ${TEMPLATE_RECURSION_CONVERGENCE}`
+    `Reached TEMPLATE_RECURSION_CONVERGENCE limit of ${TEMPLATE_RECURSION_CONVERGENCE}`,
   );
 }
 
@@ -83,7 +83,7 @@ export async function loadTemplateView(
       LOGGER.debug(`Reading template-view at ${path}`);
       const file = await fs.readFile(path);
       const parsed = YAML.parse(file);
-      if (parsed && typeof parsed == "object") {
+      if (parsed && typeof parsed === "object") {
         view = { ...view, ...parsed };
       }
     } catch (err) {

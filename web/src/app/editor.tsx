@@ -1,9 +1,9 @@
 "use client";
 
-import { useAillyPageStore } from "./store";
+import type { useAillyPageStore } from "./store";
 
-import styles from "./editor.module.css";
 import { ChangeEvent, useCallback, useMemo, useRef } from "react";
+import styles from "./editor.module.css";
 
 const INPUT_DELAY = 900;
 export const Editor = (store: ReturnType<typeof useAillyPageStore>) => {
@@ -14,14 +14,14 @@ export const Editor = (store: ReturnType<typeof useAillyPageStore>) => {
   const send = useCallback(() => {
     clearTimeout(timer.current);
     if (input.current) actions.prompt(input.current?.value);
-  }, [input, actions]);
+  }, [actions]);
 
   const onChange = useMemo(() => {
     return () => {
       clearTimeout(timer.current);
       timer.current = setTimeout(send, INPUT_DELAY);
     };
-  }, [send, timer]);
+  }, [send]);
 
   return (
     <section className={styles.section}>
@@ -40,7 +40,7 @@ export const Editor = (store: ReturnType<typeof useAillyPageStore>) => {
           onChange={onChange}
           onBlur={send}
         />
-        <button className={styles.button} onClick={send}>
+        <button className={styles.button} onClick={send} type="button">
           <span className="material-symbols-outlined">refresh</span>
         </button>
       </form>

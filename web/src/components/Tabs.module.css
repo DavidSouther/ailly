@@ -7,8 +7,8 @@
   --spacing-tab-edge: var(--size-thick);
   display: grid;
   grid-template-rows: min-content 1fr;
+  /* One column for the ::before left-side space */
   grid-template-columns:
-    /* One column for the ::before left-side space */
     var(--spacing-tab-edge)
     /* --tab-count columns "as small as their content" */
     /* NB: Set "word-wrap: nowrap" on the tab labels in user's code */

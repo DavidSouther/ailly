@@ -14,7 +14,7 @@ import {
   makePipelineSettings,
 } from "@ailly/core/lib/index.js";
 import { assertExists } from "@davidsouther/jiffies/lib/cjs/assert.js";
-import { FileSystem } from "@davidsouther/jiffies/lib/cjs/fs.js";
+import type { FileSystem } from "@davidsouther/jiffies/lib/cjs/fs.js";
 import {
   LEVEL,
   basicLogFormatter,
@@ -22,12 +22,12 @@ import {
   getLogger,
 } from "@davidsouther/jiffies/lib/cjs/log.js";
 
-import { Args } from "./args.js";
+import type { Args } from "./args.js";
 
 export const LOGGER = getLogger("@ailly/cli");
 export async function loadFs(
   fs: FileSystem,
-  args: Args
+  args: Args,
 ): Promise<{
   context: Record<string, Content>;
   content: string[];
@@ -47,7 +47,7 @@ export async function loadFs(
     ? new Console(process.stderr, process.stderr)
     : global.console;
   ROOT_LOGGER.level = LOGGER.level = getLogLevel(
-    logLevel === "trace" ? "0.5" : logLevel
+    logLevel === "trace" ? "0.5" : logLevel,
   );
   const logFormat = args.values["log-format"];
   const formatter =
@@ -65,11 +65,13 @@ export async function loadFs(
 
   const templateView = await loadTemplateView(
     fs,
-    ...(args.values["template-view"] ?? [])
+    ...(args.values["template-view"] ?? []),
   );
   const isExpensiveModel = args.values.model?.includes("opus") ?? false;
-  const requestLimit =
-    args.values["request-limit"] ?? isExpensiveModel ? 1 : undefined;
+  const baseRequestLimit = args.values["request-limit"]
+    ? Number(args.values["request-limit"])
+    : undefined;
+  const requestLimit = baseRequestLimit ?? (isExpensiveModel ? 1 : 5);
 
   const settings = await makePipelineSettings({
     root,
@@ -90,31 +92,33 @@ export async function loadFs(
   const system = args.values.system ?? "";
   const depth = Number(args.values["max-depth"]);
 
-  let context = await loadContent(
+  const context = await loadContent(
     fs,
-    system ? [{ content: system, view: {} }] : [],
-    settings,
-    depth
+    {
+      system: system ? [{ content: system, view: {} }] : [],
+      meta: settings,
+    },
+    depth,
   );
 
   let content: string[] = [];
   if (!hasPositionals && hasPrompt) {
-    Object.values(context).forEach((c) => {
+    for (const c of Object.values(context)) {
       c.meta = c.meta ?? {};
       c.meta.skip = true;
-    });
+    }
   } else {
     if (!hasPositionals) positionals.push(root);
     content = Object.keys(context).filter((c) =>
-      positionals.some((p) => c.startsWith(p))
+      positionals.some((p) => c.startsWith(p)),
     );
   }
 
-  let edit = args.values.edit
+  const edit = args.values.edit
     ? makeEdit(args.values.lines, content, hasPrompt)
     : undefined;
   if (hasPrompt) {
-    if (edit && content.length == 1) {
+    if (edit && content.length === 1) {
       content = [];
     }
     const prompt = await readPrompt(args);
@@ -152,10 +156,10 @@ function readPrompt(args: Args): Promise<string> {
 export function makeEdit(
   lines: string | undefined,
   content: string[],
-  hasPrompt: boolean
+  hasPrompt: boolean,
 ): AillyEdit | undefined {
   if (!lines) return undefined;
-  if (content.length != 1) {
+  if (content.length !== 1) {
     throw new Error("Edit requires exactly 1 path");
   }
   if (!hasPrompt) {
@@ -184,7 +188,8 @@ async function readAll(readable: typeof process.stdin): Promise<string> {
     const chunks: string[] = [];
 
     readable.on("readable", () => {
-      let chunk;
+      let chunk: string | null;
+      // biome-ignore lint/suspicious/noAssignInExpressions: quick read
       while (null !== (chunk = readable.read())) {
         chunks.push(chunk);
       }

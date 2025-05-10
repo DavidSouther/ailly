@@ -1,8 +1,14 @@
 "use client";
-import { Dispatch, MutableRefObject, useMemo, useReducer, useRef } from "react";
 import type { Content, WritableContent } from "@ailly/core/src/content/content";
-import { generateOne } from "./ailly";
 import { withResolvers } from "@ailly/core/src/util";
+import {
+  type Dispatch,
+  type MutableRefObject,
+  useMemo,
+  useReducer,
+  useRef,
+} from "react";
+import { generateOne } from "./ailly";
 
 export interface AillyPageState {
   story: StoryBook[];
@@ -44,15 +50,15 @@ export type AillyStoreDispatch = Dispatch<{
 export function makeAillyStore(dispatch: MutableRefObject<AillyStoreDispatch>) {
   const story: StoryBook[] = [ROLES, TONES, BACKGROUND, OUTPUT];
   // const story: StoryBook[] = [BIRD_ROLES, BIRD_TONES];
-  story.forEach((book) => {
-    if (book.options.at(-1)?.slug != "custom")
+  for (const book of story) {
+    if (book.options.at(-1)?.slug !== "custom")
       book.options.push({ slug: "custom", content: "" });
-  });
+  }
   let storyItem = -1;
   let nextStoryItem = -1;
   let selections: number[][] = [];
   let instruction = "";
-  let response = { content: "" };
+  const response = { content: "" };
   let generating = true;
   let content: WritableContent = {
     name: "dev",
@@ -89,15 +95,15 @@ export function makeAillyStore(dispatch: MutableRefObject<AillyStoreDispatch>) {
     },
     prompt(content: string) {
       instruction = content;
-      if (storyItem == -1) nextStoryItem = 0;
+      if (storyItem === -1) nextStoryItem = 0;
       this.updateAndGenerate();
     },
     select(block: number, choice: number) {
-      if (selections[block + 1] == undefined) {
+      if (selections[block + 1] === undefined) {
         nextStoryItem = block + 1;
       }
       const newBlock =
-        story[block].select == "multi"
+        story[block].select === "multi"
           ? [...new Set(selections[block] ?? []), choice]
           : [choice];
       // Un-read-only selections
@@ -114,14 +120,13 @@ export function makeAillyStore(dispatch: MutableRefObject<AillyStoreDispatch>) {
         prompt: instruction,
         context: {
           system: selections
-            .map((opts, block) =>
+            .flatMap((opts, block) =>
               opts.map((opt) =>
                 (story[block]?.format ?? ((c) => c))(
-                  story[block]?.options[opt].content
-                )
-              )
+                  story[block]?.options[opt].content,
+                ),
+              ),
             )
-            .flat()
             .map((content) => ({ content, view: {} })),
           view: false,
         },
@@ -130,7 +135,7 @@ export function makeAillyStore(dispatch: MutableRefObject<AillyStoreDispatch>) {
       this.update();
       try {
         const genContent = await generateOne(content);
-        const error = (genContent.meta?.debug as { error: {} } | undefined)
+        const error = (genContent.meta?.debug as { error: object } | undefined)
           ?.error;
         if (error) {
           response.content = JSON.stringify(error);
@@ -165,7 +170,7 @@ export function useAillyPageStore() {
 
   const { initialState, reducers, actions } = useMemo(
     () => makeAillyStore(dispatch),
-    [dispatch]
+    [],
   );
 
   const [state, dispatcher] = useReducer(reducers.updateState, initialState);
@@ -271,7 +276,7 @@ function makeBook(
   select: "single" | "multi",
   options: StoryBookOption[],
   slug = title.toLowerCase(),
-  format = (c: string) => `<${slug}>${c}</${slug}>`
+  format = (c: string) => `<${slug}>${c}</${slug}>`,
 ): StoryBook {
   return {
     title,

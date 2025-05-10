@@ -56,23 +56,23 @@ describe("scheduler", () => {
 });
 
 describe("generateOne", () => {
-  let level = LOGGER.level;
+  const level = LOGGER.level;
   const state = cleanState(async () => {
     const logger = {
       info: vi.spyOn(LOGGER, "info"),
       debug: vi.spyOn(LOGGER, "debug"),
     };
     LOGGER.level = LEVEL.SILENT;
-    const context = await loadContent(
-      new FileSystem(
-        new ObjectFileSystemAdapter({
-          "a.txt": `prompt a`,
-          "a.txt.ailly.md": `response a`,
-          "b.txt": `---\nprompt: prompt b\nskip: true\n---\nresponse b`,
-          "c.txt": "tell me a joke\n",
-        })
-      )
+    const fs = new FileSystem(
+      new ObjectFileSystemAdapter({
+        "a.txt": "prompt a",
+        "a.txt.ailly.md": "response a",
+        "b.txt":
+          "---\nprompt: prompt b\nskip: true\ncombined: true\n---\nresponse b",
+        "c.txt": "tell me a joke",
+      }),
     );
+    const context = await loadContent(fs);
     const engine = await getEngine("noop");
     TIMEOUT.setTimeout(0);
     expect(logger.debug).toHaveBeenCalledWith("Loading content from /");
@@ -80,7 +80,7 @@ describe("generateOne", () => {
     expect(logger.info).toHaveBeenCalledTimes(0);
     logger.debug.mockClear();
     logger.info.mockClear();
-    return { logger, context, engine };
+    return { logger, context, engine, fs };
   }, beforeEach);
 
   afterEach(() => {
@@ -89,12 +89,12 @@ describe("generateOne", () => {
     TIMEOUT.resetTimeout();
   });
 
-  it("skips some", async () => {
+  it("skips some and runs others", async () => {
     await generateOne(
       state.context["/a.txt"],
       state.context,
       await makePipelineSettings({ root: "/", overwrite: false }),
-      state.engine
+      state.engine,
     );
     expect(state.logger.info).toHaveBeenCalledWith("Skipping /a.txt");
     state.logger.info.mockClear();
@@ -103,20 +103,20 @@ describe("generateOne", () => {
       state.context["/b.txt"],
       state.context,
       await makePipelineSettings({ root: "/" }),
-      state.engine
+      state.engine,
     );
     expect(state.logger.info).toHaveBeenCalledWith("Skipping /b.txt");
     state.logger.info.mockClear();
-  });
+    //   });
 
-  it("generates others", async () => {
+    //   it("generates others", async () => {
     const content = state.context["/c.txt"];
     expect(content.response).toBeUndefined();
     await generateOne(
       content,
       state.context,
       await makePipelineSettings({ root: "/" }),
-      state.engine
+      state.engine,
     );
     await drain(content);
     expect(state.logger.info).toHaveBeenCalledWith("Running /c.txt");
@@ -126,8 +126,9 @@ describe("generateOne", () => {
         { role: "system", content: "" },
         { role: "user", content: "prompt a" },
         { role: "assistant", content: "response a" },
-        { role: "user", content: "response b" },
-        { role: "user", content: "tell me a joke\n" },
+        { role: "user", content: "prompt b" },
+        { role: "assistant", content: "response b" },
+        { role: "user", content: "tell me a joke" },
       ],
     });
     expect(content.response).toMatch(/^noop response for c.txt:/);
@@ -135,7 +136,7 @@ describe("generateOne", () => {
 });
 
 describe("PromptThread", () => {
-  let level = LOGGER.level;
+  const level = LOGGER.level;
   const state = cleanState(async () => {
     const logger = {
       info: vi.spyOn(LOGGER, "info"),
@@ -144,11 +145,11 @@ describe("PromptThread", () => {
     LOGGER.level = LEVEL.SILENT;
     const fs = new FileSystem(
       new ObjectFileSystemAdapter({
-        "a.txt": `prompt a`,
-        "a.txt.ailly.md": `response a`,
-        "b.txt": `---\nprompt: prompt b\nskip: true\n---\nresponse b`,
+        "a.txt": "prompt a",
+        "a.txt.ailly.md": "response a",
+        "b.txt": "---\nprompt: prompt b\nskip: true\n---\nresponse b",
         "c.txt": "tell me a joke\n",
-      })
+      }),
     );
     const engine = await getEngine("noop");
     TIMEOUT.setTimeout(0);
@@ -163,19 +164,23 @@ describe("PromptThread", () => {
 
   it("runs isolated", async () => {
     const settings = await makePipelineSettings({ root: "/", isolated: true });
-    const context = await loadContent(state.fs, [], { isolated: true });
+    const context = await loadContent(state.fs, {
+      system: [],
+      meta: { isolated: true },
+    });
     state.logger.debug.mockClear();
     state.logger.info.mockClear();
     const content = [...Object.values(context)];
-    const plugin = await (
-      await getPlugin("none")
-    ).default(state.engine, settings);
+    const plugin = await (await getPlugin("none")).default(
+      state.engine,
+      settings,
+    );
     const thread = PromptThread.run(
       content,
       context,
       settings,
       state.engine,
-      plugin
+      plugin,
     );
     expect(thread.isDone).toBe(false);
     expect(thread.finished).toBe(0);
@@ -206,15 +211,16 @@ describe("PromptThread", () => {
     state.logger.debug.mockClear();
     state.logger.info.mockClear();
     const content = [...Object.values(context)];
-    const plugin = await (
-      await getPlugin("none")
-    ).default(state.engine, settings);
+    const plugin = await (await getPlugin("none")).default(
+      state.engine,
+      settings,
+    );
     const thread = PromptThread.run(
       content,
       context,
       settings,
       state.engine,
-      plugin
+      plugin,
     );
     expect(thread.isDone).toBe(false);
     expect(thread.finished).toBe(0);

@@ -1,10 +1,10 @@
 "use client";
 
-import M from "@/components/M";
-import { useAillyPageStore } from "./store";
-import styles from "./response.module.css";
-import { Tab, TabList } from "@/components/Tabs";
 import { Copy } from "@/components/Copy";
+import M from "@/components/M";
+import { Tab, TabList } from "@/components/Tabs";
+import styles from "./response.module.css";
+import type { useAillyPageStore } from "./store";
 
 export const Response = (store: ReturnType<typeof useAillyPageStore>) => {
   const { state } = store;
@@ -14,12 +14,12 @@ export const Response = (store: ReturnType<typeof useAillyPageStore>) => {
       className={`${styles.response} ${state.generating ? "generating" : ""}`}
     >
       {state.generating ? (
-        <div className={styles.spinner}></div>
+        <div className={styles.spinner} />
       ) : (
         <TabList>
           <Tab title="Response">
             {state.response.content && (
-              <Copy contents={state.response.content}></Copy>
+              <Copy contents={state.response.content} />
             )}
             <M>{state.response.content}</M>
           </Tab>
@@ -31,12 +31,12 @@ export const Response = (store: ReturnType<typeof useAillyPageStore>) => {
                   user: state.content?.prompt,
                 },
                 undefined,
-                "\t"
+                "\t",
               )}
-            ></Copy>
+            />
             <h2>System</h2>
             {state.content?.context.system?.map((s, i) => (
-              <p key={i}>{s.content}</p>
+              <p key={s.content}>{s.content}</p>
             ))}
             <h2>User</h2>
             {state.content?.prompt}
