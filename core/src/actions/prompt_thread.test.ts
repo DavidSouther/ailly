@@ -63,17 +63,16 @@ describe("generateOne", () => {
       debug: vi.spyOn(LOGGER, "debug"),
     };
     LOGGER.level = LEVEL.SILENT;
-    const context = await loadContent(
-      new FileSystem(
-        new ObjectFileSystemAdapter({
-          "a.txt": "prompt a",
-          "a.txt.ailly.md": "response a",
-          "b.txt":
-            "---\nprompt: prompt b\nskip: true\ncombined: true\n---\nresponse b",
-          "c.txt": "tell me a joke",
-        }),
-      ),
+    const fs = new FileSystem(
+      new ObjectFileSystemAdapter({
+        "a.txt": "prompt a",
+        "a.txt.ailly.md": "response a",
+        "b.txt":
+          "---\nprompt: prompt b\nskip: true\ncombined: true\n---\nresponse b",
+        "c.txt": "tell me a joke",
+      }),
     );
+    const context = await loadContent(fs);
     const engine = await getEngine("noop");
     TIMEOUT.setTimeout(0);
     expect(logger.debug).toHaveBeenCalledWith("Loading content from /");
@@ -81,7 +80,7 @@ describe("generateOne", () => {
     expect(logger.info).toHaveBeenCalledTimes(0);
     logger.debug.mockClear();
     logger.info.mockClear();
-    return { logger, context, engine };
+    return { logger, context, engine, fs };
   }, beforeEach);
 
   afterEach(() => {
@@ -90,7 +89,7 @@ describe("generateOne", () => {
     TIMEOUT.resetTimeout();
   });
 
-  it("skips some", async () => {
+  it("skips some and runs others", async () => {
     await generateOne(
       state.context["/a.txt"],
       state.context,
@@ -108,9 +107,9 @@ describe("generateOne", () => {
     );
     expect(state.logger.info).toHaveBeenCalledWith("Skipping /b.txt");
     state.logger.info.mockClear();
-  });
+    //   });
 
-  it("generates others", async () => {
+    //   it("generates others", async () => {
     const content = state.context["/c.txt"];
     expect(content.response).toBeUndefined();
     await generateOne(

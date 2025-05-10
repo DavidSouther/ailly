@@ -1,4 +1,3 @@
-import { isAscii } from "node:buffer";
 import { join, normalize } from "node:path";
 import {
   FileSystem,
@@ -6,19 +5,24 @@ import {
   type Stats,
 } from "@davidsouther/jiffies/lib/cjs/fs.js";
 import * as gitignoreParser from "gitignore-parser";
+import {
+  BINARY_EXTENSIONS,
+  IGNORED_NAMES,
+  SIGNATURES,
+  TEXT_EXTENSIONS,
+} from "./gitignore_fs_constants.js";
 
-const IGNORED_NAMES = [".git", ".gitignore"];
 export class GitignoreFs extends FileSystem {
   async readdir(path: string): Promise<string[]> {
     // biome-ignore lint/style/noParameterAssign: update path based on CWD
     path = (this as unknown as { p(p: string): string }).p(path);
-    const [drive, ...dirs] = this.cwd().split("/");
+    const [drive, ...dirs] = path.split("/");
     const gitignores: Array<{
       path: string;
       gitignore: string;
       accepts: ReturnType<typeof gitignoreParser.compile>["accepts"];
     }> = [];
-    for (let i = 1; i <= dirs.length; i++) {
+    for (let i = 0; i <= dirs.length; i++) {
       const gitignorePath = normalize(
         drive + SEP + join(...dirs.slice(0, i), ".gitignore"),
       );
@@ -36,7 +40,7 @@ export class GitignoreFs extends FileSystem {
       paths.map(async (stats) => {
         const include =
           !IGNORED_NAMES.includes(stats.name) &&
-          (stats.isDirectory() || (await this.isTextFile(stats))) && // This test was intended to limit us to text files only
+          (stats.isDirectory() || (await this.isTextFile(path, stats))) && // This test was intended to limit us to text files only
           gitignores.every((g) =>
             stats.isDirectory()
               ? g.accepts(`${stats.name}/`)
@@ -50,40 +54,94 @@ export class GitignoreFs extends FileSystem {
     return filtered.map((p) => p.name);
   }
 
-  private async isTextFile(p: Stats): Promise<boolean> {
+  private async isTextFile(path: string, p: Stats): Promise<boolean> {
+    const ext = p.name.substring(p.name.lastIndexOf(".")).toLowerCase();
+    if (TEXT_EXTENSIONS.has(ext)) return true;
+    if (BINARY_EXTENSIONS.has(ext)) return false;
+
     try {
-      const content = await this.readFile(p.name);
-      return isAscii(Buffer.from(content.slice(0, 5), "utf-8"));
+      const content = await this.readFile(join(path, p.name));
+
+      if (hasMagicSignature(content)) {
+        return false;
+      }
+
+      return !isBinByControlChars(content);
     } catch (e) {
       return false;
     }
   }
 }
 
-function isTextExtension(name: string) {
-  // If theres no extension, err on the side
-  // of caution and don't include it in the context.
-  if (!name.includes(".")) {
-    return false;
+function hasMagicSignature(content: string) {
+  return SIGNATURES.some((prefix) => content.startsWith(prefix));
+}
+
+function isBinByControlChars(
+  sample: string,
+  {
+    sampleSize,
+    controlCharThreshold,
+    extendedThreshold,
+  }: {
+    sampleSize?: number;
+    controlCharThreshold?: number;
+    extendedThreshold?: { base: number; control: number };
+  } = {},
+): boolean {
+  // Check for high percentage of control or non-printable characters
+  // Sample the first N bytes to save performance on large files
+  sampleSize = Math.min(sample.length, sampleSize ?? 512);
+
+  let controlChars = 0;
+  let extendedChars = 0;
+
+  for (let i = 0; i < sampleSize; i++) {
+    const charCode = sample.charCodeAt(i);
+
+    // null character is immediately binary
+    if (charCode === 0) {
+      return true;
+    }
+
+    // Control characters (except common whitespace)
+    if (
+      (charCode < 32 &&
+        // Tab, newline, carriage return
+        charCode !== 9 &&
+        charCode !== 10 &&
+        charCode !== 13) ||
+      charCode === 127 // del
+    ) {
+      controlChars++;
+    }
+
+    // Extended ASCII and beyond - not necessarily binary but can be part of heuristic
+    if (charCode > 127) {
+      extendedChars++;
+    }
   }
 
-  // From https://github.com/bevry/binaryextensions/blob/master/source/index.ts
-  const binaryExtensions = [
-    "dds",
-    "eot",
-    "gif",
-    "ico",
-    "jar",
-    "jpeg",
-    "jpg",
-    "pdf",
-    "png",
-    "swf",
-    "tga",
-    "ttf",
-    "zip",
-  ];
+  // Calculate percentages
+  const controlCharPercentage = (controlChars / sampleSize) * 100;
+  const extendedCharPercentage = (extendedChars / sampleSize) * 100;
 
-  const ext = name.split(".").pop() || "";
-  return !binaryExtensions.includes(ext);
+  // If more than 10% are control characters, likely binary
+  controlCharThreshold = controlCharThreshold ?? 10;
+  if (controlCharPercentage > controlCharThreshold) {
+    return true;
+  }
+
+  // Special handling for extended characters to avoid misclassifying non-English text
+  // as binary. If we have many extended chars but few control chars, it's likely
+  // a text file in a non-ASCII encoding (like UTF-8 for Chinese, Japanese, etc.)
+  extendedThreshold = extendedThreshold ?? { base: 30, control: 5 };
+  if (
+    extendedCharPercentage > extendedThreshold.base &&
+    controlCharPercentage > extendedThreshold.control
+  ) {
+    return true;
+  }
+
+  return false;
 }

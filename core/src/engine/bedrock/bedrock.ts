@@ -53,7 +53,7 @@ declare module "@davidsouther/jiffies/lib/cjs/log.js" {
 
 export const generate: EngineGenerate<BedrockDebug> = (
   c: Content,
-  { model = DEFAULT_MODEL }: { model?: string }
+  { model = DEFAULT_MODEL }: { model?: string },
 ) => {
   LOGGER.level = ROOT_LOGGER.level;
   LOGGER.format = ROOT_LOGGER.format;
@@ -73,7 +73,7 @@ export const generate: EngineGenerate<BedrockDebug> = (
 
   // Use given temperature; or 0 for edit (don't want creativity) but 1.0 generally.
   const temperature =
-    c.meta?.temperature ?? c.context.edit !== undefined ? 0.0 : 1.0;
+    (c.meta?.temperature ?? c.context.edit !== undefined) ? 0.0 : 1.0;
   const maxTokens = c.meta?.maxTokens;
 
   LOGGER.debug("Bedrock sending prompt", {
@@ -83,7 +83,7 @@ export const generate: EngineGenerate<BedrockDebug> = (
   });
 
   try {
-    let message: string = c.meta?.continue ? c.response ?? "" : "";
+    let message: string = c.meta?.continue ? (c.response ?? "") : "";
     const debug: BedrockDebug = {
       id: "",
       finish: "unknown",
@@ -127,7 +127,7 @@ export const generate: EngineGenerate<BedrockDebug> = (
           if (block.validationException) {
             throw new Error(
               "The input fails to satisfy the constraints specified by Amazon Bedrock.",
-              { cause: block.validationException }
+              { cause: block.validationException },
             );
           }
 
@@ -141,7 +141,7 @@ export const generate: EngineGenerate<BedrockDebug> = (
               "Your request was denied due to exceeding the account quotas for Amazon Bedrock.",
               {
                 cause: block.throttlingException,
-              }
+              },
             );
           }
 
@@ -199,7 +199,7 @@ export const generate: EngineGenerate<BedrockDebug> = (
         }
 
         LOGGER.debug(
-          `Finished streaming response from Bedrock for ${c.name} (${debug.id}), total ${blocks} blocks.`
+          `Finished streaming response from Bedrock for ${c.name} (${debug.id}), total ${blocks} blocks.`,
         );
       })
       .catch((e) => {
@@ -209,12 +209,12 @@ export const generate: EngineGenerate<BedrockDebug> = (
           `Error for Bedrock response ${c.name} (${debug.id ?? "no id"})`,
           {
             err: debug.error,
-          }
+          },
         );
       })
       .finally(async () => {
         LOGGER.debug(
-          `Closing write stream for bedrock response ${c.name} (${debug.id})`
+          `Closing write stream for bedrock response ${c.name} (${debug.id})`,
         );
         await writer.close();
       });
@@ -262,7 +262,7 @@ export async function view(): Promise<View> {
 
 export async function format(
   contents: Content[],
-  context: Record<string, Content>
+  context: Record<string, Content>,
 ): Promise<Summary> {
   const summary: Summary = { prompts: contents.length, tokens: 0 };
   for (const content of contents) {
@@ -282,7 +282,7 @@ export async function vector(inputText: string, _: object): Promise<number[]> {
       modelId: "amazon.titan-embed-text-v1",
       contentType: "application/json",
       accept: "*/*",
-    })
+    }),
   );
 
   const body = JSON.parse(td.decode(response.body));
@@ -296,7 +296,7 @@ export function formatError(content: Content) {
     const { message } = debug?.error ?? { message: "Unknown Error" };
     const model = assertExists(
       debug?.model,
-      "Missing `model` in debug when formatting Error"
+      "Missing `model` in debug when formatting Error",
     );
     const region =
       process.env.AWS_REGION ??

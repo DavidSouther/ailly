@@ -7,6 +7,7 @@ debug:
   lastRun: 2025-05-09T21:34:45.275Z
   model: us.anthropic.claude-3-7-sonnet-20250219-v1:0
   region: us-east-1
+isolated: true
 prompt: |
   I Have a TypeScript program that has an abstraction over file systems. One of these is a subclass that, when walking a folder, ignores files that look like binary.
 

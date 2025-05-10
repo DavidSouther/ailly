@@ -22,7 +22,7 @@ export type Models =
   | "us.amazon.nova-pro-v1:0";
 
 export class PromptBuilder {
-  modelBuilders: Record<Models, (m: Message[]) => any> = {
+  modelBuilders: Record<Models, (m: Message[]) => Prompt> = {
     "anthropic.claude-v2": converseBuilder,
     "anthropic.claude-3-opus-20240229-v1:0": converseBuilder,
     "us.anthropic.claude-3-opus-20240229-v1:0": converseBuilder,
