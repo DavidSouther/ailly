@@ -8,15 +8,21 @@ export interface LLMMessage {
 export type Models =
   | "anthropic.claude-v2"
   | "anthropic.claude-3-opus-20240229-v1:0"
+  | "us.anthropic.claude-3-opus-20240229-v1:0" // cross-region inference
   | "anthropic.claude-3-sonnet-20240229-v1:0"
-  | "anthropic.claude-3-haiku-20240307-v1:0";
+  | "us.anthropic.claude-3-7-sonnet-20250219-v1:0" // cross-region inference
+  | "anthropic.claude-3-haiku-20240307-v1:0"
+  | "us.anthropic.claude-3-haiku-20240307-v1:0"; // cross-region inference
 
 export class PromptBuilder {
   modelBuilders: Record<Models, (m: Message[]) => any> = {
     "anthropic.claude-v2": conversationBuilder,
-    "anthropic.claude-3-sonnet-20240229-v1:0": messagesBuilder,
-    "anthropic.claude-3-haiku-20240307-v1:0": messagesBuilder,
     "anthropic.claude-3-opus-20240229-v1:0": messagesBuilder,
+    "us.anthropic.claude-3-opus-20240229-v1:0": messagesBuilder,
+    "anthropic.claude-3-sonnet-20240229-v1:0": messagesBuilder,
+    "us.anthropic.claude-3-7-sonnet-20250219-v1:0": messagesBuilder,
+    "anthropic.claude-3-haiku-20240307-v1:0": messagesBuilder,
+    "us.anthropic.claude-3-haiku-20240307-v1:0": messagesBuilder
   };
 
   constructor(private readonly modelName: Models) {}
