@@ -6,13 +6,15 @@ import {
   type ConverseStreamCommandInput,
   InvokeModelCommand,
   type SystemContentBlock,
+  type Tool,
+  type ToolInputSchema,
 } from "@aws-sdk/client-bedrock-runtime";
 import { fromNodeProviderChain } from "@aws-sdk/credential-providers";
 import { getLogger } from "@davidsouther/jiffies/lib/cjs/log.js";
 
 import { assertExists } from "@davidsouther/jiffies/lib/cjs/assert";
-import type { Content, View } from "../../content/content.js";
-import { LOGGER as ROOT_LOGGER } from "../../index.js";
+import type { Content, ContentMeta, View } from "../../content/content.js";
+import { LOGGER as ROOT_LOGGER, content } from "../../index.js";
 import type { EngineDebug, EngineGenerate, Summary } from "../index.js";
 import { addContentMessages } from "../messages.js";
 import { type Models, type Prompt, PromptBuilder } from "./prompt_builder.js";
@@ -65,16 +67,9 @@ export const generate: EngineGenerate<BedrockDebug> = (
   if (!inMessages.find((m) => m.role === "user")) {
     throw new Error("Bedrock must have at least one message with role: user");
   }
-  const stopSequences = c.context.edit ? ["```"] : undefined;
-
   const promptBuilder = new PromptBuilder(model as Models);
   const prompt: Prompt = promptBuilder.build(inMessages);
   prompt.system = prompt.system.trim() || DEFAULT_SYSTEM_PROMPT;
-
-  // Use given temperature; or 0 for edit (don't want creativity) but 1.0 generally.
-  const temperature =
-    (c.meta?.temperature ?? c.context.edit !== undefined) ? 0.0 : 1.0;
-  const maxTokens = c.meta?.maxTokens;
 
   LOGGER.debug("Bedrock sending prompt", {
     ...prompt,
@@ -83,7 +78,6 @@ export const generate: EngineGenerate<BedrockDebug> = (
   });
 
   try {
-    let message: string = c.meta?.continue ? (c.response ?? "") : "";
     const debug: BedrockDebug = {
       id: "",
       finish: "unknown",
@@ -95,47 +89,9 @@ export const generate: EngineGenerate<BedrockDebug> = (
     });
     const stream = new TransformStream();
     const writer = stream.writable.getWriter();
-    const converseStreamCommand: ConverseStreamCommandInput = {
-      modelId: model,
-      system: [
-        {
-          text: prompt.system,
-        } satisfies SystemContentBlock,
-      ],
-      messages: prompt.messages.map((message) => ({
-        role: message.role,
-        content: [{ text: message.content } satisfies ContentBlock],
-      })),
-      toolConfig: {
-        tools: [
-          {
-            "toolSpec": {
-              "name": "top_song",
-              "description": "Get the most popular song played on a radio station.",
-              "inputSchema": {
-                "json": {
-                  "type": "object",
-                  "properties": {
-                    "sign": {
-                      "type": "string",
-                      "description": "The call sign for the radio station for which you want the most popular song. Example calls signs are WZPZ and WKRP."
-                    }
-                  },
-                  "required": [
-                    "sign"
-                  ]
-                }
-              }
-            }
-          }
-        ]
-      },
-      inferenceConfig: {
-        maxTokens,
-        stopSequences,
-        temperature,
-      },
-    };
+    let message: string = c.meta?.continue ? (c.response ?? "") : "";
+    const converseStreamCommand: ConverseStreamCommandInput =
+      createConverseStreamCommand(model, c, prompt);
     LOGGER.trace("Sending ConverseStreamCommand", {
       converseStreamCommand,
     });
@@ -264,6 +220,74 @@ export const generate: EngineGenerate<BedrockDebug> = (
   }
 };
 
+export const contentToToolConfig = (c: Content) => {
+  return {
+    tools: c.meta?.tools?.map(
+      (tool) =>
+        ({
+          toolSpec: {
+            name: tool.name,
+            description: tool.description,
+            inputSchema: {
+              json: tool.parameters,
+            } as unknown as ToolInputSchema.JsonMember, // We're more strict than Bedrock, hence the unknown cast.
+          },
+        }) as Tool.ToolSpecMember,
+    ),
+    // {
+    //   "toolSpec": {
+    //     "name": "top_song",
+    //     "description": "Get the most popular song played on a radio station.",
+    //     "inputSchema": {
+    //       "json": {
+    //         "type": "object",
+    //         "properties": {
+    //           "sign": {
+    //             "type": "string",
+    //             "description": "The call sign for the radio station for which you want the most popular song. Example calls signs are WZPZ and WKRP."
+    //           }
+    //         },
+    //         "required": [
+    //           "sign"
+    //         ]
+    //       }
+    //     }
+    //   }
+    // }
+  };
+};
+
+export const createConverseStreamCommand = (
+  model: string,
+  c: Content,
+  prompt: Prompt,
+): ConverseStreamCommandInput => {
+  const stopSequences = c.context.edit ? ["```"] : undefined;
+  // Use given temperature; or 0 for edit (don't want creativity) but 1.0 generally.
+  const temperature =
+    (c.meta?.temperature ?? c.context.edit !== undefined) ? 0.0 : 1.0;
+  const maxTokens = c.meta?.maxTokens;
+
+  return {
+    modelId: model,
+    system: [
+      {
+        text: prompt.system,
+      } satisfies SystemContentBlock,
+    ],
+    messages: prompt.messages.map((message) => ({
+      role: message.role,
+      content: [{ text: message.content } satisfies ContentBlock],
+    })),
+    toolConfig: contentToToolConfig(c),
+    inferenceConfig: {
+      maxTokens,
+      stopSequences,
+      temperature,
+    },
+  };
+};
+
 function makeClient() {
   return new BedrockRuntimeClient({
     credentials: fromNodeProviderChain({
@@ -295,7 +319,7 @@ export async function format(
   return summary;
 }
 
-export async function tune(content: Content[]) { }
+export async function tune(content: Content[]) {}
 
 const td = new TextDecoder();
 export async function vector(inputText: string, _: object): Promise<number[]> {

@@ -17,6 +17,7 @@ import {
   checkExhaustive,
 } from "@davidsouther/jiffies/lib/cjs/assert";
 import type { EngineDebug, Message } from "../engine/index.js";
+import type { Tool } from "../engine/tool.js";
 import { LOGGER } from "../index.js";
 import {
   type PromiseWithResolvers,
@@ -81,7 +82,7 @@ export interface ContentMeta {
   prompt?: string;
   temperature?: number;
   maxTokens?: number;
-  tools?: FunctionSchema[]
+  tools?: Tool[];
 }
 
 export type AillyEditReplace = { start: number; end: number; file: string };
