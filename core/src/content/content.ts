@@ -64,6 +64,15 @@ export interface Context {
   mcpClient?: never; // TODO: Define the mcpClient
 }
 
+type MCPConfig =
+  | {
+      type: "stdio";
+      command: string;
+      args?: string[];
+      env?: Record<string, string>;
+    }
+  | { type: "http"; url: string; headers?: Record<string, string> };
+
 // Additional useful metadata.
 export interface ContentMeta {
   root?: string;
@@ -83,6 +92,7 @@ export interface ContentMeta {
   temperature?: number;
   maxTokens?: number;
   tools?: Tool[];
+  mcp?: MCPConfig;
 }
 
 export type AillyEditReplace = { start: number; end: number; file: string };
@@ -365,13 +375,20 @@ export async function loadAillyRc(
 
 async function mergeAillyRc(
   content_meta: ContentMeta,
-  data: { [key: string]: unknown },
+  data: Record<string, unknown>,
   content: string,
   view: View,
   system: System[],
   fs: FileSystem,
 ): Promise<[System[], ContentMeta]> {
+  const mcp: MCPConfig = {
+    ...(content_meta.mcp ?? {}),
+    ...((data.mcp as MCPConfig) ?? {}),
+  };
   const meta = { ...{ parent: "root" as const }, ...content_meta, ...data };
+  if (Object.keys(mcp)) {
+    meta.mcp = mcp;
+  }
   switch (meta.parent) {
     case "root":
       if (!(content === "" && Object.keys(view).length === 0))
