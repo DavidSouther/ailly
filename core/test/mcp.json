@@ -1,0 +1,14 @@
+{
+  "servers": {
+    "ailly-mcp": {
+      "type": "stdio",
+      "command": "node",
+      "args": [
+        "server.js"
+      ],
+      "env": {
+        "TEST_ENV": "true"
+      }
+    }
+  }
+}
