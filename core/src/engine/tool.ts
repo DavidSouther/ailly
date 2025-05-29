@@ -1,7 +1,13 @@
-type JSONSchemaTypeName = 'string' | 'number' | 'integer' | 'boolean' | 'object' | 'array';
+type JSONSchemaTypeName =
+  | "string"
+  | "number"
+  | "integer"
+  | "boolean"
+  | "object"
+  | "array";
 
-interface FunctionSchemaParameters {
-  type: 'object';
+export interface ToolParameters {
+  type: "object";
   properties: {
     [key: string]: {
       type: JSONSchemaTypeName;
@@ -13,8 +19,8 @@ interface FunctionSchemaParameters {
   additionalProperties?: boolean;
 }
 
-interface FunctionSchema {
+export interface Tool {
   name: string;
   description?: string;
-  parameters: FunctionSchemaParameters;
+  parameters: ToolParameters;
 }
