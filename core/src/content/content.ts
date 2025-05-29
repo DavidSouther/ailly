@@ -81,6 +81,7 @@ export interface ContentMeta {
   prompt?: string;
   temperature?: number;
   maxTokens?: number;
+  tools?: FunctionSchema[]
 }
 
 export type AillyEditReplace = { start: number; end: number; file: string };
