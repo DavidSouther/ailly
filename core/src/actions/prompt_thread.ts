@@ -117,6 +117,7 @@ export class PromptThread {
         this.settings.templateView,
       );
     }
+    // TODO: Prepare tools
     try {
       await this.template(c, this.view);
       await this.plugin.augment(c);
@@ -227,13 +228,18 @@ export function generateOne(
     },
   };
 
-  try {
+  function runWithTools() {
     const generator = engine.generate(c, settings);
     assertExists(c.responseStream).resolve(generator.stream);
     return generator.done.finally(() => {
+      // TODO: Check for tool requests
       c.response = generator.message();
       assertExists(c.meta).debug = { ...c.meta?.debug, ...generator.debug() };
     });
+  }
+
+  try {
+    return runWithTools();
   } catch (err) {
     LOGGER.error(`Uncaught error in ${engine.name} generator`, { err });
     if (c.meta?.debug) {

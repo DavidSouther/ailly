@@ -14,6 +14,7 @@ export interface EngineDebug {
   lastRun?: Temporal.Instant | string;
 }
 
+// TODO: Add tool call requests to return type
 export type EngineGenerate<D extends EngineDebug = object> = (
   c: Content,
   parameters: PipelineSettings,

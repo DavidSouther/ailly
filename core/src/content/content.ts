@@ -60,6 +60,7 @@ export interface Context {
   edit?:
     | { start: number; end: number; file: string }
     | { after: number; file: string };
+  mcpClient?: never; // TODO: Define the mcpClient
 }
 
 // Additional useful metadata.
@@ -181,6 +182,9 @@ export async function loadContent(
       }
       break;
   }
+
+  // TODO: Extract MCP information from meta server and attach MCP Clients to Context
+  // TODO: stdio, http, and `mock`
 
   const folders: Record<string, Content> = {};
   if (context !== "none") {

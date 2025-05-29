@@ -1,0 +1,7 @@
+---
+mcp:
+  mock:
+    type: stdio
+    command: node
+    args: ["mock.js"]
+---

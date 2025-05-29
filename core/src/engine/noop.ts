@@ -35,20 +35,7 @@ export const generate: EngineGenerate = (
   LOGGER.level = ROOT_LOGGER.level;
   LOGGER.format = ROOT_LOGGER.format;
 
-  const system = content.context.system
-    ?.map((s, i) => `[system ${i}] ${s.content}`)
-    .join("\n");
-  const messages = content.meta?.messages
-    ?.map((m, i) => `[message ${i}] ${m.role}: ${m.content}`)
-    .join("\n");
-  const message =
-    process.env.AILLY_NOOP_RESPONSE ??
-    [
-      `noop response for ${content.name}:`,
-      system,
-      messages,
-      `[response] ${content.prompt}`,
-    ].join("\n");
+  const message = makeMessages(content);
 
   let error: Error | undefined;
   const stream = new TextEncoderStream();
@@ -83,6 +70,39 @@ export const generate: EngineGenerate = (
     done,
   };
 };
+
+function makeMessages(content: Content) {
+  const system = content.context.system
+    ?.map((s, i) => `[system ${i}] ${s.content}`)
+    .join("\n");
+  const messageList = content.meta?.messages ?? [];
+  const messages = messageList
+    .map((m, i) => `[message ${i}] ${m.role}: ${m.content}`)
+    .join("\n");
+
+  if (messageList.at(-1)?.content.includes("USE")) {
+    const toolUse = messageList
+      .at(-1)
+      ?.content.match(/USE (?<tool>[^\s]+) WITH (?<args>[^\n]+)/);
+    if (toolUse) {
+      const { tool, args: rawArgs } = toolUse.groups ?? {};
+      const args = rawArgs.split(/\s+/);
+      return `USING TOOL ${tool} WITH ARGS [${args.join(", ")}]`;
+      // TODO:
+      // 1. Include tool use metadata in interim response
+      // 2. Include tool use response in final response
+    }
+  }
+  return (
+    process.env.AILLY_NOOP_RESPONSE ??
+    [
+      `noop response for ${content.name}:`,
+      system,
+      messages,
+      `[response] ${content.prompt}`,
+    ].join("\n")
+  );
+}
 
 function sleep(duration: number) {
   if (Number.isFinite(duration) && duration > 16)
