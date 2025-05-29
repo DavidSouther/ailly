@@ -7,7 +7,7 @@ import * as noop from "./noop.js";
 import * as openai from "./openai.js";
 
 export interface EngineDebug {
-  toolUse?: { name: string; input: Record<string, never> };
+  toolUse?: { name: string; input: Record<string, unknown>; partial: string };
   engine?: string;
   model?: string;
   finish?: string;
@@ -15,8 +15,7 @@ export interface EngineDebug {
   lastRun?: Temporal.Instant | string;
 }
 
-// TODO: Add tool call requests to return type
-export type EngineGenerate<D extends EngineDebug = object> = (
+export type EngineGenerate<D extends EngineDebug = EngineDebug> = (
   c: Content,
   parameters: PipelineSettings,
 ) => {
@@ -40,6 +39,12 @@ export interface Engine {
 export interface Message {
   role: "system" | "user" | "assistant";
   content: string;
+  toolUse?: {
+    name: string;
+    input: Record<string, unknown>;
+    result: string;
+    id?: string;
+  };
   tokens?: number;
 }
 
