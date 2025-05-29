@@ -41,7 +41,7 @@ export async function loadFs(
   const hasPrompt = (args.values.prompt ?? "") !== "";
   const isPipe = !hasPositionals && hasPrompt;
   const logLevel =
-    args.values["log-level"] ??
+    args.values["log-level"]?.toLowerCase() ??
     (args.values.verbose ? "verbose" : isPipe ? "silent" : "info");
   ROOT_LOGGER.console = LOGGER.console = isPipe
     ? new Console(process.stderr, process.stderr)
