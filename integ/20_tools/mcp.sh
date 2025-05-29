@@ -10,7 +10,7 @@ rm -f ./out ./err
 ###
 
 echo "basic mcp"
-npx ailly --root ./root --log-format pretty --prompt "This is a conversation with system and two files." > >(tee ./out) 2> >(tee ./err >&2)
+npx ailly --root ./root --log-level error > >(tee ./out) 2> >(tee ./err >&2)
 [ ! -s ./err ]                        # No error output at all
 
 MESSAGES=(
@@ -18,8 +18,8 @@ MESSAGES=(
   "TOOL RETURNED 10"
 )
 for M in "${MESSAGES[@]}"; do
-  grep -q "$M" ./out
+  fgrep -q "$M" ./root/01_a.txt.ailly.md
 done
 
 echo "(all conversation messages checked)"
-rm -f ./out ./err
+rm -f ./out ./err ./root/01_a.txt.ailly.md

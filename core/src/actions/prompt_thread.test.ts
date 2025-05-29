@@ -259,11 +259,8 @@ describe("PromptThread", () => {
     expect(thread.finished).toBe(1);
     expect(thread.errors.length).toBe(0);
 
-    expect(content.at(-1)).toMatchObject({
-      meta: {
-        // TODO: add tool use check, did it use the tool?
-      },
-      response: "USING TOOL add WITH ARGS [40, 7]\nTOOL RETURNED 47",
-    } satisfies Partial<Content>);
+    expect(content.at(-1)?.response).toBe(
+      "USING TOOL add WITH ARGS [40, 7]\nTOOL RETURNED 47\n",
+    );
   });
 });

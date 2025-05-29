@@ -155,6 +155,12 @@ export const generate: EngineGenerate<BedrockDebug> = (
           }
 
           if (block.contentBlockStart) {
+            const { name } = block.contentBlockStart.start?.toolUse ?? {
+              name: undefined,
+            };
+            if (name) {
+              debug.toolUse = { name, input: {}, partial: "" };
+            }
           }
 
           if (block.contentBlockDelta) {
@@ -165,12 +171,15 @@ export const generate: EngineGenerate<BedrockDebug> = (
               await writer.write(text);
             }
             const tool = block.contentBlockDelta.delta?.toolUse;
-            if (tool) {
-              // pass
+            if (tool && debug.toolUse) {
+              debug.toolUse.partial += tool.input ?? "";
             }
           }
+
           if (block.contentBlockStop) {
-            // Nothing to do
+            if (debug.toolUse) {
+              debug.toolUse.input = JSON.parse(debug.toolUse.partial);
+            }
           }
 
           if (block.messageStop) {

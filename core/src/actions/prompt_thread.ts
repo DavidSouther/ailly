@@ -228,14 +228,27 @@ export function generateOne(
     },
   };
 
-  function runWithTools() {
+  async function runWithTools() {
     const generator = engine.generate(c, settings);
     assertExists(c.responseStream).resolve(generator.stream);
-    return generator.done.finally(() => {
-      // TODO: Check for tool requests
-      c.response = generator.message();
+    await generator.done.finally(() => {
+      c.response = (c.response ?? "") + generator.message();
       assertExists(c.meta).debug = { ...c.meta?.debug, ...generator.debug() };
     });
+    const { toolUse } = generator.debug();
+    if (toolUse?.name === "add") {
+      c.meta?.messages?.push({
+        role: "assistant",
+        content: c.response ?? "",
+        toolUse: {
+          name: "add",
+          input: toolUse.input,
+          result: `${(toolUse.input.args as string[]).map(Number).reduce((a, b) => a + b, 0)}`,
+        },
+      });
+      c.meta = { ...(c.meta ?? {}), continue: true };
+      return runWithTools();
+    }
   }
 
   try {
