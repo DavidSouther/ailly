@@ -106,6 +106,30 @@ export const generate: EngineGenerate<BedrockDebug> = (
         role: message.role,
         content: [{ text: message.content } satisfies ContentBlock],
       })),
+      toolConfig: {
+        tools: [
+          {
+            "toolSpec": {
+              "name": "top_song",
+              "description": "Get the most popular song played on a radio station.",
+              "inputSchema": {
+                "json": {
+                  "type": "object",
+                  "properties": {
+                    "sign": {
+                      "type": "string",
+                      "description": "The call sign for the radio station for which you want the most popular song. Example calls signs are WZPZ and WKRP."
+                    }
+                  },
+                  "required": [
+                    "sign"
+                  ]
+                }
+              }
+            }
+          }
+        ]
+      },
       inferenceConfig: {
         maxTokens,
         stopSequences,
@@ -271,7 +295,7 @@ export async function format(
   return summary;
 }
 
-export async function tune(content: Content[]) {}
+export async function tune(content: Content[]) { }
 
 const td = new TextDecoder();
 export async function vector(inputText: string, _: object): Promise<number[]> {
