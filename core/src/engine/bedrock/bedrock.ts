@@ -40,6 +40,20 @@ const MODEL_MAP: Record<string, string> = {
   sonnet: "us.anthropic.claude-3-7-sonnet-20250219-v1:0",
   haiku: "us.anthropic.claude-3-haiku-20240307-v1:0",
   opus: "us.anthropic.claude-3-opus-20240229-v1:0",
+  sonnet3: "us.anthropic.claude-3-7-sonnet-20250219-v1:0",
+  haiku3: "us.anthropic.claude-3-haiku-20240307-v1:0",
+  opus3: "us.anthropic.claude-3-opus-20240229-v1:0",
+  "sonnet-3": "us.anthropic.claude-3-7-sonnet-20250219-v1:0",
+  "haiku-3": "us.anthropic.claude-3-haiku-20240307-v1:0",
+  "opus-3": "us.anthropic.claude-3-opus-20240229-v1:0",
+  sonnet4: "us.anthropic.claude-sonnet-4-20250514-v1:0",
+  opus4: "us.anthropic.claude-opus-4-20250514-v1:0",
+  "sonnet-4": "us.anthropic.claude-sonnet-4-20250514-v1:0",
+  "opus-4": "us.anthropic.claude-opus-4-20250514-v1:0",
+  nova: "us.amazon.nova-lite-v1:0",
+  novapro: "us.amazon.nova-pro-v1:0",
+  "nova-lite": "us.amazon.nova-lite-v1:0",
+  "nova-pro": "us.amazon.nova-pro-v1:0",
   nova_lite: "us.amazon.nova-lite-v1:0",
   nova_pro: "us.amazon.nova-pro-v1:0",
 };
@@ -322,6 +336,7 @@ export function formatError(content: Content) {
         break;
       case "You don't have access to the model with the specified model ID.":
         base += `Please enable model access to model with id ${model} in the AWS region ${region}.`;
+        base += `https://${region}.console.aws.amazon.com/bedrock/home?region=${region}#/modelaccess`;
         break;
       case "The provided model identifier is invalid.":
         base += `The provided model identifier "${model}" is not recognized. Please ensure it is a valid model deployed in AWS region ${region}, or change your AWS region.`;
