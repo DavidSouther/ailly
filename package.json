@@ -10,7 +10,8 @@
     "test:cli": "npm run ci -w core && npm run ci -w cli && ./integ/integ-noop.sh",
     "test": "npm run test:cli && npm run ci -w web && npm run ci -w extension",
     "prepackage": "npm run build",
-    "package": "npm run --w extension package"
+    "package": "npm run --w extension package",
+    "mock": "npm run build -w core && npm test -w core -- src/mcp.test.ts"
   },
   "workspaces": [
     "core",

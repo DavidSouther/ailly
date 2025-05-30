@@ -10,7 +10,7 @@ test("mock-doc-test", async () => {
     servers: {
       "mock-aws-docs": {
         type: "stdio",
-        command: "npm",
+        command: "node",
         args: ["./lib/testing/mockDocsMCPServer.js"],
         env: {
           FASTMCP_LOG_LEVEL: "ERROR",
