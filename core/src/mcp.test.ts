@@ -40,6 +40,6 @@ test("aws-mcp-test", async () => {
   expect(
     (toolResult.output?.content as Array<Record<string, string>>).length,
   ).toBe(129);
-
+  
   await mcpWrapper.cleanup();
 }, 100000);

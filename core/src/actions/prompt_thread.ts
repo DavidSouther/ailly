@@ -244,6 +244,7 @@ export function generateOne(
           name: "add",
           input: toolUse.input,
           result: `${(toolUse.input.args as string[]).map(Number).reduce((a, b) => a + b, 0)}`,
+          id: toolUse.id,
         },
       });
       c.meta = { ...(c.meta ?? {}), continue: true };

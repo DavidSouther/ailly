@@ -7,7 +7,12 @@ import * as noop from "./noop.js";
 import * as openai from "./openai.js";
 
 export interface EngineDebug {
-  toolUse?: { name: string; input: Record<string, unknown>; partial: string };
+  toolUse?: {
+    name: string;
+    input: Record<string, unknown>;
+    partial: string;
+    id: string;
+  };
   engine?: string;
   model?: string;
   finish?: string;
