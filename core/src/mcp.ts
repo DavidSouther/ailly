@@ -1,8 +1,13 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio";
 
-import { Err, Ok, type Result } from "@davidsouther/jiffies/src/result";
-import type { JSONSchemaTypeName, Tool, ToolInformation } from "./engine/tool";
+import { Err, Ok } from "@davidsouther/jiffies/src/result";
+import type {
+  JSONSchemaTypeName,
+  Tool,
+  ToolInformation,
+  ToolInvocationResult,
+} from "./engine/tool";
 
 export type MCPServerConfig =
   | {
@@ -95,7 +100,7 @@ export class MCPClient {
     toolName: string,
     parameters: Record<string, unknown>,
     context?: string,
-  ): Promise<Result<unknown, unknown>> {
+  ): Promise<ToolInvocationResult> {
     const toolInfo = this.toolsMap.get(toolName);
     if (!toolInfo) {
       return Err({
