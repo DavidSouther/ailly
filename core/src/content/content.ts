@@ -12,10 +12,7 @@ import {
   isAbsolute,
 } from "@davidsouther/jiffies/lib/cjs/fs.js";
 
-import {
-  assertExists,
-  checkExhaustive,
-} from "@davidsouther/jiffies/lib/cjs/assert";
+import { checkExhaustive } from "@davidsouther/jiffies/lib/cjs/assert";
 import type { EngineDebug, Message } from "../engine/index.js";
 import type { Tool } from "../engine/tool.js";
 import { LOGGER } from "../index.js";
@@ -64,7 +61,7 @@ export interface Context {
   mcpClient?: never; // TODO: Define the mcpClient
 }
 
-type MCPConfig =
+type MCPServerConfig =
   | {
       type: "stdio";
       command: string;
@@ -72,6 +69,8 @@ type MCPConfig =
       env?: Record<string, string>;
     }
   | { type: "http"; url: string; headers?: Record<string, string> };
+
+type MCPConfig = Record<string, MCPServerConfig>;
 
 // Additional useful metadata.
 export interface ContentMeta {
