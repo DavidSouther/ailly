@@ -9,20 +9,16 @@ test("aws-mcp-test", async () => {
 
   // Initialize the wrapper with the configuration
   await mcpWrapper.initialize({
-    servers: [
-      {
+    servers: {
+      mock: {
         type: "stdio",
-        command: "uvx",
-        args: [
-          "--from",
-          "awslabs-aws-documentation-mcp-server",
-          "awslabs.aws-documentation-mcp-server.exe",
-        ],
+        command: "npm",
+        args: ["run", "mock-mcp-server"],
         env: {
           FASTMCP_LOG_LEVEL: "ERROR",
         },
       },
-    ],
+    },
   });
 
   const tools = await mcpWrapper.getToolsMap();

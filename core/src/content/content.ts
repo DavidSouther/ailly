@@ -184,19 +184,6 @@ export async function loadContent(
       break;
   }
 
-  // const mcpClient = new MCPClient();
-
-  // // Extract MCP information from meta server and attach MCP Clients to Context
-  // await mcpClient.initialize(meta.mcp);
-
-  // // Assign all the tools to meta.tools
-  // meta.tools = mcpClient.getAllTools();
-
-  // // Attach MCP Clients to context
-  // for (const file of files) {
-  //   file.context.mcpClient = mcpClient;
-  // }
-
   const folders: Record<string, Content> = {};
   if (context !== "none") {
     for (const folder of dir.folders) {
