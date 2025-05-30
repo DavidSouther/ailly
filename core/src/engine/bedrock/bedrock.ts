@@ -169,11 +169,10 @@ export const generate: EngineGenerate<BedrockDebug> = (
           }
 
           if (block.contentBlockStart) {
-            const { name } = block.contentBlockStart.start?.toolUse ?? {
-              name: undefined,
-            };
-            if (name) {
-              debug.toolUse = { name, input: {}, partial: "" };
+            const toolUse = block.contentBlockStart.start?.toolUse;
+            const { name, toolUseId } = toolUse ?? { name: undefined };
+            if (name && toolUseId) {
+              debug.toolUse = { name, input: {}, partial: "", id: toolUseId };
             }
           }
 
