@@ -3,7 +3,7 @@ import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio";
 
 import type { JSONSchemaTypeName, Tool } from "./engine/tool";
 
-export type MCPConfig =
+export type MCPServerConfig =
   | {
       type: "stdio";
       command: string;
@@ -12,11 +12,13 @@ export type MCPConfig =
     }
   | { type: "http"; url: string; headers?: Record<string, string> };
 
+export type MCPConfig = Record<string, MCPServerConfig>;
+
 /**
  * Configuration for MCP servers
  */
 export interface MCPServersConfig {
-  servers: MCPConfig[];
+  servers: MCPConfig;
   inputs?: Array<{
     type: string;
     id: string;
@@ -62,11 +64,7 @@ export class MCPClient {
    * Get or create an MCP client for a server
    */
   async fillToolInformation() {
-    if (this.config?.servers.length === 0) {
-      return;
-    }
-
-    for (const serverConfig of this.config?.servers || []) {
+    for (const serverConfig of Object.values(this.config?.servers ?? {})) {
       const clientInfo = { name: "ailly-client", version: "1.0.0" };
 
       // Create client and transport based on server type
