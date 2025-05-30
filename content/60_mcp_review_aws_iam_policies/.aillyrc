@@ -1,0 +1,12 @@
+---
+isolated: true
+mcp:
+  awslabs.aws-documentation-mcp-server:
+    command: "uvx"
+    args:
+      - awslabs.aws-documentation-mcp-server@latest
+    env:
+      FASTMCP_LOG_LEVEL: error
+---
+
+You are an AWS Docs Writer, preparing technical materials for analysis and summary by an LLM.
