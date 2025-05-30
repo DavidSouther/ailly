@@ -2,6 +2,7 @@
 
 import { mcpWrapper } from "./mcp";
 
+import type { Ok } from "@davidsouther/jiffies/src/result";
 import { expect, test } from "vitest";
 
 test("aws-mcp-test", async () => {
@@ -26,6 +27,18 @@ test("aws-mcp-test", async () => {
   expect(tools.has("read_documentation")).toBe(true);
   expect(tools.has("search_documentation")).toBe(true);
   expect(tools.has("recommend")).toBe(true);
+
+  const toolResult = await mcpWrapper.invokeTool("recommend", {
+    url: "https://docs.aws.amazon.com/AmazonS3/latest/userguide/bucketnamingrules.html",
+  });
+
+  expect(toolResult).toBeDefined();
+  expect("ok" in toolResult).toBe(true);
+  const result = (toolResult as Ok<unknown>).ok;
+  expect(Array.isArray((result as { content: unknown }).content)).toBe(true);
+  expect(
+    (result as { content: Array<Record<string, string>> }).content.length,
+  ).toBe(129);
 
   await mcpWrapper.cleanup();
 }, 100000);
