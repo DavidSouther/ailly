@@ -10,7 +10,9 @@ import { getPlugin, makePipelineSettings } from "..";
 import { type Content, loadContent } from "../content/content.js";
 import { getEngine } from "../engine/index.js";
 import { TIMEOUT } from "../engine/noop.js";
+import type { Tool } from "../engine/tool";
 import { LOGGER } from "../index.js";
+import { MCPClient, type MCPServersConfig } from "../mcp";
 import { withResolvers } from "../util.js";
 import {
   PromptThread,
@@ -188,6 +190,11 @@ describe("PromptThread", () => {
     await Promise.resolve();
     await Promise.resolve();
     await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
     // Enough to get one resolved
 
     expect(thread.isDone).toBe(false);
@@ -241,6 +248,39 @@ describe("PromptThread", () => {
     );
     const context = await loadContent(fs);
     const content = [...Object.values(context)];
+    const client = new (class MockClient extends MCPClient {
+      initialize(_config?: MCPServersConfig): Promise<void> {
+        return Promise.resolve();
+      }
+      getAllTools(): Tool[] {
+        return [
+          {
+            name: "add",
+            parameters: {
+              type: "object",
+              properties: { args: { type: "array" } },
+            },
+          },
+        ];
+      }
+
+      async invokeTool(
+        toolName: string,
+        parameters: Record<string, unknown>,
+        _context?: string,
+      ): Promise<string> {
+        if (toolName === "add") {
+          const { args } = parameters;
+          const nums = (args as string[]).map(Number);
+          const sum = nums.reduce((a, b) => a + b, 0);
+          return `${sum}`;
+        }
+        return "";
+      }
+    })();
+    for (const f of content) {
+      f.context.mcpClient = client;
+    }
     const plugin = await (await getPlugin("none")).default(
       state.engine,
       settings,
@@ -260,7 +300,7 @@ describe("PromptThread", () => {
     expect(thread.errors.length).toBe(0);
 
     expect(content.at(-1)?.response).toBe(
-      "USING TOOL add WITH ARGS [40, 7]\nTOOL RETURNED 47\n",
+      'USING TOOL add WITH ARGS [40, 7]\nTOOL RETURNED "47"\n',
     );
   });
 });

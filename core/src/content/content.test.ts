@@ -365,7 +365,7 @@ describe("Loading aillyrc", () => {
     });
   });
 
-  test("it loads MCP servers", async () => {
+  test("it loads MCP server config", async () => {
     const fs = new FileSystem(
       new ObjectFileSystemAdapter({
         ".aillyrc": `---
