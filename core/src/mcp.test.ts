@@ -31,10 +31,10 @@ test("mock-doc-test", async () => {
   expect(tool.tool.name).toBe("add");
 
   //test invokeTool
-  const result = await mcpWrapper.invokeTool("add", { a: 1, b: 2 });
+  const result = await mcpWrapper.invokeTool("add", { args: [1, 2] });
   expect(result.content[0].text).toBe("3");
 
-  const resultTwo = await mcpWrapper.invokeTool("add", { a: 3, b: 2 });
+  const resultTwo = await mcpWrapper.invokeTool("add", { args: [3, 2] });
   expect(resultTwo.content[0].text).toBe("5");
 
   await mcpWrapper.cleanup();
