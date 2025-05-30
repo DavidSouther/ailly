@@ -1,12 +1,8 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio";
 
-import type {
-  JSONSchemaTypeName,
-  Tool,
-  ToolInformation,
-  ToolInvocationResult,
-} from "./engine/tool";
+import { Err, Ok, type Result } from "@davidsouther/jiffies/src/result";
+import type { JSONSchemaTypeName, Tool, ToolInformation } from "./engine/tool";
 
 export type MCPServerConfig =
   | {
@@ -99,16 +95,13 @@ export class MCPClient {
     toolName: string,
     parameters: Record<string, unknown>,
     context?: string,
-  ): Promise<ToolInvocationResult> {
+  ): Promise<Result<unknown, unknown>> {
     const toolInfo = this.toolsMap.get(toolName);
     if (!toolInfo) {
-      return {
-        status: "error",
-        error: {
-          message: `Tool ${toolName} not found`,
-          code: "TOOL_NOT_FOUND",
-        },
-      };
+      return Err({
+        message: `Tool ${toolName} not found`,
+        code: "TOOL_NOT_FOUND",
+      });
     }
 
     const { client } = toolInfo;
@@ -120,24 +113,19 @@ export class MCPClient {
         ...(context ? { context } : {}),
       });
 
-      return {
-        status: result.isError ? "error" : "success",
-        output: !result.isError ? result : undefined,
-        error: result.isError
-          ? {
-              message: `Tool execution failed. Result: ${JSON.stringify(result)}`,
-              code: "TOOL_EXECUTION_FAILED",
-            }
-          : undefined,
-      };
-    } catch (error) {
-      return {
-        status: "error",
-        error: {
-          message: error instanceof Error ? error.message : String(error),
+      if (result.isError) {
+        return Err({
+          message: `Tool execution failed. Result: ${JSON.stringify(result)}`,
           code: "TOOL_EXECUTION_FAILED",
-        },
-      };
+        });
+      }
+
+      return Ok(result);
+    } catch (error) {
+      return Err({
+        message: error instanceof Error ? error.message : String(error),
+        code: "TOOL_EXECUTION_FAILED",
+      });
     }
   }
 

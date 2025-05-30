@@ -31,12 +31,3 @@ export interface ToolInformation {
   client: Client;
   tool: Tool;
 }
-
-export interface ToolInvocationResult {
-  status: "success" | "error";
-  output?: Record<string, unknown>;
-  error?: {
-    message: string;
-    code?: string;
-  };
-}
