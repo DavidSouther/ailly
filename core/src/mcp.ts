@@ -1,7 +1,13 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio";
 
-import type { JSONSchemaTypeName, Tool } from "./engine/tool";
+import { Err, Ok } from "@davidsouther/jiffies/src/result";
+import type {
+  JSONSchemaTypeName,
+  Tool,
+  ToolInformation,
+  ToolInvocationResult,
+} from "./engine/tool";
 
 export type MCPServerConfig =
   | {
@@ -25,11 +31,6 @@ export interface MCPServersConfig {
     description: string;
     password?: boolean;
   }>;
-}
-
-export interface ToolInformation {
-  client: Client;
-  tool: Tool;
 }
 
 /**
@@ -99,19 +100,38 @@ export class MCPClient {
     toolName: string,
     parameters: Record<string, unknown>,
     context?: string,
-  ) {
+  ): Promise<ToolInvocationResult> {
     const toolInfo = this.toolsMap.get(toolName);
     if (!toolInfo) {
-      throw new Error(`Tool ${toolName} not found`);
+      return Err({
+        message: `Tool ${toolName} not found`,
+        code: "TOOL_NOT_FOUND",
+      });
     }
 
     const { client } = toolInfo;
 
-    return await client.callTool({
-      name: toolName,
-      arguments: parameters,
-      ...(context ? { context } : {}),
-    });
+    try {
+      const result = await client.callTool({
+        name: toolName,
+        arguments: parameters,
+        ...(context ? { context } : {}),
+      });
+
+      if (result.isError) {
+        return Err({
+          message: `Tool execution failed. Result: ${JSON.stringify(result)}`,
+          code: "TOOL_EXECUTION_FAILED",
+        });
+      }
+
+      return Ok(result);
+    } catch (error) {
+      return Err({
+        message: error instanceof Error ? error.message : String(error),
+        code: "TOOL_EXECUTION_FAILED",
+      });
+    }
   }
 
   getAllTools(): Tool[] {

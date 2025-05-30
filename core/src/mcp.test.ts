@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+import { mcpWrapper } from "./mcp"
 import { expect, test } from "vitest";
 import { type MCPServersConfig, type ToolInformation, mcpWrapper } from "./mcp";
 
@@ -22,7 +23,7 @@ test("mock-doc-test", async () => {
   await mcpWrapper.initialize(mcpConfig);
 
   //test get tools
-  const tools: Map<string, ToolInformation> = await mcpWrapper.getToolsMap();
+  const tools: Map<string, ToolInformation> = mcpWrapper.getToolsMap();
   expect(tools.size).toBe(1);
   expect(tools.has("add")).toBe(true);
 
