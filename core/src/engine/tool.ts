@@ -1,3 +1,5 @@
+import type { Client } from "@modelcontextprotocol/sdk/client/index";
+
 export type JSONSchemaTypeName =
   | "string"
   | "number"
@@ -23,4 +25,18 @@ export interface Tool {
   name: string;
   description?: string;
   parameters: ToolParameters;
+}
+
+export interface ToolInformation {
+  client: Client;
+  tool: Tool;
+}
+
+export interface ToolInvocationResult {
+  status: "success" | "error";
+  output?: Record<string, unknown>;
+  error?: {
+    message: string;
+    code?: string;
+  };
 }

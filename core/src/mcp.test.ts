@@ -9,8 +9,8 @@ test("aws-mcp-test", async () => {
 
   // Initialize the wrapper with the configuration
   await mcpWrapper.initialize({
-    servers: [
-      {
+    servers: {
+      mock: {
         type: "stdio",
         command: "uvx",
         args: [
@@ -22,7 +22,7 @@ test("aws-mcp-test", async () => {
           FASTMCP_LOG_LEVEL: "ERROR",
         },
       },
-    ],
+    },
   });
 
   const tools = await mcpWrapper.getToolsMap();
@@ -30,6 +30,16 @@ test("aws-mcp-test", async () => {
   expect(tools.has("read_documentation")).toBe(true);
   expect(tools.has("search_documentation")).toBe(true);
   expect(tools.has("recommend")).toBe(true);
+
+  const toolResult = await mcpWrapper.invokeTool("recommend", {
+    url: "https://docs.aws.amazon.com/AmazonS3/latest/userguide/bucketnamingrules.html",
+  });
+
+  expect(toolResult).toBeDefined();
+  expect(toolResult.output?.content).toBeInstanceOf(Array);
+  expect(
+    (toolResult.output?.content as Array<Record<string, string>>).length,
+  ).toBe(129);
 
   await mcpWrapper.cleanup();
 }, 100000);
