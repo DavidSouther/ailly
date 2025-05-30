@@ -7,7 +7,6 @@ export * as content from "./content/content.js";
 export { GitignoreFs } from "./content/gitignore_fs.js";
 export { getEngine } from "./engine/index.js";
 export { getPlugin } from "./plugin/index.js";
-//export { MCPClient } from "./mcp.js";
 
 export const LOGGER = getLogger("@ailly/core");
 LOGGER.level = getLogLevel(process.env.AILLY_LOG_LEVEL);
