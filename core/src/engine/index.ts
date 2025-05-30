@@ -47,6 +47,7 @@ export interface Message {
   toolUse?: {
     name: string;
     input: Record<string, unknown>;
+    // TODO: Results can be more varied that strings, at least in the case of Bedrock.
     result: string;
     id?: string;
   };

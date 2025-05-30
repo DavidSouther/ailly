@@ -15,7 +15,12 @@ import { getLogger } from "@davidsouther/jiffies/lib/cjs/log.js";
 import { assertExists } from "@davidsouther/jiffies/lib/cjs/assert";
 import type { Content, ContentMeta, View } from "../../content/content.js";
 import { LOGGER as ROOT_LOGGER, content } from "../../index.js";
-import type { EngineDebug, EngineGenerate, Summary } from "../index.js";
+import type {
+  EngineDebug,
+  EngineGenerate,
+  Message,
+  Summary,
+} from "../index.js";
 import { addContentMessages } from "../messages.js";
 import { type Models, type Prompt, PromptBuilder } from "./prompt_builder.js";
 
@@ -256,26 +261,6 @@ export const contentToToolConfig = (c: Content) => {
           },
         }) as Tool.ToolSpecMember,
     ),
-    // {
-    //   "toolSpec": {
-    //     "name": "top_song",
-    //     "description": "Get the most popular song played on a radio station.",
-    //     "inputSchema": {
-    //       "json": {
-    //         "type": "object",
-    //         "properties": {
-    //           "sign": {
-    //             "type": "string",
-    //             "description": "The call sign for the radio station for which you want the most popular song. Example calls signs are WZPZ and WKRP."
-    //           }
-    //         },
-    //         "required": [
-    //           "sign"
-    //         ]
-    //       }
-    //     }
-    //   }
-    // }
   };
 };
 
@@ -289,7 +274,6 @@ export const createConverseStreamCommand = (
   const temperature =
     (c.meta?.temperature ?? c.context.edit !== undefined) ? 0.0 : 1.0;
   const maxTokens = c.meta?.maxTokens;
-
   return {
     modelId: model,
     system: [
@@ -298,10 +282,10 @@ export const createConverseStreamCommand = (
       } satisfies SystemContentBlock,
     ],
     messages: prompt.messages.map((message) => ({
-      role: message.role,
-      content: [{ text: message.content } satisfies ContentBlock],
+      role: message.role === "system" ? "user" : message.role,
+      content: buildContent(message),
     })),
-    toolConfig: contentToToolConfig(c),
+    toolConfig: c.meta?.tools ? contentToToolConfig(c) : undefined,
     inferenceConfig: {
       maxTokens,
       stopSequences,
@@ -309,6 +293,25 @@ export const createConverseStreamCommand = (
     },
   };
 };
+
+function buildContent(m: Message): ContentBlock[] {
+  if (m.toolUse) {
+    return [
+      {
+        toolResult: {
+          toolUseId: m.toolUse.id,
+          content: [
+            {
+              text: m.toolUse.result,
+            },
+          ],
+        },
+      },
+    ];
+  }
+
+  return [{ text: m.content } satisfies ContentBlock];
+}
 
 function makeClient() {
   return new BedrockRuntimeClient({

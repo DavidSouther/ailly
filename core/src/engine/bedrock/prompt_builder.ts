@@ -1,13 +1,8 @@
 import type { Message } from "../index.js";
 
 export interface Prompt {
-  messages: LLMMessage[];
+  messages: Message[];
   system: string;
-}
-
-export interface LLMMessage {
-  role: "user" | "assistant";
-  content: string;
 }
 
 export type Models =
@@ -43,24 +38,25 @@ export class PromptBuilder {
 
 export function converseBuilder(messages: Message[]): Prompt {
   let system = "";
-  const promptMessages: LLMMessage[] = [];
+  const promptMessages: Message[] = [];
   for (const message of messages) {
-    switch (message.role) {
-      case "system":
-        system += `${message.content}\n`;
-        break;
-      case "assistant":
-      case "user": {
-        const last = promptMessages.at(-1);
-        if (last?.role === message.role) {
-          last.content += `\n${message.content}`;
-        } else {
-          promptMessages.push({
-            role: message.role,
-            content: message.content,
-          });
-        }
-        break;
+    if (message.role === "system") {
+      system += `${message.content}\n`;
+    } else if (message.role === "user" && message.toolUse) {
+      promptMessages.push({
+        role: message.role,
+        toolUse: message.toolUse,
+        content: "",
+      });
+    } else {
+      const last = promptMessages.at(-1);
+      if (last?.role === message.role) {
+        last.content += `\n${message.content}`;
+      } else {
+        promptMessages.push({
+          role: message.role,
+          content: message.content,
+        });
       }
     }
   }
