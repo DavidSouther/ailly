@@ -100,6 +100,7 @@ function makeMessages(content: Content): [string, EngineDebug] {
             name: tool,
             input: { args },
             partial: "",
+            id: "",
           },
         },
       ];
