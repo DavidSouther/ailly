@@ -1,44 +1,42 @@
 #!/usr/bin/env node
 
-import { mcpWrapper } from "./mcp";
-
-import type { Ok } from "@davidsouther/jiffies/src/result";
+import { mcpWrapper } from "./mcp"
 import { expect, test } from "vitest";
+import { type MCPServersConfig, type ToolInformation, mcpWrapper } from "./mcp";
 
-test("aws-mcp-test", async () => {
+test("mock-doc-test", async () => {
   console.log("Initializing MCP wrapper...");
 
-  // Initialize the wrapper with the configuration
-  await mcpWrapper.initialize({
+  const mcpConfig: MCPServersConfig = {
     servers: {
-      mock: {
+      "mock-aws-docs": {
         type: "stdio",
-        command: "npm",
-        args: ["run", "mock-mcp-server"],
+        command: "node",
+        args: ["./lib/testing/mockDocsMCPServer.js"],
         env: {
           FASTMCP_LOG_LEVEL: "ERROR",
         },
       },
     },
-  });
+  };
 
-  const tools = await mcpWrapper.getToolsMap();
-  expect(tools.size).toBe(3);
-  expect(tools.has("read_documentation")).toBe(true);
-  expect(tools.has("search_documentation")).toBe(true);
-  expect(tools.has("recommend")).toBe(true);
+  await mcpWrapper.initialize(mcpConfig);
 
-  const toolResult = await mcpWrapper.invokeTool("recommend", {
-    url: "https://docs.aws.amazon.com/AmazonS3/latest/userguide/bucketnamingrules.html",
-  });
+  //test get tools
+  const tools: Map<string, ToolInformation> = mcpWrapper.getToolsMap();
+  expect(tools.size).toBe(1);
+  expect(tools.has("add")).toBe(true);
 
-  expect(toolResult).toBeDefined();
-  expect("ok" in toolResult).toBe(true);
-  const result = (toolResult as Ok<unknown>).ok;
-  expect(Array.isArray((result as { content: unknown }).content)).toBe(true);
-  expect(
-    (result as { content: Array<Record<string, string>> }).content.length,
-  ).toBe(129);
+  //test get tool
+  const tool = mcpWrapper.getTool("add");
+  expect(tool.tool.name).toBe("add");
+
+  //test invokeTool
+  const result = await mcpWrapper.invokeTool("add", { args: [1, 2] });
+  expect(result.content[0].text).toBe("3");
+
+  const resultTwo = await mcpWrapper.invokeTool("add", { args: [3, 2] });
+  expect(resultTwo.content[0].text).toBe("5");
 
   await mcpWrapper.cleanup();
-}, 100000);
+});
