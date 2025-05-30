@@ -1,6 +1,7 @@
 import { dirname, join } from "node:path";
 import matter, { type GrayMatterFile } from "gray-matter";
 import * as YAML from "yaml";
+import { MCPClient, type MCPConfig } from "../mcp";
 
 import {
   type FileSystem,
@@ -61,17 +62,8 @@ export interface Context {
   edit?:
     | { start: number; end: number; file: string }
     | { after: number; file: string };
-  mcpClient?: never; // TODO: Define the mcpClient
+  mcpClient?: MCPClient;
 }
-
-type MCPConfig =
-  | {
-      type: "stdio";
-      command: string;
-      args?: string[];
-      env?: Record<string, string>;
-    }
-  | { type: "http"; url: string; headers?: Record<string, string> };
 
 // Additional useful metadata.
 export interface ContentMeta {
@@ -195,8 +187,18 @@ export async function loadContent(
       break;
   }
 
-  // TODO: Extract MCP information from meta server and attach MCP Clients to Context
-  // TODO: stdio, http, and `mock`
+  // const mcpClient = new MCPClient();
+
+  // // Extract MCP information from meta server and attach MCP Clients to Context
+  // await mcpClient.initialize(meta.mcp);
+
+  // // Assign all the tools to meta.tools
+  // meta.tools = mcpClient.getAllTools();
+
+  // // Attach MCP Clients to context
+  // for (const file of files) {
+  //   file.context.mcpClient = mcpClient;
+  // }
 
   const folders: Record<string, Content> = {};
   if (context !== "none") {

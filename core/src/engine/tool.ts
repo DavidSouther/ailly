@@ -1,4 +1,4 @@
-type JSONSchemaTypeName =
+export type JSONSchemaTypeName =
   | "string"
   | "number"
   | "integer"
