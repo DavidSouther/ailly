@@ -1,5 +1,4 @@
 import {
-  type Message as BedrockMessage,
   BedrockRuntimeClient,
   type ContentBlock,
   ConverseStreamCommand,
@@ -13,8 +12,8 @@ import { fromNodeProviderChain } from "@aws-sdk/credential-providers";
 import { getLogger } from "@davidsouther/jiffies/lib/cjs/log.js";
 
 import { assertExists } from "@davidsouther/jiffies/lib/cjs/assert";
-import type { Content, ContentMeta, View } from "../../content/content.js";
-import { LOGGER as ROOT_LOGGER, content } from "../../index.js";
+import type { Content, View } from "../../content/content.js";
+import { LOGGER as ROOT_LOGGER } from "../../index.js";
 import type { EngineDebug, EngineGenerate, Summary } from "../index.js";
 import { addContentMessages } from "../messages.js";
 import { type Models, type Prompt, PromptBuilder } from "./prompt_builder.js";

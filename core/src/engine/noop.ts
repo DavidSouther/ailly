@@ -1,4 +1,6 @@
 import { getLogger } from "@davidsouther/jiffies/lib/cjs/log.js";
+import { isOk, unwrap } from "@davidsouther/jiffies/lib/esm/result.js";
+
 import type { Content } from "../content/content.js";
 import { type PipelineSettings, LOGGER as ROOT_LOGGER } from "../index.js";
 import type { EngineDebug, EngineGenerate } from "./index.js";
@@ -83,7 +85,13 @@ function makeMessages(content: Content): [string, EngineDebug] {
 
   const last = messageList.at(-1);
   if (last?.toolUse) {
-    return [`TOOL RETURNED ${last.toolUse.result}\n`, {}];
+    if (isOk(last.toolUse.result)) {
+      const result = unwrap(last.toolUse.result) as {
+        content: Array<{ text: string }>;
+      };
+      return [`TOOL RETURNED ${result.content[0].text}\n`, {}];
+    }
+    return [`TOOL FAILED ${last.toolUse.result.err.message}\n`, {}];
   }
 
   if (last?.content.includes("USE")) {

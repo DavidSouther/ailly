@@ -5,6 +5,7 @@ import * as bedrock from "./bedrock/bedrock.js";
 import * as mistral from "./mistral/mistral.js";
 import * as noop from "./noop.js";
 import * as openai from "./openai.js";
+import type { ToolInvocationResult } from "./tool";
 
 export interface EngineDebug {
   toolUse?: {
@@ -47,7 +48,7 @@ export interface Message {
   toolUse?: {
     name: string;
     input: Record<string, unknown>;
-    result: string;
+    result: ToolInvocationResult;
     id?: string;
   };
   tokens?: number;

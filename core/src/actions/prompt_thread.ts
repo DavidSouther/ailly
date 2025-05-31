@@ -143,6 +143,10 @@ export class PromptThread {
       LOGGER.warn("Error generating content", { err: { message, stack } });
       this.errors.push([i, err as Error]);
       throw err;
+    } finally {
+      if (c.context.mcpClient) {
+        c.context.mcpClient.cleanup();
+      }
     }
     return c;
   }
@@ -264,7 +268,7 @@ export function generateOne(
         toolUse: {
           name: toolUse.name,
           input: toolUse.input,
-          result: JSON.stringify(result),
+          result: result,
           id: toolUse.id,
         },
       });
