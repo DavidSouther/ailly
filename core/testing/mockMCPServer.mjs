@@ -12,11 +12,11 @@ server.tool(
   "add",
   {
     args: z
-      .array(z.number().int())
+      .array(z.number().int().or(z.string()))
       .describe("Array of numbers to add together"),
   },
   async ({ args }) => {
-    const sum = args.reduce((total, num) => total + num, 0);
+    const sum = args.reduce((total, num) => total + Number(num), 0);
 
     return {
       content: [{ type: "text", text: String(sum) }],

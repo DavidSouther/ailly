@@ -1,9 +1,9 @@
+import { Err, Ok } from "@davidsouther/jiffies/lib/esm/result.js";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 
-import { Err, Ok } from "@davidsouther/jiffies/src/result.js";
 import type {
   JSONSchemaTypeName,
   Tool,
@@ -208,6 +208,11 @@ export class MCPClient {
   async cleanup(): Promise<void> {
     // The Client class doesn't have a disconnect method
     // We'll just clear our maps
+    for (const client of this.clients.values()) {
+      await client.close();
+    }
+    this.clients.clear();
+    this.toolsMap.clear();
   }
 }
 
