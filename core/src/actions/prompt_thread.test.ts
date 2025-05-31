@@ -268,12 +268,13 @@ describe("PromptThread", () => {
         toolName: string,
         parameters: Record<string, unknown>,
         _context?: string,
-      ): Promise<string> {
+      ): // biome-ignore lint/suspicious/noExplicitAny: for the mock
+      Promise<any> {
         if (toolName === "add") {
           const { args } = parameters;
           const nums = (args as string[]).map(Number);
           const sum = nums.reduce((a, b) => a + b, 0);
-          return `${sum}`;
+          return sum;
         }
         return "";
       }

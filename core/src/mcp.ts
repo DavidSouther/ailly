@@ -1,5 +1,5 @@
-import { Client } from "@modelcontextprotocol/sdk/client/index";
-import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio";
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 
 import { Err, Ok } from "@davidsouther/jiffies/src/result";
 import type {

@@ -6,40 +6,68 @@ import {
 } from "@davidsouther/jiffies/lib/cjs/fs.js";
 import { cleanState } from "@davidsouther/jiffies/lib/cjs/scope/state.js";
 
-import { type Content, loadContent } from "../../content/content";
+import { type Content, loadContent } from "../../content/content.js";
 import { makePipelineSettings } from "../../index.js";
-import { contentToToolConfig, format } from "./bedrock";
-import { converseBuilder } from "./prompt_builder.js";
+import type { Message } from "../index.js";
+import { format } from "./bedrock";
+import {
+  type Models,
+  contentToToolConfig,
+  converseBuilder,
+} from "./prompt_builder.js";
+
+const TEST_MODEL: Models = "us.anthropic.claude-3-haiku-20240307-v1:0";
 
 describe("bedrock claude3", () => {
   describe("prompt builder", () => {
+    function makeContentForMessages(messages: Message[]) {
+      return {
+        name: "test",
+        path: "test",
+        outPath: "test",
+        prompt: "test",
+        context: { view: {} },
+        meta: { messages },
+      };
+    }
     it("combines system prompts", () => {
-      const actual = converseBuilder([
-        { role: "system", content: "sysa" },
-        { role: "system", content: "sysb" },
-      ]);
-      expect(actual.system).toEqual("sysa\nsysb\n");
+      const actual = converseBuilder(
+        TEST_MODEL,
+        makeContentForMessages([
+          { role: "system", content: "sysa" },
+          { role: "system", content: "sysb" },
+        ]),
+      );
+      expect(actual.system).toEqual([{ text: "sysa\nsysb" }]);
     });
 
     it("combines user prompts", () => {
-      const actual = converseBuilder([
-        { role: "user", content: "usera" },
-        { role: "user", content: "userb" },
-      ]);
+      const actual = converseBuilder(
+        TEST_MODEL,
+        makeContentForMessages([
+          { role: "user", content: "usera" },
+          { role: "user", content: "userb" },
+        ]),
+      );
       expect(actual.messages).toEqual([
-        { role: "user", content: "usera\nuserb" },
+        { role: "user", content: [{ text: "usera\nuserb" }] },
       ]);
     });
 
     it("combines assistant prompts", () => {
-      const actual = converseBuilder([
-        { role: "assistant", content: "assista" },
-        { role: "assistant", content: "assistb" },
-      ]);
+      const actual = converseBuilder(
+        TEST_MODEL,
+        makeContentForMessages([
+          { role: "assistant", content: "assista" },
+          { role: "assistant", content: "assistb" },
+        ]),
+      );
       expect(actual.messages).toEqual([
-        { role: "assistant", content: "assista\nassistb" },
+        { role: "assistant", content: [{ text: "assista\nassistb" }] },
       ]);
     });
+
+    it("adds tool use blocks", () => {});
   });
 
   describe("contentToToolConfig", () => {

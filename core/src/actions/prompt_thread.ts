@@ -9,12 +9,13 @@ import {
   mergeViews,
 } from "../content/template.js";
 import type { Engine } from "../engine/index.js";
+import type { Tool } from "../engine/tool.js";
 import {
   DEFAULT_SCHEDULER_LIMIT,
   LOGGER,
   type PipelineSettings,
 } from "../index.js";
-import { MCPClient } from "../mcp";
+import { MCPClient, type MCPServersConfig } from "../mcp.js";
 import type { Plugin } from "../plugin/index.js";
 
 export interface PromptThreadsSummary {
@@ -131,6 +132,44 @@ export class PromptThread {
       // Attach MCP Clients to context
       c.context.mcpClient = mcpClient;
     }
+
+    // Remove below
+    c.context.mcpClient = new (class MockClient extends MCPClient {
+      initialize(_config?: MCPServersConfig): Promise<void> {
+        return Promise.resolve();
+      }
+      getAllTools(): Tool[] {
+        return [
+          {
+            name: "add",
+            description: "Tool for adding many numbers.",
+            parameters: {
+              type: "object",
+              properties: { args: { type: "array" } },
+            },
+          },
+        ];
+      }
+
+      async invokeTool(
+        toolName: string,
+        parameters: Record<string, unknown>,
+        _context?: string,
+        // biome-ignore lint/suspicious/noExplicitAny: reason
+      ): Promise<any> {
+        if (toolName === "add") {
+          const { args } = parameters;
+          const nums = (args as string[]).map(Number);
+          const sum = nums.reduce((a, b) => a + b, 0);
+          return `${sum}`;
+        }
+        return "";
+      }
+    })();
+
+    c.meta ??= {};
+    c.meta.tools = c.context.mcpClient.getAllTools();
+    // Remove above
 
     try {
       await this.template(c, this.view);
