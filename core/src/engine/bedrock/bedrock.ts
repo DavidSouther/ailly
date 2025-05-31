@@ -1,35 +1,23 @@
 import {
-  type Message as BedrockMessage,
   BedrockRuntimeClient,
-  type ContentBlock,
   ConverseStreamCommand,
   type ConverseStreamCommandInput,
   InvokeModelCommand,
-  type SystemContentBlock,
-  type Tool,
-  type ToolInputSchema,
 } from "@aws-sdk/client-bedrock-runtime";
 import { fromNodeProviderChain } from "@aws-sdk/credential-providers";
 import { getLogger } from "@davidsouther/jiffies/lib/cjs/log.js";
 
 import { assertExists } from "@davidsouther/jiffies/lib/cjs/assert";
-import type { Content, ContentMeta, View } from "../../content/content.js";
-import { LOGGER as ROOT_LOGGER, content } from "../../index.js";
-import type {
-  EngineDebug,
-  EngineGenerate,
-  Message,
-  Summary,
-} from "../index.js";
+import type { Content, View } from "../../content/content.js";
+import { LOGGER as ROOT_LOGGER } from "../../index.js";
+import type { EngineDebug, EngineGenerate, Summary } from "../index.js";
 import { addContentMessages } from "../messages.js";
-import { type Models, type Prompt, PromptBuilder } from "./prompt_builder.js";
+import { MODEL_MAP, type Models, PromptBuilder } from "./prompt_builder.js";
 
 export const name = "bedrock";
 export const DEFAULT_MODEL = "sonnet";
 
 const LOGGER = getLogger("@ailly/core:bedrock");
-const DEFAULT_SYSTEM_PROMPT = "You are Ailly, the helpful AI Writer's Ally.";
-
 export interface BedrockDebug extends EngineDebug {
   statistics?: {
     inputTokenCount?: number;
@@ -43,27 +31,6 @@ export interface BedrockDebug extends EngineDebug {
   id: string;
 }
 
-const MODEL_MAP: Record<string, string> = {
-  sonnet: "us.anthropic.claude-3-7-sonnet-20250219-v1:0",
-  haiku: "us.anthropic.claude-3-haiku-20240307-v1:0",
-  opus: "us.anthropic.claude-3-opus-20240229-v1:0",
-  sonnet3: "us.anthropic.claude-3-7-sonnet-20250219-v1:0",
-  haiku3: "us.anthropic.claude-3-haiku-20240307-v1:0",
-  opus3: "us.anthropic.claude-3-opus-20240229-v1:0",
-  "sonnet-3": "us.anthropic.claude-3-7-sonnet-20250219-v1:0",
-  "haiku-3": "us.anthropic.claude-3-haiku-20240307-v1:0",
-  "opus-3": "us.anthropic.claude-3-opus-20240229-v1:0",
-  sonnet4: "us.anthropic.claude-sonnet-4-20250514-v1:0",
-  opus4: "us.anthropic.claude-opus-4-20250514-v1:0",
-  "sonnet-4": "us.anthropic.claude-sonnet-4-20250514-v1:0",
-  "opus-4": "us.anthropic.claude-opus-4-20250514-v1:0",
-  nova: "us.amazon.nova-lite-v1:0",
-  novapro: "us.amazon.nova-pro-v1:0",
-  "nova-lite": "us.amazon.nova-lite-v1:0",
-  "nova-pro": "us.amazon.nova-pro-v1:0",
-  nova_lite: "us.amazon.nova-lite-v1:0",
-  nova_pro: "us.amazon.nova-pro-v1:0",
-};
 
 declare module "@davidsouther/jiffies/lib/cjs/log.js" {
   interface Logger {
@@ -82,18 +49,34 @@ export const generate: EngineGenerate<BedrockDebug> = (
   LOGGER.trace = LOGGER.logAt(0.5, "TRACE");
   const bedrock = makeClient();
   model = MODEL_MAP[model] ?? model;
-  const inMessages = c.meta?.messages ?? [];
-  if (!inMessages.find((m) => m.role === "user")) {
+  c.meta ??= {};
+  c.meta.messages ??= [];
+  if (!c.meta.messages.find((m) => m.role === "user")) {
     throw new Error("Bedrock must have at least one message with role: user");
   }
   const promptBuilder = new PromptBuilder(model as Models);
-  const prompt: Prompt = promptBuilder.build(inMessages);
-  prompt.system = prompt.system.trim() || DEFAULT_SYSTEM_PROMPT;
+  const converseStreamCommand: ConverseStreamCommandInput =
+    promptBuilder.build(c);
 
   LOGGER.debug("Bedrock sending prompt", {
-    ...prompt,
-    messages: [`...${inMessages.length} messages...`],
-    system: `${prompt.system.slice(0, 20)}...`,
+    messages: converseStreamCommand.messages?.map((m) => ({
+      role: m.role,
+      content: m.content?.map((block) => {
+        switch (true) {
+          case !!block.text:
+            return `${block.text.slice(0, 60)}...`;
+          case !!block.toolUse:
+            return `${block.toolUse.name}(${JSON.stringify(block.toolUse.input)})#${block.toolUse.toolUseId}`;
+          case !!block.toolResult:
+            return `#${block.toolResult.toolUseId} = ${JSON.stringify(block.toolResult.content)}`;
+        }
+      }),
+    })),
+    system: `${converseStreamCommand.system?.slice(0, 20) ?? ""}...`,
+  });
+
+  LOGGER.trace("Sending ConverseStreamCommand", {
+    converseStreamCommand,
   });
 
   try {
@@ -109,11 +92,6 @@ export const generate: EngineGenerate<BedrockDebug> = (
     const stream = new TransformStream();
     const writer = stream.writable.getWriter();
     let message: string = c.meta?.continue ? (c.response ?? "") : "";
-    const converseStreamCommand: ConverseStreamCommandInput =
-      createConverseStreamCommand(model, c, prompt);
-    LOGGER.trace("Sending ConverseStreamCommand", {
-      converseStreamCommand,
-    });
     const done = bedrock
       .send(new ConverseStreamCommand(converseStreamCommand))
       .then(async (response) => {
@@ -247,72 +225,6 @@ export const generate: EngineGenerate<BedrockDebug> = (
   }
 };
 
-export const contentToToolConfig = (c: Content) => {
-  return {
-    tools: c.meta?.tools?.map(
-      (tool) =>
-        ({
-          toolSpec: {
-            name: tool.name,
-            description: tool.description,
-            inputSchema: {
-              json: tool.parameters,
-            } as unknown as ToolInputSchema.JsonMember, // We're more strict than Bedrock, hence the unknown cast.
-          },
-        }) as Tool.ToolSpecMember,
-    ),
-  };
-};
-
-export const createConverseStreamCommand = (
-  model: string,
-  c: Content,
-  prompt: Prompt,
-): ConverseStreamCommandInput => {
-  const stopSequences = c.context.edit ? ["```"] : undefined;
-  // Use given temperature; or 0 for edit (don't want creativity) but 1.0 generally.
-  const temperature =
-    (c.meta?.temperature ?? c.context.edit !== undefined) ? 0.0 : 1.0;
-  const maxTokens = c.meta?.maxTokens;
-  return {
-    modelId: model,
-    system: [
-      {
-        text: prompt.system,
-      } satisfies SystemContentBlock,
-    ],
-    messages: prompt.messages.map((message) => ({
-      role: message.role === "system" ? "user" : message.role,
-      content: buildContent(message),
-    })),
-    toolConfig: c.meta?.tools ? contentToToolConfig(c) : undefined,
-    inferenceConfig: {
-      maxTokens,
-      stopSequences,
-      temperature,
-    },
-  };
-};
-
-function buildContent(m: Message): ContentBlock[] {
-  if (m.toolUse) {
-    return [
-      {
-        toolResult: {
-          toolUseId: m.toolUse.id,
-          content: [
-            {
-              text: m.toolUse.result,
-            },
-          ],
-        },
-      },
-    ];
-  }
-
-  return [{ text: m.content } satisfies ContentBlock];
-}
-
 function makeClient() {
   return new BedrockRuntimeClient({
     credentials: fromNodeProviderChain({
@@ -394,7 +306,7 @@ export function formatError(content: Content) {
         }
         break;
       case "You don't have access to the model with the specified model ID.":
-        base += `Please enable model access to model with id ${model} in the AWS region ${region}.`;
+        base += `Please enable model access to model with id ${model} in the AWS region ${region}.\n`;
         base += `https://${region}.console.aws.amazon.com/bedrock/home?region=${region}#/modelaccess`;
         break;
       case "The provided model identifier is invalid.":

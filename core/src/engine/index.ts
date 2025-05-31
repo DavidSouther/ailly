@@ -6,6 +6,9 @@ import * as mistral from "./mistral/mistral.js";
 import * as noop from "./noop.js";
 import * as openai from "./openai.js";
 
+export const DEFAULT_SYSTEM_PROMPT =
+  "You are Ailly, the helpful AI Writer's Ally.";
+
 export interface EngineDebug {
   toolUse?: {
     name: string;
