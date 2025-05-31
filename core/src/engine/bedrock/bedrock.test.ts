@@ -6,9 +6,9 @@ import {
 } from "@davidsouther/jiffies/lib/cjs/fs.js";
 import { cleanState } from "@davidsouther/jiffies/lib/cjs/scope/state.js";
 
-import { loadContent } from "../../content/content";
+import { type Content, loadContent } from "../../content/content";
 import { makePipelineSettings } from "../../index.js";
-import { format } from "./bedrock";
+import { contentToToolConfig, format } from "./bedrock";
 import { converseBuilder } from "./prompt_builder.js";
 
 describe("bedrock claude3", () => {
@@ -39,6 +39,82 @@ describe("bedrock claude3", () => {
       expect(actual.messages).toEqual([
         { role: "assistant", content: "assista\nassistb" },
       ]);
+    });
+  });
+
+  describe("contentToToolConfig", () => {
+    it("converts content tools to Bedrock tool config", () => {
+      const content: Content = {
+        path: "/test/path",
+        outPath: "/test/outPath",
+        name: "test",
+        prompt: "test prompt",
+        context: { view: false },
+        meta: {
+          tools: [
+            {
+              name: "test_tool",
+              description: "A test tool for testing",
+              parameters: {
+                type: "object",
+                properties: {
+                  param1: {
+                    type: "string",
+                    description: "First parameter",
+                  },
+                  param2: {
+                    type: "number",
+                    description: "Second parameter",
+                  },
+                },
+                required: ["param1"],
+              },
+            },
+          ],
+        },
+      };
+
+      const result = contentToToolConfig(content);
+
+      expect(result).toEqual({
+        tools: [
+          {
+            toolSpec: {
+              name: "test_tool",
+              description: "A test tool for testing",
+              inputSchema: {
+                json: {
+                  type: "object",
+                  properties: {
+                    param1: {
+                      type: "string",
+                      description: "First parameter",
+                    },
+                    param2: {
+                      type: "number",
+                      description: "Second parameter",
+                    },
+                  },
+                  required: ["param1"],
+                },
+              },
+            },
+          },
+        ],
+      });
+    });
+
+    it("returns undefined tools when content has no tools", () => {
+      const content: Content = {
+        path: "/test/path",
+        outPath: "/test/outPath",
+        name: "test",
+        prompt: "test prompt",
+        context: { view: false },
+        meta: {},
+      };
+      const result = contentToToolConfig(content);
+      expect(result).toEqual({ tools: undefined });
     });
   });
 

@@ -5,12 +5,15 @@ import {
 import { LEVEL } from "@davidsouther/jiffies/lib/cjs/log";
 import { range } from "@davidsouther/jiffies/lib/cjs/range.js";
 import { cleanState } from "@davidsouther/jiffies/lib/cjs/scope/state";
+import { Err, Ok } from "@davidsouther/jiffies/lib/esm/result";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { getPlugin, makePipelineSettings } from "..";
-import { loadContent } from "../content/content.js";
+import { type Content, loadContent } from "../content/content.js";
 import { getEngine } from "../engine/index.js";
 import { TIMEOUT } from "../engine/noop.js";
+import type { Tool, ToolInvocationResult } from "../engine/tool";
 import { LOGGER } from "../index.js";
+import { MCPClient, type MCPServersConfig } from "../mcp";
 import { withResolvers } from "../util.js";
 import {
   PromptThread,
@@ -107,9 +110,7 @@ describe("generateOne", () => {
     );
     expect(state.logger.info).toHaveBeenCalledWith("Skipping /b.txt");
     state.logger.info.mockClear();
-    //   });
 
-    //   it("generates others", async () => {
     const content = state.context["/c.txt"];
     expect(content.response).toBeUndefined();
     await generateOne(
@@ -168,8 +169,6 @@ describe("PromptThread", () => {
       system: [],
       meta: { isolated: true },
     });
-    state.logger.debug.mockClear();
-    state.logger.info.mockClear();
     const content = [...Object.values(context)];
     const plugin = await (await getPlugin("none")).default(
       state.engine,
@@ -186,6 +185,11 @@ describe("PromptThread", () => {
     expect(thread.finished).toBe(0);
     expect(thread.errors.length).toBe(0);
 
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
     await Promise.resolve();
     await Promise.resolve();
     await Promise.resolve();
@@ -208,8 +212,6 @@ describe("PromptThread", () => {
   it("runs sequence", async () => {
     const settings = await makePipelineSettings({ root: "/" });
     const context = await loadContent(state.fs);
-    state.logger.debug.mockClear();
-    state.logger.info.mockClear();
     const content = [...Object.values(context)];
     const plugin = await (await getPlugin("none")).default(
       state.engine,
@@ -231,5 +233,75 @@ describe("PromptThread", () => {
     expect(thread.isDone).toBe(true);
     expect(thread.finished).toBe(3);
     expect(thread.errors.length).toBe(0);
+  });
+
+  it("runs with MCP", async () => {
+    const settings = await makePipelineSettings({
+      root: "/",
+      isolated: true,
+      combined: true,
+    });
+    const fs = new FileSystem(
+      new ObjectFileSystemAdapter({
+        ".ailly.md": "---\nmcp:\n  mock:\n    type: mock\n---\n",
+        "a.txt": "USE add WITH 40 7",
+      }),
+    );
+    const context = await loadContent(fs);
+    const content = [...Object.values(context)];
+    const client = new (class MockClient extends MCPClient {
+      initialize(_config?: MCPServersConfig): Promise<void> {
+        return Promise.resolve();
+      }
+      getAllTools(): Tool[] {
+        return [
+          {
+            name: "add",
+            parameters: {
+              type: "object",
+              properties: { args: { type: "array" } },
+            },
+          },
+        ];
+      }
+
+      async invokeTool(
+        toolName: string,
+        parameters: Record<string, unknown>,
+        _context?: string,
+      ): Promise<ToolInvocationResult> {
+        if (toolName === "add") {
+          const { args } = parameters;
+          const nums = (args as string[]).map(Number);
+          const sum = nums.reduce((a, b) => a + b, 0);
+          return Ok({ content: [{ text: `${sum}` }] });
+        }
+        return Err({ message: "unknown tool" });
+      }
+    })();
+    for (const f of content) {
+      f.context.mcpClient = client;
+    }
+    const plugin = await (await getPlugin("none")).default(
+      state.engine,
+      settings,
+    );
+    const thread = PromptThread.run(
+      content,
+      context,
+      settings,
+      state.engine,
+      plugin,
+    );
+
+    await thread.allSettled();
+
+    expect(thread.isDone).toBe(true);
+    expect(thread.finished).toBe(1);
+    expect(thread.errors.length).toBe(0);
+
+    expect(content.at(-1)?.response).toBe(
+      "USING TOOL add WITH ARGS [40, 7]\nTOOL RETURNED 47\n",
+    );
   });
 });

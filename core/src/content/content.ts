@@ -2,6 +2,7 @@ import { dirname, join } from "node:path";
 import matter, { type GrayMatterFile } from "gray-matter";
 import * as YAML from "yaml";
 
+import { checkExhaustive } from "@davidsouther/jiffies/lib/cjs/assert";
 import {
   type FileSystem,
   PLATFORM_PARTS,
@@ -12,12 +13,10 @@ import {
   isAbsolute,
 } from "@davidsouther/jiffies/lib/cjs/fs.js";
 
-import {
-  assertExists,
-  checkExhaustive,
-} from "@davidsouther/jiffies/lib/cjs/assert";
 import type { EngineDebug, Message } from "../engine/index.js";
+import type { Tool } from "../engine/tool.js";
 import { LOGGER } from "../index.js";
+import type { MCPClient, MCPConfig } from "../mcp.js";
 import {
   type PromiseWithResolvers,
   isDefined,
@@ -60,6 +59,7 @@ export interface Context {
   edit?:
     | { start: number; end: number; file: string }
     | { after: number; file: string };
+  mcpClient?: MCPClient;
 }
 
 // Additional useful metadata.
@@ -80,6 +80,8 @@ export interface ContentMeta {
   prompt?: string;
   temperature?: number;
   maxTokens?: number;
+  tools?: Tool[];
+  mcp?: MCPConfig;
 }
 
 export type AillyEditReplace = { start: number; end: number; file: string };
@@ -359,13 +361,20 @@ export async function loadAillyRc(
 
 async function mergeAillyRc(
   content_meta: ContentMeta,
-  data: { [key: string]: unknown },
+  data: Record<string, unknown>,
   content: string,
   view: View,
   system: System[],
   fs: FileSystem,
 ): Promise<[System[], ContentMeta]> {
+  const mcp: MCPConfig = {
+    ...(content_meta.mcp ?? {}),
+    ...((data.mcp as MCPConfig) ?? {}),
+  };
   const meta = { ...{ parent: "root" as const }, ...content_meta, ...data };
+  if (Object.keys(mcp)) {
+    meta.mcp = mcp;
+  }
   switch (meta.parent) {
     case "root":
       if (!(content === "" && Object.keys(view).length === 0))

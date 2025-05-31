@@ -36,3 +36,6 @@ echo "Max depth"
 
 echo "Tempate Views"
 ./12_template_view/template_view.sh
+
+echo "Tools"
+./20_tools/mcp.sh

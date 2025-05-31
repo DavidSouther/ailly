@@ -364,6 +364,65 @@ describe("Loading aillyrc", () => {
       },
     });
   });
+
+  test("it loads MCP server config", async () => {
+    const fs = new FileSystem(
+      new ObjectFileSystemAdapter({
+        ".aillyrc": `---
+mcp:
+  base:
+    type: stdio
+    command: base
+---
+`,
+        root: {
+          ".aillyrc": `---
+mcp:
+  root:
+    type: http
+    url: localhost:8080
+---
+`,
+
+          a: "a",
+        },
+      }),
+    );
+
+    const content = await loadContent(fs, {
+      meta: { context: "conversation" },
+    });
+
+    expect(content).toMatchObject({
+      "/root/a": {
+        name: "a",
+        path: "/root/a",
+        outPath: "/root/a.ailly.md",
+        prompt: "a",
+        context: {
+          system: [],
+          view: {},
+        },
+        meta: {
+          combined: false,
+          context: "conversation",
+          parent: "root",
+          root: "/root",
+          text: "a",
+          mcp: {
+            base: {
+              type: "stdio",
+              command: "base",
+            },
+            root: {
+              type: "http",
+              url: "localhost:8080",
+            },
+          },
+        },
+      },
+    });
+  });
 });
 
 describe("Loading", () => {
@@ -732,6 +791,7 @@ describe("Writing", () => {
     });
   });
 });
+
 describe("combined vs separate", () => {
   test("it loads combined prompt and responses", async () => {
     const fs = new FileSystem(

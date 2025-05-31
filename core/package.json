@@ -32,6 +32,7 @@
     "@aws-sdk/credential-providers": "^3.572.0",
     "@davidsouther/jiffies": "^2.2.5",
     "@dqbd/tiktoken": "^1.0.7",
+    "@modelcontextprotocol/sdk": "^1.12.1",
     "esbuild": "0.25.4",
     "gitignore-parser": "^0.0.2",
     "gray-matter": "^4.0.3",

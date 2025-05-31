@@ -14,6 +14,7 @@ import {
   LOGGER,
   type PipelineSettings,
 } from "../index.js";
+import { MCPClient } from "../mcp";
 import type { Plugin } from "../plugin/index.js";
 
 export interface PromptThreadsSummary {
@@ -117,6 +118,20 @@ export class PromptThread {
         this.settings.templateView,
       );
     }
+
+    if (c.meta?.mcp && !c.context.mcpClient) {
+      const mcpClient = new MCPClient();
+
+      // Extract MCP information from meta server and attach MCP Clients to Context
+      await mcpClient.initialize({ servers: c.meta.mcp });
+
+      // Assign all the tools to meta.tools
+      c.meta.tools = mcpClient.getAllTools();
+
+      // Attach MCP Clients to context
+      c.context.mcpClient = mcpClient;
+    }
+
     try {
       await this.template(c, this.view);
       await this.plugin.augment(c);
@@ -128,6 +143,10 @@ export class PromptThread {
       LOGGER.warn("Error generating content", { err: { message, stack } });
       this.errors.push([i, err as Error]);
       throw err;
+    } finally {
+      if (c.context.mcpClient) {
+        c.context.mcpClient.cleanup();
+      }
     }
     return c;
   }
@@ -227,13 +246,39 @@ export function generateOne(
     },
   };
 
-  try {
+  async function runWithTools() {
     const generator = engine.generate(c, settings);
     assertExists(c.responseStream).resolve(generator.stream);
-    return generator.done.finally(() => {
-      c.response = generator.message();
+    await generator.done.finally(() => {
+      c.response = (c.response ?? "") + generator.message();
       assertExists(c.meta).debug = { ...c.meta?.debug, ...generator.debug() };
     });
+    const { toolUse } = generator.debug();
+    if (toolUse && c.meta && c.context.mcpClient) {
+      const result = await c.context.mcpClient.invokeTool(
+        toolUse.name,
+        toolUse.input,
+      );
+
+      c.meta.messages ??= [];
+
+      c.meta.messages.push({
+        role: "assistant",
+        content: c.response ?? "",
+        toolUse: {
+          name: toolUse.name,
+          input: toolUse.input,
+          result: result,
+          id: toolUse.id,
+        },
+      });
+      c.meta.continue = true;
+      return runWithTools();
+    }
+  }
+
+  try {
+    return runWithTools();
   } catch (err) {
     LOGGER.error(`Uncaught error in ${engine.name} generator`, { err });
     if (c.meta?.debug) {
