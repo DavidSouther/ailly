@@ -1,7 +1,15 @@
+import { Err, Ok } from "@davidsouther/jiffies/lib/esm/result.js";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 
-import type { JSONSchemaTypeName, Tool } from "./engine/tool";
+import type {
+  JSONSchemaTypeName,
+  Tool,
+  ToolInformation,
+  ToolInvocationResult,
+} from "./engine/tool.js";
 
 export type MCPServerConfig =
   | {
@@ -9,6 +17,7 @@ export type MCPServerConfig =
       command: string;
       args?: string[];
       env?: Record<string, string>;
+      cwd?: string;
     }
   | { type: "http"; url: string; headers?: Record<string, string> };
 
@@ -27,22 +36,46 @@ export interface MCPServersConfig {
   }>;
 }
 
-export interface ToolInformation {
-  client: Client;
-  tool: Tool;
-}
-
 /**
  * Wrapper for MCP Client
  */
 export class MCPClient {
   private toolsMap: Map<string, ToolInformation> = new Map();
+  private clients: Map<string, Client> = new Map();
   private config?: MCPServersConfig;
   /**
    * Initialize the MCP wrapper with a configuration
    */
   async initialize(config: MCPServersConfig | undefined): Promise<void> {
     this.config = config;
+
+    for (const [name, serverConfig] of Object.entries(
+      this.config?.servers ?? {},
+    )) {
+      const clientInfo = { name: "ailly-client", version: "1.0.0" };
+
+      // Create client and transport based on server type
+      const client = new Client(clientInfo);
+      let transport: Transport;
+
+      if (serverConfig.type === "stdio" && serverConfig.command) {
+        transport = new StdioClientTransport({
+          command: serverConfig.command,
+          args: serverConfig.args ?? [],
+          env: serverConfig.env ?? {},
+          cwd: serverConfig.cwd ?? undefined,
+        });
+      } else if (serverConfig.type === "http" && serverConfig.url) {
+        transport = new StreamableHTTPClientTransport(
+          new URL(serverConfig.url),
+        );
+      } else {
+        throw new Error("Invalid server configuration, .");
+      }
+      await client.connect(transport);
+      this.clients.set(name, client);
+    }
+
     await this.fillToolInformation();
   }
 
@@ -64,26 +97,7 @@ export class MCPClient {
    * Get or create an MCP client for a server
    */
   async fillToolInformation() {
-    for (const serverConfig of Object.values(this.config?.servers ?? {})) {
-      const clientInfo = { name: "ailly-client", version: "1.0.0" };
-
-      // Create client and transport based on server type
-      let client: Client;
-      let transport: StdioClientTransport;
-
-      if (serverConfig.type === "stdio" && serverConfig.command) {
-        client = new Client(clientInfo);
-        transport = new StdioClientTransport({
-          command: serverConfig.command,
-          args: serverConfig.args || [],
-          env: serverConfig.env || {},
-        });
-      } else {
-        throw new Error("Invalid server configuration.");
-      }
-
-      await client.connect(transport);
-
+    for (const client of this.clients.values()) {
       const tools = await this.getTools(client);
 
       for (const tool of tools) {
@@ -99,19 +113,38 @@ export class MCPClient {
     toolName: string,
     parameters: Record<string, unknown>,
     context?: string,
-  ) {
+  ): Promise<ToolInvocationResult> {
     const toolInfo = this.toolsMap.get(toolName);
     if (!toolInfo) {
-      throw new Error(`Tool ${toolName} not found`);
+      return Err({
+        message: `Tool ${toolName} not found`,
+        code: "TOOL_NOT_FOUND",
+      });
     }
 
     const { client } = toolInfo;
 
-    return await client.callTool({
-      name: toolName,
-      arguments: parameters,
-      ...(context ? { context } : {}),
-    });
+    try {
+      const result = await client.callTool({
+        name: toolName,
+        arguments: parameters,
+        ...(context ? { context } : {}),
+      });
+
+      if (result.isError) {
+        return Err({
+          message: `Tool execution failed. Result: ${JSON.stringify(result)}`,
+          code: "TOOL_EXECUTION_FAILED",
+        });
+      }
+
+      return Ok(result);
+    } catch (error) {
+      return Err({
+        message: error instanceof Error ? error.message : String(error),
+        code: "TOOL_EXECUTION_FAILED",
+      });
+    }
   }
 
   getAllTools(): Tool[] {
@@ -175,6 +208,11 @@ export class MCPClient {
   async cleanup(): Promise<void> {
     // The Client class doesn't have a disconnect method
     // We'll just clear our maps
+    for (const client of this.clients.values()) {
+      await client.close();
+    }
+    this.clients.clear();
+    this.toolsMap.clear();
   }
 }
 

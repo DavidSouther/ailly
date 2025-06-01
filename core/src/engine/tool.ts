@@ -1,3 +1,6 @@
+import type { Result } from "@davidsouther/jiffies/src/result";
+import type { Client } from "@modelcontextprotocol/sdk/client/index";
+
 export type JSONSchemaTypeName =
   | "string"
   | "number"
@@ -24,3 +27,13 @@ export interface Tool {
   description?: string;
   parameters: ToolParameters;
 }
+
+export interface ToolInformation {
+  client: Client;
+  tool: Tool;
+}
+
+export type ToolInvocationResult = Result<
+  Record<string, unknown>,
+  { message: string; code?: string }
+>;

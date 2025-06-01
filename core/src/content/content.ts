@@ -1,8 +1,8 @@
 import { dirname, join } from "node:path";
 import matter, { type GrayMatterFile } from "gray-matter";
 import * as YAML from "yaml";
-import type { MCPClient, MCPConfig } from "../mcp";
 
+import { checkExhaustive } from "@davidsouther/jiffies/lib/cjs/assert";
 import {
   type FileSystem,
   PLATFORM_PARTS,
@@ -13,10 +13,10 @@ import {
   isAbsolute,
 } from "@davidsouther/jiffies/lib/cjs/fs.js";
 
-import { checkExhaustive } from "@davidsouther/jiffies/lib/cjs/assert";
 import type { EngineDebug, Message } from "../engine/index.js";
 import type { Tool } from "../engine/tool.js";
 import { LOGGER } from "../index.js";
+import type { MCPClient, MCPConfig } from "../mcp.js";
 import {
   type PromiseWithResolvers,
   isDefined,

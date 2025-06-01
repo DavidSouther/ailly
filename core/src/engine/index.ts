@@ -5,6 +5,7 @@ import * as bedrock from "./bedrock/bedrock.js";
 import * as mistral from "./mistral/mistral.js";
 import * as noop from "./noop.js";
 import * as openai from "./openai.js";
+import type { ToolInvocationResult } from "./tool";
 
 export const DEFAULT_SYSTEM_PROMPT =
   "You are Ailly, the helpful AI Writer's Ally.";
@@ -50,8 +51,7 @@ export interface Message {
   toolUse?: {
     name: string;
     input: Record<string, unknown>;
-    // TODO: Results can be more varied that strings, at least in the case of Bedrock.
-    result: string;
+    result: ToolInvocationResult;
     id?: string;
   };
   tokens?: number;

@@ -10,6 +10,9 @@ rm -f ./out ./err
 ###
 
 echo "basic mcp"
+# Replace node with local node
+NODE=$(which node)
+sed -e "s!#NODE#!$NODE!" -e "s!#PWD#!$PWD!" ./root/.aillyrc.tmpl > ./root/.aillyrc
 npx ailly --root ./root --log-level error > >(tee ./out) 2> >(tee ./err >&2)
 [ ! -s ./err ]                        # No error output at all
 
@@ -22,4 +25,4 @@ for M in "${MESSAGES[@]}"; do
 done
 
 echo "(all conversation messages checked)"
-rm -f ./out ./err ./root/01_a.txt.ailly.md
+rm -f ./out ./err ./root/01_a.txt.ailly.md ./root/.aillyrc

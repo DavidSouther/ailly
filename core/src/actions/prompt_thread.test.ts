@@ -5,12 +5,13 @@ import {
 import { LEVEL } from "@davidsouther/jiffies/lib/cjs/log";
 import { range } from "@davidsouther/jiffies/lib/cjs/range.js";
 import { cleanState } from "@davidsouther/jiffies/lib/cjs/scope/state";
+import { Err, Ok } from "@davidsouther/jiffies/lib/esm/result";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { getPlugin, makePipelineSettings } from "..";
 import { type Content, loadContent } from "../content/content.js";
 import { getEngine } from "../engine/index.js";
 import { TIMEOUT } from "../engine/noop.js";
-import type { Tool } from "../engine/tool";
+import type { Tool, ToolInvocationResult } from "../engine/tool";
 import { LOGGER } from "../index.js";
 import { MCPClient, type MCPServersConfig } from "../mcp";
 import { withResolvers } from "../util.js";
@@ -268,15 +269,14 @@ describe("PromptThread", () => {
         toolName: string,
         parameters: Record<string, unknown>,
         _context?: string,
-      ): // biome-ignore lint/suspicious/noExplicitAny: for the mock
-      Promise<any> {
+      ): Promise<ToolInvocationResult> {
         if (toolName === "add") {
           const { args } = parameters;
           const nums = (args as string[]).map(Number);
           const sum = nums.reduce((a, b) => a + b, 0);
-          return sum;
+          return Ok({ content: [{ text: `${sum}` }] });
         }
-        return "";
+        return Err({ message: "unknown tool" });
       }
     })();
     for (const f of content) {
@@ -301,7 +301,7 @@ describe("PromptThread", () => {
     expect(thread.errors.length).toBe(0);
 
     expect(content.at(-1)?.response).toBe(
-      'USING TOOL add WITH ARGS [40, 7]\nTOOL RETURNED "47"\n',
+      "USING TOOL add WITH ARGS [40, 7]\nTOOL RETURNED 47\n",
     );
   });
 });

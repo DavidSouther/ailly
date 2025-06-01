@@ -31,7 +31,6 @@ export interface BedrockDebug extends EngineDebug {
   id: string;
 }
 
-
 declare module "@davidsouther/jiffies/lib/cjs/log.js" {
   interface Logger {
     /** Augment our logger with a `trace` method to trace streaming calls. */
@@ -298,7 +297,7 @@ export function formatError(content: Content) {
         break;
       case "Could not resolve the foundation model from the provided model identifier.":
         base += `The model ${model} could not be resolved.`;
-        if (Object.values(MODEL_MAP).includes(model)) {
+        if (Object.values(MODEL_MAP).includes(model as unknown as Models)) {
           base += ` Please ensure it is enabled in AWS region ${region}, or change your AWS region.`;
         } else {
           base +=
