@@ -1,4 +1,4 @@
-import { Err, Ok } from "@davidsouther/jiffies/lib/esm/result.js";
+import { Err, Ok } from "@davidsouther/jiffies/lib/cjs/result.js";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
@@ -138,6 +138,15 @@ export class MCPClient {
         });
       }
 
+      if (
+        !result.content ||
+        (result.content as never[])?.length === 0 ||
+        Object.keys(result.content ?? {}).length === 0
+      ) {
+        // biome-ignore lint/performance/noDelete: need to clean this out
+        delete result.content;
+      }
+
       return Ok(result);
     } catch (error) {
       return Err({
@@ -218,3 +227,34 @@ export class MCPClient {
 
 // Export a singleton instance
 export const mcpWrapper = new MCPClient();
+
+export class MockClient extends MCPClient {
+  initialize(_config?: MCPServersConfig): Promise<void> {
+    return Promise.resolve();
+  }
+  getAllTools(): Tool[] {
+    return [
+      {
+        name: "add",
+        parameters: {
+          type: "object",
+          properties: { args: { type: "array" } },
+        },
+      },
+    ];
+  }
+
+  async invokeTool(
+    toolName: string,
+    parameters: Record<string, unknown>,
+    _context?: string,
+  ): Promise<ToolInvocationResult> {
+    if (toolName === "add") {
+      const { args } = parameters;
+      const nums = (args as string[]).map(Number);
+      const sum = nums.reduce((a, b) => a + b, 0);
+      return Ok({ content: [{ text: `${sum}` }] });
+    }
+    return Err({ message: "unknown tool" });
+  }
+}

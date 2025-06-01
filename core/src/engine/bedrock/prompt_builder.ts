@@ -1,13 +1,18 @@
 import type {
   ContentBlock,
   ConverseStreamCommandInput,
+  Message,
   SystemContentBlock,
   Tool,
   ToolInputSchema,
+  ToolResultBlock,
+  ToolResultContentBlock,
 } from "@aws-sdk/client-bedrock-runtime";
-import type { Content } from "../../content/content.js";
-import { DEFAULT_SYSTEM_PROMPT, type Message } from "../index.js";
+import { Err, isOk, unwrap } from "@davidsouther/jiffies/lib/cjs/result.js";
 
+import type { Content } from "../../content/content.js";
+import { DEFAULT_SYSTEM_PROMPT } from "../index.js";
+import type { ToolInvocationResult } from "../tool";
 export interface Prompt {
   messages: Message[];
   system: string;
@@ -56,71 +61,65 @@ export function converseBuilder(
   model: Models,
   content: Content,
 ): ConverseStreamCommandInput {
-  let system = "";
+  const system: SystemContentBlock = { text: "" };
   const messages: Message[] = [];
   for (const message of content.meta?.messages ?? []) {
     if (message.role === "system") {
-      system += `${message.content}\n`;
-    } else if (message.role === "user" && message.toolUse) {
-      messages.push({
-        role: message.role,
-        toolUse: message.toolUse,
-        content: "",
-      });
+      system.text += `${message.content}\n`;
     } else {
-      const last = messages.at(-1);
-      if (last?.role === message.role) {
-        last.content += `\n${message.content}`;
-      } else {
+      if (messages.at(-1)?.role !== message.role) {
         messages.push({
           role: message.role,
-          content: message.content,
+          content: [],
         });
+      }
+      if (message.content) {
+        messages.at(-1)?.content?.push({ text: message.content });
+      }
+      if (message.toolUse) {
+        messages.at(-2)?.content?.push({
+          toolUse: {
+            name: message.toolUse.name,
+            toolUseId: message.toolUse.id,
+            // biome-ignore lint/suspicious/noExplicitAny: Bedrock keeps DocumentType private
+            input: message.toolUse.input as any,
+          },
+        });
+        messages.at(-1)?.content?.push({
+          toolResult: toolUseResult(message.toolUse),
+        } satisfies ContentBlock.ToolResultMember);
       }
     }
   }
 
-  system = system.trim() || DEFAULT_SYSTEM_PROMPT;
+  system.text = system.text.trim() || DEFAULT_SYSTEM_PROMPT;
 
-  const prompt = { messages, system };
-  const command = createConverseStreamCommand(model, content, prompt);
-  return command;
-}
-
-export const createConverseStreamCommand = (
-  model: string,
-  c: Content,
-  prompt: Prompt,
-): ConverseStreamCommandInput => {
-  const stopSequences = c.context.edit ? ["```"] : undefined;
+  const stopSequences = content.context.edit ? ["```"] : undefined;
   // Use given temperature; or 0 for edit (don't want creativity) but 1.0 generally.
   const temperature =
-    (c.meta?.temperature ?? c.context.edit !== undefined) ? 0.0 : 1.0;
-  const maxTokens = c.meta?.maxTokens;
+    (content.meta?.temperature ?? content.context.edit !== undefined)
+      ? 0.0
+      : 1.0;
+  const maxTokens = content.meta?.maxTokens;
+
+  const toolConfig = contentToToolConfig(content);
 
   return {
     modelId: model,
-    system: [
-      {
-        text: prompt.system,
-      } satisfies SystemContentBlock,
-    ],
-    messages: prompt.messages.map((message) => ({
-      role: message.role,
-      content: [{ text: message.content } satisfies ContentBlock],
-    })),
-    toolConfig: contentToToolConfig(c),
+    system: [system],
+    messages,
+    toolConfig,
     inferenceConfig: {
       maxTokens,
       stopSequences,
       temperature,
     },
   };
-};
+}
 
-export const contentToToolConfig = (c: Content) => {
+export const contentToToolConfig = (content: Content) => {
   return {
-    tools: c.meta?.tools?.map(
+    tools: content.meta?.tools?.map(
       (tool) =>
         ({
           toolSpec: {
@@ -134,3 +133,24 @@ export const contentToToolConfig = (c: Content) => {
     ),
   };
 };
+
+export function toolUseResult({
+  result,
+  id: toolUseId = "unknown",
+}: {
+  result: ToolInvocationResult;
+  id?: string;
+}): ToolResultBlock {
+  if (isOk(result)) {
+    return {
+      toolUseId,
+      status: "success",
+      content: [{ json: unwrap(result) } as unknown as ToolResultContentBlock],
+    };
+  }
+  return {
+    toolUseId,
+    status: "error",
+    content: [{ json: Err(result) } as unknown as ToolResultContentBlock],
+  };
+}

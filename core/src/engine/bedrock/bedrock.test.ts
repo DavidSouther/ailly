@@ -4,12 +4,13 @@ import {
   FileSystem,
   RecordFileSystemAdapter,
 } from "@davidsouther/jiffies/lib/cjs/fs.js";
+import { Ok } from "@davidsouther/jiffies/lib/cjs/result.js";
 import { cleanState } from "@davidsouther/jiffies/lib/cjs/scope/state.js";
 
 import { type Content, loadContent } from "../../content/content.js";
 import { makePipelineSettings } from "../../index.js";
 import type { Message } from "../index.js";
-import { format } from "./bedrock";
+import { format } from "./bedrock.js";
 import {
   type Models,
   contentToToolConfig,
@@ -50,7 +51,7 @@ describe("bedrock claude3", () => {
         ]),
       );
       expect(actual.messages).toEqual([
-        { role: "user", content: [{ text: "usera\nuserb" }] },
+        { role: "user", content: [{ text: "usera" }, { text: "userb" }] },
       ]);
     });
 
@@ -63,11 +64,63 @@ describe("bedrock claude3", () => {
         ]),
       );
       expect(actual.messages).toEqual([
-        { role: "assistant", content: [{ text: "assista\nassistb" }] },
+        {
+          role: "assistant",
+          content: [{ text: "assista" }, { text: "assistb" }],
+        },
       ]);
     });
 
-    it("adds tool use blocks", () => {});
+    it("adds tool use blocks", () => {
+      const content = makeContentForMessages([
+        { role: "user", content: "USE add WITH 2 7" },
+        {
+          role: "assistant",
+          content: "I'll use the addition tool to add 2 with 7",
+        },
+        {
+          role: "user",
+          content: "",
+          toolUse: {
+            name: "add",
+            input: {
+              args: [2, 7],
+            },
+            result: Ok({ content: "9" }),
+            id: "test-tool",
+          },
+        },
+      ]);
+      const actual = converseBuilder(TEST_MODEL, content);
+      expect(actual.messages).toEqual([
+        { role: "user", content: [{ text: "USE add WITH 2 7" }] },
+        {
+          role: "assistant",
+          content: [
+            { text: "I'll use the addition tool to add 2 with 7" },
+            {
+              toolUse: {
+                name: "add",
+                input: { args: [2, 7] },
+                toolUseId: "test-tool",
+              },
+            },
+          ],
+        },
+        {
+          role: "user",
+          content: [
+            {
+              toolResult: {
+                toolUseId: "test-tool",
+                status: "success",
+                content: [{ json: { content: "9" } }],
+              },
+            },
+          ],
+        },
+      ]);
+    });
   });
 
   describe("contentToToolConfig", () => {

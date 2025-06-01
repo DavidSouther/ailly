@@ -1,5 +1,5 @@
 import { getLogger } from "@davidsouther/jiffies/lib/cjs/log.js";
-import { isOk, unwrap } from "@davidsouther/jiffies/lib/esm/result.js";
+import { isOk, unwrap } from "@davidsouther/jiffies/lib/cjs/result.js";
 
 import type { Content } from "../content/content.js";
 import { type PipelineSettings, LOGGER as ROOT_LOGGER } from "../index.js";
@@ -112,9 +112,6 @@ function makeMessages(content: Content): [string, EngineDebug] {
           },
         },
       ];
-      // TODO:
-      // 1. Include tool use metadata in interim response
-      // 2. Include tool use response in final response
     }
   }
 

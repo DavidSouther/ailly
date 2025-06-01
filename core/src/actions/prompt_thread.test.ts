@@ -5,15 +5,13 @@ import {
 import { LEVEL } from "@davidsouther/jiffies/lib/cjs/log";
 import { range } from "@davidsouther/jiffies/lib/cjs/range.js";
 import { cleanState } from "@davidsouther/jiffies/lib/cjs/scope/state";
-import { Err, Ok } from "@davidsouther/jiffies/lib/esm/result";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { getPlugin, makePipelineSettings } from "..";
-import { type Content, loadContent } from "../content/content.js";
+import { loadContent } from "../content/content.js";
 import { getEngine } from "../engine/index.js";
 import { TIMEOUT } from "../engine/noop.js";
-import type { Tool, ToolInvocationResult } from "../engine/tool";
 import { LOGGER } from "../index.js";
-import { MCPClient, type MCPServersConfig } from "../mcp";
+import { MockClient } from "../mcp";
 import { withResolvers } from "../util.js";
 import {
   PromptThread,
@@ -249,38 +247,8 @@ describe("PromptThread", () => {
     );
     const context = await loadContent(fs);
     const content = [...Object.values(context)];
-    const client = new (class MockClient extends MCPClient {
-      initialize(_config?: MCPServersConfig): Promise<void> {
-        return Promise.resolve();
-      }
-      getAllTools(): Tool[] {
-        return [
-          {
-            name: "add",
-            parameters: {
-              type: "object",
-              properties: { args: { type: "array" } },
-            },
-          },
-        ];
-      }
-
-      async invokeTool(
-        toolName: string,
-        parameters: Record<string, unknown>,
-        _context?: string,
-      ): Promise<ToolInvocationResult> {
-        if (toolName === "add") {
-          const { args } = parameters;
-          const nums = (args as string[]).map(Number);
-          const sum = nums.reduce((a, b) => a + b, 0);
-          return Ok({ content: [{ text: `${sum}` }] });
-        }
-        return Err({ message: "unknown tool" });
-      }
-    })();
     for (const f of content) {
-      f.context.mcpClient = client;
+      f.context.mcpClient = new MockClient();
     }
     const plugin = await (await getPlugin("none")).default(
       state.engine,

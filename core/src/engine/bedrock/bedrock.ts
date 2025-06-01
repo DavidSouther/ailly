@@ -99,7 +99,7 @@ export const generate: EngineGenerate<BedrockDebug> = (
         let blocks = 0;
         for await (const block of response.stream ?? []) {
           blocks += 1;
-          LOGGER.trace("Got response stream message", block);
+          LOGGER.trace("Got response stream message", { blocks, ...block });
           if (block.validationException) {
             throw new Error(
               "The input fails to satisfy the constraints specified by Amazon Bedrock.",
