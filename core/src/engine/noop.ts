@@ -41,28 +41,28 @@ export const generate: EngineGenerate = (
 
   let error: Error | undefined;
   const stream = new TextEncoderStream();
+  const writer = stream.writable.getWriter();
   const done = Promise.resolve()
     .then(async () => {
       await sleep(TIMEOUT.timeout);
-      const writer = await stream.writable.getWriter();
-      try {
-        await writer.ready;
-        if (process.env.AILLY_NOOP_STREAM) {
-          let first = true;
-          for (const word of message.split(" ")) {
-            await writer.write((first ? "" : " ") + word);
-            first = false;
-            await sleep(TIMEOUT.timeout / 10);
-          }
-        } else {
-          writer.write(message);
+      if (process.env.AILLY_NOOP_STREAM) {
+        let first = true;
+        for (const word of message.split(" ")) {
+          await writer.ready;
+          await writer.write((first ? "" : " ") + word);
+          first = false;
+          await sleep(TIMEOUT.timeout / 10);
         }
-      } finally {
-        writer.close();
+      } else {
+        await writer.ready;
+        await writer.write(message);
       }
     })
     .catch((err) => {
       error = err as Error;
+    })
+    .finally(async () => {
+      await writer.close();
     });
 
   return {

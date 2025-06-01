@@ -10,7 +10,7 @@ npm init --yes
 npm link ../core ../cli
 
 export AILLY_TEMPLATE_VIEW=
-export AILLY_ENGINE=${AILLY_ENGINE:-noop}
+export AILLY_ENGINE=noop
 
 echo "Basic"
 npx ailly --root 01_basic

@@ -90,6 +90,13 @@ export const generate: EngineGenerate<BedrockDebug> = (
     });
     const stream = new TransformStream();
     const writer = stream.writable.getWriter();
+    const write = async (text: string | undefined) => {
+      if (text) {
+        message += text;
+        await writer.ready;
+        await writer.write(text);
+      }
+    };
     let message: string = c.meta?.continue ? (c.response ?? "") : "";
     const done = bedrock
       .send(new ConverseStreamCommand(converseStreamCommand))
@@ -155,16 +162,12 @@ export const generate: EngineGenerate<BedrockDebug> = (
             const { name, toolUseId } = toolUse ?? { name: undefined };
             if (name && toolUseId) {
               debug.toolUse = { name, input: {}, partial: "", id: toolUseId };
+              await write(" ");
             }
           }
 
           if (block.contentBlockDelta) {
-            const text = block.contentBlockDelta.delta?.text;
-            if (text) {
-              message += text;
-              await writer.ready;
-              await writer.write(text);
-            }
+            await write(block.contentBlockDelta.delta?.text);
             const tool = block.contentBlockDelta.delta?.toolUse;
             if (tool && debug.toolUse) {
               debug.toolUse.partial += tool.input ?? "";

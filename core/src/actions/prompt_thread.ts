@@ -220,6 +220,7 @@ export function generateOne(
     assertExists(c.responseStream).resolve(
       stream.readable.pipeThrough(new TextDecoderStream()),
     );
+    stream.writable.close();
     return Promise.resolve();
   }
 
@@ -246,16 +247,26 @@ export function generateOne(
     },
   };
 
+  // Start a new stream for streams
+  const generatorStream = new TransformStream();
+  assertExists(c.responseStream).resolve(generatorStream.readable);
+
   async function runWithTools() {
     const generator = engine.generate(c, settings);
-    assertExists(c.responseStream).resolve(generator.stream);
+    generator.stream.pipeTo(generatorStream.writable, { preventClose: true });
     await generator.done.finally(() => {
-      c.response = (c.response ?? "") + generator.message();
+      c.response = generator.message();
       assertExists(c.meta).debug = { ...c.meta?.debug, ...generator.debug() };
     });
     const { toolUse } = generator.debug();
     if (toolUse && c.meta && c.context.mcpClient) {
-      LOGGER.debug("Invoking tool", { toolUse });
+      LOGGER.info("Invoking tool", {
+        tool: {
+          name: toolUse.name,
+          input: toolUse.input,
+        },
+      });
+      LOGGER.debug("Tool details", { toolUse });
       const result = await c.context.mcpClient.invokeTool(
         toolUse.name,
         toolUse.input,
@@ -281,6 +292,7 @@ export function generateOne(
       c.meta.continue = true;
       return runWithTools();
     }
+    generatorStream.writable.close();
   }
 
   try {

@@ -62,7 +62,10 @@ export class MCPClient {
         transport = new StdioClientTransport({
           command: serverConfig.command,
           args: serverConfig.args ?? [],
-          env: serverConfig.env ?? {},
+          env: {
+            ...(serverConfig.env ?? {}),
+            ...(process.env as unknown as Record<string, string>),
+          },
           cwd: serverConfig.cwd ?? undefined,
         });
       } else if (serverConfig.type === "http" && serverConfig.url) {

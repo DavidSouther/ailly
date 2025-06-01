@@ -1,4 +1,4 @@
-import { dirname, normalize, resolve } from "node:path";
+import { dirname } from "node:path";
 import { GenerateManager } from "@ailly/core/lib/actions/generate_manager.js";
 import {
   type AillyEdit,
