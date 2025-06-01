@@ -1,5 +1,13 @@
 ---
-combined: false  
+combined: false
 isolated: true
+mcp:
+  "awslabs.aws-documentation-mcp-server":
+    type: stdio
+    command: "uvx"
+    args: ["awslabs.aws-documentation-mcp-server@latest"]
+    env:
+      FASTMCP_LOG_LEVEL: ERROR
 ---
-Look up AWS Documentation relevant to this code. Find any mistakes or optimizations or modernizations that can be made based on the docs.
+
+Look up AWS Documentation relevant to this code. Find any mistakes, optimizations, or modernizations that can be made based on the docs.
