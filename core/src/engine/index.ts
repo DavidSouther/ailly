@@ -7,6 +7,9 @@ import * as noop from "./noop.js";
 import * as openai from "./openai.js";
 import type { ToolInvocationResult } from "./tool";
 
+export const DEFAULT_SYSTEM_PROMPT =
+  "You are Ailly, the helpful AI Writer's Ally.";
+
 export interface EngineDebug {
   toolUse?: {
     name: string;

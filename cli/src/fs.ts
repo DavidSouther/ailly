@@ -17,12 +17,29 @@ import { assertExists } from "@davidsouther/jiffies/lib/cjs/assert.js";
 import type { FileSystem } from "@davidsouther/jiffies/lib/cjs/fs.js";
 import {
   LEVEL,
-  basicLogFormatter,
   getLogLevel,
   getLogger,
 } from "@davidsouther/jiffies/lib/cjs/log.js";
 
 import type { Args } from "./args.js";
+
+function basicLogFormatter(
+  data: { prefix: string; message: string } | Record<string, unknown>,
+) {
+  return `${data.prefix}: ${data.message} ${Object.entries(data)
+    .map(([k, v]) => {
+      if (
+        k === "name" ||
+        k === "prefix" ||
+        k === "message" ||
+        k === "level" ||
+        k === "source"
+      )
+        return "";
+      return `${k}=${JSON.stringify(v)}`;
+    })
+    .join(" ")}`;
+}
 
 export const LOGGER = getLogger("@ailly/cli");
 export async function loadFs(

@@ -18,9 +18,7 @@ server.tool(
   async ({ args }) => {
     const sum = args.reduce((total, num) => total + Number(num), 0);
 
-    return {
-      content: [{ type: "text", text: String(sum) }],
-    };
+    return { sum };
   }
 );
 

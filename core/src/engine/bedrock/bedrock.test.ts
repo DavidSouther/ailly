@@ -4,40 +4,121 @@ import {
   FileSystem,
   RecordFileSystemAdapter,
 } from "@davidsouther/jiffies/lib/cjs/fs.js";
+import { Ok } from "@davidsouther/jiffies/lib/cjs/result.js";
 import { cleanState } from "@davidsouther/jiffies/lib/cjs/scope/state.js";
 
-import { type Content, loadContent } from "../../content/content";
+import { type Content, loadContent } from "../../content/content.js";
 import { makePipelineSettings } from "../../index.js";
-import { contentToToolConfig, format } from "./bedrock";
-import { converseBuilder } from "./prompt_builder.js";
+import type { Message } from "../index.js";
+import { format } from "./bedrock.js";
+import {
+  type Models,
+  contentToToolConfig,
+  converseBuilder,
+} from "./prompt_builder.js";
+
+const TEST_MODEL: Models = "us.anthropic.claude-3-haiku-20240307-v1:0";
 
 describe("bedrock claude3", () => {
   describe("prompt builder", () => {
+    function makeContentForMessages(messages: Message[]) {
+      return {
+        name: "test",
+        path: "test",
+        outPath: "test",
+        prompt: "test",
+        context: { view: {} },
+        meta: { messages },
+      };
+    }
     it("combines system prompts", () => {
-      const actual = converseBuilder([
-        { role: "system", content: "sysa" },
-        { role: "system", content: "sysb" },
-      ]);
-      expect(actual.system).toEqual("sysa\nsysb\n");
+      const actual = converseBuilder(
+        TEST_MODEL,
+        makeContentForMessages([
+          { role: "system", content: "sysa" },
+          { role: "system", content: "sysb" },
+        ]),
+      );
+      expect(actual.system).toEqual([{ text: "sysa\nsysb" }]);
     });
 
     it("combines user prompts", () => {
-      const actual = converseBuilder([
-        { role: "user", content: "usera" },
-        { role: "user", content: "userb" },
-      ]);
+      const actual = converseBuilder(
+        TEST_MODEL,
+        makeContentForMessages([
+          { role: "user", content: "usera" },
+          { role: "user", content: "userb" },
+        ]),
+      );
       expect(actual.messages).toEqual([
-        { role: "user", content: "usera\nuserb" },
+        { role: "user", content: [{ text: "usera" }, { text: "userb" }] },
       ]);
     });
 
     it("combines assistant prompts", () => {
-      const actual = converseBuilder([
-        { role: "assistant", content: "assista" },
-        { role: "assistant", content: "assistb" },
-      ]);
+      const actual = converseBuilder(
+        TEST_MODEL,
+        makeContentForMessages([
+          { role: "assistant", content: "assista" },
+          { role: "assistant", content: "assistb" },
+        ]),
+      );
       expect(actual.messages).toEqual([
-        { role: "assistant", content: "assista\nassistb" },
+        {
+          role: "assistant",
+          content: [{ text: "assista" }, { text: "assistb" }],
+        },
+      ]);
+    });
+
+    it("adds tool use blocks", () => {
+      const content = makeContentForMessages([
+        { role: "user", content: "USE add WITH 2 7" },
+        {
+          role: "assistant",
+          content: "I'll use the addition tool to add 2 with 7",
+        },
+        {
+          role: "user",
+          content: "",
+          toolUse: {
+            name: "add",
+            input: {
+              args: [2, 7],
+            },
+            result: Ok({ content: "9" }),
+            id: "test-tool",
+          },
+        },
+      ]);
+      const actual = converseBuilder(TEST_MODEL, content);
+      expect(actual.messages).toEqual([
+        { role: "user", content: [{ text: "USE add WITH 2 7" }] },
+        {
+          role: "assistant",
+          content: [
+            { text: "I'll use the addition tool to add 2 with 7" },
+            {
+              toolUse: {
+                name: "add",
+                input: { args: [2, 7] },
+                toolUseId: "test-tool",
+              },
+            },
+          ],
+        },
+        {
+          role: "user",
+          content: [
+            {
+              toolResult: {
+                toolUseId: "test-tool",
+                status: "success",
+                content: [{ json: { content: "9" } }],
+              },
+            },
+          ],
+        },
       ]);
     });
   });

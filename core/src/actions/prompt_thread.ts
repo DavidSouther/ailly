@@ -14,7 +14,7 @@ import {
   LOGGER,
   type PipelineSettings,
 } from "../index.js";
-import { MCPClient } from "../mcp";
+import { MCPClient } from "../mcp.js";
 import type { Plugin } from "../plugin/index.js";
 
 export interface PromptThreadsSummary {
@@ -220,6 +220,7 @@ export function generateOne(
     assertExists(c.responseStream).resolve(
       stream.readable.pipeThrough(new TextDecoderStream()),
     );
+    stream.writable.close();
     return Promise.resolve();
   }
 
@@ -246,25 +247,41 @@ export function generateOne(
     },
   };
 
+  // Start a new stream for streams
+  const generatorStream = new TransformStream();
+  assertExists(c.responseStream).resolve(generatorStream.readable);
+
   async function runWithTools() {
     const generator = engine.generate(c, settings);
-    assertExists(c.responseStream).resolve(generator.stream);
+    generator.stream.pipeTo(generatorStream.writable, { preventClose: true });
     await generator.done.finally(() => {
-      c.response = (c.response ?? "") + generator.message();
+      c.response = generator.message();
       assertExists(c.meta).debug = { ...c.meta?.debug, ...generator.debug() };
     });
     const { toolUse } = generator.debug();
     if (toolUse && c.meta && c.context.mcpClient) {
+      LOGGER.info("Invoking tool", {
+        tool: {
+          name: toolUse.name,
+          input: toolUse.input,
+        },
+      });
+      LOGGER.debug("Tool details", { toolUse });
       const result = await c.context.mcpClient.invokeTool(
         toolUse.name,
         toolUse.input,
       );
+      LOGGER.debug("Tool response", { toolUse, result });
 
       c.meta.messages ??= [];
-
       c.meta.messages.push({
         role: "assistant",
         content: c.response ?? "",
+      });
+
+      c.meta.messages.push({
+        role: "user",
+        content: "",
         toolUse: {
           name: toolUse.name,
           input: toolUse.input,
@@ -275,6 +292,7 @@ export function generateOne(
       c.meta.continue = true;
       return runWithTools();
     }
+    generatorStream.writable.close();
   }
 
   try {
