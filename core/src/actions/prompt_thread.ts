@@ -14,7 +14,7 @@ import {
   LOGGER,
   type PipelineSettings,
 } from "../index.js";
-import { MCPClient } from "../mcp.js";
+import { MCPClient, type MCPConfig } from "../mcp.js";
 import type { Plugin } from "../plugin/index.js";
 
 export interface PromptThreadsSummary {
@@ -101,9 +101,33 @@ export class PromptThread {
   }
 
   start() {
-    this.runner = this.isolated ? this.runIsolated() : this.runSequence();
+    let servers: MCPConfig = {};
+    for (const f of this.content) {
+      if (f.meta?.mcp) {
+        servers = { ...servers, ...f.meta.mcp };
+      }
+    }
+    let client: MCPClient;
+    if (Object.keys(servers).length > 0) {
+      client = new MCPClient();
+    }
+    this.runner = Promise.resolve().then(async () => {
+      if (client) {
+        await client.initialize({ servers });
+        const tools = client.getAllTools();
+        for (const f of this.content) {
+          f.context.mcpClient = client;
+          if (f.meta) f.meta.tools = tools;
+        }
+      }
+      const promises = this.isolated ? this.runIsolated() : this.runSequence();
+      return promises;
+    });
     this.runner.catch((err) => {
       LOGGER.error("Error in prompt thread", { err });
+    });
+    this.runner.finally(() => {
+      client?.cleanup();
     });
   }
 
@@ -125,9 +149,6 @@ export class PromptThread {
       // Extract MCP information from meta server and attach MCP Clients to Context
       await mcpClient.initialize({ servers: c.meta.mcp });
 
-      // Assign all the tools to meta.tools
-      c.meta.tools = mcpClient.getAllTools();
-
       // Attach MCP Clients to context
       c.context.mcpClient = mcpClient;
     }
@@ -143,10 +164,6 @@ export class PromptThread {
       LOGGER.warn("Error generating content", { err: { message, stack } });
       this.errors.push([i, err as Error]);
       throw err;
-    } finally {
-      if (c.context.mcpClient) {
-        c.context.mcpClient.cleanup();
-      }
     }
     return c;
   }

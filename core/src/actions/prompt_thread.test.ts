@@ -196,6 +196,7 @@ describe("PromptThread", () => {
     await Promise.resolve();
     await Promise.resolve();
     await Promise.resolve();
+    await Promise.resolve();
     // Enough to get one resolved
 
     expect(thread.isDone).toBe(false);
