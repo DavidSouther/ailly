@@ -1,6 +1,5 @@
 "use client";
-import type { Content, WritableContent } from "@ailly/core/src/content/content";
-import { withResolvers } from "@ailly/core/src/util";
+import type { WritableContent } from "@ailly/core/lib/content/content";
 import {
   type Dispatch,
   type MutableRefObject,

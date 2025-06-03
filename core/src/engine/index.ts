@@ -5,8 +5,18 @@ import * as bedrock from "./bedrock/bedrock.js";
 import * as mistral from "./mistral/mistral.js";
 import * as noop from "./noop.js";
 import * as openai from "./openai.js";
+import type { ToolInvocationResult } from "./tool";
+
+export const DEFAULT_SYSTEM_PROMPT =
+  "You are Ailly, the helpful AI Writer's Ally.";
 
 export interface EngineDebug {
+  toolUse?: {
+    name: string;
+    input: Record<string, unknown>;
+    partial: string;
+    id: string;
+  };
   engine?: string;
   model?: string;
   finish?: string;
@@ -14,7 +24,7 @@ export interface EngineDebug {
   lastRun?: Temporal.Instant | string;
 }
 
-export type EngineGenerate<D extends EngineDebug = object> = (
+export type EngineGenerate<D extends EngineDebug = EngineDebug> = (
   c: Content,
   parameters: PipelineSettings,
 ) => {
@@ -38,6 +48,12 @@ export interface Engine {
 export interface Message {
   role: "system" | "user" | "assistant";
   content: string;
+  toolUse?: {
+    name: string;
+    input: Record<string, unknown>;
+    result: ToolInvocationResult;
+    id?: string;
+  };
   tokens?: number;
 }
 

@@ -14,6 +14,7 @@ import {
   LOGGER,
   type PipelineSettings,
 } from "../index.js";
+import { MCPClient, type MCPConfig } from "../mcp.js";
 import type { Plugin } from "../plugin/index.js";
 
 export interface PromptThreadsSummary {
@@ -100,9 +101,33 @@ export class PromptThread {
   }
 
   start() {
-    this.runner = this.isolated ? this.runIsolated() : this.runSequence();
+    let servers: MCPConfig = {};
+    for (const f of this.content) {
+      if (f.meta?.mcp) {
+        servers = { ...servers, ...f.meta.mcp };
+      }
+    }
+    let client: MCPClient;
+    if (Object.keys(servers).length > 0) {
+      client = new MCPClient();
+    }
+    this.runner = Promise.resolve().then(async () => {
+      if (client) {
+        await client.initialize({ servers });
+        const tools = client.getAllTools();
+        for (const f of this.content) {
+          f.context.mcpClient = client;
+          if (f.meta) f.meta.tools = tools;
+        }
+      }
+      const promises = this.isolated ? this.runIsolated() : this.runSequence();
+      return promises;
+    });
     this.runner.catch((err) => {
       LOGGER.error("Error in prompt thread", { err });
+    });
+    this.runner.finally(() => {
+      client?.cleanup();
     });
   }
 
@@ -117,6 +142,17 @@ export class PromptThread {
         this.settings.templateView,
       );
     }
+
+    if (c.meta?.mcp && !c.context.mcpClient) {
+      const mcpClient = new MCPClient();
+
+      // Extract MCP information from meta server and attach MCP Clients to Context
+      await mcpClient.initialize({ servers: c.meta.mcp });
+
+      // Attach MCP Clients to context
+      c.context.mcpClient = mcpClient;
+    }
+
     try {
       await this.template(c, this.view);
       await this.plugin.augment(c);
@@ -201,6 +237,7 @@ export function generateOne(
     assertExists(c.responseStream).resolve(
       stream.readable.pipeThrough(new TextDecoderStream()),
     );
+    if (!stream.writable.locked) stream.writable.close();
     return Promise.resolve();
   }
 
@@ -227,13 +264,56 @@ export function generateOne(
     },
   };
 
-  try {
+  // Start a new stream for streams
+  const generatorStream = new TransformStream();
+  assertExists(c.responseStream).resolve(generatorStream.readable);
+
+  async function runWithTools() {
     const generator = engine.generate(c, settings);
-    assertExists(c.responseStream).resolve(generator.stream);
-    return generator.done.finally(() => {
+    generator.stream.pipeThrough(generatorStream, { preventClose: true });
+    await generator.done.finally(() => {
       c.response = generator.message();
       assertExists(c.meta).debug = { ...c.meta?.debug, ...generator.debug() };
     });
+    const { toolUse } = generator.debug();
+    if (toolUse && c.meta && c.context.mcpClient) {
+      LOGGER.info("Invoking tool", {
+        tool: {
+          name: toolUse.name,
+          input: toolUse.input,
+        },
+      });
+      LOGGER.debug("Tool details", { toolUse });
+      const result = await c.context.mcpClient.invokeTool(
+        toolUse.name,
+        toolUse.input,
+      );
+      LOGGER.debug("Tool response", { toolUse, result });
+
+      c.meta.messages ??= [];
+      c.meta.messages.push({
+        role: "assistant",
+        content: c.response ?? "",
+      });
+
+      c.meta.messages.push({
+        role: "user",
+        content: `USED TOOL ${toolUse.name} WITH ARGS ${toolUse.partial}`,
+        toolUse: {
+          name: toolUse.name,
+          input: toolUse.input,
+          result: result,
+          id: toolUse.id,
+        },
+      });
+      c.meta.continue = true;
+      return runWithTools();
+    }
+    generatorStream.writable.close();
+  }
+
+  try {
+    return runWithTools();
   } catch (err) {
     LOGGER.error(`Uncaught error in ${engine.name} generator`, { err });
     if (c.meta?.debug) {

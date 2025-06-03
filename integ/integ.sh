@@ -10,7 +10,7 @@ npm init --yes
 npm link ../core ../cli
 
 export AILLY_TEMPLATE_VIEW=
-export AILLY_ENGINE=${AILLY_ENGINE:-noop}
+export AILLY_ENGINE=noop
 
 echo "Basic"
 npx ailly --root 01_basic
@@ -36,3 +36,6 @@ echo "Max depth"
 
 echo "Tempate Views"
 ./12_template_view/template_view.sh
+
+echo "Tools"
+./20_tools/mcp.sh
