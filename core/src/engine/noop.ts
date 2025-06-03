@@ -1,3 +1,4 @@
+import { assert } from "@davidsouther/jiffies/lib/cjs/assert.js";
 import { getLogger } from "@davidsouther/jiffies/lib/cjs/log.js";
 import { isOk, unwrap } from "@davidsouther/jiffies/lib/cjs/result.js";
 
@@ -14,8 +15,10 @@ export const TIMEOUT = {
   setTimeout(timeout: number) {
     TIMEOUT.timeout = timeout;
   },
-  resetTimeout() {
-    TIMEOUT.setTimeout(Number(process.env.AILLY_NOOP_TIMEOUT ?? 750));
+  resetTimeout(defaultTimeout = 750) {
+    const timeout = Number(process.env.AILLY_NOOP_TIMEOUT ?? defaultTimeout);
+    assert(timeout >= 0);
+    TIMEOUT.setTimeout(timeout);
   },
 };
 TIMEOUT.resetTimeout();
@@ -30,6 +33,8 @@ export async function format(
   }
 }
 
+const NOOP_STRIDE = 10;
+
 export const generate: EngineGenerate = (
   content: Content,
   _: PipelineSettings,
@@ -40,22 +45,17 @@ export const generate: EngineGenerate = (
   const [message, debug] = makeMessages(content);
 
   let error: Error | undefined;
+  const stride = Number(process.env.NOOP_STRIDE ?? NOOP_STRIDE);
+  assert(stride > 0);
   const stream = new TextEncoderStream();
   const writer = stream.writable.getWriter();
   const done = Promise.resolve()
     .then(async () => {
       await sleep(TIMEOUT.timeout);
-      if (process.env.AILLY_NOOP_STREAM) {
-        let first = true;
-        for (const word of message.split(" ")) {
-          await writer.ready;
-          await writer.write((first ? "" : " ") + word);
-          first = false;
-          await sleep(TIMEOUT.timeout / 10);
-        }
-      } else {
+      for (let i = 0; i <= message.length; i += stride) {
         await writer.ready;
-        await writer.write(message);
+        await writer.write(message.substring(i, i + stride));
+        await sleep(TIMEOUT.timeout / 10);
       }
     })
     .catch((err) => {
@@ -78,20 +78,27 @@ function makeMessages(content: Content): [string, EngineDebug] {
   const system = content.context.system
     ?.map((s, i) => `[system ${i}] ${s.content}`)
     .join("\n");
+
   const messageList = content.meta?.messages ?? [];
-  const messages = messageList
-    .map((m, i) => `[message ${i}] ${m.role}: ${m.content}`)
-    .join("\n");
 
   const last = messageList.at(-1);
+  let debug: EngineDebug = {};
+
   if (last?.toolUse) {
     if (isOk(last.toolUse.result)) {
       const result = unwrap(last.toolUse.result) as {
         content: Array<{ text: string }>;
       };
-      return [`TOOL RETURNED ${result.content[0].text}\n`, {}];
+      messageList.push({
+        role: "assistant",
+        content: `TOOL RETURNED ${result.content[0].text}`,
+      });
+    } else {
+      messageList.push({
+        role: "assistant",
+        content: `TOOL FAILED ${last.toolUse.result.err.message}`,
+      });
     }
-    return [`TOOL FAILED ${last.toolUse.result.err.message}\n`, {}];
   }
 
   if (last?.content.includes("USE")) {
@@ -101,19 +108,24 @@ function makeMessages(content: Content): [string, EngineDebug] {
     if (useTool) {
       const { tool, args: rawArgs } = useTool.groups ?? {};
       const args = rawArgs.split(/\s+/);
-      return [
-        `USING TOOL ${tool} WITH ARGS [${args.join(", ")}]\n`,
-        {
-          toolUse: {
-            name: tool,
-            input: { args },
-            partial: "",
-            id: "",
-          },
+      messageList.push({
+        role: "assistant",
+        content: `USING TOOL ${tool} WITH ARGS [${args.join(", ")}]\n`,
+      });
+      debug = {
+        toolUse: {
+          name: tool,
+          input: { args },
+          partial: rawArgs,
+          id: "",
         },
-      ];
+      };
     }
   }
+
+  const messages = messageList
+    .map((m, i) => `[message ${i}] ${m.role}: ${m.content}`)
+    .join("\n");
 
   return [
     process.env.AILLY_NOOP_RESPONSE ??
@@ -123,7 +135,7 @@ function makeMessages(content: Content): [string, EngineDebug] {
         messages,
         `[response] ${content.prompt}`,
       ].join("\n"),
-    {},
+    debug,
   ];
 }
 

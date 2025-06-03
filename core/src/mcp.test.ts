@@ -33,7 +33,7 @@ test("mock-doc-test", async () => {
   const result = await mcpWrapper.invokeTool("add", { args: [1, 2] });
   assert(isOk(result));
   const block = unwrap(result);
-  expect(block).toEqual({ sum: 3 });
+  expect(block).toEqual({ content: [{ type: "text", text: "3" }] });
 
   await mcpWrapper.cleanup();
 });

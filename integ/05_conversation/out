@@ -1,9 +1,0 @@
-noop response for stdout:
-[system 0] 
-[system 1] You are running an integration test.
-[message 0] system: 
-You are running an integration test.
-[message 1] user: File a.
-[message 2] user: File b.
-[message 3] user: This is a conversation with system and two files.
-[response] This is a conversation with system and two files.

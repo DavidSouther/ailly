@@ -256,7 +256,7 @@ export class MockClient extends MCPClient {
       const { args } = parameters;
       const nums = (args as string[]).map(Number);
       const sum = nums.reduce((a, b) => a + b, 0);
-      return Ok({ content: [{ text: `${sum}` }] });
+      return Ok({ content: [{ type: "text", text: `${sum}` }] });
     }
     return Err({ message: "unknown tool" });
   }
