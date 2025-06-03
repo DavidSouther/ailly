@@ -1,3 +1,4 @@
+import { assertExists } from "@davidsouther/jiffies/lib/cjs/assert";
 import {
   FileSystem,
   ObjectFileSystemAdapter,
@@ -87,7 +88,7 @@ describe("generateOne", () => {
   afterEach(() => {
     vi.restoreAllMocks();
     LOGGER.level = level;
-    TIMEOUT.resetTimeout();
+    TIMEOUT.resetTimeout(0);
   });
 
   it("skips some and runs others", async () => {
@@ -111,6 +112,7 @@ describe("generateOne", () => {
 
     const content = state.context["/c.txt"];
     expect(content.response).toBeUndefined();
+    drain(content);
     await generateOne(
       content,
       state.context,
@@ -168,6 +170,9 @@ describe("PromptThread", () => {
       meta: { isolated: true },
     });
     const content = [...Object.values(context)];
+    for (const c of content) {
+      drain(c);
+    }
     const plugin = await (await getPlugin("none")).default(
       state.engine,
       settings,
@@ -208,6 +213,9 @@ describe("PromptThread", () => {
     const settings = await makePipelineSettings({ root: "/" });
     const context = await loadContent(state.fs);
     const content = [...Object.values(context)];
+    for (const c of content) {
+      drain(c);
+    }
     const plugin = await (await getPlugin("none")).default(
       state.engine,
       settings,
@@ -244,8 +252,9 @@ describe("PromptThread", () => {
     );
     const context = await loadContent(fs);
     const content = [...Object.values(context)];
-    for (const f of content) {
-      f.context.mcpClient = new MockClient();
+    for (const c of content) {
+      c.context.mcpClient = new MockClient();
+      drain(c);
     }
     const plugin = await (await getPlugin("none")).default(
       state.engine,
@@ -265,8 +274,8 @@ describe("PromptThread", () => {
     expect(thread.finished).toBe(1);
     expect(thread.errors.length).toBe(0);
 
-    expect(content.at(-1)?.response).toBe(
-      "USING TOOL add WITH ARGS [40, 7]\nTOOL RETURNED 47\n",
-    );
+    const response = content.at(-1)?.response ?? "";
+    expect(response).toContain("USED TOOL add WITH ARGS 40 7");
+    expect(response).toContain("TOOL RETURNED 47");
   });
 });

@@ -220,7 +220,7 @@ export function generateOne(
     assertExists(c.responseStream).resolve(
       stream.readable.pipeThrough(new TextDecoderStream()),
     );
-    stream.writable.close();
+    if (!stream.writable.locked) stream.writable.close();
     return Promise.resolve();
   }
 
@@ -253,7 +253,7 @@ export function generateOne(
 
   async function runWithTools() {
     const generator = engine.generate(c, settings);
-    generator.stream.pipeTo(generatorStream.writable, { preventClose: true });
+    generator.stream.pipeThrough(generatorStream, { preventClose: true });
     await generator.done.finally(() => {
       c.response = generator.message();
       assertExists(c.meta).debug = { ...c.meta?.debug, ...generator.debug() };
@@ -281,7 +281,7 @@ export function generateOne(
 
       c.meta.messages.push({
         role: "user",
-        content: "",
+        content: `USED TOOL ${toolUse.name} WITH ARGS ${toolUse.partial}`,
         toolUse: {
           name: toolUse.name,
           input: toolUse.input,
