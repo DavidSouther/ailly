@@ -1,6 +1,6 @@
 {
   "name": "@ailly/web",
-  "version": "1.6.0",
+  "version": "1.7.0-rc1",
   "private": true,
   "scripts": {
     "check": "biome check src && tsc --noEmit",
