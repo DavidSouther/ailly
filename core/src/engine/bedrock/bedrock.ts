@@ -1,3 +1,5 @@
+import { performance } from "node:perf_hooks";
+
 import {
   BedrockRuntimeClient,
   ConverseStreamCommand,
@@ -98,6 +100,8 @@ export const generate: EngineGenerate<BedrockDebug> = (
       }
     };
     let message: string = c.meta?.continue ? (c.response ?? "") : "";
+    const start = performance.now();
+    let firstResponse = -1;
     const done = bedrock
       .send(new ConverseStreamCommand(converseStreamCommand))
       .then(async (response) => {
@@ -105,6 +109,9 @@ export const generate: EngineGenerate<BedrockDebug> = (
 
         let blocks = 0;
         for await (const block of response.stream ?? []) {
+          if (blocks === 0) {
+            firstResponse = performance.now();
+          }
           blocks += 1;
           LOGGER.trace("Got response stream message", { blocks, ...block });
           if (block.validationException) {
@@ -141,10 +148,21 @@ export const generate: EngineGenerate<BedrockDebug> = (
           }
 
           if (block.metadata) {
-            // block.metadata.metrics?.latencyMs
-            // block.metadata.usage?.inputTokens
-            // block.metadata.usage?.outputTokens
-            // block.metadata.usage?.totalTokens
+            // if (block.metadata.metrics?.latencyMs) {
+            //   debug.statistics = {...debug.statistics, invocationLatency: }
+            // }
+            if (block.metadata.usage?.inputTokens) {
+              debug.statistics = {
+                ...debug.statistics,
+                inputTokenCount: block.metadata.usage.inputTokens,
+              };
+            }
+            if (block.metadata.usage?.outputTokens) {
+              debug.statistics = {
+                ...debug.statistics,
+                outputTokenCount: block.metadata.usage.outputTokens,
+              };
+            }
             // block.metadata.performanceConfig?.latency // OPTIMIZED || STANDARD
             // block.metadata.trace?.guardrail?.inputAssessment
             // block.metadata.trace?.guardrail?.modelOutput
@@ -203,6 +221,17 @@ export const generate: EngineGenerate<BedrockDebug> = (
         LOGGER.debug(
           `Closing write stream for bedrock response ${c.name} (${debug.id})`,
         );
+        const finished = performance.now();
+
+        const firstByteLatency = firstResponse - start;
+        const invocationLatency = finished - start;
+
+        debug.statistics = {
+          ...debug.statistics,
+          firstByteLatency,
+          invocationLatency,
+        };
+
         await writer.close();
       });
 
