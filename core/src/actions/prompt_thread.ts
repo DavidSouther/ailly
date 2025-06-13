@@ -115,9 +115,11 @@ export class PromptThread {
       if (client) {
         await client.initialize({ servers });
         const tools = client.getAllTools();
-        for (const f of this.content) {
-          f.context.mcpClient = client;
-          if (f.meta) f.meta.tools = tools;
+        if (tools) {
+          for (const f of this.content) {
+            f.context.mcpClient = client;
+            if (f.meta) f.meta.tools = tools;
+          }
         }
       }
       const promises = this.isolated ? this.runIsolated() : this.runSequence();
