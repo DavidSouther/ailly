@@ -158,30 +158,32 @@ describe("bedrock claude3", () => {
       const result = contentToToolConfig(content);
 
       expect(result).toEqual({
-        tools: [
-          {
-            toolSpec: {
-              name: "test_tool",
-              description: "A test tool for testing",
-              inputSchema: {
-                json: {
-                  type: "object",
-                  properties: {
-                    param1: {
-                      type: "string",
-                      description: "First parameter",
+        toolConfig: {
+          tools: [
+            {
+              toolSpec: {
+                name: "test_tool",
+                description: "A test tool for testing",
+                inputSchema: {
+                  json: {
+                    type: "object",
+                    properties: {
+                      param1: {
+                        type: "string",
+                        description: "First parameter",
+                      },
+                      param2: {
+                        type: "number",
+                        description: "Second parameter",
+                      },
                     },
-                    param2: {
-                      type: "number",
-                      description: "Second parameter",
-                    },
+                    required: ["param1"],
                   },
-                  required: ["param1"],
                 },
               },
             },
-          },
-        ],
+          ],
+        },
       });
     });
 

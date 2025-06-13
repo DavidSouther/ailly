@@ -108,7 +108,7 @@ export function converseBuilder(
     modelId: model,
     system: [system],
     messages,
-    toolConfig,
+    ...toolConfig,
     inferenceConfig: {
       maxTokens,
       stopSequences,
@@ -118,20 +118,24 @@ export function converseBuilder(
 }
 
 export const contentToToolConfig = (content: Content) => {
-  return {
-    tools: content.meta?.tools?.map(
-      (tool) =>
-        ({
-          toolSpec: {
-            name: tool.name,
-            description: tool.description,
-            inputSchema: {
-              json: tool.parameters,
-            } as unknown as ToolInputSchema.JsonMember, // We're more strict than Bedrock, hence the unknown cast.
-          },
-        }) as Tool.ToolSpecMember,
-    ),
-  };
+  return content.meta?.tools
+    ? {
+        toolConfig: {
+          tools: content.meta?.tools?.map(
+            (tool) =>
+              ({
+                toolSpec: {
+                  name: tool.name,
+                  description: tool.description,
+                  inputSchema: {
+                    json: tool.parameters,
+                  } as unknown as ToolInputSchema.JsonMember, // We're more strict than Bedrock, hence the unknown cast.
+                },
+              }) as Tool.ToolSpecMember,
+          ),
+        },
+      }
+    : {};
 };
 
 export function toolUseResult({
