@@ -289,9 +289,8 @@ async function loadFile(
               const outFile = await fs.readFile(outPath).catch((e) => "");
               const parsedResponse: GrayMatterFile<string> = matter(outFile);
               response = parsedResponse.content;
-              data.meta = data.meta ?? {};
-              (data.meta as { debug: object }).debug =
-                parsedResponse.data.meta?.debug ?? {};
+              (data as { debug: object }).debug =
+                parsedResponse.data.debug ?? {};
             } catch (err) {
               LOGGER.warn(
                 `Error reading response and parsing for matter in ${outPath}`,
