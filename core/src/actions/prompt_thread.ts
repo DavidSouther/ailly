@@ -300,7 +300,7 @@ export function generateOne(
 
       c.meta.messages.push({
         role: "user",
-        content: `USED TOOL ${toolUse.name} WITH ARGS ${toolUse.partial}`,
+        content: "",
         toolUse: {
           name: toolUse.name,
           input: toolUse.input,

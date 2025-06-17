@@ -276,7 +276,6 @@ describe("PromptThread", () => {
     expect(thread.errors.length).toBe(0);
 
     const response = content.at(-1)?.response ?? "";
-    expect(response).toContain("USED TOOL add WITH ARGS 40 7");
     expect(response).toContain("TOOL RETURNED 47");
   });
 });
