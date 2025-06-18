@@ -1,5 +1,6 @@
 import { dirname } from "node:path";
 
+import EventEmitter from "node:events";
 import type { Content } from "../content/content";
 import { type Engine, getEngine } from "../engine/index.js";
 import {
@@ -25,6 +26,7 @@ export class GenerateManager {
   started = false;
   threads: Thread[];
   threadRunners: PromptThread[] = [];
+  events = new EventEmitter();
 
   static async from(
     content: string[],
@@ -52,7 +54,14 @@ export class GenerateManager {
   start() {
     this.started = true;
     this.threadRunners = this.threads.map((t) =>
-      PromptThread.run(t, this.context, this.settings, this.engine, this.rag),
+      PromptThread.run(
+        t,
+        this.context,
+        this.settings,
+        this.engine,
+        this.rag,
+        this.events,
+      ),
     );
 
     this.settled.promise.then(() => {
