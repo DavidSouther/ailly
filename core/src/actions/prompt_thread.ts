@@ -1,3 +1,4 @@
+import { EventEmitter } from "node:events";
 import { Temporal } from "temporal-polyfill";
 
 import { assertExists } from "@davidsouther/jiffies/lib/cjs/assert.js";
@@ -16,6 +17,10 @@ import {
 } from "../index.js";
 import { MCPClient, type MCPConfig } from "../mcp.js";
 import type { Plugin } from "../plugin/index.js";
+
+export const PROMPT_THREAD_ALL_DONE = "All prompt threads finished";
+export const PROMPT_THREAD_ONE_DONE = "One prompt thread done";
+export const PROMPT_THREAD_ONE_FAILED = "One prompt thread failed";
 
 export interface PromptThreadsSummary {
   totalPrompts: number;
@@ -81,10 +86,18 @@ export class PromptThread {
     settings: PipelineSettings,
     engine: Engine,
     rag: Plugin,
+    events: EventEmitter = new EventEmitter(),
   ) {
     settings.isolated =
       settings.isolated || content.every((c) => c.meta?.isolated);
-    const thread = new PromptThread(content, context, settings, engine, rag);
+    const thread = new PromptThread(
+      content,
+      context,
+      settings,
+      engine,
+      rag,
+      events,
+    );
     thread.start();
     return thread;
   }
@@ -95,6 +108,7 @@ export class PromptThread {
     private settings: PipelineSettings,
     private engine: Engine,
     private plugin: Plugin,
+    private events: EventEmitter,
   ) {
     this.content = content;
     this.isolated = Boolean(settings.isolated ?? false);
@@ -130,6 +144,7 @@ export class PromptThread {
     });
     this.runner.finally(() => {
       client?.cleanup();
+      this.events.emit(PROMPT_THREAD_ALL_DONE);
     });
   }
 
@@ -165,8 +180,10 @@ export class PromptThread {
       const { message, stack } = err as Error;
       LOGGER.warn("Error generating content", { err: { message, stack } });
       this.errors.push([i, err as Error]);
+      this.events.emit(PROMPT_THREAD_ONE_FAILED, { content: c, error: err });
       throw err;
     }
+    this.events.emit(PROMPT_THREAD_ONE_DONE, { content: c });
     return c;
   }
 

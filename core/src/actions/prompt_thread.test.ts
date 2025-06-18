@@ -1,4 +1,4 @@
-import { assertExists } from "@davidsouther/jiffies/lib/cjs/assert";
+import { EventEmitter } from "node:stream";
 import {
   FileSystem,
   ObjectFileSystemAdapter,
@@ -15,6 +15,8 @@ import { LOGGER } from "../index.js";
 import { MockClient } from "../mcp";
 import { withResolvers } from "../util.js";
 import {
+  PROMPT_THREAD_ALL_DONE,
+  PROMPT_THREAD_ONE_DONE,
   PromptThread,
   drain,
   generateOne,
@@ -177,16 +179,20 @@ describe("PromptThread", () => {
       state.engine,
       settings,
     );
+    const events = new EventEmitter();
+    vi.spyOn(events, "emit");
     const thread = PromptThread.run(
       content,
       context,
       settings,
       state.engine,
       plugin,
+      events,
     );
     expect(thread.isDone).toBe(false);
     expect(thread.finished).toBe(0);
     expect(thread.errors.length).toBe(0);
+    expect(events.emit).toHaveBeenCalledTimes(0);
 
     await Promise.resolve();
     await Promise.resolve();
@@ -202,12 +208,27 @@ describe("PromptThread", () => {
     expect(thread.isDone).toBe(false);
     expect(thread.finished).toBe(1);
     expect(thread.errors.length).toBe(0);
+    expect(events.emit).toHaveBeenCalledTimes(1);
 
     await thread.allSettled();
 
     expect(thread.isDone).toBe(true);
     expect(thread.finished).toBe(3);
     expect(thread.errors.length).toBe(0);
+    expect(events.emit).toHaveBeenCalledWith(
+      PROMPT_THREAD_ONE_DONE,
+      expect.anything(),
+    );
+    expect(events.emit).toHaveBeenCalledWith(
+      PROMPT_THREAD_ONE_DONE,
+      expect.anything(),
+    );
+    expect(events.emit).toHaveBeenCalledWith(
+      PROMPT_THREAD_ONE_DONE,
+      expect.anything(),
+    );
+    expect(events.emit).toHaveBeenCalledWith(PROMPT_THREAD_ALL_DONE);
+    expect(events.emit).toHaveBeenCalledTimes(4);
   });
 
   it("runs sequence", async () => {
@@ -221,22 +242,27 @@ describe("PromptThread", () => {
       state.engine,
       settings,
     );
+    const events = new EventEmitter();
+    vi.spyOn(events, "emit");
     const thread = PromptThread.run(
       content,
       context,
       settings,
       state.engine,
       plugin,
+      events,
     );
     expect(thread.isDone).toBe(false);
     expect(thread.finished).toBe(0);
     expect(thread.errors.length).toBe(0);
+    expect(events.emit).toHaveBeenCalledTimes(0);
 
     await thread.allSettled();
 
     expect(thread.isDone).toBe(true);
     expect(thread.finished).toBe(3);
     expect(thread.errors.length).toBe(0);
+    expect(events.emit).toHaveBeenCalledTimes(4);
   });
 
   it("runs with MCP", async () => {
