@@ -188,3 +188,80 @@ This intentional approach to editing is very different from CoPilot's and Q's in
 Repurpose the website and domain for a Prompt Engineering playground and training site.
 Users are guided through several prompt engineering exercises that show how small changes to the system prompt cause huge changes to the output.
 Allow a final "playground" mode when they've completed the main course.
+
+## Tool Use as Content
+
+Ailly's core "one file one prompt" faces challenges in the Tool Use paradigm.
+One prompt call can result in multiple LLM tool use blocks.
+Putting the back and forth as an array in the meta head isn't great user experience, as it's too hard to parse where the tool use calls align in the document itself.
+
+Ailly could use yaml's --- syntax to indicate multiple documents, but this clases with Markdown's --- for &lt;hr> section breaks.
+Further, tool Use can include large responses, that aren't specifically related to the LLM's response but are necessary to understand the LLM's context window.
+
+One option seems to be expanding one "call" into several files, with each tool call being a call and response.
+This has a downside of keeping the final response separated across a number of files, but otherwise "looks like" current Ailly prompt files.
+
+Ailly could store the primary response in a single file, and insert hrefs to tool use files.
+This seems to handle the "one file one prompt" approach well, without needlessly burdening the user with inline tool responses.
+However, Ailly needs to include some information in situ for the primary prompt file to coordinate where to insert the prompts.
+If we insist that Ailly responses are always markdown syntax, there are some interesting mechanisms for this.
+
+The simplest approach would be to use reference-style links, and then put the tool use details (the tool, parameters, and response) in that file.
+When loading content, Ailly would need to look for these references, and re-build the messages for the content from those positions.
+
+```
+[tool-use:tool-use-1]: ./file-tool-use.md
+```
+
+> (The below example shouldn't render in a markdown tool.)
+
+[tool-use:tool-use-1]: ./file-tool-use.md
+
+However, this requires the reader to go to the response file to view the tool called and its parameters.
+
+Another option would be to use an HTML comment block, and similarly remove it.
+This would allow a YAML format in the primary file, but keep the response separate.
+
+```
+<!-- TOOL-USE
+id: id123
+tool: add
+parameters: [2, 5]
+response: ./file-tool-use.md
+-->
+```
+
+In MDAST, this is
+
+```
+{
+  type: 'definition',
+  identifier: 'tool-use:tool-use-1',
+  label: 'tool-use:tool-use-1',
+  title: null,
+  url: './file-tool-use.md',
+  position: [Object]
+}```
+
+> (The below example, again, shouldn't render in a markdown tool.)
+
+<!-- TOOL-USE
+id: id123
+tool: add
+parameters: [2, 5]
+response: ./file-tool-use.md
+-->
+
+Using `remark`, this looks like:
+
+```
+{
+  type: 'html',
+  value: '<!-- TOOL-USE\n' +
+    'id: id123\n' +
+    'tool: add\n' +
+    'parameters: [2, 5]\n' +
+    'response: ./file-tool-use.md\n' +
+    '-->',
+  position: [Object]
+}```
