@@ -12,6 +12,7 @@ import { assertExists } from "@davidsouther/jiffies/lib/cjs/assert.js";
 import type { FileSystem } from "@davidsouther/jiffies/lib/cjs/fs.js";
 import { NodeFileSystemAdapter } from "@davidsouther/jiffies/lib/cjs/fs_node.js";
 
+import { PROMPT_THREAD_ONE_DONE } from "@ailly/core/lib/actions/prompt_thread";
 import { type Args, help, makeArgs } from "./args.js";
 import { LOGGER, loadFs } from "./fs.js";
 import { version } from "./version.js";
@@ -66,6 +67,16 @@ export async function main() {
       break;
     default: {
       LOGGER.info(`Starting ${loaded.content.length} requests`);
+
+      generator.events.on(
+        PROMPT_THREAD_ONE_DONE,
+        ({ content }: { content: Content }) => {
+          if (content.meta?.debug?.finish !== "failed") {
+            writeContent(fs, [content]);
+          }
+        },
+      );
+
       generator.start();
 
       if (isStdOut) {
@@ -107,12 +118,6 @@ export async function main() {
           ].join("\n"),
         );
       }
-
-      const toWrite = loaded.content
-        .map((c) => loaded.context[c])
-        .filter((c) => c.meta?.debug?.finish !== "failed");
-      await writeContent(fs, toWrite);
-      break;
     }
   }
 }
