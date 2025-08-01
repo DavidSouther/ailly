@@ -16,7 +16,7 @@ import {
 import type { EngineDebug, Message } from "../engine/index.js";
 import type { Tool } from "../engine/tool.js";
 import { LOGGER } from "../index.js";
-import type { MCPClient, MCPConfig } from "../mcp.js";
+import type { MCPClientAdapter, MCPConfig } from "../mcp.js";
 import {
   type PromiseWithResolvers,
   isDefined,
@@ -59,7 +59,7 @@ export interface Context {
   edit?:
     | { start: number; end: number; file: string }
     | { after: number; file: string };
-  mcpClient?: MCPClient;
+  mcpClient?: MCPClientAdapter;
 }
 
 // Additional useful metadata.
