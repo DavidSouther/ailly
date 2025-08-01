@@ -2,8 +2,19 @@ import { Err, Ok } from "@davidsouther/jiffies/lib/cjs/result.js";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
-import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
+import type {
+  Transport,
+  TransportSendOptions,
+} from "@modelcontextprotocol/sdk/shared/transport.js";
+import {
+  type JSONRPCRequestSchema,
+  LATEST_PROTOCOL_VERSION,
+} from "@modelcontextprotocol/sdk/types.js";
 
+import { assertExists } from "@davidsouther/jiffies/lib/esm/assert.js";
+import { isOk, unwrap } from "@davidsouther/jiffies/lib/esm/result.js";
+import type { AuthInfo } from "@modelcontextprotocol/sdk/server/auth/types.js";
+import type { JSONRPCMessage } from "@modelcontextprotocol/sdk/types.js";
 import type {
   JSONSchemaTypeName,
   Tool,
@@ -36,13 +47,109 @@ export interface MCPServersConfig {
   }>;
 }
 
+export interface MCPClient {
+  readonly version?: string;
+  readonly tools: Tool[];
+  invokeTool(
+    toolName: string,
+    parameters: Record<string, unknown>,
+    context?: string,
+  ): Promise<ToolInvocationResult>;
+}
+
+export class PluginTransport implements Transport {
+  path: string;
+  mcp?: MCPClient;
+  constructor(path: string) {
+    this.path = path;
+  }
+
+  async start(...args: never[]): Promise<void> {
+    const plugin = (await import(this.path)).default;
+    // Check if the default export from this.path has a tools array and an invokeTool method
+    this.mcp = plugin;
+  }
+
+  async send(
+    message: JSONRPCMessage,
+    options?: TransportSendOptions,
+  ): Promise<void> {
+    const { id, method, params } =
+      message as unknown as typeof JSONRPCRequestSchema;
+    switch (method) {
+      case "initialize":
+        Promise.resolve().then(() => {
+          this.onmessage?.({
+            jsonrpc: "2.0" as const,
+            id,
+            result: {
+              protocolVersion: LATEST_PROTOCOL_VERSION,
+              capabilities: {
+                tools: { listChanged: false },
+              },
+              serverInfo: {
+                name: `Plugin Server at ${this.path}`,
+                version: this.mcp?.version ?? "0.0.1",
+              },
+            },
+          });
+        });
+        break;
+      case "tools/list":
+        Promise.resolve().then(() => {
+          this.onmessage?.({
+            jsonrpc: "2.0",
+            id,
+            result: { tools: assertExists(this.mcp).tools ?? [] },
+          });
+        });
+        break;
+      case "tools/call":
+        Promise.resolve().then(async () => {
+          let result: ToolInvocationResult;
+          try {
+            result = await assertExists(this.mcp).invokeTool(
+              params.name,
+              params.arguments,
+            );
+          } catch (e) {
+            result = Err({
+              message: (e as Error).message,
+              code: "tools/call error",
+            });
+          }
+          this.onmessage?.({
+            jsonrpc: "2.0",
+            id,
+            result: isOk(result)
+              ? { content: [unwrap(result)], isError: false }
+              : { isError: true, error: Err(result).message },
+          });
+        });
+    }
+  }
+
+  close(): Promise<void> {
+    return Promise.resolve();
+  }
+  onmessage?: (
+    message: JSONRPCMessage,
+    extra?: { authInfo?: AuthInfo },
+  ) => void;
+  onclose?: (() => void) | undefined;
+  onerror?: ((error: Error) => void) | undefined;
+  sessionId?: string | undefined;
+}
+
 /**
  * Wrapper for MCP Client
  */
-export class MCPClient {
+export class MCPClientAdapter implements MCPClient {
   private toolsMap: Map<string, ToolInformation> = new Map();
   private clients: Map<string, Client> = new Map();
   private config?: MCPServersConfig;
+  protected _tools?: Tool[];
+
   /**
    * Initialize the MCP wrapper with a configuration
    */
@@ -83,20 +190,6 @@ export class MCPClient {
   }
 
   /**
-   * Get the current configuration
-   */
-  getToolsMap(): Map<string, ToolInformation> {
-    return this.toolsMap;
-  }
-
-  /**
-   * Get the current configuration
-   */
-  getConfig(): MCPServersConfig | undefined {
-    return this.config;
-  }
-
-  /**
    * Get or create an MCP client for a server
    */
   async fillToolInformation() {
@@ -104,7 +197,7 @@ export class MCPClient {
       const tools = await this.getTools(client);
 
       for (const tool of tools) {
-        this.toolsMap.set(`${tool.name}`, { client, tool });
+        this.toolsMap.set(tool.name, { client, tool });
       }
     }
   }
@@ -159,17 +252,11 @@ export class MCPClient {
     }
   }
 
-  getAllTools(): Tool[] {
-    const tools: Tool[] = [];
-    for (const [key, value] of this.toolsMap.entries()) {
-      tools.push(value.tool);
+  get tools(): Tool[] {
+    if (!this._tools) {
+      this._tools = Array.from(this.toolsMap.values().map(({ tool }) => tool));
     }
-    return tools;
-  }
-
-  getTool(name: string | undefined): ToolInformation | undefined {
-    if (!name) return undefined;
-    return this.toolsMap.get(name);
+    return this._tools;
   }
 
   /**
@@ -229,35 +316,4 @@ export class MCPClient {
 }
 
 // Export a singleton instance
-export const mcpWrapper = new MCPClient();
-
-export class MockClient extends MCPClient {
-  initialize(_config?: MCPServersConfig): Promise<void> {
-    return Promise.resolve();
-  }
-  getAllTools(): Tool[] {
-    return [
-      {
-        name: "add",
-        parameters: {
-          type: "object",
-          properties: { args: { type: "array" } },
-        },
-      },
-    ];
-  }
-
-  async invokeTool(
-    toolName: string,
-    parameters: Record<string, unknown>,
-    _context?: string,
-  ): Promise<ToolInvocationResult> {
-    if (toolName === "add") {
-      const { args } = parameters;
-      const nums = (args as string[]).map(Number);
-      const sum = nums.reduce((a, b) => a + b, 0);
-      return Ok({ content: [{ type: "text", text: `${sum}` }] });
-    }
-    return Err({ message: "unknown tool" });
-  }
-}
+export const mcpWrapper = new MCPClientAdapter();

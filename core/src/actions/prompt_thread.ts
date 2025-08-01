@@ -15,7 +15,7 @@ import {
   LOGGER,
   type PipelineSettings,
 } from "../index.js";
-import { MCPClient, type MCPConfig } from "../mcp.js";
+import { type MCPClient, MCPClientAdapter, type MCPConfig } from "../mcp.js";
 import type { Plugin } from "../plugin/index.js";
 
 export const PROMPT_THREAD_ALL_DONE = "All prompt threads finished";
@@ -121,20 +121,21 @@ export class PromptThread {
         servers = { ...servers, ...f.meta.mcp };
       }
     }
-    let client: MCPClient;
+    let client: MCPClientAdapter | undefined;
     if (Object.keys(servers).length > 0) {
-      client = new MCPClient();
+      client = new MCPClientAdapter();
     }
     this.runner = Promise.resolve().then(async () => {
       if (client) {
         await client.initialize({ servers });
-        const tools = client.getAllTools();
-        if (tools) {
-          for (const f of this.content) {
-            f.context.mcpClient = client;
-            if (f.meta) f.meta.tools = tools;
-          }
-        }
+      }
+      const tools = [
+        ...(client?.tools ?? []),
+        ...(this.plugin.mcp?.tools ?? []),
+      ];
+      for (const f of this.content) {
+        f.context.mcpClient = client;
+        if (f.meta) f.meta.tools = tools;
       }
       const promises = this.isolated ? this.runIsolated() : this.runSequence();
       return promises;
@@ -161,7 +162,7 @@ export class PromptThread {
     }
 
     if (c.meta?.mcp && !c.context.mcpClient) {
-      const mcpClient = new MCPClient();
+      const mcpClient = new MCPClientAdapter();
 
       // Extract MCP information from meta server and attach MCP Clients to Context
       await mcpClient.initialize({ servers: c.meta.mcp });

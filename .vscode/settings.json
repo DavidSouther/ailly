@@ -1,5 +1,4 @@
 {
   "typescript.updateImportsOnFileMove.enabled": "always",
-  "typescript.preferences.importModuleSpecifierEnding": "minimal"
-  // "vitest.include": ["**/src/**/*.test.ts"]
+  "typescript.preferences.importModuleSpecifierEnding": "js"
 }
