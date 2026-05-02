@@ -16,7 +16,7 @@ use ailly::mem_fs;
 async fn generator_runs_two_turn_sequence_through_noop() {
     let fs = mem_fs! {
         "root": {
-            ".aillyrc.toml": r#"system = "you are helpful""#,
+            ".ailly.toml": r#"system = "you are helpful""#,
             "01.toml": r#"prompt = "first turn""#,
             "02.toml": r#"prompt = "second turn""#,
         },

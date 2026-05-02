@@ -3,12 +3,12 @@ use rig::{
     message::{AssistantContent, Message, UserContent},
 };
 use serde::{Deserialize, Serialize};
-use vfs::VfsPath;
+use vfs::{MemoryFS, VfsPath};
 
 mod gitignore_fs;
 mod gitignore_fs_constants;
 
-pub const AILLYRC: &str = ".aillyrc.toml";
+pub const AILLYRC: &str = ".ailly.toml";
 pub const EXTENSION: &str = ".toml";
 
 #[derive(Debug, thiserror::Error)]
@@ -149,7 +149,7 @@ impl ConversationTurn {
     ///
     /// The file format is `prompt = "..."` plus an optional `[[response]]`
     /// array of `{ role, text }` messages. The caller threads the inherited
-    /// `meta` and `system` from the surrounding `.aillyrc.toml` chain;
+    /// `meta` and `system` from the surrounding `.ailly.toml` chain;
     /// `ConversationTurn::load` does not walk the filesystem itself.
     ///
     /// Returns an error when the file cannot be read, fails to parse, or
@@ -275,13 +275,13 @@ pub struct Conversation {
 
 impl Conversation {
     /// Walk the directory rooted at `path` recursively and build one
-    /// `ConversationTurn` per `<name>.toml` file (other than `.aillyrc.toml`).
+    /// `ConversationTurn` per `<name>.toml` file (other than `.ailly.toml`).
     ///
-    /// `.aillyrc.toml` system messages and meta are threaded down via
+    /// `.ailly.toml` system messages and meta are threaded down via
     /// `AillyRc::load`, so each turn carries the system chain inherited at
     /// its location. Turns appear in `turns` in walk order: parent before
     /// child, lexicographic among siblings within a directory. A directory
-    /// whose `.aillyrc.toml` sets `skip = true` contributes no turns and
+    /// whose `.ailly.toml` sets `skip = true` contributes no turns and
     /// is not recursed into.
     pub async fn load(path: VfsPath) -> Result<Self, ContentError> {
         // Out of scope: the `.vectors` directory skip, synthetic CLI content,
@@ -290,6 +290,14 @@ impl Conversation {
         let mut turns: Vec<(VfsPath, ConversationTurn)> = Vec::new();
         Self::load_into(&path, AillyRc::default(), &mut turns).await?;
         Ok(Self { turns })
+    }
+
+    /// Build a Conversation with no turns.
+    ///
+    /// Used by callers that need a starting point to append synthetic
+    /// turns to without first walking a real filesystem.
+    pub fn empty() -> Self {
+        Self { turns: Vec::new() }
     }
 
     /// Write every turn back to its on-disk path.
@@ -324,6 +332,51 @@ impl Conversation {
     /// `history_for` calls observe it as a predecessor's response.
     pub fn record_response(&mut self, idx: usize, message: Message) {
         self.turns[idx].1.response.push(message);
+    }
+
+    /// Append a synthetic user-prompt turn to the conversation.
+    ///
+    /// The new turn lives on an in-memory `VfsPath`, inheriting the
+    /// `system` chain and `meta` from the previously loaded final turn so
+    /// it observes the same system messages and metadata as a sibling
+    /// would. When the conversation has no turns, the synthetic turn
+    /// carries an empty system chain and default meta.
+    ///
+    /// Used by the CLI to support `--root <dir> --prompt <text>` where
+    /// the prompt is the trailing turn over the root's loaded context.
+    pub fn push_synthetic_prompt(&mut self, prompt: &str) -> Result<(), ContentError> {
+        let (system, meta) = match self.turns.last() {
+            Some((_, last)) => (last.system.clone(), last.meta.clone()),
+            None => (Vec::new(), ContentMeta::default()),
+        };
+
+        let fs = VfsPath::new(MemoryFS::new());
+        let dir = fs
+            .join("synthetic")
+            .map_err(|source| ContentError::ResolvePath {
+                path: "synthetic".to_string(),
+                source,
+            })?;
+        dir.create_dir().map_err(|source| ContentError::OpenForWrite {
+            path: dir.as_str().to_string(),
+            source,
+        })?;
+        let path = dir
+            .join("prompt.toml")
+            .map_err(|source| ContentError::ResolvePath {
+                path: "synthetic/prompt.toml".to_string(),
+                source,
+            })?;
+
+        let turn = ConversationTurn {
+            path: path.clone(),
+            meta,
+            system,
+            prompt: OneOrMany::one(Message::user(prompt.to_string())),
+            response: Vec::new(),
+        };
+        self.turns.push((path, turn));
+        Ok(())
     }
 
     /// Return the immediately prior `ConversationTurn` in load order, if any.
@@ -418,7 +471,7 @@ impl Conversation {
 }
 
 /// True when `entry` is a turn file: a regular `.toml` file other than
-/// the `.aillyrc.toml` marker.
+/// the `.ailly.toml` marker.
 fn is_turn_file(entry: &VfsPath) -> bool {
     if !entry.is_file().unwrap_or(false) {
         return false;
@@ -470,7 +523,7 @@ impl TryFrom<Message> for MessageFile {
     }
 }
 
-/// Accumulated state from walking up `.aillyrc.toml` files.
+/// Accumulated state from walking up `.ailly.toml` files.
 #[derive(Debug, Default, Clone)]
 pub struct AillyRc {
     pub system: Vec<Message>,
@@ -478,7 +531,7 @@ pub struct AillyRc {
 }
 
 impl AillyRc {
-    /// Read `.aillyrc.toml` at `dir` and merge it into `prior` per the `parent` mode.
+    /// Read `.ailly.toml` at `dir` and merge it into `prior` per the `parent` mode.
     pub async fn load(dir: &VfsPath, prior: AillyRc) -> Result<Self, ContentError> {
         let AillyRc {
             mut system,
@@ -547,7 +600,7 @@ impl AillyRc {
     }
 }
 
-/// On-disk format of a `.aillyrc.toml` file. Each meta field is `Option`
+/// On-disk format of a `.ailly.toml` file. Each meta field is `Option`
 /// so that fields absent from the file do not clobber inherited values.
 #[derive(Debug, Default, Deserialize)]
 struct AillyRcFile {
@@ -611,7 +664,7 @@ mod tests {
     #[tokio::test]
     async fn at_root_with_aillyrc_in_cwd() {
         let fs = mem_fs! {
-            "root": { ".aillyrc.toml": r#"system = "system""# },
+            "root": { ".ailly.toml": r#"system = "system""# },
         };
         let cwd = fs.join("root").unwrap();
 
@@ -625,7 +678,7 @@ mod tests {
     async fn below_root_with_no_aillyrc_carries_parent_system() {
         let fs = mem_fs! {
             "root": {
-                ".aillyrc.toml": r#"system = "system""#,
+                ".ailly.toml": r#"system = "system""#,
                 "below": {},
             },
         };
@@ -645,8 +698,8 @@ mod tests {
     async fn below_root_with_aillyrc_appends() {
         let fs = mem_fs! {
             "root": {
-                ".aillyrc.toml": r#"system = "root""#,
-                "below": { ".aillyrc.toml": r#"system = "below""# },
+                ".ailly.toml": r#"system = "root""#,
+                "below": { ".ailly.toml": r#"system = "below""# },
             },
         };
         let cwd = fs.join("root/below").unwrap();
@@ -665,8 +718,8 @@ mod tests {
     async fn always_pulls_parent_when_system_empty() {
         let fs = mem_fs! {
             "root": {
-                ".aillyrc.toml": r#"system = "root""#,
-                "below": { ".aillyrc.toml": r#"system = "below""# },
+                ".ailly.toml": r#"system = "root""#,
+                "below": { ".ailly.toml": r#"system = "below""# },
             },
         };
         let cwd = fs.join("root/below").unwrap();
@@ -688,11 +741,11 @@ mod tests {
     async fn always_chains_three_levels() {
         let fs = mem_fs! {
             "root": {
-                ".aillyrc.toml": r#"system = "root""#,
+                ".ailly.toml": r#"system = "root""#,
                 "below": {
-                    ".aillyrc.toml": "parent = \"always\"\nsystem = \"below\"\n",
+                    ".ailly.toml": "parent = \"always\"\nsystem = \"below\"\n",
                     "deep": {
-                        ".aillyrc.toml": "parent = \"always\"\nsystem = \"deep\"\n",
+                        ".ailly.toml": "parent = \"always\"\nsystem = \"deep\"\n",
                     },
                 },
             },
@@ -719,10 +772,10 @@ mod tests {
     async fn always_breaks_at_missing_intermediate() {
         let fs = mem_fs! {
             "root": {
-                ".aillyrc.toml": r#"system = "root""#,
+                ".ailly.toml": r#"system = "root""#,
                 "below": {
                     "deep": {
-                        ".aillyrc.toml": "parent = \"always\"\nsystem = \"deep\"\n",
+                        ".ailly.toml": "parent = \"always\"\nsystem = \"deep\"\n",
                     },
                 },
             },
@@ -746,10 +799,10 @@ mod tests {
     async fn always_keeps_existing_system_and_appends() {
         let fs = mem_fs! {
             "root": {
-                ".aillyrc.toml": r#"system = "root""#,
+                ".ailly.toml": r#"system = "root""#,
                 "below": {
                     "deep": {
-                        ".aillyrc.toml": "parent = \"always\"\nsystem = \"deep\"\n",
+                        ".ailly.toml": "parent = \"always\"\nsystem = \"deep\"\n",
                     },
                 },
             },
@@ -773,8 +826,8 @@ mod tests {
     async fn never_replaces_inherited_with_local() {
         let fs = mem_fs! {
             "root": {
-                ".aillyrc.toml": r#"system = "root""#,
-                "below": { ".aillyrc.toml": r#"system = "below""# },
+                ".ailly.toml": r#"system = "root""#,
+                "below": { ".ailly.toml": r#"system = "below""# },
             },
         };
         let cwd = fs.join("root/below").unwrap();
@@ -848,7 +901,7 @@ mod tests {
     async fn system_returns_messages_for_turn() {
         let fs = mem_fs! {
             "root": {
-                ".aillyrc.toml": r#"system = "sys""#,
+                ".ailly.toml": r#"system = "sys""#,
                 "01.toml": r#"prompt = "x""#,
             },
         };
@@ -861,7 +914,7 @@ mod tests {
     async fn loads_turns_recursively_parents_before_children() {
         let fs = mem_fs! {
             "root": {
-                ".aillyrc.toml": r#"system = "root-sys""#,
+                ".ailly.toml": r#"system = "root-sys""#,
                 "01.toml": r#"prompt = "top""#,
                 "child": {
                     "02.toml": r#"prompt = "deep""#,
@@ -883,9 +936,9 @@ mod tests {
     async fn child_turns_inherit_parent_system() {
         let fs = mem_fs! {
             "root": {
-                ".aillyrc.toml": r#"system = "root-sys""#,
+                ".ailly.toml": r#"system = "root-sys""#,
                 "child": {
-                    ".aillyrc.toml": r#"system = "child-sys""#,
+                    ".ailly.toml": r#"system = "child-sys""#,
                     "01.toml": r#"prompt = "x""#,
                 },
             },
@@ -899,7 +952,7 @@ mod tests {
     async fn loads_directory_of_turns_in_lexicographic_order() {
         let fs = mem_fs! {
             "root": {
-                ".aillyrc.toml": r#"system = "sys""#,
+                ".ailly.toml": r#"system = "sys""#,
                 "02_b.toml": r#"prompt = "second""#,
                 "01_a.toml": r#"prompt = "first""#,
             },
@@ -916,7 +969,7 @@ mod tests {
     async fn skips_directory_when_meta_skip_true() {
         let fs = mem_fs! {
             "root": {
-                ".aillyrc.toml": "skip = true\n",
+                ".ailly.toml": "skip = true\n",
                 "01.toml": r#"prompt = "x""#,
             },
         };
@@ -1048,7 +1101,7 @@ text = "hi"
     async fn conversation_write_round_trips_all_turns() {
         let fs = mem_fs! {
             "root": {
-                ".aillyrc.toml": r#"system = "sys""#,
+                ".ailly.toml": r#"system = "sys""#,
                 "01.toml": r#"prompt = "first""#,
                 "child": {
                     "02.toml": "prompt = \"second\"\n\n[[response]]\nrole = \"assistant\"\ntext = \"a\"\n",
@@ -1145,7 +1198,7 @@ text = "hi"
     async fn history_for_single_turn_pushes_system_then_prompt() {
         let fs = mem_fs! {
             "root": {
-                ".aillyrc.toml": r#"system = "sys""#,
+                ".ailly.toml": r#"system = "sys""#,
                 "01.toml": r#"prompt = "first""#,
             },
         };
@@ -1162,7 +1215,7 @@ text = "hi"
     async fn history_for_two_turns_includes_predecessor_prompt_and_response() {
         let fs = mem_fs! {
             "root": {
-                ".aillyrc.toml": r#"system = "sys""#,
+                ".ailly.toml": r#"system = "sys""#,
                 "01.toml": "prompt = \"first\"\n\n[[response]]\nrole = \"assistant\"\ntext = \"answer1\"\n",
                 "02.toml": r#"prompt = "second""#,
             },
@@ -1188,7 +1241,7 @@ text = "hi"
     async fn history_for_skip_head_drops_inherited_system_keeps_predecessors() {
         let fs = mem_fs! {
             "root": {
-                ".aillyrc.toml": r#"system = "sys""#,
+                ".ailly.toml": r#"system = "sys""#,
                 "01.toml": "prompt = \"first\"\n\n[[response]]\nrole = \"assistant\"\ntext = \"answer1\"\n",
                 "02.toml": r#"prompt = "second""#,
             },
@@ -1214,7 +1267,7 @@ text = "hi"
     async fn history_for_isolated_drops_predecessors_keeps_system() {
         let fs = mem_fs! {
             "root": {
-                ".aillyrc.toml": r#"system = "sys""#,
+                ".ailly.toml": r#"system = "sys""#,
                 "01.toml": "prompt = \"first\"\n\n[[response]]\nrole = \"assistant\"\ntext = \"answer1\"\n",
                 "02.toml": r#"prompt = "second""#,
             },
@@ -1233,7 +1286,7 @@ text = "hi"
     async fn history_for_pops_trailing_assistant_when_continue_false() {
         let fs = mem_fs! {
             "root": {
-                ".aillyrc.toml": r#"system = "sys""#,
+                ".ailly.toml": r#"system = "sys""#,
                 "01.toml": r#"prompt = "first""#,
             },
         };
@@ -1255,7 +1308,7 @@ text = "hi"
     async fn history_for_keeps_trailing_assistant_when_continue_true() {
         let fs = mem_fs! {
             "root": {
-                ".aillyrc.toml": r#"system = "sys""#,
+                ".ailly.toml": r#"system = "sys""#,
                 "01.toml": r#"prompt = "first""#,
             },
         };

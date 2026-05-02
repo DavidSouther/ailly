@@ -12,8 +12,7 @@ use std::sync::Arc;
 use anyhow::{Context, Result, anyhow};
 use clap::Parser;
 use futures::StreamExt;
-use serde::Serialize;
-use vfs::{MemoryFS, PhysicalFS, VfsPath};
+use vfs::{PhysicalFS, VfsPath};
 
 use crate::content::Conversation;
 use crate::engine::{
@@ -211,42 +210,23 @@ fn build_engine(kind: EngineKind, model: Option<&str>) -> Result<Arc<dyn Engine>
 }
 
 async fn load_conversation(cli: &Cli) -> Result<Conversation> {
-    if let Some(prompt) = cli.prompt.as_deref() {
-        load_synthetic_prompt(prompt).await
+    let root = cli.root();
+    let mut conversation = if root.exists() {
+        load_from_root(&root).await?
+    } else if cli.prompt.is_some() {
+        Conversation::empty()
     } else {
-        load_from_root(&cli.root()).await
-    }
-}
+        return Err(anyhow!("root path does not exist: {}", root.display()));
+    };
 
-async fn load_synthetic_prompt(prompt: &str) -> Result<Conversation> {
-    #[derive(Serialize)]
-    struct Turn<'a> {
-        prompt: &'a str,
+    if let Some(prompt) = cli.prompt.as_deref() {
+        conversation.push_synthetic_prompt(prompt)?;
     }
 
-    let fs = VfsPath::new(MemoryFS::new());
-    let root = fs.join("prompt").context("joining synthetic root")?;
-    root.create_dir().context("creating synthetic root")?;
-
-    let turn_path = root.join("01_prompt.toml").context("joining turn file")?;
-    let body = toml::to_string(&Turn { prompt }).context("serializing synthetic turn")?;
-    let mut writer = turn_path
-        .create_file()
-        .context("opening synthetic turn for write")?;
-    writer
-        .write_all(body.as_bytes())
-        .context("writing synthetic turn")?;
-    drop(writer);
-
-    Conversation::load(root)
-        .await
-        .context("loading synthetic conversation")
+    Ok(conversation)
 }
 
 async fn load_from_root(root: &Path) -> Result<Conversation> {
-    if !root.exists() {
-        return Err(anyhow!("root path does not exist: {}", root.display()));
-    }
     let vfs_root = VfsPath::new(PhysicalFS::new(root.to_path_buf()));
     Conversation::load(vfs_root)
         .await

@@ -87,6 +87,13 @@ impl Generator {
                         EngineEvent::Final(r) => {
                             self.conversation
                                 .record_response(idx, Message::assistant(r.text.clone()));
+                            if let Err(err) = self.conversation.turn(idx).write().await {
+                                yield TurnEvent::Failed {
+                                    path: path.clone(),
+                                    error: Arc::new(anyhow::Error::new(err)),
+                                };
+                                break;
+                            }
                             yield TurnEvent::Finished {
                                 path: path.clone(),
                                 response: r.text,
@@ -113,7 +120,7 @@ mod tests {
     async fn single_turn_emits_started_deltas_finished() {
         let fs = mem_fs! {
             "root": {
-                ".aillyrc.toml": r#"system = "sys""#,
+                ".ailly.toml": r#"system = "sys""#,
                 "01.toml": r#"prompt = "first""#,
             },
         };
@@ -159,7 +166,7 @@ mod tests {
     async fn two_turn_sequence_writes_back_predecessor_response() {
         let fs = mem_fs! {
             "root": {
-                ".aillyrc.toml": r#"system = "sys""#,
+                ".ailly.toml": r#"system = "sys""#,
                 "01.toml": r#"prompt = "first""#,
                 "02.toml": r#"prompt = "second""#,
             },
