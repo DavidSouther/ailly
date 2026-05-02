@@ -1,0 +1,13 @@
+[package]
+name = "ailly"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+anyhow = "1.0.102"
+rig-core = "0.36.0"
+serde = { version = "1.0.228", features = ["derive"] }
+thiserror = "2.0.18"
+tokio = { version = "1.52.1", features = ["macros", "rt-multi-thread"] }
+toml = "1.1.2"
+vfs = { version = "0.13.0", features = ["tokio"] }
