@@ -19,9 +19,13 @@ use crate::content::Conversation;
 use crate::engine::{
     Engine, Generator, Noop, Settings, StopReason, TurnEvent, anthropic_from_env, openai_from_env,
 };
+#[cfg(feature = "bedrock")]
+use crate::engine::bedrock_from_env;
 
 const DEFAULT_ANTHROPIC_MODEL: &str = "claude-sonnet-4-5";
 const DEFAULT_OPENAI_MODEL: &str = "gpt-4o-mini";
+#[cfg(feature = "bedrock")]
+const DEFAULT_BEDROCK_MODEL: &str = "us.anthropic.claude-sonnet-4-5-20250929-v1:0";
 
 enum RunError {
     /// The error has already been reported to stderr; the CLI just needs to
@@ -169,6 +173,8 @@ enum EngineKind {
     Noop,
     Anthropic,
     Openai,
+    #[cfg(feature = "bedrock")]
+    Bedrock,
 }
 
 fn resolve_engine_kind(raw: Option<&str>) -> Result<EngineKind> {
@@ -176,8 +182,11 @@ fn resolve_engine_kind(raw: Option<&str>) -> Result<EngineKind> {
         None | Some("") | Some("noop") => Ok(EngineKind::Noop),
         Some("anthropic") | Some("claude") => Ok(EngineKind::Anthropic),
         Some("openai") | Some("gpt") => Ok(EngineKind::Openai),
+        #[cfg(feature = "bedrock")]
+        Some("bedrock") => Ok(EngineKind::Bedrock),
         Some(other) => Err(anyhow!(
-            "unknown engine {other:?}; expected one of: noop, anthropic, openai"
+            "unknown engine {other:?}; expected one of: noop, anthropic, openai{}",
+            if cfg!(feature = "bedrock") { ", bedrock" } else { "" }
         )),
     }
 }
@@ -192,6 +201,11 @@ fn build_engine(kind: EngineKind, model: Option<&str>) -> Result<Arc<dyn Engine>
         EngineKind::Openai => {
             let model = model.unwrap_or(DEFAULT_OPENAI_MODEL);
             Ok(Arc::new(openai_from_env(model)?))
+        }
+        #[cfg(feature = "bedrock")]
+        EngineKind::Bedrock => {
+            let model = model.unwrap_or(DEFAULT_BEDROCK_MODEL);
+            Ok(Arc::new(bedrock_from_env(model)?))
         }
     }
 }
@@ -241,7 +255,7 @@ async fn load_from_root(root: &Path) -> Result<Conversation> {
 
 #[cfg(test)]
 mod tests {
-    use super::format_engine_error;
+    use super::{format_engine_error, resolve_engine_kind};
 
     #[test]
     fn extracts_anthropic_error_body() {
@@ -262,6 +276,33 @@ mod tests {
     fn returns_raw_when_json_lacks_error_field() {
         let raw = r#"prefix: {"unrelated": 42}"#;
         assert_eq!(format_engine_error(raw), raw);
+    }
+
+    #[cfg(feature = "bedrock")]
+    #[test]
+    fn resolve_engine_kind_accepts_bedrock_when_feature_on() {
+        use super::EngineKind;
+        let kind = resolve_engine_kind(Some("bedrock")).expect("bedrock should resolve");
+        assert!(matches!(kind, EngineKind::Bedrock));
+    }
+
+    #[cfg(not(feature = "bedrock"))]
+    #[test]
+    fn resolve_engine_kind_rejects_bedrock_when_feature_off() {
+        let err = resolve_engine_kind(Some("bedrock")).expect_err("bedrock should be unknown");
+        assert!(err.to_string().contains("unknown engine"));
+    }
+
+    #[test]
+    fn unknown_engine_error_lists_bedrock_only_when_feature_on() {
+        let err = resolve_engine_kind(Some("nonsense"))
+            .expect_err("nonsense should always be unknown");
+        let msg = err.to_string();
+        if cfg!(feature = "bedrock") {
+            assert!(msg.contains("bedrock"), "expected bedrock listed in: {msg}");
+        } else {
+            assert!(!msg.contains("bedrock"), "did not expect bedrock in: {msg}");
+        }
     }
 }
 

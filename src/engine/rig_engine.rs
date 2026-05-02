@@ -2,7 +2,8 @@
 //!
 //! The module is named `rig_engine` so use sites do not collide with the
 //! `rig` crate. Concrete provider constructors (`anthropic_from_env`,
-//! `openai_from_env`) live alongside the adapter.
+//! `openai_from_env`, and `bedrock_from_env` under the `bedrock` feature)
+//! live alongside the adapter.
 
 use anyhow::{Result, anyhow};
 use futures::StreamExt;
@@ -118,6 +119,15 @@ pub fn openai_from_env(
     Ok(RigEngine::new(client.completion_model(model)))
 }
 
+#[cfg(feature = "bedrock")]
+pub fn bedrock_from_env(
+    model: &str,
+) -> Result<RigEngine<rig_bedrock::completion::CompletionModel>> {
+    let client = rig_bedrock::client::Client::from_env()
+        .map_err(|e| anyhow!("bedrock from_env: {e}"))?;
+    Ok(RigEngine::new(client.completion_model(model)))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -147,6 +157,50 @@ mod tests {
     #[test]
     fn rejects_assistant_last_message() {
         let engine = build_dummy_anthropic();
+        let history = vec![Message::user("hi"), Message::assistant("there")];
+        let msg = err_message(engine.stream(history, &Settings::default(), "label"));
+        assert!(msg.contains("must be a User message"));
+    }
+}
+
+#[cfg(all(test, feature = "bedrock"))]
+mod bedrock_tests {
+    use super::*;
+    use aws_config::{BehaviorVersion, SdkConfig};
+    use aws_credential_types::Credentials;
+    use aws_credential_types::provider::SharedCredentialsProvider;
+    use aws_sdk_bedrockruntime::config::Region;
+    use rig::message::Message;
+
+    fn build_dummy_bedrock() -> RigEngine<rig_bedrock::completion::CompletionModel> {
+        let creds = Credentials::new("AKIA_DUMMY", "dummy_secret", None, None, "test");
+        let cfg = SdkConfig::builder()
+            .behavior_version(BehaviorVersion::latest())
+            .region(Region::new("us-east-1"))
+            .credentials_provider(SharedCredentialsProvider::new(creds))
+            .build();
+        let aws_client = aws_sdk_bedrockruntime::Client::new(&cfg);
+        let client: rig_bedrock::client::Client = aws_client.into();
+        RigEngine::new(client.completion_model("test-model"))
+    }
+
+    fn err_message(result: Result<EngineStream>) -> String {
+        match result {
+            Ok(_) => panic!("expected stream() to return Err"),
+            Err(e) => e.to_string(),
+        }
+    }
+
+    #[test]
+    fn bedrock_rejects_empty_history() {
+        let engine = build_dummy_bedrock();
+        let msg = err_message(engine.stream(Vec::new(), &Settings::default(), "label"));
+        assert!(msg.contains("history is empty"));
+    }
+
+    #[test]
+    fn bedrock_rejects_assistant_last_message() {
+        let engine = build_dummy_bedrock();
         let history = vec![Message::user("hi"), Message::assistant("there")];
         let msg = err_message(engine.stream(history, &Settings::default(), "label"));
         assert!(msg.contains("must be a User message"));
