@@ -104,8 +104,56 @@ impl ConversationTurn {
         })
     }
 
-    pub async fn write(&self) {
-        todo!()
+    /// Serialize this turn to its `path` as TOML.
+    ///
+    /// Format mirrors `ConversationTurn::load`: a top-level `prompt` string
+    /// followed by an optional `[[response]]` array of `{ role, text }`
+    /// entries. The file is created or truncated in place.
+    ///
+    /// Returns an error when a message contains non-text content (tool
+    /// calls, tool results, images), when TOML serialization fails, or
+    /// when the file cannot be opened for writing.
+    pub async fn write(&self) -> Result<()> {
+    // Out of scope: the `clean` option, the YAML head with
+    // `view`/`debug`/`augment` summary, the `combined` mode that writes
+    // prompt and response into a single file at `outPath != path`,
+    // `skipHead`, and `mkdirp` of arbitrary `outPath` parents. These
+    // extend the existing deferred items from the load path.
+        let prompt_text = match self.prompt.first() {
+            Message::User { content } => match content.first() {
+                UserContent::Text(t) => t.text.clone(),
+                _ => anyhow::bail!(
+                    "non-text user prompt at {} cannot be serialized",
+                    self.path.as_str()
+                ),
+            },
+            _ => anyhow::bail!(
+                "prompt at {} is not a user message",
+                self.path.as_str()
+            ),
+        };
+
+        let response: Vec<MessageFile> = self
+            .response
+            .iter()
+            .cloned()
+            .map(MessageFile::try_from)
+            .collect::<Result<_>>()?;
+
+        let file = ConversationTurnFile {
+            prompt: prompt_text,
+            response,
+        };
+        let text = toml::to_string(&file)
+            .with_context(|| format!("serializing {}", self.path.as_str()))?;
+
+        let mut writer = self
+            .path
+            .create_file()
+            .with_context(|| format!("opening {} for write", self.path.as_str()))?;
+        std::io::Write::write_all(&mut writer, text.as_bytes())
+            .with_context(|| format!("writing {}", self.path.as_str()))?;
+        Ok(())
     }
 }
 
@@ -134,9 +182,20 @@ impl Conversation {
         Ok(Self { turns })
     }
 
-    pub async fn write(&self) {
-        // Write each conversation turn
-        todo!()
+    /// Write every turn back to its on-disk path.
+    ///
+    /// Iterates `self.turns` in load order and calls each turn's `write`.
+    /// Returns the first error encountered. The TypeScript
+    /// log-and-continue behaviour is intentionally not ported.
+    ///
+    /// Out of scope: the `clean` option and any handling of
+    /// `combined`/`outPath` rewriting. See `ConversationTurn::write` for
+    /// the per-turn deferred items.
+    pub async fn write(&self) -> Result<()> {
+        for (_, turn) in &self.turns {
+            turn.write().await?;
+        }
+        Ok(())
     }
 
     /// Return the immediately prior `ConversationTurn` in load order, if any.
@@ -197,14 +256,14 @@ fn is_turn_file(entry: &VfsPath) -> bool {
     name != AILLYRC && name.ends_with(EXTENSION)
 }
 
-#[derive(Debug, Default, Deserialize)]
+#[derive(Debug, Default, Serialize, Deserialize)]
 struct ConversationTurnFile {
     prompt: String,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     response: Vec<MessageFile>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 #[serde(tag = "role", rename_all = "lowercase")]
 enum MessageFile {
     User { text: String },
@@ -218,6 +277,24 @@ impl MessageFile {
             MessageFile::User { text } => Message::user(text),
             MessageFile::Assistant { text } => Message::assistant(text),
             MessageFile::System { text } => Message::system(text),
+        }
+    }
+}
+
+impl TryFrom<Message> for MessageFile {
+    type Error = anyhow::Error;
+
+    fn try_from(m: Message) -> Result<Self> {
+        match m {
+            Message::System { content } => Ok(MessageFile::System { text: content }),
+            Message::User { content } => match content.first() {
+                UserContent::Text(t) => Ok(MessageFile::User { text: t.text }),
+                _ => anyhow::bail!("non-text user message cannot be serialized"),
+            },
+            Message::Assistant { content, .. } => match content.first() {
+                AssistantContent::Text(t) => Ok(MessageFile::Assistant { text: t.text }),
+                _ => anyhow::bail!("non-text assistant message cannot be serialized"),
+            },
         }
     }
 }
@@ -722,6 +799,152 @@ text = "hi"
         let parsed: ConversationTurnFile = toml::from_str(toml).unwrap();
         assert_eq!(parsed.prompt, "hi");
         assert!(parsed.response.is_empty());
+    }
+
+    #[test]
+    fn serializes_turn_file_with_prompt_and_response() {
+        let file = ConversationTurnFile {
+            prompt: "hello\nworld".to_string(),
+            response: vec![MessageFile::Assistant {
+                text: "hi".to_string(),
+            }],
+        };
+        let toml_text = toml::to_string(&file).unwrap();
+        let parsed: ConversationTurnFile = toml::from_str(&toml_text).unwrap();
+        assert_eq!(parsed.prompt, "hello\nworld");
+        assert_eq!(parsed.response.len(), 1);
+    }
+
+    #[test]
+    fn serializes_turn_file_omits_empty_response() {
+        let file = ConversationTurnFile {
+            prompt: "hi".to_string(),
+            response: Vec::new(),
+        };
+        let toml_text = toml::to_string(&file).unwrap();
+        assert!(!toml_text.contains("response"));
+    }
+
+    #[tokio::test]
+    async fn write_rejects_non_text_user_prompt() {
+        use rig::message::Image;
+
+        let fs = mem_fs! { "root": { "01.toml": r#"prompt = "x""# } };
+        let path = fs.join("root/01.toml").unwrap();
+
+        let image = UserContent::Image(Image::default());
+        let prompt = OneOrMany::one(Message::User {
+            content: OneOrMany::one(image),
+        });
+        let turn = ConversationTurn {
+            path: path.clone(),
+            meta: ContentMeta::default(),
+            system: Vec::new(),
+            prompt,
+            response: Vec::new(),
+        };
+
+        let err = turn.write().await.unwrap_err();
+        assert!(err.to_string().contains("non-text user prompt"));
+    }
+
+    #[tokio::test]
+    async fn conversation_write_surfaces_turn_error() {
+        use rig::message::Image;
+
+        let fs = mem_fs! { "root": { "01.toml": r#"prompt = "x""# } };
+        let dir = fs.join("root").unwrap();
+        let mut convo = Conversation::load(dir).await.unwrap();
+
+        let image = UserContent::Image(Image::default());
+        convo.turns[0].1.prompt = OneOrMany::one(Message::User {
+            content: OneOrMany::one(image),
+        });
+
+        assert!(convo.write().await.is_err());
+    }
+
+    #[tokio::test]
+    async fn conversation_write_round_trips_all_turns() {
+        let fs = mem_fs! {
+            "root": {
+                ".aillyrc.toml": r#"system = "sys""#,
+                "01.toml": r#"prompt = "first""#,
+                "child": {
+                    "02.toml": "prompt = \"second\"\n\n[[response]]\nrole = \"assistant\"\ntext = \"a\"\n",
+                },
+            },
+        };
+        let dir = fs.join("root").unwrap();
+        let convo = Conversation::load(dir.clone()).await.unwrap();
+        assert_eq!(convo.turns.len(), 2);
+
+        convo.write().await.unwrap();
+
+        let reloaded = Conversation::load(dir).await.unwrap();
+        assert_eq!(reloaded.turns.len(), 2);
+        assert!(reloaded.turns[0].0.as_str().ends_with("01.toml"));
+        assert!(reloaded.turns[1].0.as_str().ends_with("02.toml"));
+        assert_eq!(reloaded.turns[1].1.response.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn write_then_load_round_trips_with_response() {
+        let fs = mem_fs! {
+            "root": {
+                "01.toml": "prompt = \"q\"\n\n[[response]]\nrole = \"assistant\"\ntext = \"a\"\n",
+            },
+        };
+        let path = fs.join("root/01.toml").unwrap();
+        let turn = ConversationTurn::load(path.clone(), ContentMeta::default(), Vec::new())
+            .await
+            .unwrap();
+
+        turn.write().await.unwrap();
+
+        let reloaded = ConversationTurn::load(path, ContentMeta::default(), Vec::new())
+            .await
+            .unwrap();
+        assert_eq!(reloaded.response.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn write_then_load_round_trips_multi_response() {
+        let fs = mem_fs! {
+            "root": {
+                "01.toml": "prompt = \"q\"\n\n[[response]]\nrole = \"assistant\"\ntext = \"a1\"\n\n[[response]]\nrole = \"user\"\ntext = \"u\"\n\n[[response]]\nrole = \"assistant\"\ntext = \"a2\"\n",
+            },
+        };
+        let path = fs.join("root/01.toml").unwrap();
+        let turn = ConversationTurn::load(path.clone(), ContentMeta::default(), Vec::new())
+            .await
+            .unwrap();
+
+        turn.write().await.unwrap();
+
+        let reloaded = ConversationTurn::load(path, ContentMeta::default(), Vec::new())
+            .await
+            .unwrap();
+        assert_eq!(reloaded.response.len(), 3);
+    }
+
+    #[tokio::test]
+    async fn write_then_load_round_trips_prompt_only() {
+        let fs = mem_fs! {
+            "root": { "01.toml": r#"prompt = "hello""# },
+        };
+        let path = fs.join("root/01.toml").unwrap();
+        let turn = ConversationTurn::load(path.clone(), ContentMeta::default(), Vec::new())
+            .await
+            .unwrap();
+
+        turn.write().await.unwrap();
+
+        let reloaded = ConversationTurn::load(path, ContentMeta::default(), Vec::new())
+            .await
+            .unwrap();
+        assert_eq!(reloaded.prompt.len(), 1);
+        assert_eq!(reloaded.response.len(), 0);
     }
 
     fn message_text(m: &Message) -> String {
