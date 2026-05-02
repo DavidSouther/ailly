@@ -1,4 +1,3 @@
-use anyhow::{Context as _, Result};
 use rig::{
     OneOrMany,
     message::{AssistantContent, Message, UserContent},
@@ -6,14 +5,94 @@ use rig::{
 use serde::{Deserialize, Serialize};
 use vfs::VfsPath;
 
-pub mod gitignore_fs;
-pub mod gitignore_fs_constants;
+mod gitignore_fs;
+mod gitignore_fs_constants;
 
 #[cfg(test)]
 mod test_util;
 
 pub const AILLYRC: &str = ".aillyrc.toml";
 pub const EXTENSION: &str = ".toml";
+
+#[derive(Debug, thiserror::Error)]
+pub enum ContentError {
+    #[error("reading {path}")]
+    Read {
+        path: String,
+        #[source]
+        source: vfs::VfsError,
+    },
+
+    #[error("listing directory {path}")]
+    ListDir {
+        path: String,
+        #[source]
+        source: vfs::VfsError,
+    },
+
+    #[error("resolving path under {path}")]
+    ResolvePath {
+        path: String,
+        #[source]
+        source: vfs::VfsError,
+    },
+
+    #[error("checking existence of {path}")]
+    CheckExists {
+        path: String,
+        #[source]
+        source: vfs::VfsError,
+    },
+
+    #[error("opening {path} for write")]
+    OpenForWrite {
+        path: String,
+        #[source]
+        source: vfs::VfsError,
+    },
+
+    #[error("writing {path}")]
+    Write {
+        path: String,
+        #[source]
+        source: std::io::Error,
+    },
+
+    #[error("parsing {path}")]
+    ParseToml {
+        path: String,
+        #[source]
+        source: toml::de::Error,
+    },
+
+    #[error("serializing {path}")]
+    SerializeToml {
+        path: String,
+        #[source]
+        source: toml::ser::Error,
+    },
+
+    #[error("turn at {path} has empty prompt")]
+    EmptyPrompt { path: String },
+
+    #[error("prompt at {path} is not a user message")]
+    PromptNotUserMessage { path: String },
+
+    #[error("non-text user prompt at {path} cannot be serialized")]
+    NonTextUserPrompt { path: String },
+
+    #[error("non-text user message in response at {path} cannot be serialized")]
+    NonTextUserMessage { path: String },
+
+    #[error("non-text assistant message in response at {path} cannot be serialized")]
+    NonTextAssistantMessage { path: String },
+}
+
+#[derive(Debug)]
+enum MessageConversionError {
+    NonTextUser,
+    NonTextAssistant,
+}
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -73,26 +152,37 @@ impl ConversationTurn {
     ///
     /// Returns an error when the file cannot be read, fails to parse, or
     /// has an empty `prompt`.
-    ///
-    /// Out of scope: `combined`, `view`, `edit`, `template-view`, `mcp`,
-    /// `tools`, `temperature`, `maxTokens`, `out`/`root`, and `augment`
-    /// from the TypeScript `loadFile`.
-    pub async fn load(path: VfsPath, meta: ContentMeta, system: Vec<Message>) -> Result<Self> {
+    pub async fn load(
+        path: VfsPath,
+        meta: ContentMeta,
+        system: Vec<Message>,
+    ) -> Result<Self, ContentError> {
+        // Out of scope: `combined`, `view`, `edit`, `template-view`, `mcp`,
+        // `tools`, `temperature`, `maxTokens`, `out`/`root`, and `augment`
+        // from the TypeScript `loadFile`.
         let text = path
             .read_to_string()
-            .with_context(|| format!("reading {}", path.as_str()))?;
+            .map_err(|source| ContentError::Read {
+                path: path.as_str().to_string(),
+                source,
+            })?;
         let file: ConversationTurnFile =
-            toml::from_str(&text).with_context(|| format!("parsing {}", path.as_str()))?;
+            toml::from_str(&text).map_err(|source| ContentError::ParseToml {
+                path: path.as_str().to_string(),
+                source,
+            })?;
 
         if file.prompt.is_empty() {
-            anyhow::bail!("turn at {} has empty prompt", path.as_str());
+            return Err(ContentError::EmptyPrompt {
+                path: path.as_str().to_string(),
+            });
         }
         let prompt = OneOrMany::one(Message::user(file.prompt));
 
         let response: Vec<Message> = file
             .response
             .into_iter()
-            .map(MessageFile::into_message)
+            .map(Into::into)
             .collect();
 
         Ok(Self {
@@ -113,24 +203,26 @@ impl ConversationTurn {
     /// Returns an error when a message contains non-text content (tool
     /// calls, tool results, images), when TOML serialization fails, or
     /// when the file cannot be opened for writing.
-    pub async fn write(&self) -> Result<()> {
-    // Out of scope: the `clean` option, the YAML head with
-    // `view`/`debug`/`augment` summary, the `combined` mode that writes
-    // prompt and response into a single file at `outPath != path`,
-    // `skipHead`, and `mkdirp` of arbitrary `outPath` parents. These
-    // extend the existing deferred items from the load path.
+    pub async fn write(&self) -> Result<(), ContentError> {
+        // Out of scope: the `clean` option, the YAML head with
+        // `view`/`debug`/`augment` summary, the `combined` mode that writes
+        // prompt and response into a single file at `outPath != path`,
+        // `skipHead`, and `mkdirp` of arbitrary `outPath` parents. These
+        // extend the existing deferred items from the load path.
         let prompt_text = match self.prompt.first() {
             Message::User { content } => match content.first() {
                 UserContent::Text(t) => t.text.clone(),
-                _ => anyhow::bail!(
-                    "non-text user prompt at {} cannot be serialized",
-                    self.path.as_str()
-                ),
+                _ => {
+                    return Err(ContentError::NonTextUserPrompt {
+                        path: self.path.as_str().to_string(),
+                    });
+                }
             },
-            _ => anyhow::bail!(
-                "prompt at {} is not a user message",
-                self.path.as_str()
-            ),
+            _ => {
+                return Err(ContentError::PromptNotUserMessage {
+                    path: self.path.as_str().to_string(),
+                });
+            }
         };
 
         let response: Vec<MessageFile> = self
@@ -138,21 +230,38 @@ impl ConversationTurn {
             .iter()
             .cloned()
             .map(MessageFile::try_from)
-            .collect::<Result<_>>()?;
+            .collect::<std::result::Result<_, _>>()
+            .map_err(|e| match e {
+                MessageConversionError::NonTextUser => ContentError::NonTextUserMessage {
+                    path: self.path.as_str().to_string(),
+                },
+                MessageConversionError::NonTextAssistant => ContentError::NonTextAssistantMessage {
+                    path: self.path.as_str().to_string(),
+                },
+            })?;
 
         let file = ConversationTurnFile {
             prompt: prompt_text,
             response,
         };
-        let text = toml::to_string(&file)
-            .with_context(|| format!("serializing {}", self.path.as_str()))?;
+        let text = toml::to_string(&file).map_err(|source| ContentError::SerializeToml {
+            path: self.path.as_str().to_string(),
+            source,
+        })?;
 
         let mut writer = self
             .path
             .create_file()
-            .with_context(|| format!("opening {} for write", self.path.as_str()))?;
-        std::io::Write::write_all(&mut writer, text.as_bytes())
-            .with_context(|| format!("writing {}", self.path.as_str()))?;
+            .map_err(|source| ContentError::OpenForWrite {
+                path: self.path.as_str().to_string(),
+                source,
+            })?;
+        std::io::Write::write_all(&mut writer, text.as_bytes()).map_err(|source| {
+            ContentError::Write {
+                path: self.path.as_str().to_string(),
+                source,
+            }
+        })?;
         Ok(())
     }
 }
@@ -164,7 +273,7 @@ pub struct Conversation {
 
 impl Conversation {
     /// Walk the directory rooted at `path` recursively and build one
-    /// `ConversationTurn` per `<name>.toml` file other than `.aillyrc.toml`.
+    /// `ConversationTurn` per `<name>.toml` file (other than `.aillyrc.toml`).
     ///
     /// `.aillyrc.toml` system messages and meta are threaded down via
     /// `AillyRc::load`, so each turn carries the system chain inherited at
@@ -172,11 +281,10 @@ impl Conversation {
     /// child, lexicographic among siblings within a directory. A directory
     /// whose `.aillyrc.toml` sets `skip = true` contributes no turns and
     /// is not recursed into.
-    ///
-    /// Out of scope: the `.vectors` directory skip, synthetic CLI content,
-    /// and folder-context wiring. See the implementation plan's
-    /// "Deferred" list.
-    pub async fn load(path: VfsPath) -> Result<Self> {
+    pub async fn load(path: VfsPath) -> Result<Self, ContentError> {
+        // Out of scope: the `.vectors` directory skip, synthetic CLI content,
+        // and folder-context wiring. See the implementation plan's
+        // "Deferred" list.
         let mut turns: Vec<(VfsPath, ConversationTurn)> = Vec::new();
         Self::load_into(&path, AillyRc::default(), &mut turns).await?;
         Ok(Self { turns })
@@ -185,13 +293,13 @@ impl Conversation {
     /// Write every turn back to its on-disk path.
     ///
     /// Iterates `self.turns` in load order and calls each turn's `write`.
-    /// Returns the first error encountered. The TypeScript
-    /// log-and-continue behaviour is intentionally not ported.
-    ///
-    /// Out of scope: the `clean` option and any handling of
-    /// `combined`/`outPath` rewriting. See `ConversationTurn::write` for
-    /// the per-turn deferred items.
-    pub async fn write(&self) -> Result<()> {
+    /// Returns the first error encountered.
+    pub async fn write(&self) -> Result<(), ContentError> {
+        // Out of scope: the `clean` option and any handling of
+        // `combined`/`outPath` rewriting. See `ConversationTurn::write` for
+        // the per-turn deferred items.
+        //
+        // The TypeScript log-and-continue behaviour is intentionally not ported.
         for (_, turn) in &self.turns {
             turn.write().await?;
         }
@@ -216,13 +324,19 @@ impl Conversation {
         dir: &VfsPath,
         prior: AillyRc,
         turns: &mut Vec<(VfsPath, ConversationTurn)>,
-    ) -> Result<()> {
+    ) -> Result<(), ContentError> {
         let acc = AillyRc::load(dir, prior).await?;
         if acc.meta.skip {
             return Ok(());
         }
 
-        let mut entries: Vec<VfsPath> = dir.read_dir()?.collect();
+        let mut entries: Vec<VfsPath> = dir
+            .read_dir()
+            .map_err(|source| ContentError::ListDir {
+                path: dir.as_str().to_string(),
+                source,
+            })?
+            .collect();
         entries.sort_by(|a, b| a.filename().cmp(&b.filename()));
 
         for entry in &entries {
@@ -271,9 +385,9 @@ enum MessageFile {
     System { text: String },
 }
 
-impl MessageFile {
-    fn into_message(self) -> Message {
-        match self {
+impl From<MessageFile> for Message {
+    fn from(value: MessageFile) -> Self {
+        match value {
             MessageFile::User { text } => Message::user(text),
             MessageFile::Assistant { text } => Message::assistant(text),
             MessageFile::System { text } => Message::system(text),
@@ -282,18 +396,18 @@ impl MessageFile {
 }
 
 impl TryFrom<Message> for MessageFile {
-    type Error = anyhow::Error;
+    type Error = MessageConversionError;
 
-    fn try_from(m: Message) -> Result<Self> {
+    fn try_from(m: Message) -> std::result::Result<Self, MessageConversionError> {
         match m {
             Message::System { content } => Ok(MessageFile::System { text: content }),
             Message::User { content } => match content.first() {
                 UserContent::Text(t) => Ok(MessageFile::User { text: t.text }),
-                _ => anyhow::bail!("non-text user message cannot be serialized"),
+                _ => Err(MessageConversionError::NonTextUser),
             },
             Message::Assistant { content, .. } => match content.first() {
                 AssistantContent::Text(t) => Ok(MessageFile::Assistant { text: t.text }),
-                _ => anyhow::bail!("non-text assistant message cannot be serialized"),
+                _ => Err(MessageConversionError::NonTextAssistant),
             },
         }
     }
@@ -308,22 +422,31 @@ pub struct AillyRc {
 
 impl AillyRc {
     /// Read `.aillyrc.toml` at `dir` and merge it into `prior` per the `parent` mode.
-    ///
-    /// Mirrors the TypeScript `loadAillyRc` from
-    /// `ailly_typescript/core/src/content/content.ts`.
-    pub async fn load(dir: &VfsPath, prior: AillyRc) -> Result<Self> {
+    pub async fn load(dir: &VfsPath, prior: AillyRc) -> Result<Self, ContentError> {
         let AillyRc {
             mut system,
             mut meta,
         } = prior;
 
-        let path = dir.join(AILLYRC)?;
-        let exists = path.exists()?;
+        let path = dir.join(AILLYRC).map_err(|source| ContentError::ResolvePath {
+            path: dir.as_str().to_string(),
+            source,
+        })?;
+        let exists = path.exists().map_err(|source| ContentError::CheckExists {
+            path: path.as_str().to_string(),
+            source,
+        })?;
         let file: AillyRcFile = if exists {
             let text = path
                 .read_to_string()
-                .with_context(|| format!("reading {}", path.as_str()))?;
-            toml::from_str(&text).with_context(|| format!("parsing {}", path.as_str()))?
+                .map_err(|source| ContentError::Read {
+                    path: path.as_str().to_string(),
+                    source,
+                })?;
+            toml::from_str(&text).map_err(|source| ContentError::ParseToml {
+                path: path.as_str().to_string(),
+                source,
+            })?
         } else {
             AillyRcFile::default()
         };
