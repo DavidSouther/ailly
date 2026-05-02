@@ -51,8 +51,175 @@ pub struct ContentMeta {
 
 #[derive(Debug, Clone)]
 pub struct ConversationTurn {
-    prompt: OneOrMany<UserContent>,
-    response: Option<OneOrMany<AssistantContent>>,
+    /// Where the conversation was stored on disk
+    path: VfsPath,
+    /// Metadata for how this ConversationTurn should run
+    meta: ContentMeta,
+    /// System message chain inherited at this turn's location
+    system: Vec<Message>,
+    /// The original user prompt for this turn
+    prompt: OneOrMany<Message>,
+    /// All subsequent messages, for this turn.
+    response: Vec<Message>,
+}
+
+impl ConversationTurn {
+    /// Parse one `<name>.toml` turn file at `path`.
+    ///
+    /// The file format is `prompt = "..."` plus an optional `[[response]]`
+    /// array of `{ role, text }` messages. The caller threads the inherited
+    /// `meta` and `system` from the surrounding `.aillyrc.toml` chain;
+    /// `ConversationTurn::load` does not walk the filesystem itself.
+    ///
+    /// Returns an error when the file cannot be read, fails to parse, or
+    /// has an empty `prompt`.
+    ///
+    /// Out of scope: `combined`, `view`, `edit`, `template-view`, `mcp`,
+    /// `tools`, `temperature`, `maxTokens`, `out`/`root`, and `augment`
+    /// from the TypeScript `loadFile`.
+    pub async fn load(path: VfsPath, meta: ContentMeta, system: Vec<Message>) -> Result<Self> {
+        let text = path
+            .read_to_string()
+            .with_context(|| format!("reading {}", path.as_str()))?;
+        let file: ConversationTurnFile =
+            toml::from_str(&text).with_context(|| format!("parsing {}", path.as_str()))?;
+
+        if file.prompt.is_empty() {
+            anyhow::bail!("turn at {} has empty prompt", path.as_str());
+        }
+        let prompt = OneOrMany::one(Message::user(file.prompt));
+
+        let response: Vec<Message> = file
+            .response
+            .into_iter()
+            .map(MessageFile::into_message)
+            .collect();
+
+        Ok(Self {
+            path,
+            meta,
+            system,
+            prompt,
+            response,
+        })
+    }
+
+    pub async fn write(&self) {
+        todo!()
+    }
+}
+
+/// A Conversation holds all the ConversationTurns.
+pub struct Conversation {
+    turns: Vec<(VfsPath, ConversationTurn)>,
+}
+
+impl Conversation {
+    /// Walk the directory rooted at `path` recursively and build one
+    /// `ConversationTurn` per `<name>.toml` file other than `.aillyrc.toml`.
+    ///
+    /// `.aillyrc.toml` system messages and meta are threaded down via
+    /// `AillyRc::load`, so each turn carries the system chain inherited at
+    /// its location. Turns appear in `turns` in walk order: parent before
+    /// child, lexicographic among siblings within a directory. A directory
+    /// whose `.aillyrc.toml` sets `skip = true` contributes no turns and
+    /// is not recursed into.
+    ///
+    /// Out of scope: the `.vectors` directory skip, synthetic CLI content,
+    /// and folder-context wiring. See the implementation plan's
+    /// "Deferred" list.
+    pub async fn load(path: VfsPath) -> Result<Self> {
+        let mut turns: Vec<(VfsPath, ConversationTurn)> = Vec::new();
+        Self::load_into(&path, AillyRc::default(), &mut turns).await?;
+        Ok(Self { turns })
+    }
+
+    pub async fn write(&self) {
+        // Write each conversation turn
+        todo!()
+    }
+
+    /// Return the immediately prior `ConversationTurn` in load order, if any.
+    pub fn predecessor(&self, turn: &ConversationTurn) -> Option<&ConversationTurn> {
+        let idx = self.turns.iter().position(|(_, t)| t.path == turn.path)?;
+        if idx == 0 {
+            return None;
+        }
+        Some(&self.turns[idx - 1].1)
+    }
+
+    /// Return the inherited system messages for `turn`.
+    pub fn system<'a>(&self, turn: &'a ConversationTurn) -> &'a [Message] {
+        &turn.system
+    }
+
+    async fn load_into(
+        dir: &VfsPath,
+        prior: AillyRc,
+        turns: &mut Vec<(VfsPath, ConversationTurn)>,
+    ) -> Result<()> {
+        let acc = AillyRc::load(dir, prior).await?;
+        if acc.meta.skip {
+            return Ok(());
+        }
+
+        let mut entries: Vec<VfsPath> = dir.read_dir()?.collect();
+        entries.sort_by(|a, b| a.filename().cmp(&b.filename()));
+
+        for entry in &entries {
+            if !is_turn_file(entry) {
+                continue;
+            }
+            let turn =
+                ConversationTurn::load(entry.clone(), acc.meta.clone(), acc.system.clone()).await?;
+            turns.push((entry.clone(), turn));
+        }
+
+        let subdirs: Vec<VfsPath> = entries
+            .into_iter()
+            .filter(|e| e.is_dir().unwrap_or(false))
+            .collect();
+        for sub in subdirs {
+            Box::pin(Self::load_into(&sub, acc.clone(), turns)).await?;
+        }
+
+        Ok(())
+    }
+}
+
+/// True when `entry` is a turn file: a regular `.toml` file other than
+/// the `.aillyrc.toml` marker.
+fn is_turn_file(entry: &VfsPath) -> bool {
+    if !entry.is_file().unwrap_or(false) {
+        return false;
+    }
+    let name = entry.filename();
+    name != AILLYRC && name.ends_with(EXTENSION)
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct ConversationTurnFile {
+    prompt: String,
+    #[serde(default)]
+    response: Vec<MessageFile>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(tag = "role", rename_all = "lowercase")]
+enum MessageFile {
+    User { text: String },
+    Assistant { text: String },
+    System { text: String },
+}
+
+impl MessageFile {
+    fn into_message(self) -> Message {
+        match self {
+            MessageFile::User { text } => Message::user(text),
+            MessageFile::Assistant { text } => Message::assistant(text),
+            MessageFile::System { text } => Message::system(text),
+        }
+    }
 }
 
 /// Accumulated state from walking up `.aillyrc.toml` files.
@@ -60,6 +227,67 @@ pub struct ConversationTurn {
 pub struct AillyRc {
     pub system: Vec<Message>,
     pub meta: ContentMeta,
+}
+
+impl AillyRc {
+    /// Read `.aillyrc.toml` at `dir` and merge it into `prior` per the `parent` mode.
+    ///
+    /// Mirrors the TypeScript `loadAillyRc` from
+    /// `ailly_typescript/core/src/content/content.ts`.
+    pub async fn load(dir: &VfsPath, prior: AillyRc) -> Result<Self> {
+        let AillyRc {
+            mut system,
+            mut meta,
+        } = prior;
+
+        let path = dir.join(AILLYRC)?;
+        let exists = path.exists()?;
+        let file: AillyRcFile = if exists {
+            let text = path
+                .read_to_string()
+                .with_context(|| format!("reading {}", path.as_str()))?;
+            toml::from_str(&text).with_context(|| format!("parsing {}", path.as_str()))?
+        } else {
+            AillyRcFile::default()
+        };
+
+        if !exists && file.parent.is_none() && meta.parent == Parent::Always {
+            meta.parent = Parent::Root;
+        }
+
+        file.merge_into(&mut meta);
+
+        let local = file
+            .system
+            .as_deref()
+            .filter(|s| !s.is_empty())
+            .map(Message::system);
+
+        match meta.parent {
+            Parent::Root => {}
+            Parent::Never => system.clear(),
+            Parent::Always => {
+                if system.is_empty() && !dir.is_root() {
+                    let parent_dir = dir.parent();
+                    let recursed = Box::pin(AillyRc::load(
+                        &parent_dir,
+                        AillyRc {
+                            system: Vec::new(),
+                            meta: meta.clone(),
+                        },
+                    ))
+                    .await?;
+                    system = recursed.system;
+                }
+            }
+        }
+
+        if let Some(m) = local {
+            system.push(m);
+        }
+
+        Ok(AillyRc { system, meta })
+    }
 }
 
 /// On-disk format of a `.aillyrc.toml` file. Each meta field is `Option`
@@ -107,65 +335,6 @@ impl AillyRcFile {
     }
 }
 
-/// Read `.aillyrc.toml` at `dir` and merge it into `prior` per the `parent` mode.
-///
-/// Mirrors the TypeScript `loadAillyRc` from
-/// `ailly_typescript/core/src/content/content.ts`.
-pub async fn load_aillyrc(dir: &VfsPath, prior: AillyRc) -> Result<AillyRc> {
-    let AillyRc {
-        mut system,
-        mut meta,
-    } = prior;
-
-    let path = dir.join(AILLYRC)?;
-    let exists = path.exists()?;
-    let file: AillyRcFile = if exists {
-        let text = path
-            .read_to_string()
-            .with_context(|| format!("reading {}", path.as_str()))?;
-        toml::from_str(&text).with_context(|| format!("parsing {}", path.as_str()))?
-    } else {
-        AillyRcFile::default()
-    };
-
-    if !exists && file.parent.is_none() && meta.parent == Parent::Always {
-        meta.parent = Parent::Root;
-    }
-
-    file.merge_into(&mut meta);
-
-    let local = file
-        .system
-        .as_deref()
-        .filter(|s| !s.is_empty())
-        .map(Message::system);
-
-    match meta.parent {
-        Parent::Root => {}
-        Parent::Never => system.clear(),
-        Parent::Always => {
-            if system.is_empty() && !dir.is_root() {
-                let parent_dir = dir.parent();
-                let recursed = Box::pin(load_aillyrc(
-                    &parent_dir,
-                    AillyRc {
-                        system: Vec::new(),
-                        meta: meta.clone(),
-                    },
-                ))
-                .await?;
-                system = recursed.system;
-            }
-        }
-    }
-
-    if let Some(m) = local {
-        system.push(m);
-    }
-
-    Ok(AillyRc { system, meta })
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -176,7 +345,7 @@ mod tests {
         let fs = mem_fs! { "root": {} };
         let cwd = fs.join("root").unwrap();
 
-        let acc = load_aillyrc(&cwd, AillyRc::default()).await.unwrap();
+        let acc = AillyRc::load(&cwd, AillyRc::default()).await.unwrap();
 
         let texts: Vec<String> = acc.system.iter().map(message_text).collect();
         assert_eq!(texts, Vec::<String>::new());
@@ -189,7 +358,7 @@ mod tests {
         };
         let cwd = fs.join("root").unwrap();
 
-        let acc = load_aillyrc(&cwd, AillyRc::default()).await.unwrap();
+        let acc = AillyRc::load(&cwd, AillyRc::default()).await.unwrap();
 
         let texts: Vec<String> = acc.system.iter().map(message_text).collect();
         assert_eq!(texts, vec!["system".to_string()]);
@@ -209,7 +378,7 @@ mod tests {
             system: vec![Message::system("root")],
             meta: ContentMeta::default(),
         };
-        let acc = load_aillyrc(&cwd, prior).await.unwrap();
+        let acc = AillyRc::load(&cwd, prior).await.unwrap();
 
         let texts: Vec<String> = acc.system.iter().map(message_text).collect();
         assert_eq!(texts, vec!["root".to_string()]);
@@ -229,7 +398,7 @@ mod tests {
             system: vec![Message::system("root")],
             meta: ContentMeta::default(),
         };
-        let acc = load_aillyrc(&cwd, prior).await.unwrap();
+        let acc = AillyRc::load(&cwd, prior).await.unwrap();
 
         let texts: Vec<String> = acc.system.iter().map(message_text).collect();
         assert_eq!(texts, vec!["root".to_string(), "below".to_string()]);
@@ -252,7 +421,7 @@ mod tests {
                 ..Default::default()
             },
         };
-        let acc = load_aillyrc(&cwd, prior).await.unwrap();
+        let acc = AillyRc::load(&cwd, prior).await.unwrap();
 
         let texts: Vec<String> = acc.system.iter().map(message_text).collect();
         assert_eq!(texts, vec!["root".to_string(), "below".to_string()]);
@@ -280,7 +449,7 @@ mod tests {
                 ..Default::default()
             },
         };
-        let acc = load_aillyrc(&cwd, prior).await.unwrap();
+        let acc = AillyRc::load(&cwd, prior).await.unwrap();
 
         let texts: Vec<String> = acc.system.iter().map(message_text).collect();
         assert_eq!(
@@ -310,7 +479,7 @@ mod tests {
                 ..Default::default()
             },
         };
-        let acc = load_aillyrc(&cwd, prior).await.unwrap();
+        let acc = AillyRc::load(&cwd, prior).await.unwrap();
 
         let texts: Vec<String> = acc.system.iter().map(message_text).collect();
         assert_eq!(texts, vec!["deep".to_string()]);
@@ -337,7 +506,7 @@ mod tests {
                 ..Default::default()
             },
         };
-        let acc = load_aillyrc(&cwd, prior).await.unwrap();
+        let acc = AillyRc::load(&cwd, prior).await.unwrap();
 
         let texts: Vec<String> = acc.system.iter().map(message_text).collect();
         assert_eq!(texts, vec!["below".to_string(), "deep".to_string()]);
@@ -360,7 +529,7 @@ mod tests {
                 ..Default::default()
             },
         };
-        let acc = load_aillyrc(&cwd, prior).await.unwrap();
+        let acc = AillyRc::load(&cwd, prior).await.unwrap();
 
         let texts: Vec<String> = acc.system.iter().map(message_text).collect();
         assert_eq!(texts, vec!["below".to_string()]);
@@ -378,10 +547,181 @@ mod tests {
                 ..Default::default()
             },
         };
-        let acc = load_aillyrc(&cwd, prior).await.unwrap();
+        let acc = AillyRc::load(&cwd, prior).await.unwrap();
 
         let texts: Vec<String> = acc.system.iter().map(message_text).collect();
         assert_eq!(texts, Vec::<String>::new());
+    }
+
+    #[tokio::test]
+    async fn loads_a_single_turn_with_prompt_only() {
+        let fs = mem_fs! {
+            "root": {
+                "01_intro.toml": r#"prompt = "say hi""#,
+            },
+        };
+        let path = fs.join("root/01_intro.toml").unwrap();
+        let turn = ConversationTurn::load(path.clone(), ContentMeta::default(), Vec::new())
+            .await
+            .unwrap();
+        assert_eq!(turn.path.as_str(), path.as_str());
+        assert_eq!(turn.response.len(), 0);
+        assert_eq!(turn.prompt.len(), 1);
+        assert!(turn.system.is_empty());
+    }
+
+    #[tokio::test]
+    async fn predecessor_returns_prior_turn_or_none() {
+        let fs = mem_fs! {
+            "root": {
+                "01.toml": r#"prompt = "first""#,
+                "02.toml": r#"prompt = "second""#,
+            },
+        };
+        let convo = Conversation::load(fs.join("root").unwrap()).await.unwrap();
+        let first = &convo.turns[0].1;
+        let second = &convo.turns[1].1;
+
+        assert!(convo.predecessor(first).is_none());
+        let pred = convo.predecessor(second).expect("second has a predecessor");
+        assert!(pred.path.as_str().ends_with("01.toml"));
+    }
+
+    #[tokio::test]
+    async fn system_returns_messages_for_turn() {
+        let fs = mem_fs! {
+            "root": {
+                ".aillyrc.toml": r#"system = "sys""#,
+                "01.toml": r#"prompt = "x""#,
+            },
+        };
+        let convo = Conversation::load(fs.join("root").unwrap()).await.unwrap();
+        let only = &convo.turns[0].1;
+        assert_eq!(convo.system(only).len(), 1);
+    }
+
+    #[tokio::test]
+    async fn loads_turns_recursively_parents_before_children() {
+        let fs = mem_fs! {
+            "root": {
+                ".aillyrc.toml": r#"system = "root-sys""#,
+                "01.toml": r#"prompt = "top""#,
+                "child": {
+                    "02.toml": r#"prompt = "deep""#,
+                },
+            },
+        };
+        let convo = Conversation::load(fs.join("root").unwrap()).await.unwrap();
+        let paths: Vec<String> = convo
+            .turns
+            .iter()
+            .map(|(p, _)| p.as_str().to_string())
+            .collect();
+        assert_eq!(paths.len(), 2);
+        assert!(paths[0].ends_with("01.toml"));
+        assert!(paths[1].ends_with("02.toml"));
+    }
+
+    #[tokio::test]
+    async fn child_turns_inherit_parent_system() {
+        let fs = mem_fs! {
+            "root": {
+                ".aillyrc.toml": r#"system = "root-sys""#,
+                "child": {
+                    ".aillyrc.toml": r#"system = "child-sys""#,
+                    "01.toml": r#"prompt = "x""#,
+                },
+            },
+        };
+        let convo = Conversation::load(fs.join("root").unwrap()).await.unwrap();
+        assert_eq!(convo.turns.len(), 1);
+        assert_eq!(convo.turns[0].1.system.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn loads_directory_of_turns_in_lexicographic_order() {
+        let fs = mem_fs! {
+            "root": {
+                ".aillyrc.toml": r#"system = "sys""#,
+                "02_b.toml": r#"prompt = "second""#,
+                "01_a.toml": r#"prompt = "first""#,
+            },
+        };
+        let dir = fs.join("root").unwrap();
+        let convo = Conversation::load(dir).await.unwrap();
+        assert_eq!(convo.turns.len(), 2);
+        assert!(convo.turns[0].0.as_str().ends_with("01_a.toml"));
+        assert!(convo.turns[1].0.as_str().ends_with("02_b.toml"));
+        assert_eq!(convo.turns[0].1.system.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn skips_directory_when_meta_skip_true() {
+        let fs = mem_fs! {
+            "root": {
+                ".aillyrc.toml": "skip = true\n",
+                "01.toml": r#"prompt = "x""#,
+            },
+        };
+        let convo = Conversation::load(fs.join("root").unwrap()).await.unwrap();
+        assert!(convo.turns.is_empty());
+    }
+
+    #[tokio::test]
+    async fn loads_turn_with_response() {
+        let fs = mem_fs! {
+            "root": {
+                "01_intro.toml": "prompt = \"say hi\"\n\n[[response]]\nrole = \"assistant\"\ntext = \"hi\"\n",
+            },
+        };
+        let path = fs.join("root/01_intro.toml").unwrap();
+        let turn = ConversationTurn::load(path, ContentMeta::default(), Vec::new())
+            .await
+            .unwrap();
+        assert_eq!(turn.response.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn rejects_turn_with_empty_prompt() {
+        let fs = mem_fs! { "root": { "01.toml": r#"prompt = """# } };
+        let path = fs.join("root/01.toml").unwrap();
+        let err = ConversationTurn::load(path, ContentMeta::default(), Vec::new())
+            .await
+            .unwrap_err();
+        assert!(err.to_string().contains("empty prompt"));
+    }
+
+    #[tokio::test]
+    async fn carries_system_passed_in() {
+        let fs = mem_fs! { "root": { "01.toml": r#"prompt = "x""# } };
+        let path = fs.join("root/01.toml").unwrap();
+        let sys = vec![Message::system("inherited")];
+        let turn = ConversationTurn::load(path, ContentMeta::default(), sys.clone())
+            .await
+            .unwrap();
+        assert_eq!(turn.system.len(), 1);
+    }
+
+    #[test]
+    fn parses_turn_file_with_string_prompt_and_response() {
+        let toml = r#"
+prompt = "hello\nworld"
+
+[[response]]
+role = "assistant"
+text = "hi"
+"#;
+        let parsed: ConversationTurnFile = toml::from_str(toml).unwrap();
+        assert_eq!(parsed.prompt, "hello\nworld");
+        assert_eq!(parsed.response.len(), 1);
+    }
+
+    #[test]
+    fn parses_turn_file_with_no_response() {
+        let toml = r#"prompt = "hi""#;
+        let parsed: ConversationTurnFile = toml::from_str(toml).unwrap();
+        assert_eq!(parsed.prompt, "hi");
+        assert!(parsed.response.is_empty());
     }
 
     fn message_text(m: &Message) -> String {
