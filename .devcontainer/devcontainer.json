@@ -1,0 +1,36 @@
+{
+  "name": "ailly",
+  "image": "mcr.microsoft.com/devcontainers/rust:1-bookworm",
+  "workspaceFolder": "/workspaces/ailly",
+  "workspaceMount": "source=${localWorkspaceFolder},target=/workspaces/ailly,type=bind,consistency=cached",
+  "mounts": [
+    "source=${localWorkspaceFolder}/../ailly_typescript,target=/workspaces/ailly/typescript,type=bind,readonly",
+    "source=ailly-cargo-registry,target=/usr/local/cargo/registry,type=volume",
+    "source=ailly-cargo-target,target=/workspaces/ailly/target,type=volume"
+  ],
+  "features": {
+    "ghcr.io/devcontainers/features/node:1": { "version": "lts" },
+    "ghcr.io/devcontainers/features/github-cli:1": {}
+  },
+  "remoteUser": "vscode",
+  "containerEnv": {
+    "CARGO_TARGET_DIR": "/workspaces/ailly/target"
+  },
+  "postCreateCommand": "bash .devcontainer/post-create.sh",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "rust-lang.rust-analyzer",
+        "tamasfe.even-better-toml",
+        "vadimcn.vscode-lldb",
+        "anthropic.claude-code"
+      ],
+      "settings": {
+        "rust-analyzer.check.command": "clippy",
+        "files.watcherExclude": {
+          "**/target/**": true
+        }
+      }
+    }
+  }
+}
