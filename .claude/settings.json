@@ -1,6 +1,28 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "permissions": {
+    "defaultMode": "bypassPermissions",
+    "allow": [
+      "Bash(cargo check *)"
+    ]
+  },
   "enabledPlugins": {
+    "general@ailly": true,
+    "developer@ailly": true,
+    "characters@ailly": true,
+    "domain@ailly": true,
+    "patterns@ailly": true,
+    "research@ailly": true,
     "rust-analyzer-lsp@claude-plugins-official": true
-  }
+  },
+  "extraKnownMarketplaces": {
+    "ailly": {
+      "source": {
+        "source": "git",
+        "url": "https://github.com/DavidSouther/domain-driven-design.git",
+        "ref": "main"
+      }
+    }
+  },
+  "autoInstallEnabledPlugins": true
 }

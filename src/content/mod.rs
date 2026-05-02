@@ -8,9 +8,6 @@ use vfs::VfsPath;
 mod gitignore_fs;
 mod gitignore_fs_constants;
 
-#[cfg(test)]
-mod test_util;
-
 pub const AILLYRC: &str = ".aillyrc.toml";
 pub const EXTENSION: &str = ".toml";
 
@@ -143,6 +140,11 @@ pub struct ConversationTurn {
 }
 
 impl ConversationTurn {
+    /// Where this turn lives on disk.
+    pub fn path(&self) -> &VfsPath {
+        &self.path
+    }
+
     /// Parse one `<name>.toml` turn file at `path`.
     ///
     /// The file format is `prompt = "..."` plus an optional `[[response]]`
@@ -306,6 +308,24 @@ impl Conversation {
         Ok(())
     }
 
+    /// Number of loaded turns, in load order.
+    pub fn turn_count(&self) -> usize {
+        self.turns.len()
+    }
+
+    /// Borrow the turn at `idx` in load order.
+    pub fn turn(&self, idx: usize) -> &ConversationTurn {
+        &self.turns[idx].1
+    }
+
+    /// Push an assistant `message` onto the turn at `idx`.
+    ///
+    /// Used by `Generator` to record an engine's `Final` text so subsequent
+    /// `history_for` calls observe it as a predecessor's response.
+    pub fn record_response(&mut self, idx: usize, message: Message) {
+        self.turns[idx].1.response.push(message);
+    }
+
     /// Return the immediately prior `ConversationTurn` in load order, if any.
     pub fn predecessor(&self, turn: &ConversationTurn) -> Option<&ConversationTurn> {
         let idx = self.turns.iter().position(|(_, t)| t.path == turn.path)?;
@@ -318,6 +338,43 @@ impl Conversation {
     /// Return the inherited system messages for `turn`.
     pub fn system<'a>(&self, turn: &'a ConversationTurn) -> &'a [Message] {
         &turn.system
+    }
+
+    /// Build the chat history that should be sent to the engine for `turn`.
+    ///
+    /// Order: system chain (unless `meta.skip_head`), predecessor turns'
+    /// `prompt + response` in load order (unless `meta.isolated`), then
+    /// `turn.prompt`. Trailing assistant message is dropped unless
+    /// `meta.continue == true`.
+    pub fn history_for(&self, turn: &ConversationTurn) -> Vec<Message> {
+        let mut out: Vec<Message> = Vec::new();
+
+        if !turn.meta.skip_head {
+            out.extend(turn.system.iter().cloned());
+        }
+
+        if !turn.meta.isolated {
+            let mut chain: Vec<&ConversationTurn> = Vec::new();
+            let mut cursor: &ConversationTurn = turn;
+            while let Some(prev) = self.predecessor(cursor) {
+                chain.push(prev);
+                cursor = prev;
+            }
+            for prev in chain.into_iter().rev() {
+                out.extend(prev.prompt.iter().cloned());
+                out.extend(prev.response.iter().cloned());
+            }
+        }
+
+        out.extend(turn.prompt.iter().cloned());
+
+        if !turn.meta.r#continue
+            && matches!(out.last(), Some(Message::Assistant { .. }))
+        {
+            out.pop();
+        }
+
+        out
     }
 
     async fn load_into(
@@ -538,7 +595,7 @@ impl AillyRcFile {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::content::test_util::mem_fs;
+    use crate::mem_fs;
 
     #[tokio::test]
     async fn at_root_with_no_aillyrc_in_cwd() {
@@ -1082,5 +1139,145 @@ text = "hi"
                 _ => String::new(),
             },
         }
+    }
+
+    #[tokio::test]
+    async fn history_for_single_turn_pushes_system_then_prompt() {
+        let fs = mem_fs! {
+            "root": {
+                ".aillyrc.toml": r#"system = "sys""#,
+                "01.toml": r#"prompt = "first""#,
+            },
+        };
+        let convo = Conversation::load(fs.join("root").unwrap()).await.unwrap();
+        let only = &convo.turns[0].1;
+
+        let history = convo.history_for(only);
+
+        let texts: Vec<String> = history.iter().map(message_text).collect();
+        assert_eq!(texts, vec!["sys".to_string(), "first".to_string()]);
+    }
+
+    #[tokio::test]
+    async fn history_for_two_turns_includes_predecessor_prompt_and_response() {
+        let fs = mem_fs! {
+            "root": {
+                ".aillyrc.toml": r#"system = "sys""#,
+                "01.toml": "prompt = \"first\"\n\n[[response]]\nrole = \"assistant\"\ntext = \"answer1\"\n",
+                "02.toml": r#"prompt = "second""#,
+            },
+        };
+        let convo = Conversation::load(fs.join("root").unwrap()).await.unwrap();
+        let second = &convo.turns[1].1;
+
+        let history = convo.history_for(second);
+
+        let texts: Vec<String> = history.iter().map(message_text).collect();
+        assert_eq!(
+            texts,
+            vec![
+                "sys".to_string(),
+                "first".to_string(),
+                "answer1".to_string(),
+                "second".to_string(),
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn history_for_skip_head_drops_inherited_system_keeps_predecessors() {
+        let fs = mem_fs! {
+            "root": {
+                ".aillyrc.toml": r#"system = "sys""#,
+                "01.toml": "prompt = \"first\"\n\n[[response]]\nrole = \"assistant\"\ntext = \"answer1\"\n",
+                "02.toml": r#"prompt = "second""#,
+            },
+        };
+        let mut convo = Conversation::load(fs.join("root").unwrap()).await.unwrap();
+        convo.turns[1].1.meta.skip_head = true;
+        let second = &convo.turns[1].1;
+
+        let history = convo.history_for(second);
+
+        let texts: Vec<String> = history.iter().map(message_text).collect();
+        assert_eq!(
+            texts,
+            vec![
+                "first".to_string(),
+                "answer1".to_string(),
+                "second".to_string(),
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn history_for_isolated_drops_predecessors_keeps_system() {
+        let fs = mem_fs! {
+            "root": {
+                ".aillyrc.toml": r#"system = "sys""#,
+                "01.toml": "prompt = \"first\"\n\n[[response]]\nrole = \"assistant\"\ntext = \"answer1\"\n",
+                "02.toml": r#"prompt = "second""#,
+            },
+        };
+        let mut convo = Conversation::load(fs.join("root").unwrap()).await.unwrap();
+        convo.turns[1].1.meta.isolated = true;
+        let second = &convo.turns[1].1;
+
+        let history = convo.history_for(second);
+
+        let texts: Vec<String> = history.iter().map(message_text).collect();
+        assert_eq!(texts, vec!["sys".to_string(), "second".to_string()]);
+    }
+
+    #[tokio::test]
+    async fn history_for_pops_trailing_assistant_when_continue_false() {
+        let fs = mem_fs! {
+            "root": {
+                ".aillyrc.toml": r#"system = "sys""#,
+                "01.toml": r#"prompt = "first""#,
+            },
+        };
+        let mut convo = Conversation::load(fs.join("root").unwrap()).await.unwrap();
+        convo.turns[0].1.prompt = OneOrMany::many([
+            Message::user("first"),
+            Message::assistant("partial"),
+        ])
+        .unwrap();
+        let only = &convo.turns[0].1;
+
+        let history = convo.history_for(only);
+
+        let texts: Vec<String> = history.iter().map(message_text).collect();
+        assert_eq!(texts, vec!["sys".to_string(), "first".to_string()]);
+    }
+
+    #[tokio::test]
+    async fn history_for_keeps_trailing_assistant_when_continue_true() {
+        let fs = mem_fs! {
+            "root": {
+                ".aillyrc.toml": r#"system = "sys""#,
+                "01.toml": r#"prompt = "first""#,
+            },
+        };
+        let mut convo = Conversation::load(fs.join("root").unwrap()).await.unwrap();
+        convo.turns[0].1.prompt = OneOrMany::many([
+            Message::user("first"),
+            Message::assistant("partial"),
+        ])
+        .unwrap();
+        convo.turns[0].1.meta.r#continue = true;
+        let only = &convo.turns[0].1;
+
+        let history = convo.history_for(only);
+
+        let texts: Vec<String> = history.iter().map(message_text).collect();
+        assert_eq!(
+            texts,
+            vec![
+                "sys".to_string(),
+                "first".to_string(),
+                "partial".to_string(),
+            ]
+        );
     }
 }

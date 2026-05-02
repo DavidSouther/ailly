@@ -299,7 +299,7 @@ fn glob_match(pattern: &[u8], name: &[u8]) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::content::test_util::mem_fs;
+    use crate::mem_fs;
     use std::io::Write;
     use vfs::VfsPath;
 
