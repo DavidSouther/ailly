@@ -4,9 +4,11 @@ use std::pin::Pin;
 
 pub mod generator;
 pub mod noop;
+pub mod rig_engine;
 
 pub use generator::{Generator, SkipReason, TurnEvent};
 pub use noop::Noop;
+pub use rig_engine::{RigEngine, anthropic_from_env, openai_from_env};
 
 pub const DEFAULT_REQUEST_LIMIT: usize = 5;
 
