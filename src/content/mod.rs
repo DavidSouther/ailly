@@ -94,6 +94,9 @@ pub enum ContentError {
 
     #[error("non-text tool result at {path} cannot be serialized")]
     NonTextToolResult { path: String },
+
+    #[error("NN width exceeded 99 in {path} (out of scope for first slice)")]
+    NextNWidthExceeded { path: String },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -197,6 +200,8 @@ pub enum ToolsParent {
 
 #[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ContentMeta {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub step: Option<String>,
     #[serde(default)]
     context: ContentMetaContext,
     #[serde(default)]
@@ -209,6 +214,15 @@ pub struct ContentMeta {
     skip_head: bool,
     #[serde(default)]
     isolated: bool,
+}
+
+impl ContentMeta {
+    pub fn with_step(step: impl Into<String>) -> Self {
+        Self {
+            step: Some(step.into()),
+            ..Default::default()
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -288,6 +302,10 @@ impl ConversationTurn {
         let declared_tools = file.tools.clone();
         let declared_parent_tools = file.parent_tools;
         let tool_names = combine_tools(tools, &file.tools, file.parent_tools);
+        let mut meta = meta;
+        if file.step.is_some() {
+            meta.step = file.step;
+        }
 
         Ok(Self {
             path,
@@ -301,6 +319,26 @@ impl ConversationTurn {
             declared_tools,
             declared_parent_tools,
         })
+    }
+
+    /// Construct an empty-response turn with `prompt` set, ready to be
+    /// written to disk before invoking `Generator`.
+    ///
+    /// Used by the workflow runtime to materialize a synthesized turn file
+    /// for a task before driving the engine over it.
+    pub fn new(path: VfsPath, meta: ContentMeta, system: Vec<Message>, prompt: String) -> Self {
+        Self {
+            path,
+            meta,
+            system,
+            prompt: OneOrMany::one(Message::user(prompt)),
+            response: Vec::new(),
+            local_system_count: 0,
+            skills: vec![],
+            tool_names: vec![],
+            declared_tools: vec![],
+            declared_parent_tools: None,
+        }
     }
 
     /// Tool names resolved for this turn after walking the directory chain
@@ -347,6 +385,7 @@ impl ConversationTurn {
             .collect::<Result<_, _>>()?;
 
         let file = ConversationTurnFile {
+            step: self.meta.step.clone(),
             prompt: prompt_text,
             tools: self.declared_tools.clone(),
             parent_tools: self.declared_parent_tools,
@@ -404,6 +443,48 @@ impl Conversation {
     /// turns to without first walking a real filesystem.
     pub fn empty() -> Self {
         Self { turns: Vec::new() }
+    }
+
+    /// Load exactly one turn at `path` with an empty system chain and
+    /// default meta. Used to hand a synthesized turn file to `Generator`
+    /// without rewalking the surrounding directory.
+    pub async fn single_turn(path: VfsPath) -> Result<Self, ContentError> {
+        let turn = ConversationTurn::load(
+            path.clone(),
+            ContentMeta::default(),
+            Vec::new(),
+            0,
+            Vec::new(),
+            Vec::new(),
+        )
+        .await?;
+        Ok(Self {
+            turns: vec![(path, turn)],
+        })
+    }
+
+    /// Load each path in `paths` as a `ConversationTurn` with default meta
+    /// and an empty system chain, preserving input order in `self.turns`.
+    /// Errors out on the first failed load.
+    ///
+    /// Used by the workflow runtime to assemble a small N-turn conversation
+    /// from already-written turn files (e.g. a main task turn followed by
+    /// an evaluator turn) without rewalking a directory.
+    pub async fn from_paths(paths: Vec<VfsPath>) -> Result<Self, ContentError> {
+        let mut turns: Vec<(VfsPath, ConversationTurn)> = Vec::with_capacity(paths.len());
+        for path in paths {
+            let turn = ConversationTurn::load(
+                path.clone(),
+                ContentMeta::default(),
+                Vec::new(),
+                0,
+                Vec::new(),
+                Vec::new(),
+            )
+            .await?;
+            turns.push((path, turn));
+        }
+        Ok(Self { turns })
     }
 
     /// Write every turn back to its on-disk path.
@@ -757,6 +838,8 @@ fn is_turn_file(entry: &VfsPath) -> bool {
 
 #[derive(Debug, Default, Serialize, Deserialize)]
 struct ConversationTurnFile {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    step: Option<String>,
     prompt: String,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     tools: Vec<String>,
@@ -1745,6 +1828,7 @@ text = "hi"
     #[test]
     fn serializes_turn_file_with_prompt_and_response() {
         let file = ConversationTurnFile {
+            step: None,
             prompt: "hello\nworld".to_string(),
             tools: Vec::new(),
             parent_tools: None,
@@ -1765,6 +1849,7 @@ text = "hi"
     #[test]
     fn serializes_turn_file_omits_empty_response() {
         let file = ConversationTurnFile {
+            step: None,
             prompt: "hi".to_string(),
             tools: Vec::new(),
             parent_tools: None,
@@ -1777,6 +1862,7 @@ text = "hi"
     #[test]
     fn assistant_message_file_round_trips_with_all_metadata() {
         let file = ConversationTurnFile {
+            step: None,
             prompt: "q".to_string(),
             tools: Vec::new(),
             parent_tools: None,
@@ -2152,6 +2238,58 @@ text = "hi"
         assert!(after_first.contains(r#"id = "call_1""#));
     }
 
+    async fn write_then_load_round_trips_step_field() {
+        let fs = mem_fs! { "root": { "01.toml": r#"prompt = "x""# } };
+        let path = fs.join("root/01.toml").unwrap();
+
+        let meta = ContentMeta::with_step("design");
+        let turn = ConversationTurn::new(path.clone(), meta, Vec::new(), "x".to_string());
+        turn.write().await.unwrap();
+
+        let written = path.read_to_string().unwrap();
+        assert!(
+            written.contains("step = \"design\""),
+            "step should round-trip: {written}"
+        );
+
+        let reloaded = ConversationTurn::load(
+            path,
+            ContentMeta::default(),
+            Vec::new(),
+            0,
+            Vec::new(),
+            Vec::new(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(reloaded.meta.step.as_deref(), Some("design"));
+    }
+
+    #[tokio::test]
+    async fn turn_without_step_round_trips_as_none() {
+        let fs = mem_fs! { "root": { "01.toml": r#"prompt = "x""# } };
+        let path = fs.join("root/01.toml").unwrap();
+
+        let turn = ConversationTurn::load(
+            path.clone(),
+            ContentMeta::default(),
+            Vec::new(),
+            0,
+            Vec::new(),
+            Vec::new(),
+        )
+        .await
+        .unwrap();
+        assert!(turn.meta.step.is_none());
+
+        turn.write().await.unwrap();
+        let written = path.read_to_string().unwrap();
+        assert!(
+            !written.contains("step ="),
+            "step should not appear when None: {written}"
+        );
+    }
+
     #[tokio::test]
     async fn write_then_load_round_trips_prompt_only() {
         let fs = mem_fs! {
@@ -2197,6 +2335,51 @@ text = "hi"
                 _ => String::new(),
             },
         }
+    }
+
+    #[tokio::test]
+    async fn from_paths_loads_two_turns_in_order() {
+        let fs = mem_fs! {
+            "root": {
+                "a.toml": r#"prompt = "first""#,
+                "b.toml": r#"prompt = "second""#,
+            },
+        };
+        let a = fs.join("root/a.toml").unwrap();
+        let b = fs.join("root/b.toml").unwrap();
+
+        let convo = Conversation::from_paths(vec![a.clone(), b.clone()])
+            .await
+            .unwrap();
+
+        assert_eq!(convo.turn_count(), 2);
+        assert_eq!(convo.turn(0).path().as_str(), a.as_str());
+        assert_eq!(convo.turn(1).path().as_str(), b.as_str());
+    }
+
+    #[tokio::test]
+    async fn from_paths_history_for_second_includes_first_prompt_and_response() {
+        let fs = mem_fs! {
+            "root": {
+                "a.toml": "prompt = \"first\"\n\n[[response]]\nrole = \"assistant\"\ntext = \"answer1\"\n",
+                "b.toml": r#"prompt = "second""#,
+            },
+        };
+        let a = fs.join("root/a.toml").unwrap();
+        let b = fs.join("root/b.toml").unwrap();
+
+        let convo = Conversation::from_paths(vec![a, b]).await.unwrap();
+        let history = convo.history_for(convo.turn(1));
+
+        let texts: Vec<String> = history.iter().map(message_text).collect();
+        assert_eq!(
+            texts,
+            vec![
+                "first".to_string(),
+                "answer1".to_string(),
+                "second".to_string(),
+            ]
+        );
     }
 
     #[tokio::test]

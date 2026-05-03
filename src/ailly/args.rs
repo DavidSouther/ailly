@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 
+use anyhow::{Result, anyhow};
 use clap::{Parser, ValueEnum};
 
 #[derive(Parser, Debug)]
@@ -22,6 +23,17 @@ pub struct Cli {
     /// preserving the prompt and writing the file back idempotently.
     #[arg(long, conflicts_with = "prompt")]
     pub clean: bool,
+
+    /// Run a workflow from `workflow.toml` at the conversation root. The argument
+    /// is `WORKFLOW` to begin at the workflow's `start`, or `WORKFLOW:TASK` to
+    /// override the queue and begin at `TASK` for one run.
+    #[arg(
+        short = 'w',
+        long,
+        env = "AILLY_WORKFLOW",
+        value_name = "WORKFLOW[:TASK]"
+    )]
+    pub workflow: Option<String>,
 
     /// Engine to drive inference. `noop` is available for testing.
     #[arg(long, env = "AILLY_ENGINE")]
@@ -61,6 +73,25 @@ pub enum LogFormat {
     Json,
 }
 
+/// Parse the `-w` argument into a workflow name and optional task override.
+///
+/// `"basic"` becomes `("basic", None)`. `"basic:second"` becomes
+/// `("basic", Some("second"))`. An empty string is rejected.
+pub fn parse_workflow_arg(raw: &str) -> Result<(String, Option<String>)> {
+    if raw.is_empty() {
+        return Err(anyhow!("--workflow requires a non-empty value"));
+    }
+    match raw.split_once(':') {
+        Some((wf, task)) if !wf.is_empty() && !task.is_empty() => {
+            Ok((wf.to_string(), Some(task.to_string())))
+        }
+        Some(_) => Err(anyhow!(
+            "--workflow {raw:?}: expected `WORKFLOW` or `WORKFLOW:TASK` with both parts non-empty"
+        )),
+        None => Ok((raw.to_string(), None)),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -75,5 +106,28 @@ mod tests {
             msg.contains("--clean") && msg.contains("--prompt"),
             "expected conflict message naming both flags, got: {msg}"
         );
+    }
+
+    #[test]
+    fn clap_parses_workflow_short_flag() {
+        let cli = Cli::try_parse_from(["ailly", "-w", "basic"]).expect("parses");
+        assert_eq!(cli.workflow.as_deref(), Some("basic"));
+    }
+
+    #[test]
+    fn parse_workflow_arg_splits_on_single_colon() {
+        let (wf, task) = parse_workflow_arg("basic").unwrap();
+        assert_eq!(wf, "basic");
+        assert!(task.is_none());
+
+        let (wf, task) = parse_workflow_arg("basic:second").unwrap();
+        assert_eq!(wf, "basic");
+        assert_eq!(task.as_deref(), Some("second"));
+    }
+
+    #[test]
+    fn parse_workflow_arg_rejects_empty() {
+        let err = parse_workflow_arg("").unwrap_err();
+        assert!(err.to_string().contains("non-empty"));
     }
 }

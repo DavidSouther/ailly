@@ -6,8 +6,10 @@ use rig::tool::ToolDyn;
 use tokio_util::sync::CancellationToken;
 use vfs::VfsPath;
 
-use crate::content::{AssistantResponse, Conversation, ResponseUsage};
-use crate::engine::{Engine, EngineEvent, EmptyRegistry, EngineInput, Settings, StopReason, ToolRegistry, Usage};
+use crate::content::{AssistantResponse, Conversation};
+use crate::engine::{
+    EmptyRegistry, Engine, EngineEvent, EngineInput, Settings, StopReason, ToolRegistry, Usage,
+};
 
 #[derive(Debug, Clone)]
 pub enum SkipReason {
@@ -172,22 +174,12 @@ impl Generator {
                             self.conversation.record_tool_result(idx, result.clone());
                             yield TurnEvent::ToolResult { path: path.clone(), result };
                         }
-                        EngineEvent::Final(r) => {
-                            let final_text = if text_buffer.is_empty() {
-                                r.text.clone()
-                            } else {
+                        EngineEvent::Final(mut r) => {
+                            r.engine_name = self.engine.name().into();
+                            r.text = if !text_buffer.is_empty() {
                                 std::mem::take(&mut text_buffer)
-                            };
-                            let response = AssistantResponse {
-                                text: final_text,
-                                model: r.model.clone(),
-                                engine: Some(self.engine.name().to_string()),
-                                stop_reason: Some(r.stop_reason.to_string()),
-                                usage: r.usage.as_ref().map(|u| ResponseUsage {
-                                    input_tokens: u.input_tokens,
-                                    output_tokens: u.output_tokens,
-                                }),
-                            };
+                            } else { r.text };
+                            let response: AssistantResponse = (&r).into();
                             self.conversation.record_response(idx, response);
                             if let Err(err) = self.conversation.turn(idx).write().await {
                                 yield TurnEvent::Failed {
@@ -288,7 +280,8 @@ mod tests {
             ) -> anyhow::Result<EngineStream> {
                 let response = EngineResponse {
                     text: "answer".to_string(),
-                    model: Some("metadata-model".to_string()),
+                    engine_name: self.name().into(),
+                    model_id: "metadata-model".into(),
                     stop_reason: StopReason::MaxTokens,
                     usage: Some(Usage {
                         input_tokens: 5,

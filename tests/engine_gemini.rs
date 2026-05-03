@@ -19,7 +19,12 @@ fn gemini_from_env_returns_a_rig_engine_without_network() {
     let engine = gemini_from_env("gemini-2.5-flash")
         .expect("gemini_from_env should construct from a populated env var");
 
-    let result = engine.stream(EngineInput::default(), &Settings::default(), "feature-test");
+    let result = engine.stream(
+        EngineInput::default(),
+        &Settings::default(),
+        &[],
+        "feature-test",
+    );
     let err = match result {
         Ok(_) => panic!("empty history must error synchronously through the shared adapter"),
         Err(e) => e,

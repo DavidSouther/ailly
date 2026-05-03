@@ -20,7 +20,10 @@ use serde::Deserialize;
 use serde_json::json;
 
 use ailly::content::Conversation;
-use ailly::engine::{Generator, HashMapRegistry, Noop, Settings, StopReason, ToolRegistry, TurnEvent};
+use ailly::engine::{
+    Generator, HashMapRegistry, Noop, Settings, StopReason, ToolRegistry, TurnEvent,
+};
+use ailly::knowledge::skills::NullSkillRepository;
 use ailly::mem_fs;
 
 use rig::completion::request::ToolDefinition;
@@ -68,7 +71,7 @@ async fn engine_surfaces_one_tool_round_trip_through_generator_and_file() {
             "01.toml": "prompt = 'USE echo WITH {\"text\":\"ok\"}'\ntools = [\"echo\"]\n",
         },
     };
-    let conversation = Conversation::load(fs.join("root").unwrap())
+    let conversation = Conversation::load(fs.join("root").unwrap(), &NullSkillRepository)
         .await
         .expect("load conversation");
 

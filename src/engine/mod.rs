@@ -19,27 +19,46 @@ pub use noop::Noop;
 pub use rig_engine::bedrock_from_env;
 pub use rig_engine::{RigEngine, anthropic_from_env, gemini_from_env, openai_from_env};
 
+use crate::content::{AssistantResponse, ResponseUsage};
+
 pub const DEFAULT_REQUEST_LIMIT: usize = 5;
 pub const DEFAULT_MAX_TOOL_TURNS: usize = 5;
 
 #[derive(Debug, Clone)]
+pub struct ModelId(String);
+impl From<&'static str> for ModelId {
+    fn from(value: &'static str) -> Self {
+        Self(value.to_string())
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct EngineName(String);
+
+impl From<&'static str> for EngineName {
+    fn from(value: &'static str) -> Self {
+        Self(value.to_string())
+    }
+}
+
+#[derive(Debug, Clone)]
 pub struct Settings {
-    pub model: Option<String>,
-    pub request_limit: usize,
-    pub max_tool_turns: usize,
-    pub isolated: bool,
-    pub overwrite: bool,
+    model_id: Option<ModelId>,
+    request_limit: usize,
+    max_tool_turns: usize,
+    isolated: bool,
+    overwrite: bool,
     /// When `true`, an unknown tool name on a turn's chain produces a
     /// `TurnEvent::Failed` and the engine is never invoked for that turn.
     /// When `false`, unknown names are dropped with a `log::warn!` and the
     /// resolved subset is passed to the engine.
-    pub strict_tools: bool,
+    strict_tools: bool,
 }
 
 impl Default for Settings {
     fn default() -> Self {
         Self {
-            model: None,
+            model_id: None,
             request_limit: DEFAULT_REQUEST_LIMIT,
             max_tool_turns: DEFAULT_MAX_TOOL_TURNS,
             isolated: false,
@@ -51,8 +70,8 @@ impl Default for Settings {
 
 #[derive(Debug, Clone, Default)]
 pub struct Usage {
-    pub input_tokens: u32,
-    pub output_tokens: u32,
+    input_tokens: u32,
+    output_tokens: u32,
 }
 
 impl From<RigUsage> for Usage {
@@ -91,10 +110,31 @@ impl fmt::Display for StopReason {
 
 #[derive(Debug, Clone)]
 pub struct EngineResponse {
-    pub text: String,
-    pub model: Option<String>,
-    pub stop_reason: StopReason,
-    pub usage: Option<Usage>,
+    pub(crate) text: String,
+    pub(crate) engine_name: EngineName,
+    pub(crate) model_id: ModelId,
+    pub(crate) stop_reason: StopReason,
+    pub(crate) usage: Option<Usage>,
+}
+
+/// Map an engine's `EngineResponse` onto a content-layer `AssistantResponse`,
+/// preserving the engine name, model, stop reason, and usage so each turn
+/// file carries the same provenance regardless of which call site recorded
+/// the response (`Generator::run` for normal turns, the workflow runtime for
+/// evaluator turns).
+impl From<&EngineResponse> for AssistantResponse {
+    fn from(value: &EngineResponse) -> Self {
+        Self {
+            text: value.text.clone(),
+            model: Some(value.model_id.0.clone()),
+            engine: Some(value.engine_name.0.clone()),
+            stop_reason: Some(value.stop_reason.to_string()),
+            usage: value.usage.as_ref().map(|u| ResponseUsage {
+                input_tokens: u.input_tokens,
+                output_tokens: u.output_tokens,
+            }),
+        }
+    }
 }
 
 #[non_exhaustive]

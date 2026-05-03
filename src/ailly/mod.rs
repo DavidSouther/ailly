@@ -1,7 +1,7 @@
 mod args;
 mod logging;
 
-pub use args::{Cli, LogFormat};
+pub use args::{Cli, LogFormat, parse_workflow_arg};
 pub use logging::init as init_logging;
 
 use std::io::Write;
@@ -22,6 +22,9 @@ use crate::engine::{
     openai_from_env,
 };
 use crate::knowledge::skills::FsSkillRepository;
+use crate::workflow::{Runtime, Workflow, WorkflowEvent, WorkflowState, WorkflowStopReason};
+
+use std::collections::VecDeque;
 
 const DEFAULT_ANTHROPIC_MODEL: &str = "claude-sonnet-4-5";
 const DEFAULT_OPENAI_MODEL: &str = "gpt-4o-mini";
@@ -87,6 +90,11 @@ async fn run_async(cli: Cli) -> Result<(), RunError> {
     );
 
     let engine: Arc<dyn Engine> = build_engine(engine_kind, model.as_deref())?;
+
+    if let Some(raw) = cli.workflow.as_deref() {
+        return run_workflow(&cli, engine, raw).await;
+    }
+
     let conversation = load_conversation(&cli).await?;
 
     if conversation.turn_count() == 0 {
@@ -271,12 +279,150 @@ async fn run_clean(cli: &Cli) -> Result<(), RunError> {
     Ok(())
 }
 
+/// Read and parse `workflow.toml` from the conversation root, validating
+/// that its declared name matches what `-w` requested.
+fn load_workflow_definition(
+    vfs_root: &VfsPath,
+    expected_name: &str,
+    raw_arg: &str,
+) -> Result<Workflow, RunError> {
+    let workflow_path = vfs_root
+        .join("workflow.toml")
+        .with_context(|| format!("resolving workflow.toml under {}", vfs_root.as_str()))?;
+    if !workflow_path.exists().unwrap_or(false) {
+        return Err(RunError::Setup(anyhow!(
+            "no workflow.toml at conversation root {}",
+            vfs_root.as_str()
+        )));
+    }
+    let workflow_text = workflow_path
+        .read_to_string()
+        .with_context(|| format!("reading {}", workflow_path.as_str()))?;
+    let workflow: Workflow = toml::from_str(&workflow_text)
+        .with_context(|| format!("parsing {}", workflow_path.as_str()))?;
+
+    if workflow.name != expected_name {
+        return Err(RunError::Setup(anyhow!(
+            "workflow.toml declares name {:?} but `-w {raw_arg}` requested {expected_name:?}",
+            workflow.name
+        )));
+    }
+
+    Ok(workflow)
+}
+
 async fn load_from_root(root: &Path) -> Result<Conversation> {
     let vfs_root = VfsPath::new(PhysicalFS::new(root));
     let skills = FsSkillRepository::new(&vfs_root);
     Conversation::load(vfs_root, &skills)
         .await
         .with_context(|| format!("loading conversation at {}", root.display()))
+}
+
+async fn run_workflow(cli: &Cli, engine: Arc<dyn Engine>, raw: &str) -> Result<(), RunError> {
+    let (workflow_name, task_override) = parse_workflow_arg(raw)?;
+
+    let root = cli.root();
+    if !root.exists() {
+        return Err(RunError::Setup(anyhow!(
+            "root path does not exist: {}",
+            root.display()
+        )));
+    }
+    let vfs_root = VfsPath::new(PhysicalFS::new(&root));
+
+    let workflow = load_workflow_definition(&vfs_root, &workflow_name, raw)?;
+
+    let mut state =
+        WorkflowState::read(&vfs_root)?.unwrap_or_else(|| WorkflowState::initial(&workflow));
+
+    if let Some(task_name) = task_override {
+        state.queue = VecDeque::from(vec![task_name]);
+    } else if state.queue.is_empty() {
+        state.queue.push_back(workflow.start.clone());
+    }
+
+    let runtime = Runtime::new(workflow, state, vfs_root, engine, Settings::default());
+    let mut events = runtime.run();
+
+    let mut stdout = std::io::stdout().lock();
+    while let Some(event) = events.next().await {
+        match event {
+            WorkflowEvent::TaskStarted { name, turn } => {
+                log::info!("task started: {} ({})", name, turn.as_str());
+            }
+            WorkflowEvent::TaskTurn(TurnEvent::Started { path }) => {
+                log::info!("turn started: {}", path.as_str());
+            }
+            WorkflowEvent::TaskTurn(TurnEvent::Delta { text, .. }) => {
+                stdout.write_all(text.as_bytes())?;
+                stdout.flush()?;
+            }
+            WorkflowEvent::TaskTurn(TurnEvent::ToolCall { path, call }) => {
+                log::info!(
+                    "turn tool_call: {} {} id={}",
+                    path.as_str(),
+                    call.function.name,
+                    call.id
+                );
+            }
+            WorkflowEvent::TaskTurn(TurnEvent::ToolResult { path, result }) => {
+                log::info!("turn tool_result: {} id={}", path.as_str(), result.id);
+            }
+            WorkflowEvent::TaskTurn(TurnEvent::Finished {
+                path, stop_reason, ..
+            }) => {
+                stdout.write_all(b"\n")?;
+                stdout.flush()?;
+                log::info!("turn finished: {} ({:?})", path.as_str(), stop_reason);
+            }
+            WorkflowEvent::TaskTurn(TurnEvent::Skipped { path, reason }) => {
+                log::info!("turn skipped: {} ({:?})", path.as_str(), reason);
+            }
+            WorkflowEvent::TaskTurn(TurnEvent::Failed { path, error }) => {
+                eprintln!(
+                    "ailly: turn {} failed: {}",
+                    path.as_str(),
+                    format_engine_error(&format!("{error:#}"))
+                );
+                return Err(RunError::Reported);
+            }
+            WorkflowEvent::TaskFinished { name, result, next } => {
+                log::info!("task finished: {name} (result={result}, next={next:?})");
+            }
+            WorkflowEvent::WorkflowFinished { reason } => match reason {
+                WorkflowStopReason::Completed => {
+                    log::info!("workflow completed");
+                    return Ok(());
+                }
+                WorkflowStopReason::UnknownNext { task, result } => {
+                    eprintln!(
+                        "ailly: workflow halted at task {task:?}: no `next` entry for result {result:?}"
+                    );
+                    return Err(RunError::Reported);
+                }
+                WorkflowStopReason::TaskFailed { task, error } => {
+                    eprintln!(
+                        "ailly: task {task:?} failed: {}",
+                        format_engine_error(&format!("{error:#}"))
+                    );
+                    return Err(RunError::Reported);
+                }
+                WorkflowStopReason::StatePersistFailed { error } => {
+                    eprintln!(
+                        "ailly: failed to persist workflow state: {}",
+                        format_engine_error(&format!("{error:#}"))
+                    );
+                    return Err(RunError::Reported);
+                }
+                WorkflowStopReason::Cancelled => {
+                    log::info!("workflow cancelled");
+                    return Err(RunError::Reported);
+                }
+            },
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]

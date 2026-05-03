@@ -7,23 +7,24 @@
 
 use std::sync::Arc;
 
+use crate::engine::{
+    Engine, EngineEvent, EngineInput, EngineName, EngineResponse, EngineStream, ModelId, Settings,
+    StopReason, Usage,
+};
 use anyhow::{Result, anyhow};
 use futures::StreamExt;
+use rig::agent::StreamingError;
 use rig::agent::{AgentBuilder, MultiTurnStreamItem};
 use rig::client::ProviderClient;
 use rig::client::completion::CompletionClient;
-use rig::completion::{CompletionModel, GetTokenUsage};
 use rig::completion::request::{PromptError, ToolDefinition};
+use rig::completion::{CompletionModel, GetTokenUsage};
 use rig::message::{Message, Text, UserContent};
-use rig::agent::StreamingError;
 use rig::streaming::{StreamedAssistantContent, StreamedUserContent, StreamingChat};
 use rig::tool::{ToolDyn, ToolError};
 use rig::wasm_compat::WasmBoxedFuture;
 
 use crate::content::PreambleBlock;
-use crate::engine::{
-    Engine, EngineEvent, EngineInput, EngineResponse, EngineStream, Settings, StopReason, Usage,
-};
 
 /// Re-box a shared `Arc<dyn ToolDyn>` as the `Box<dyn ToolDyn>` shape that
 /// `AgentBuilder::tools` requires, while leaving the caller's `Arc` intact.
@@ -100,7 +101,8 @@ where
         let model = self.model.clone();
         let constructor_preamble = self.preamble.clone();
         let preamble = merge_preamble(constructor_preamble, &input_preamble);
-        let model_id = self.model_id.clone();
+        let engine_name = EngineName(self.name().to_string());
+        let model_id = ModelId(self.model_id.clone());
         let max_tool_turns = settings.max_tool_turns;
         let dyn_tools: Vec<Box<dyn ToolDyn>> = tools
             .iter()
@@ -157,8 +159,9 @@ where
 
             yield EngineEvent::Final(EngineResponse {
                 text: assembled,
-                model: Some(model_id),
                 stop_reason,
+                engine_name,
+                model_id,
                 usage,
             });
         }))
@@ -278,7 +281,8 @@ mod tests {
     #[test]
     fn rejects_empty_history() {
         let engine = build_dummy_anthropic();
-        let msg = err_message(engine.stream(EngineInput::default(), &Settings::default(), &[], "label"));
+        let msg =
+            err_message(engine.stream(EngineInput::default(), &Settings::default(), &[], "label"));
         assert!(msg.contains("history is empty"));
     }
 
@@ -329,7 +333,8 @@ mod tests {
     #[test]
     fn gemini_rejects_empty_history() {
         let engine = build_dummy_gemini();
-        let msg = err_message(engine.stream(EngineInput::default(), &Settings::default(), "label"));
+        let msg =
+            err_message(engine.stream(EngineInput::default(), &Settings::default(), &[], "label"));
         assert!(msg.contains("history is empty"));
     }
 
@@ -343,6 +348,7 @@ mod tests {
                 history,
             },
             &Settings::default(),
+            &[],
             "label",
         ));
         assert!(msg.contains("must be a User message"));
@@ -440,7 +446,7 @@ mod tests {
             }
             let final_response = final_response.expect("Final event must be present");
 
-            assert_eq!(final_response.model.as_deref(), Some("fake-model-id"));
+            assert_eq!(final_response.model_id.0, "fake-model-id");
             let usage = final_response.usage.expect("usage must be populated");
             assert_eq!(usage.input_tokens, 7);
             assert_eq!(usage.output_tokens, 3);
@@ -518,10 +524,8 @@ mod tests {
             async fn stream(
                 &self,
                 _request: CompletionRequest,
-            ) -> Result<
-                StreamingCompletionResponse<Self::StreamingResponse>,
-                CompletionError,
-            > {
+            ) -> Result<StreamingCompletionResponse<Self::StreamingResponse>, CompletionError>
+            {
                 let call_index = self.calls.fetch_add(1, Ordering::SeqCst);
                 let limit = self.tool_calls_to_emit;
                 let inner = Box::pin(async_stream::stream! {
@@ -543,15 +547,11 @@ mod tests {
 
         #[tokio::test]
         async fn multi_round_trip_surfaces_tool_call_then_result_pairs_in_order() {
-            let engine = RigEngine::new(
-                ScriptedToolModel::new(2),
-                "fake",
-                "fake-model-id",
-            );
+            let engine = RigEngine::new(ScriptedToolModel::new(2), "fake", "fake-model-id");
             let echo: Arc<dyn ToolDyn> = Arc::new(EchoTool);
             let stream = engine
                 .stream(
-                    vec![rig::message::Message::user("ask")],
+                    EngineInput::with_history(vec![rig::message::Message::user("ask")]),
                     &Settings::default(),
                     &[echo],
                     "label",
@@ -587,18 +587,15 @@ mod tests {
 
         #[tokio::test]
         async fn tool_limit_exhaustion_yields_stop_reason_tool_limit() {
-            let engine = RigEngine::new(
-                ScriptedToolModel::new(usize::MAX),
-                "fake",
-                "fake-model-id",
-            );
+            let engine =
+                RigEngine::new(ScriptedToolModel::new(usize::MAX), "fake", "fake-model-id");
             let echo: Arc<dyn ToolDyn> = Arc::new(EchoTool);
             let mut settings = Settings::default();
             settings.max_tool_turns = 0;
 
             let stream = engine
                 .stream(
-                    vec![rig::message::Message::user("ask")],
+                    EngineInput::with_history(vec![rig::message::Message::user("ask")]),
                     &settings,
                     &[echo],
                     "label",
@@ -653,7 +650,8 @@ mod bedrock_tests {
     #[test]
     fn bedrock_rejects_empty_history() {
         let engine = build_dummy_bedrock();
-        let msg = err_message(engine.stream(EngineInput::default(), &Settings::default(), &[], "label"));
+        let msg =
+            err_message(engine.stream(EngineInput::default(), &Settings::default(), &[], "label"));
         assert!(msg.contains("history is empty"));
     }
 

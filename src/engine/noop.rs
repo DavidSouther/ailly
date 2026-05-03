@@ -10,7 +10,7 @@ use rig::tool::ToolDyn;
 
 use crate::content::PreambleBlock;
 use crate::engine::{
-    Engine, EngineEvent, EngineInput, EngineResponse, EngineStream, Settings, StopReason,
+    Engine, EngineEvent, EngineInput, EngineResponse, EngineStream, ModelId, Settings, StopReason,
 };
 
 pub const DEFAULT_CHUNK_BYTES: usize = 32;
@@ -47,7 +47,11 @@ impl Engine for Noop {
         let request_label = request_label.to_string();
         let tools: Vec<Arc<dyn ToolDyn>> = tools.to_vec();
 
-        let last_user_text = input.history
+        let engine_name = super::EngineName("noop".to_string());
+        let model_id = ModelId("noop".to_string());
+
+        let last_user_text = input
+            .history
             .iter()
             .rev()
             .find(|m| matches!(m, Message::User { .. }))
@@ -95,9 +99,10 @@ impl Engine for Noop {
 
                 yield EngineEvent::Final(EngineResponse {
                     text: format!("{pre}{post}"),
-                    model: None,
+                    model_id,
                     stop_reason: StopReason::EndTurn,
                     usage: None,
+                    engine_name,
                 });
                 return;
             }
@@ -111,9 +116,10 @@ impl Engine for Noop {
             }
             yield EngineEvent::Final(EngineResponse {
                 text,
-                model: None,
+                model_id,
                 stop_reason: StopReason::EndTurn,
                 usage: None,
+                engine_name,
             });
         }))
     }
