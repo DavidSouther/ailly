@@ -2,11 +2,10 @@ use std::pin::Pin;
 use std::sync::Arc;
 
 use futures::{Stream, StreamExt};
-use rig::message::Message;
 use tokio_util::sync::CancellationToken;
 use vfs::VfsPath;
 
-use crate::content::Conversation;
+use crate::content::{AssistantResponse, Conversation, ResponseUsage};
 use crate::engine::{Engine, EngineEvent, Settings, StopReason, Usage};
 
 #[derive(Debug, Clone)]
@@ -85,8 +84,17 @@ impl Generator {
                             yield TurnEvent::Delta { path: path.clone(), text: t };
                         }
                         EngineEvent::Final(r) => {
-                            self.conversation
-                                .record_response(idx, Message::assistant(r.text.clone()));
+                            let response = AssistantResponse {
+                                text: r.text.clone(),
+                                model: r.model.clone(),
+                                engine: Some(self.engine.name().to_string()),
+                                stop_reason: Some(r.stop_reason.to_string()),
+                                usage: r.usage.as_ref().map(|u| ResponseUsage {
+                                    input_tokens: u.input_tokens,
+                                    output_tokens: u.output_tokens,
+                                }),
+                            };
+                            self.conversation.record_response(idx, response);
                             if let Err(err) = self.conversation.turn(idx).write().await {
                                 yield TurnEvent::Failed {
                                     path: path.clone(),
@@ -160,6 +168,68 @@ mod tests {
         assert!(matches!(stop_reason, StopReason::EndTurn));
         assert!(response.contains("noop response for "));
         assert_eq!(finished_idx, events.len() - 1);
+    }
+
+    #[tokio::test]
+    async fn final_event_persists_engine_model_stop_reason_and_usage_to_file() {
+        use crate::engine::{EngineEvent, EngineResponse, EngineStream, Usage};
+        use rig::message::Message;
+
+        struct MetadataEngine;
+        impl Engine for MetadataEngine {
+            fn name(&self) -> &'static str {
+                "metadata"
+            }
+            fn stream(
+                &self,
+                _history: Vec<Message>,
+                _settings: &Settings,
+                _request_label: &str,
+            ) -> anyhow::Result<EngineStream> {
+                let response = EngineResponse {
+                    text: "answer".to_string(),
+                    model: Some("metadata-model".to_string()),
+                    stop_reason: StopReason::MaxTokens,
+                    usage: Some(Usage {
+                        input_tokens: 5,
+                        output_tokens: 9,
+                    }),
+                };
+                Ok(Box::pin(futures::stream::iter(vec![EngineEvent::Final(
+                    response,
+                )])))
+            }
+        }
+
+        let fs = mem_fs! {
+            "root": {
+                "01.toml": r#"prompt = "ask""#,
+            },
+        };
+        let dir = fs.join("root").unwrap();
+        let convo = Conversation::load(dir.clone()).await.unwrap();
+        let generator = Generator::new(convo, Arc::new(MetadataEngine), Settings::default());
+
+        let _events: Vec<TurnEvent> = generator.run().collect().await;
+
+        let path = fs.join("root/01.toml").unwrap();
+        let written = path.read_to_string().unwrap();
+        assert!(
+            written.contains("engine = \"metadata\""),
+            "missing engine field: {written}"
+        );
+        assert!(
+            written.contains("model = \"metadata-model\""),
+            "missing model field: {written}"
+        );
+        assert!(
+            written.contains("stop_reason = \"max_tokens\""),
+            "missing stop_reason field: {written}"
+        );
+        assert!(
+            written.contains("input_tokens = 5") && written.contains("output_tokens = 9"),
+            "missing usage table: {written}"
+        );
     }
 
     #[tokio::test]

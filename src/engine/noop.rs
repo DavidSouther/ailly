@@ -21,6 +21,10 @@ impl Default for Noop {
 }
 
 impl Engine for Noop {
+    fn name(&self) -> &'static str {
+        "noop"
+    }
+
     fn stream(
         &self,
         history: Vec<Message>,
@@ -38,6 +42,7 @@ impl Engine for Noop {
             .collect();
         events.push(EngineEvent::Final(EngineResponse {
             text,
+            model: None,
             stop_reason: StopReason::EndTurn,
             usage: None,
         }));
@@ -124,6 +129,12 @@ mod tests {
             }
         }
         (texts, final_ev.expect("Noop must emit a Final"))
+    }
+
+    #[test]
+    fn noop_engine_name_is_noop() {
+        let noop = Noop::default();
+        assert_eq!(noop.name(), "noop");
     }
 
     #[tokio::test]

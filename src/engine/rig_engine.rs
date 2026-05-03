@@ -14,18 +14,27 @@ use rig::completion::{CompletionModel, GetTokenUsage};
 use rig::message::{Message, Text, UserContent};
 use rig::streaming::{StreamedAssistantContent, StreamingChat};
 
-use crate::engine::{Engine, EngineEvent, EngineResponse, EngineStream, Settings, StopReason};
+use crate::engine::{Engine, EngineEvent, EngineResponse, EngineStream, Settings, StopReason, Usage};
+
+const ANTHROPIC: &str = "anthropic";
+const OPENAI: &str = "openai";
+#[cfg(feature = "bedrock")]
+const BEDROCK: &str = "bedrock";
 
 pub struct RigEngine<M> {
     model: M,
     preamble: Option<String>,
+    engine_name: &'static str,
+    model_id: String,
 }
 
 impl<M> RigEngine<M> {
-    pub fn new(model: M) -> Self {
+    pub fn new(model: M, engine_name: &'static str, model_id: impl Into<String>) -> Self {
         Self {
             model,
             preamble: None,
+            engine_name,
+            model_id: model_id.into(),
         }
     }
 
@@ -40,6 +49,10 @@ where
     M: CompletionModel + Clone + Send + Sync + 'static,
     M::StreamingResponse: GetTokenUsage + Send,
 {
+    fn name(&self) -> &'static str {
+        self.engine_name
+    }
+
     fn stream(
         &self,
         history: Vec<Message>,
@@ -51,6 +64,7 @@ where
 
         let model = self.model.clone();
         let preamble = self.preamble.clone();
+        let model_id = self.model_id.clone();
 
         Ok(Box::pin(async_stream::stream! {
             let mut builder = AgentBuilder::new(model);
@@ -62,6 +76,7 @@ where
             let mut stream = agent.stream_chat(last_user_text, prior).await;
 
             let mut assembled = String::new();
+            let mut usage: Option<Usage> = None;
             let stop_reason = loop {
                 match stream.next().await {
                     Some(Ok(MultiTurnStreamItem::StreamAssistantItem(
@@ -73,9 +88,11 @@ where
                     // ToolCall, ToolCallDelta, Reasoning, ReasoningDelta, and
                     // StreamUserItem are intentionally ignored in this slice.
                     // Per-provider mapping is deferred.
-                    Some(Ok(MultiTurnStreamItem::FinalResponse(_))) | None => {
+                    Some(Ok(MultiTurnStreamItem::FinalResponse(final_response))) => {
+                        usage = Some(Usage::from(final_response.usage()));
                         break StopReason::EndTurn;
                     }
+                    None => break StopReason::EndTurn,
                     Some(Ok(_)) => {}
                     Some(Err(e)) => break StopReason::Error(e.to_string()),
                 }
@@ -83,8 +100,9 @@ where
 
             yield EngineEvent::Final(EngineResponse {
                 text: assembled,
+                model: Some(model_id),
                 stop_reason,
-                usage: None,
+                usage,
             });
         }))
     }
@@ -108,7 +126,7 @@ pub fn anthropic_from_env(
 ) -> Result<RigEngine<rig::providers::anthropic::completion::CompletionModel>> {
     let client = rig::providers::anthropic::Client::from_env()
         .map_err(|e| anyhow!("anthropic from_env: {e}"))?;
-    Ok(RigEngine::new(client.completion_model(model)))
+    Ok(RigEngine::new(client.completion_model(model), ANTHROPIC, model))
 }
 
 pub fn openai_from_env(
@@ -116,7 +134,7 @@ pub fn openai_from_env(
 ) -> Result<RigEngine<rig::providers::openai::responses_api::ResponsesCompletionModel>> {
     let client = rig::providers::openai::Client::from_env()
         .map_err(|e| anyhow!("openai from_env: {e}"))?;
-    Ok(RigEngine::new(client.completion_model(model)))
+    Ok(RigEngine::new(client.completion_model(model), OPENAI, model))
 }
 
 #[cfg(feature = "bedrock")]
@@ -125,7 +143,7 @@ pub fn bedrock_from_env(
 ) -> Result<RigEngine<rig_bedrock::completion::CompletionModel>> {
     let client = rig_bedrock::client::Client::from_env()
         .map_err(|e| anyhow!("bedrock from_env: {e}"))?;
-    Ok(RigEngine::new(client.completion_model(model)))
+    Ok(RigEngine::new(client.completion_model(model), BEDROCK, model))
 }
 
 #[cfg(test)]
@@ -137,7 +155,11 @@ mod tests {
     {
         let client = rig::providers::anthropic::Client::from_val("dummy-key".to_string())
             .expect("from_val with dummy key should construct without network");
-        RigEngine::new(client.completion_model("claude-sonnet-4-5"))
+        RigEngine::new(
+            client.completion_model("claude-sonnet-4-5"),
+            ANTHROPIC,
+            "claude-sonnet-4-5",
+        )
     }
 
     fn err_message(result: Result<EngineStream>) -> String {
@@ -161,6 +183,110 @@ mod tests {
         let msg = err_message(engine.stream(history, &Settings::default(), "label"));
         assert!(msg.contains("must be a User message"));
     }
+
+    #[test]
+    fn anthropic_engine_name_is_anthropic() {
+        let engine = build_dummy_anthropic();
+        assert_eq!(engine.name(), "anthropic");
+    }
+
+    #[test]
+    fn openai_engine_name_is_openai() {
+        let client =
+            rig::providers::openai::Client::from_val("dummy-key".to_string().into())
+                .expect("openai from_val with dummy key constructs without network");
+        let engine = RigEngine::new(
+            client.completion_model("gpt-4o-mini"),
+            OPENAI,
+            "gpt-4o-mini",
+        );
+        assert_eq!(engine.name(), "openai");
+    }
+
+    mod fake_model {
+        use super::*;
+        use crate::engine::EngineEvent;
+        use futures::StreamExt;
+        use rig::completion::{
+            CompletionError, CompletionModel, CompletionRequest, CompletionResponse, GetTokenUsage,
+            Usage as RigUsage,
+        };
+        use rig::streaming::{RawStreamingChoice, StreamingCompletionResponse};
+        use serde::{Deserialize, Serialize};
+
+        #[derive(Clone)]
+        struct FakeModel;
+
+        #[derive(Clone, Debug, Serialize, Deserialize)]
+        struct FakeStreamingResponse;
+
+        impl GetTokenUsage for FakeStreamingResponse {
+            fn token_usage(&self) -> Option<RigUsage> {
+                let mut u = RigUsage::new();
+                u.input_tokens = 7;
+                u.output_tokens = 3;
+                Some(u)
+            }
+        }
+
+        impl CompletionModel for FakeModel {
+            type Response = serde_json::Value;
+            type StreamingResponse = FakeStreamingResponse;
+            type Client = ();
+
+            fn make(_client: &Self::Client, _model: impl Into<String>) -> Self {
+                Self
+            }
+
+            async fn completion(
+                &self,
+                _request: CompletionRequest,
+            ) -> Result<CompletionResponse<Self::Response>, CompletionError> {
+                Err(CompletionError::ProviderError("unused".to_string()))
+            }
+
+            async fn stream(
+                &self,
+                _request: CompletionRequest,
+            ) -> Result<
+                StreamingCompletionResponse<Self::StreamingResponse>,
+                CompletionError,
+            > {
+                let inner = Box::pin(async_stream::stream! {
+                    yield Ok(RawStreamingChoice::Message("hi".to_string()));
+                    yield Ok(RawStreamingChoice::FinalResponse(FakeStreamingResponse));
+                });
+                Ok(StreamingCompletionResponse::stream(inner))
+            }
+        }
+
+        #[tokio::test]
+        async fn populates_model_and_usage_from_final_response() {
+            let engine = RigEngine::new(FakeModel, "fake", "fake-model-id");
+            let stream = engine
+                .stream(
+                    vec![rig::message::Message::user("ask")],
+                    &Settings::default(),
+                    "label",
+                )
+                .expect("stream() should succeed");
+            let events: Vec<EngineEvent> = stream.collect().await;
+
+            let mut final_response: Option<EngineResponse> = None;
+            for ev in events {
+                if let EngineEvent::Final(r) = ev {
+                    final_response = Some(r);
+                }
+            }
+            let final_response = final_response.expect("Final event must be present");
+
+            assert_eq!(final_response.model.as_deref(), Some("fake-model-id"));
+            let usage = final_response.usage.expect("usage must be populated");
+            assert_eq!(usage.input_tokens, 7);
+            assert_eq!(usage.output_tokens, 3);
+            assert!(matches!(final_response.stop_reason, StopReason::EndTurn));
+        }
+    }
 }
 
 #[cfg(all(test, feature = "bedrock"))]
@@ -181,7 +307,7 @@ mod bedrock_tests {
             .build();
         let aws_client = aws_sdk_bedrockruntime::Client::new(&cfg);
         let client: rig_bedrock::client::Client = aws_client.into();
-        RigEngine::new(client.completion_model("test-model"))
+        RigEngine::new(client.completion_model("test-model"), BEDROCK, "test-model")
     }
 
     fn err_message(result: Result<EngineStream>) -> String {
@@ -204,5 +330,11 @@ mod bedrock_tests {
         let history = vec![Message::user("hi"), Message::assistant("there")];
         let msg = err_message(engine.stream(history, &Settings::default(), "label"));
         assert!(msg.contains("must be a User message"));
+    }
+
+    #[test]
+    fn bedrock_engine_name_is_bedrock() {
+        let engine = build_dummy_bedrock();
+        assert_eq!(engine.name(), "bedrock");
     }
 }

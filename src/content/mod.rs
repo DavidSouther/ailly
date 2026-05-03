@@ -1,6 +1,6 @@
 use rig::{
     OneOrMany,
-    message::{AssistantContent, Message, UserContent},
+    message::{Message, UserContent},
 };
 use serde::{Deserialize, Serialize};
 use vfs::{MemoryFS, VfsPath};
@@ -77,18 +77,28 @@ pub enum ContentError {
 
     #[error("non-text user prompt at {path} cannot be serialized")]
     NonTextUserPrompt { path: String },
-
-    #[error("non-text user message in response at {path} cannot be serialized")]
-    NonTextUserMessage { path: String },
-
-    #[error("non-text assistant message in response at {path} cannot be serialized")]
-    NonTextAssistantMessage { path: String },
 }
 
-#[derive(Debug)]
-enum MessageConversionError {
-    NonTextUser,
-    NonTextAssistant,
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AssistantResponse {
+    pub text: String,
+    pub model: Option<String>,
+    pub engine: Option<String>,
+    pub stop_reason: Option<String>,
+    pub usage: Option<ResponseUsage>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ResponseUsage {
+    pub input_tokens: u32,
+    pub output_tokens: u32,
+}
+
+#[derive(Debug, Clone)]
+pub enum TurnMessage {
+    User(String),
+    Assistant(AssistantResponse),
+    System(String),
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -136,7 +146,7 @@ pub struct ConversationTurn {
     /// The original user prompt for this turn
     prompt: OneOrMany<Message>,
     /// All subsequent messages, for this turn.
-    response: Vec<Message>,
+    response: Vec<TurnMessage>,
 }
 
 impl ConversationTurn {
@@ -181,10 +191,10 @@ impl ConversationTurn {
         }
         let prompt = OneOrMany::one(Message::user(file.prompt));
 
-        let response: Vec<Message> = file
+        let response: Vec<TurnMessage> = file
             .response
             .into_iter()
-            .map(Into::into)
+            .map(TurnMessage::from)
             .collect();
 
         Ok(Self {
@@ -231,16 +241,8 @@ impl ConversationTurn {
             .response
             .iter()
             .cloned()
-            .map(MessageFile::try_from)
-            .collect::<std::result::Result<_, _>>()
-            .map_err(|e| match e {
-                MessageConversionError::NonTextUser => ContentError::NonTextUserMessage {
-                    path: self.path.as_str().to_string(),
-                },
-                MessageConversionError::NonTextAssistant => ContentError::NonTextAssistantMessage {
-                    path: self.path.as_str().to_string(),
-                },
-            })?;
+            .map(MessageFile::from)
+            .collect();
 
         let file = ConversationTurnFile {
             prompt: prompt_text,
@@ -326,12 +328,13 @@ impl Conversation {
         &self.turns[idx].1
     }
 
-    /// Push an assistant `message` onto the turn at `idx`.
+    /// Push an assistant `response` onto the turn at `idx`.
     ///
-    /// Used by `Generator` to record an engine's `Final` text so subsequent
-    /// `history_for` calls observe it as a predecessor's response.
-    pub fn record_response(&mut self, idx: usize, message: Message) {
-        self.turns[idx].1.response.push(message);
+    /// Used by `Generator` to record an engine's `Final` text and metadata
+    /// so subsequent `history_for` calls observe it as a predecessor's
+    /// response and the on-disk file carries provenance for that turn.
+    pub fn record_response(&mut self, idx: usize, response: AssistantResponse) {
+        self.turns[idx].1.response.push(TurnMessage::Assistant(response));
     }
 
     /// Append a synthetic user-prompt turn to the conversation.
@@ -415,7 +418,7 @@ impl Conversation {
             }
             for prev in chain.into_iter().rev() {
                 out.extend(prev.prompt.iter().cloned());
-                out.extend(prev.response.iter().cloned());
+                out.extend(prev.response.iter().map(Message::from));
             }
         }
 
@@ -490,35 +493,81 @@ struct ConversationTurnFile {
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(tag = "role", rename_all = "lowercase")]
 enum MessageFile {
-    User { text: String },
-    Assistant { text: String },
-    System { text: String },
+    User {
+        text: String,
+    },
+    Assistant {
+        text: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        model: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        engine: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        stop_reason: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        usage: Option<UsageFile>,
+    },
+    System {
+        text: String,
+    },
 }
 
-impl From<MessageFile> for Message {
+#[derive(Debug, Serialize, Deserialize)]
+struct UsageFile {
+    input_tokens: u32,
+    output_tokens: u32,
+}
+
+impl From<MessageFile> for TurnMessage {
     fn from(value: MessageFile) -> Self {
         match value {
-            MessageFile::User { text } => Message::user(text),
-            MessageFile::Assistant { text } => Message::assistant(text),
-            MessageFile::System { text } => Message::system(text),
+            MessageFile::User { text } => TurnMessage::User(text),
+            MessageFile::Assistant {
+                text,
+                model,
+                engine,
+                stop_reason,
+                usage,
+            } => TurnMessage::Assistant(AssistantResponse {
+                text,
+                model,
+                engine,
+                stop_reason,
+                usage: usage.map(|u| ResponseUsage {
+                    input_tokens: u.input_tokens,
+                    output_tokens: u.output_tokens,
+                }),
+            }),
+            MessageFile::System { text } => TurnMessage::System(text),
         }
     }
 }
 
-impl TryFrom<Message> for MessageFile {
-    type Error = MessageConversionError;
+impl From<TurnMessage> for MessageFile {
+    fn from(value: TurnMessage) -> Self {
+        match value {
+            TurnMessage::User(text) => MessageFile::User { text },
+            TurnMessage::Assistant(response) => MessageFile::Assistant {
+                text: response.text,
+                model: response.model,
+                engine: response.engine,
+                stop_reason: response.stop_reason,
+                usage: response.usage.map(|u| UsageFile {
+                    input_tokens: u.input_tokens,
+                    output_tokens: u.output_tokens,
+                }),
+            },
+            TurnMessage::System(text) => MessageFile::System { text },
+        }
+    }
+}
 
-    fn try_from(m: Message) -> std::result::Result<Self, MessageConversionError> {
-        match m {
-            Message::System { content } => Ok(MessageFile::System { text: content }),
-            Message::User { content } => match content.first() {
-                UserContent::Text(t) => Ok(MessageFile::User { text: t.text }),
-                _ => Err(MessageConversionError::NonTextUser),
-            },
-            Message::Assistant { content, .. } => match content.first() {
-                AssistantContent::Text(t) => Ok(MessageFile::Assistant { text: t.text }),
-                _ => Err(MessageConversionError::NonTextAssistant),
-            },
+impl From<&TurnMessage> for Message {
+    fn from(value: &TurnMessage) -> Self {
+        match value {
+            TurnMessage::User(text) => Message::user(text.clone()),
+            TurnMessage::Assistant(response) => Message::assistant(response.text.clone()),
+            TurnMessage::System(text) => Message::system(text.clone()),
         }
     }
 }
@@ -649,6 +698,7 @@ impl AillyRcFile {
 mod tests {
     use super::*;
     use crate::mem_fs;
+    use rig::message::AssistantContent;
 
     #[tokio::test]
     async fn at_root_with_no_aillyrc_in_cwd() {
@@ -1040,6 +1090,10 @@ text = "hi"
             prompt: "hello\nworld".to_string(),
             response: vec![MessageFile::Assistant {
                 text: "hi".to_string(),
+                model: None,
+                engine: None,
+                stop_reason: None,
+                usage: None,
             }],
         };
         let toml_text = toml::to_string(&file).unwrap();
@@ -1056,6 +1110,85 @@ text = "hi"
         };
         let toml_text = toml::to_string(&file).unwrap();
         assert!(!toml_text.contains("response"));
+    }
+
+    #[test]
+    fn assistant_message_file_round_trips_with_all_metadata() {
+        let file = ConversationTurnFile {
+            prompt: "q".to_string(),
+            response: vec![MessageFile::Assistant {
+                text: "a".to_string(),
+                model: Some("test-model".to_string()),
+                engine: Some("noop".to_string()),
+                stop_reason: Some("end_turn".to_string()),
+                usage: Some(UsageFile {
+                    input_tokens: 11,
+                    output_tokens: 22,
+                }),
+            }],
+        };
+
+        let toml_text = toml::to_string(&file).unwrap();
+        let parsed: ConversationTurnFile = toml::from_str(&toml_text).unwrap();
+
+        let MessageFile::Assistant {
+            text,
+            model,
+            engine,
+            stop_reason,
+            usage,
+        } = parsed.response.into_iter().next().unwrap()
+        else {
+            panic!("expected an Assistant entry");
+        };
+        assert_eq!(text, "a");
+        assert_eq!(model.as_deref(), Some("test-model"));
+        assert_eq!(engine.as_deref(), Some("noop"));
+        assert_eq!(stop_reason.as_deref(), Some("end_turn"));
+        let u = usage.expect("usage round-trips");
+        assert_eq!(u.input_tokens, 11);
+        assert_eq!(u.output_tokens, 22);
+    }
+
+    #[test]
+    fn assistant_message_file_round_trips_without_metadata() {
+        let toml_text = "prompt = \"q\"\n\n[[response]]\nrole = \"assistant\"\ntext = \"a\"\n";
+        let parsed: ConversationTurnFile = toml::from_str(toml_text).unwrap();
+
+        let MessageFile::Assistant {
+            text,
+            model,
+            engine,
+            stop_reason,
+            usage,
+        } = parsed.response.into_iter().next().unwrap()
+        else {
+            panic!("expected an Assistant entry");
+        };
+        assert_eq!(text, "a");
+        assert!(model.is_none());
+        assert!(engine.is_none());
+        assert!(stop_reason.is_none());
+        assert!(usage.is_none());
+    }
+
+    #[tokio::test]
+    async fn text_only_response_load_write_is_identical() {
+        let fs = mem_fs! {
+            "root": {
+                "01.toml": "prompt = \"q\"\n\n[[response]]\nrole = \"assistant\"\ntext = \"a\"\n",
+            },
+        };
+        let path = fs.join("root/01.toml").unwrap();
+        let original = path.read_to_string().unwrap();
+
+        let turn = ConversationTurn::load(path.clone(), ContentMeta::default(), Vec::new())
+            .await
+            .unwrap();
+        turn.write().await.unwrap();
+
+        let after = path.read_to_string().unwrap();
+        assert_eq!(after, original);
     }
 
     #[tokio::test]
