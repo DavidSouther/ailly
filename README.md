@@ -35,7 +35,7 @@ To get started on the command line, follow these steps:
 1. Create a file named `10_chickens.md` with "Tell me a joke about chickens" as the content.
 1. Run Ailly using NodeJS: `../target/debug/ailly`
    - See the joke in `10_chickens.toml`
-1. Create a file named `.aillyrc.toml` with "\[system]\\nYou are a farmer writing jokes for your other barnyard animals."
+1. Create a file named `.ailly.toml` with "\[system]\\nYou are a farmer writing jokes for your other barnyard animals."
    - Include other system prompts, level setting expectations. etc.
    - Run Ailly with the same command, and see how the joke changes.
 1. Create more numbered files, such as `20_knock_knock.md` which contains the following text: "Turn the chicken joke into a knock-knock joke."

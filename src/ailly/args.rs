@@ -18,6 +18,11 @@ pub struct Cli {
     #[arg(short = 'p', long, env = "AILLY_PROMPT")]
     pub prompt: Option<String>,
 
+    /// Strip every recorded `[[response]]` entry from every turn file under `--root`,
+    /// preserving the prompt and writing the file back idempotently.
+    #[arg(long, conflicts_with = "prompt")]
+    pub clean: bool,
+
     /// Engine to drive inference. `noop` is available for testing.
     #[arg(long, env = "AILLY_ENGINE")]
     pub engine: Option<String>,
@@ -54,4 +59,21 @@ impl Cli {
 pub enum LogFormat {
     Pretty,
     Json,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use clap::Parser;
+
+    #[test]
+    fn clap_rejects_clean_combined_with_prompt() {
+        let result = Cli::try_parse_from(["ailly", "--clean", "--prompt", "foo"]);
+        let err = result.expect_err("--clean must conflict with --prompt at parse time");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("--clean") && msg.contains("--prompt"),
+            "expected conflict message naming both flags, got: {msg}"
+        );
+    }
 }

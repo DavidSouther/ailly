@@ -2,3 +2,4 @@ target
 Cargo.lock
 devcontainer-lock.json
 .env
+typescript/

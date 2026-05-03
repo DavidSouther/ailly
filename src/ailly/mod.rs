@@ -69,6 +69,10 @@ pub fn run() -> ExitCode {
 }
 
 async fn run_async(cli: Cli) -> Result<(), RunError> {
+    if cli.clean {
+        return run_clean(&cli).await;
+    }
+
     let engine_kind = resolve_engine_kind(cli.engine.as_deref())?;
     let model = cli.model.clone();
 
@@ -224,6 +228,23 @@ async fn load_conversation(cli: &Cli) -> Result<Conversation> {
     }
 
     Ok(conversation)
+}
+
+async fn run_clean(cli: &Cli) -> Result<(), RunError> {
+    let root = cli.root();
+    if !root.exists() {
+        return Err(RunError::Setup(anyhow!(
+            "root path does not exist: {}",
+            root.display()
+        )));
+    }
+
+    let mut conversation = load_from_root(&root).await?;
+    conversation.clean().await?;
+    for idx in 0..conversation.turn_count() {
+        log::info!("cleaned: {}", conversation.turn(idx).path().as_str());
+    }
+    Ok(())
 }
 
 async fn load_from_root(root: &Path) -> Result<Conversation> {

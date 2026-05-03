@@ -29,7 +29,58 @@ Use Sayiir crate to manage workflows of tasks. A task is a name, the task to com
 - **Next** Map<EvaluationResult, Name> matches the evaluation result (`success`, `failure`, or other) to the name of another task to execute next. If no match is found, or the named task is unknown, no further action is taken.
 
 ## Knowledge
-CodeGraph-rust and other knowledge base things to do semantic rag both on the project's source code and supporting documentation artifacts. Loads [Agent Skills](https://agentskills.io/home). Handles MCP sessions.
+
+The Knowledge subsystem injects additional information into the conversation. CodeGraph 
+
+Kahneman's work "thinking fast and slow" describes a two-tier reasoning system in the human brain. The fast brain is responsible for immediate attention needing tasks, while the slow brain takes time to work through reasoning tasks.
+
+Coding agents circa 2026 use Foundational models for all aspects of their output. The agent takes a user prompt, combines certain preloaded bits of context, and responds to LLM tool use calls to get additional context data. (Claude's "Assist" tool is taking a stab at this.)
+
+A hybrid approach, inspired by Thinking Fast and Slow, will use local, small, fast models to determine a better initial set of context. The remote foundation model then only requests clarification for any points, rather than driving the LLM through tool usage.
+
+A new tool, `Clarify`, can be used when additional context is desired. An agent can implement this tool as "search or ask". That is, for questions that are likely answerable via information local to the project, the local agent will use local LSP or file tools to answer. Otherwise, it can ask the user for guidance.
+
+### Project map and code map
+
+The Knowledge subsystem provides a code map utility. Graph RAG 
+
+- **In-process crate.** `anvanster/codegraph` v0.2.0 (Apache 2.0, RocksDB backend, 16 languages, native Rust query API). Linked directly into the Ailly binary. Parser-agnostic core, so Ailly still owns the tree-sitter feeding step.
+- **MCP server.** `Jakedismo/codegraph-rust` (MIT, SurrealDB plus HNSW, ~13 languages, hybrid 70/30 vector and lexical retrieval, agentic MCP tools). Spawned as a subprocess and consumed through `rmcp`.
+
+The choice between these two is a real one and belongs in the implementation design doc. The architecture commits to one of them as the indexing backbone, not to a hand-rolled tree-sitter plus `petgraph` substitute.
+
+The Knowledge layer adds three concerns CodeGraph does not cover:
+
+1. **Documentation corpus.** `.md` and `.toml` artifacts, plus the `.aillyrc` chains, indexed separately from the code graph. Embedded with `rig::embeddings::EmbeddingModel` and held behind `rig::vector_store::VectorStoreIndexDyn`. Default backend is rig's `InMemoryVectorStore`. Persistent backend is `rig-lancedb`, writing under `.ailly/lance/`.
+2. **Repo map preface.** A PageRank pass over CodeGraph's graph, rendered as a token-budgeted (default 1000) summary of definitions and prepended to every request inside the system chain. Aider-style. Cheap, always on, independent of per-turn retrieval.
+3. **rig glue.** A `KnowledgeIndex` type that returns `impl VectorStoreIndexDyn`, so the Engine wires retrieval through `agent.dynamic_context(k, idx)` without seeing CodeGraph directly.
+
+Retrieval is hybrid. A query asks CodeGraph for graph-structural matches (callers, definitions, imports) and the documentation index for semantic matches, merges and reranks the two streams, and splices the result into the message stream as separate user messages between the system chain and the predecessor history.
+
+### Agent Skills
+
+The Knowledge subsystem loads Agent Skills following the open standard at [agentskills.io](https://agentskills.io/specification), version 1.0 (open release 2025-12-18). A Skill is a directory whose `SKILL.md` carries YAML frontmatter and a Markdown body. Required frontmatter fields are `name` (lowercase, 1 to 64 chars, equal to the directory name) and `description` (1 to 1024 chars). Optional fields are `license`, `compatibility`, `metadata`, and `allowed-tools`.
+
+Loading is three-tier progressive disclosure:
+
+1. **Discovery.** At project load time, walk the skill search paths and read only `name` and `description`. The discovery index is folded into the system chain. Budget is roughly 100 tokens per skill.
+2. **Activation.** When the model requests a skill, or the user names one, load the full `SKILL.md` body. Recommended cap is 5000 tokens.
+3. **Execution.** Files under `scripts/`, `references/`, and `assets/` load only when the skill body refers to them.
+
+Search paths, in order of precedence: `<project>/.ailly/skills/`, then `~/.ailly/skills/`, then `~/.claude/skills/`. The optional `allowed-tools` frontmatter composes with the Engine's "reads safe, writes dangerous" permission model rather than replacing it. The loader is hand-rolled on `walkdir` plus a YAML parser. No skills crate is taken as a runtime dependency.
+
+### MCP sessions
+
+The Knowledge subsystem owns MCP sessions for **resources**, distinct from the Engine's use of MCP for **tools**. A configured MCP server can expose document URIs, search endpoints, or other live read-only data. The Knowledge layer maintains the client connection through `rmcp` (gated by rig-core's `rmcp` feature), surfaces resources to the `augment` hook for inclusion in retrieval, and shuts the session through `clean`. Tool-bearing MCP servers stay with the Engine. A single MCP server may expose both surfaces, in which case the Engine and Knowledge subsystems share the underlying `rmcp` connection but consume different parts of its catalog.
+
+### Notes for the Rust port
+
+The Rust crate currently has no Knowledge code. Implementation lands after the Engine slice ([docs/developer/2026-05-01-A-engine/](docs/developer/2026-05-01-A-engine/)) and follows the same design-then-feature-test cadence. The CodeGraph choice drives the rest of the dependency set:
+
+- **In-process route:** `anvanster/codegraph` v0.2.0 plus `tree-sitter` and the language grammars (codegraph is parser-agnostic), plus rig-core's embeddings and vector-store surface for the documentation corpus, plus `walkdir` and a YAML parser for the Skills loader.
+- **MCP route:** `rmcp` (gated by rig-core's `rmcp` feature) for the CodeGraph subprocess, plus rig-core's embeddings and vector-store surface, plus `walkdir` and a YAML parser. No tree-sitter in our process.
+
+Persistent vector storage (`rig-lancedb`) is deferred to a second slice behind rig's `InMemoryVectorStore`.
 
 ## Project
 The primary API layer, exposing a Project with Project::instruct(&mut self, prompt: String) that runs a user prompt to make modifications to a project, and Project::resources(&self, query: String) which runs a user prompt to find resources within a project matching the prompt. A project has a root folder, stores its conversations, settings, etc in `.ailly`. Loads Skills, MCP configurations, etc. 

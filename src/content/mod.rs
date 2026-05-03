@@ -328,6 +328,18 @@ impl Conversation {
         &self.turns[idx].1
     }
 
+    /// Strip every `[[response]]` entry from every turn, then write each
+    /// turn back to disk. Idempotent: a second call produces a
+    /// byte-identical file because `ConversationTurnFile.response`
+    /// serializes via `skip_serializing_if = "Vec::is_empty"`.
+    pub async fn clean(&mut self) -> Result<(), ContentError> {
+        for (_, turn) in &mut self.turns {
+            turn.response.clear();
+            turn.write().await?;
+        }
+        Ok(())
+    }
+
     /// Push an assistant `response` onto the turn at `idx`.
     ///
     /// Used by `Generator` to record an engine's `Final` text and metadata
@@ -1170,6 +1182,69 @@ text = "hi"
         assert!(engine.is_none());
         assert!(stop_reason.is_none());
         assert!(usage.is_none());
+    }
+
+    #[tokio::test]
+    async fn clean_strips_responses_and_is_byte_identical_on_second_call() {
+        let fs = mem_fs! {
+            "root": {
+                "01.toml": "prompt = \"q\"\n\n[[response]]\nrole = \"assistant\"\ntext = \"a1\"\n\n[[response]]\nrole = \"user\"\ntext = \"u\"\n\n[[response]]\nrole = \"assistant\"\ntext = \"a2\"\n",
+            },
+        };
+        let dir = fs.join("root").unwrap();
+        let path = fs.join("root/01.toml").unwrap();
+
+        let mut convo = Conversation::load(dir.clone()).await.unwrap();
+        convo.clean().await.unwrap();
+
+        let after_first = path.read_to_string().unwrap();
+        assert!(!after_first.contains("[[response]]"), "first clean kept [[response]]: {after_first}");
+        assert!(after_first.contains("prompt = \"q\""), "first clean dropped prompt: {after_first}");
+
+        let mut convo = Conversation::load(dir).await.unwrap();
+        convo.clean().await.unwrap();
+        let after_second = path.read_to_string().unwrap();
+
+        assert_eq!(after_first, after_second, "second clean should be byte-identical");
+    }
+
+    #[tokio::test]
+    async fn clean_skips_directory_when_meta_skip_true() {
+        let fs = mem_fs! {
+            "root": {
+                ".ailly.toml": "skip = true\n",
+                "01.toml": "prompt = \"q\"\n\n[[response]]\nrole = \"assistant\"\ntext = \"a\"\n",
+            },
+        };
+        let dir = fs.join("root").unwrap();
+        let path = fs.join("root/01.toml").unwrap();
+        let original = path.read_to_string().unwrap();
+
+        let mut convo = Conversation::load(dir).await.unwrap();
+        assert_eq!(convo.turn_count(), 0, "skip = true must yield zero loaded turns");
+        convo.clean().await.unwrap();
+
+        let after = path.read_to_string().unwrap();
+        assert_eq!(after, original, "clean must not touch files inside skip = true dirs");
+    }
+
+    #[tokio::test]
+    async fn clean_does_not_touch_aillyrc_files() {
+        let fs = mem_fs! {
+            "root": {
+                ".ailly.toml": "system = \"sys\"\n",
+                "01.toml": "prompt = \"q\"\n\n[[response]]\nrole = \"assistant\"\ntext = \"a\"\n",
+            },
+        };
+        let dir = fs.join("root").unwrap();
+        let aillyrc = fs.join("root/.ailly.toml").unwrap();
+        let original = aillyrc.read_to_string().unwrap();
+
+        let mut convo = Conversation::load(dir).await.unwrap();
+        convo.clean().await.unwrap();
+
+        let after = aillyrc.read_to_string().unwrap();
+        assert_eq!(after, original, "clean must not touch .ailly.toml");
     }
 
     #[tokio::test]
