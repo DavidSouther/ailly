@@ -248,7 +248,7 @@ async fn run_clean(cli: &Cli) -> Result<(), RunError> {
 }
 
 async fn load_from_root(root: &Path) -> Result<Conversation> {
-    let vfs_root = VfsPath::new(PhysicalFS::new(root.to_path_buf()));
+    let vfs_root = VfsPath::new(PhysicalFS::new(root));
     Conversation::load(vfs_root)
         .await
         .with_context(|| format!("loading conversation at {}", root.display()))

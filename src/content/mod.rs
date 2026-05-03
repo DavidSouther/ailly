@@ -462,7 +462,7 @@ impl Conversation {
                 source,
             })?
             .collect();
-        entries.sort_by(|a, b| a.filename().cmp(&b.filename()));
+        entries.sort_by_key(|entry| entry.filename());
 
         for entry in &entries {
             if !is_turn_file(entry) {
