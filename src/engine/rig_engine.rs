@@ -2,8 +2,8 @@
 //!
 //! The module is named `rig_engine` so use sites do not collide with the
 //! `rig` crate. Concrete provider constructors (`anthropic_from_env`,
-//! `openai_from_env`, and `bedrock_from_env` under the `bedrock` feature)
-//! live alongside the adapter.
+//! `openai_from_env`, `gemini_from_env`, and `bedrock_from_env` under the
+//! `bedrock` feature) live alongside the adapter.
 
 use anyhow::{Result, anyhow};
 use futures::StreamExt;
@@ -18,6 +18,7 @@ use crate::engine::{Engine, EngineEvent, EngineResponse, EngineStream, Settings,
 
 const ANTHROPIC: &str = "anthropic";
 const OPENAI: &str = "openai";
+const GEMINI: &str = "gemini";
 #[cfg(feature = "bedrock")]
 const BEDROCK: &str = "bedrock";
 
@@ -121,29 +122,38 @@ fn extract_last_user_text(history: &[Message]) -> Result<String> {
     }
 }
 
+fn rig_engine_from_env<C>(provider: &'static str, model: &str) -> Result<RigEngine<C::CompletionModel>>
+where
+    C: ProviderClient + CompletionClient,
+    <C as ProviderClient>::Error: std::fmt::Display,
+{
+    let client = C::from_env().map_err(|e| anyhow!("{provider} from_env: {e}"))?;
+    Ok(RigEngine::new(client.completion_model(model), provider, model))
+}
+
 pub fn anthropic_from_env(
     model: &str,
 ) -> Result<RigEngine<rig::providers::anthropic::completion::CompletionModel>> {
-    let client = rig::providers::anthropic::Client::from_env()
-        .map_err(|e| anyhow!("anthropic from_env: {e}"))?;
-    Ok(RigEngine::new(client.completion_model(model), ANTHROPIC, model))
+    rig_engine_from_env::<rig::providers::anthropic::Client>(ANTHROPIC, model)
 }
 
 pub fn openai_from_env(
     model: &str,
 ) -> Result<RigEngine<rig::providers::openai::responses_api::ResponsesCompletionModel>> {
-    let client = rig::providers::openai::Client::from_env()
-        .map_err(|e| anyhow!("openai from_env: {e}"))?;
-    Ok(RigEngine::new(client.completion_model(model), OPENAI, model))
+    rig_engine_from_env::<rig::providers::openai::Client>(OPENAI, model)
+}
+
+pub fn gemini_from_env(
+    model: &str,
+) -> Result<RigEngine<rig::providers::gemini::completion::CompletionModel>> {
+    rig_engine_from_env::<rig::providers::gemini::Client>(GEMINI, model)
 }
 
 #[cfg(feature = "bedrock")]
 pub fn bedrock_from_env(
     model: &str,
 ) -> Result<RigEngine<rig_bedrock::completion::CompletionModel>> {
-    let client = rig_bedrock::client::Client::from_env()
-        .map_err(|e| anyhow!("bedrock from_env: {e}"))?;
-    Ok(RigEngine::new(client.completion_model(model), BEDROCK, model))
+    rig_engine_from_env::<rig_bedrock::client::Client>(BEDROCK, model)
 }
 
 #[cfg(test)]
@@ -201,6 +211,38 @@ mod tests {
             "gpt-4o-mini",
         );
         assert_eq!(engine.name(), "openai");
+    }
+
+    fn build_dummy_gemini() -> RigEngine<rig::providers::gemini::completion::CompletionModel> {
+        let client =
+            rig::providers::gemini::Client::from_val("dummy-key".to_string().into())
+                .expect("gemini from_val with dummy key constructs without network");
+        RigEngine::new(
+            client.completion_model("gemini-2.5-flash"),
+            GEMINI,
+            "gemini-2.5-flash",
+        )
+    }
+
+    #[test]
+    fn gemini_rejects_empty_history() {
+        let engine = build_dummy_gemini();
+        let msg = err_message(engine.stream(Vec::new(), &Settings::default(), "label"));
+        assert!(msg.contains("history is empty"));
+    }
+
+    #[test]
+    fn gemini_rejects_assistant_last_message() {
+        let engine = build_dummy_gemini();
+        let history = vec![Message::user("hi"), Message::assistant("there")];
+        let msg = err_message(engine.stream(history, &Settings::default(), "label"));
+        assert!(msg.contains("must be a User message"));
+    }
+
+    #[test]
+    fn gemini_engine_name_is_gemini() {
+        let engine = build_dummy_gemini();
+        assert_eq!(engine.name(), "gemini");
     }
 
     mod fake_model {

@@ -10,7 +10,7 @@ pub mod rig_engine;
 
 pub use generator::{Generator, SkipReason, TurnEvent};
 pub use noop::Noop;
-pub use rig_engine::{RigEngine, anthropic_from_env, openai_from_env};
+pub use rig_engine::{RigEngine, anthropic_from_env, gemini_from_env, openai_from_env};
 #[cfg(feature = "bedrock")]
 pub use rig_engine::bedrock_from_env;
 

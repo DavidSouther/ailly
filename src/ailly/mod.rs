@@ -16,13 +16,15 @@ use vfs::{PhysicalFS, VfsPath};
 
 use crate::content::Conversation;
 use crate::engine::{
-    Engine, Generator, Noop, Settings, StopReason, TurnEvent, anthropic_from_env, openai_from_env,
+    Engine, Generator, Noop, Settings, StopReason, TurnEvent, anthropic_from_env, gemini_from_env,
+    openai_from_env,
 };
 #[cfg(feature = "bedrock")]
 use crate::engine::bedrock_from_env;
 
 const DEFAULT_ANTHROPIC_MODEL: &str = "claude-sonnet-4-5";
 const DEFAULT_OPENAI_MODEL: &str = "gpt-4o-mini";
+const DEFAULT_GEMINI_MODEL: &str = "gemini-2.5-flash";
 #[cfg(feature = "bedrock")]
 const DEFAULT_BEDROCK_MODEL: &str = "us.anthropic.claude-sonnet-4-5-20250929-v1:0";
 
@@ -176,6 +178,7 @@ enum EngineKind {
     Noop,
     Anthropic,
     Openai,
+    Gemini,
     #[cfg(feature = "bedrock")]
     Bedrock,
 }
@@ -185,10 +188,11 @@ fn resolve_engine_kind(raw: Option<&str>) -> Result<EngineKind> {
         None | Some("") | Some("noop") => Ok(EngineKind::Noop),
         Some("anthropic") | Some("claude") => Ok(EngineKind::Anthropic),
         Some("openai") | Some("gpt") => Ok(EngineKind::Openai),
+        Some("gemini") | Some("google") => Ok(EngineKind::Gemini),
         #[cfg(feature = "bedrock")]
         Some("bedrock") => Ok(EngineKind::Bedrock),
         Some(other) => Err(anyhow!(
-            "unknown engine {other:?}; expected one of: noop, anthropic, openai{}",
+            "unknown engine {other:?}; expected one of: noop, anthropic, openai, gemini{}",
             if cfg!(feature = "bedrock") { ", bedrock" } else { "" }
         )),
     }
@@ -204,6 +208,10 @@ fn build_engine(kind: EngineKind, model: Option<&str>) -> Result<Arc<dyn Engine>
         EngineKind::Openai => {
             let model = model.unwrap_or(DEFAULT_OPENAI_MODEL);
             Ok(Arc::new(openai_from_env(model)?))
+        }
+        EngineKind::Gemini => {
+            let model = model.unwrap_or(DEFAULT_GEMINI_MODEL);
+            Ok(Arc::new(gemini_from_env(model)?))
         }
         #[cfg(feature = "bedrock")]
         EngineKind::Bedrock => {
@@ -299,6 +307,7 @@ mod tests {
         let err = resolve_engine_kind(Some("nonsense"))
             .expect_err("nonsense should always be unknown");
         let msg = err.to_string();
+        assert!(msg.contains("gemini"), "expected gemini listed in: {msg}");
         if cfg!(feature = "bedrock") {
             assert!(msg.contains("bedrock"), "expected bedrock listed in: {msg}");
         } else {

@@ -6,7 +6,7 @@ cd "$(dirname "$0")"
 . ./_lib.sh
 
 if [ "$#" -ne 1 ]; then
-    echo "usage: $(basename "$0") <anthropic|openai>" >&2
+    echo "usage: $(basename "$0") <anthropic|openai|gemini>" >&2
     exit 2
 fi
 
@@ -14,8 +14,9 @@ engine="$1"
 case "$engine" in
     anthropic) key_var="ANTHROPIC_API_KEY" ;;
     openai)    key_var="OPENAI_API_KEY" ;;
+    gemini)    key_var="GEMINI_API_KEY" ;;
     *)
-        echo "unknown engine: $engine (expected anthropic or openai)" >&2
+        echo "unknown engine: $engine (expected anthropic, openai, or gemini)" >&2
         exit 2
         ;;
 esac
