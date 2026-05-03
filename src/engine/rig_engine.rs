@@ -14,7 +14,9 @@ use rig::completion::{CompletionModel, GetTokenUsage};
 use rig::message::{Message, Text, UserContent};
 use rig::streaming::{StreamedAssistantContent, StreamingChat};
 
-use crate::engine::{Engine, EngineEvent, EngineResponse, EngineStream, Settings, StopReason, Usage};
+use crate::engine::{
+    Engine, EngineEvent, EngineResponse, EngineStream, Settings, StopReason, Usage,
+};
 
 const ANTHROPIC: &str = "anthropic";
 const OPENAI: &str = "openai";
@@ -122,13 +124,20 @@ fn extract_last_user_text(history: &[Message]) -> Result<String> {
     }
 }
 
-fn rig_engine_from_env<C>(provider: &'static str, model: &str) -> Result<RigEngine<C::CompletionModel>>
+fn rig_engine_from_env<C>(
+    provider: &'static str,
+    model: &str,
+) -> Result<RigEngine<C::CompletionModel>>
 where
     C: ProviderClient + CompletionClient,
     <C as ProviderClient>::Error: std::fmt::Display,
 {
     let client = C::from_env().map_err(|e| anyhow!("{provider} from_env: {e}"))?;
-    Ok(RigEngine::new(client.completion_model(model), provider, model))
+    Ok(RigEngine::new(
+        client.completion_model(model),
+        provider,
+        model,
+    ))
 }
 
 pub fn anthropic_from_env(
@@ -202,9 +211,8 @@ mod tests {
 
     #[test]
     fn openai_engine_name_is_openai() {
-        let client =
-            rig::providers::openai::Client::from_val("dummy-key".to_string().into())
-                .expect("openai from_val with dummy key constructs without network");
+        let client = rig::providers::openai::Client::from_val("dummy-key".to_string().into())
+            .expect("openai from_val with dummy key constructs without network");
         let engine = RigEngine::new(
             client.completion_model("gpt-4o-mini"),
             OPENAI,
@@ -214,9 +222,8 @@ mod tests {
     }
 
     fn build_dummy_gemini() -> RigEngine<rig::providers::gemini::completion::CompletionModel> {
-        let client =
-            rig::providers::gemini::Client::from_val("dummy-key".to_string().into())
-                .expect("gemini from_val with dummy key constructs without network");
+        let client = rig::providers::gemini::Client::from_val("dummy-key".to_string().into())
+            .expect("gemini from_val with dummy key constructs without network");
         RigEngine::new(
             client.completion_model("gemini-2.5-flash"),
             GEMINI,
@@ -290,10 +297,8 @@ mod tests {
             async fn stream(
                 &self,
                 _request: CompletionRequest,
-            ) -> Result<
-                StreamingCompletionResponse<Self::StreamingResponse>,
-                CompletionError,
-            > {
+            ) -> Result<StreamingCompletionResponse<Self::StreamingResponse>, CompletionError>
+            {
                 let inner = Box::pin(async_stream::stream! {
                     yield Ok(RawStreamingChoice::Message("hi".to_string()));
                     yield Ok(RawStreamingChoice::FinalResponse(FakeStreamingResponse));

@@ -49,9 +49,9 @@ pub struct Cli {
 impl Cli {
     /// Resolve the project root, falling back to the current working directory.
     pub fn root(&self) -> PathBuf {
-        self.root.clone().unwrap_or_else(|| {
-            std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
-        })
+        self.root
+            .clone()
+            .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")))
     }
 }
 

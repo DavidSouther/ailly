@@ -15,12 +15,12 @@ use futures::StreamExt;
 use vfs::{PhysicalFS, VfsPath};
 
 use crate::content::Conversation;
+#[cfg(feature = "bedrock")]
+use crate::engine::bedrock_from_env;
 use crate::engine::{
     Engine, Generator, Noop, Settings, StopReason, TurnEvent, anthropic_from_env, gemini_from_env,
     openai_from_env,
 };
-#[cfg(feature = "bedrock")]
-use crate::engine::bedrock_from_env;
 
 const DEFAULT_ANTHROPIC_MODEL: &str = "claude-sonnet-4-5";
 const DEFAULT_OPENAI_MODEL: &str = "gpt-4o-mini";
@@ -193,7 +193,11 @@ fn resolve_engine_kind(raw: Option<&str>) -> Result<EngineKind> {
         Some("bedrock") => Ok(EngineKind::Bedrock),
         Some(other) => Err(anyhow!(
             "unknown engine {other:?}; expected one of: noop, anthropic, openai, gemini{}",
-            if cfg!(feature = "bedrock") { ", bedrock" } else { "" }
+            if cfg!(feature = "bedrock") {
+                ", bedrock"
+            } else {
+                ""
+            }
         )),
     }
 }
@@ -304,8 +308,8 @@ mod tests {
 
     #[test]
     fn unknown_engine_error_lists_bedrock_only_when_feature_on() {
-        let err = resolve_engine_kind(Some("nonsense"))
-            .expect_err("nonsense should always be unknown");
+        let err =
+            resolve_engine_kind(Some("nonsense")).expect_err("nonsense should always be unknown");
         let msg = err.to_string();
         assert!(msg.contains("gemini"), "expected gemini listed in: {msg}");
         if cfg!(feature = "bedrock") {
@@ -315,4 +319,3 @@ mod tests {
         }
     }
 }
-

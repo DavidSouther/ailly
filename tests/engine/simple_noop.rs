@@ -71,7 +71,10 @@ async fn generator_runs_two_turn_sequence_through_noop() {
                     "finished path {} does not match {turn_filename}",
                     path.as_str()
                 );
-                assert_eq!(*response, delta_concat, "response equals concatenated deltas");
+                assert_eq!(
+                    *response, delta_concat,
+                    "response equals concatenated deltas"
+                );
                 assert!(matches!(stop_reason, StopReason::EndTurn));
                 assert!(
                     response.contains(&format!("noop response for {}", path.as_str())),

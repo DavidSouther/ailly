@@ -195,14 +195,15 @@ mod tests {
             chunk: 16,
             override_response: None,
         };
-        let history = vec![
-            Message::system("sys"),
-            Message::user("ask something"),
-        ];
+        let history = vec![Message::system("sys"), Message::user("ask something")];
 
-        let s1 = noop.stream(history.clone(), &Settings::default(), "label").unwrap();
+        let s1 = noop
+            .stream(history.clone(), &Settings::default(), "label")
+            .unwrap();
         let e1: Vec<EngineEvent> = s1.collect().await;
-        let s2 = noop.stream(history.clone(), &Settings::default(), "label").unwrap();
+        let s2 = noop
+            .stream(history.clone(), &Settings::default(), "label")
+            .unwrap();
         let e2: Vec<EngineEvent> = s2.collect().await;
 
         let texts1: Vec<String> = e1

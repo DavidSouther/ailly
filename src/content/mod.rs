@@ -172,12 +172,10 @@ impl ConversationTurn {
         // Out of scope: `combined`, `view`, `edit`, `template-view`, `mcp`,
         // `tools`, `temperature`, `maxTokens`, `out`/`root`, and `augment`
         // from the TypeScript `loadFile`.
-        let text = path
-            .read_to_string()
-            .map_err(|source| ContentError::Read {
-                path: path.as_str().to_string(),
-                source,
-            })?;
+        let text = path.read_to_string().map_err(|source| ContentError::Read {
+            path: path.as_str().to_string(),
+            source,
+        })?;
         let file: ConversationTurnFile =
             toml::from_str(&text).map_err(|source| ContentError::ParseToml {
                 path: path.as_str().to_string(),
@@ -191,11 +189,7 @@ impl ConversationTurn {
         }
         let prompt = OneOrMany::one(Message::user(file.prompt));
 
-        let response: Vec<TurnMessage> = file
-            .response
-            .into_iter()
-            .map(TurnMessage::from)
-            .collect();
+        let response: Vec<TurnMessage> = file.response.into_iter().map(TurnMessage::from).collect();
 
         Ok(Self {
             path,
@@ -346,7 +340,10 @@ impl Conversation {
     /// so subsequent `history_for` calls observe it as a predecessor's
     /// response and the on-disk file carries provenance for that turn.
     pub fn record_response(&mut self, idx: usize, response: AssistantResponse) {
-        self.turns[idx].1.response.push(TurnMessage::Assistant(response));
+        self.turns[idx]
+            .1
+            .response
+            .push(TurnMessage::Assistant(response));
     }
 
     /// Append a synthetic user-prompt turn to the conversation.
@@ -372,10 +369,11 @@ impl Conversation {
                 path: "synthetic".to_string(),
                 source,
             })?;
-        dir.create_dir().map_err(|source| ContentError::OpenForWrite {
-            path: dir.as_str().to_string(),
-            source,
-        })?;
+        dir.create_dir()
+            .map_err(|source| ContentError::OpenForWrite {
+                path: dir.as_str().to_string(),
+                source,
+            })?;
         let path = dir
             .join("prompt.toml")
             .map_err(|source| ContentError::ResolvePath {
@@ -436,9 +434,7 @@ impl Conversation {
 
         out.extend(turn.prompt.iter().cloned());
 
-        if !turn.meta.r#continue
-            && matches!(out.last(), Some(Message::Assistant { .. }))
-        {
+        if !turn.meta.r#continue && matches!(out.last(), Some(Message::Assistant { .. })) {
             out.pop();
         }
 
@@ -599,21 +595,21 @@ impl AillyRc {
             mut meta,
         } = prior;
 
-        let path = dir.join(AILLYRC).map_err(|source| ContentError::ResolvePath {
-            path: dir.as_str().to_string(),
-            source,
-        })?;
+        let path = dir
+            .join(AILLYRC)
+            .map_err(|source| ContentError::ResolvePath {
+                path: dir.as_str().to_string(),
+                source,
+            })?;
         let exists = path.exists().map_err(|source| ContentError::CheckExists {
             path: path.as_str().to_string(),
             source,
         })?;
         let file: AillyRcFile = if exists {
-            let text = path
-                .read_to_string()
-                .map_err(|source| ContentError::Read {
-                    path: path.as_str().to_string(),
-                    source,
-                })?;
+            let text = path.read_to_string().map_err(|source| ContentError::Read {
+                path: path.as_str().to_string(),
+                source,
+            })?;
             toml::from_str(&text).map_err(|source| ContentError::ParseToml {
                 path: path.as_str().to_string(),
                 source,
@@ -1198,14 +1194,23 @@ text = "hi"
         convo.clean().await.unwrap();
 
         let after_first = path.read_to_string().unwrap();
-        assert!(!after_first.contains("[[response]]"), "first clean kept [[response]]: {after_first}");
-        assert!(after_first.contains("prompt = \"q\""), "first clean dropped prompt: {after_first}");
+        assert!(
+            !after_first.contains("[[response]]"),
+            "first clean kept [[response]]: {after_first}"
+        );
+        assert!(
+            after_first.contains("prompt = \"q\""),
+            "first clean dropped prompt: {after_first}"
+        );
 
         let mut convo = Conversation::load(dir).await.unwrap();
         convo.clean().await.unwrap();
         let after_second = path.read_to_string().unwrap();
 
-        assert_eq!(after_first, after_second, "second clean should be byte-identical");
+        assert_eq!(
+            after_first, after_second,
+            "second clean should be byte-identical"
+        );
     }
 
     #[tokio::test]
@@ -1221,11 +1226,18 @@ text = "hi"
         let original = path.read_to_string().unwrap();
 
         let mut convo = Conversation::load(dir).await.unwrap();
-        assert_eq!(convo.turn_count(), 0, "skip = true must yield zero loaded turns");
+        assert_eq!(
+            convo.turn_count(),
+            0,
+            "skip = true must yield zero loaded turns"
+        );
         convo.clean().await.unwrap();
 
         let after = path.read_to_string().unwrap();
-        assert_eq!(after, original, "clean must not touch files inside skip = true dirs");
+        assert_eq!(
+            after, original,
+            "clean must not touch files inside skip = true dirs"
+        );
     }
 
     #[tokio::test]
@@ -1499,11 +1511,8 @@ text = "hi"
             },
         };
         let mut convo = Conversation::load(fs.join("root").unwrap()).await.unwrap();
-        convo.turns[0].1.prompt = OneOrMany::many([
-            Message::user("first"),
-            Message::assistant("partial"),
-        ])
-        .unwrap();
+        convo.turns[0].1.prompt =
+            OneOrMany::many([Message::user("first"), Message::assistant("partial")]).unwrap();
         let only = &convo.turns[0].1;
 
         let history = convo.history_for(only);
@@ -1521,11 +1530,8 @@ text = "hi"
             },
         };
         let mut convo = Conversation::load(fs.join("root").unwrap()).await.unwrap();
-        convo.turns[0].1.prompt = OneOrMany::many([
-            Message::user("first"),
-            Message::assistant("partial"),
-        ])
-        .unwrap();
+        convo.turns[0].1.prompt =
+            OneOrMany::many([Message::user("first"), Message::assistant("partial")]).unwrap();
         convo.turns[0].1.meta.r#continue = true;
         let only = &convo.turns[0].1;
 
