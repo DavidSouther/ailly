@@ -358,12 +358,19 @@ mod tests {
         use super::*;
         use crate::engine::EngineEvent;
         use futures::StreamExt;
+        use rig::completion::request::ToolDefinition;
         use rig::completion::{
             CompletionError, CompletionModel, CompletionRequest, CompletionResponse, GetTokenUsage,
             Usage as RigUsage,
         };
-        use rig::streaming::{RawStreamingChoice, StreamingCompletionResponse};
+        use rig::streaming::{
+            RawStreamingChoice, RawStreamingToolCall, StreamingCompletionResponse,
+        };
+        use rig::tool::{Tool, ToolDyn};
         use serde::{Deserialize, Serialize};
+        use serde_json::json;
+        use std::sync::Arc;
+        use std::sync::atomic::{AtomicUsize, Ordering};
 
         #[derive(Clone)]
         struct FakeModel;
@@ -438,6 +445,179 @@ mod tests {
             assert_eq!(usage.input_tokens, 7);
             assert_eq!(usage.output_tokens, 3);
             assert!(matches!(final_response.stop_reason, StopReason::EndTurn));
+        }
+
+        #[derive(Debug, thiserror::Error)]
+        #[error("echo tool error")]
+        struct EchoError;
+
+        #[derive(Deserialize)]
+        struct EchoArgs {
+            text: String,
+        }
+
+        #[derive(Default)]
+        struct EchoTool;
+
+        impl Tool for EchoTool {
+            const NAME: &'static str = "echo";
+            type Error = EchoError;
+            type Args = EchoArgs;
+            type Output = String;
+
+            async fn definition(&self, _prompt: String) -> ToolDefinition {
+                ToolDefinition {
+                    name: "echo".to_string(),
+                    description: "echoes the input text".to_string(),
+                    parameters: json!({
+                        "type": "object",
+                        "properties": { "text": { "type": "string" } },
+                        "required": ["text"]
+                    }),
+                }
+            }
+
+            async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
+                Ok(args.text)
+            }
+        }
+
+        /// Scripted model: each `stream()` call yields a tool call until the
+        /// counter exceeds `tool_calls_to_emit`, then yields a final response.
+        #[derive(Clone)]
+        struct ScriptedToolModel {
+            calls: Arc<AtomicUsize>,
+            tool_calls_to_emit: usize,
+        }
+
+        impl ScriptedToolModel {
+            fn new(tool_calls_to_emit: usize) -> Self {
+                Self {
+                    calls: Arc::new(AtomicUsize::new(0)),
+                    tool_calls_to_emit,
+                }
+            }
+        }
+
+        impl CompletionModel for ScriptedToolModel {
+            type Response = serde_json::Value;
+            type StreamingResponse = FakeStreamingResponse;
+            type Client = ();
+
+            fn make(_client: &Self::Client, _model: impl Into<String>) -> Self {
+                Self::new(0)
+            }
+
+            async fn completion(
+                &self,
+                _request: CompletionRequest,
+            ) -> Result<CompletionResponse<Self::Response>, CompletionError> {
+                Err(CompletionError::ProviderError("unused".to_string()))
+            }
+
+            async fn stream(
+                &self,
+                _request: CompletionRequest,
+            ) -> Result<
+                StreamingCompletionResponse<Self::StreamingResponse>,
+                CompletionError,
+            > {
+                let call_index = self.calls.fetch_add(1, Ordering::SeqCst);
+                let limit = self.tool_calls_to_emit;
+                let inner = Box::pin(async_stream::stream! {
+                    if call_index < limit {
+                        let id = format!("call_{}", call_index + 1);
+                        yield Ok(RawStreamingChoice::ToolCall(RawStreamingToolCall::new(
+                            id,
+                            "echo".to_string(),
+                            json!({"text": "ok"}),
+                        )));
+                    } else {
+                        yield Ok(RawStreamingChoice::Message("done".to_string()));
+                        yield Ok(RawStreamingChoice::FinalResponse(FakeStreamingResponse));
+                    }
+                });
+                Ok(StreamingCompletionResponse::stream(inner))
+            }
+        }
+
+        #[tokio::test]
+        async fn multi_round_trip_surfaces_tool_call_then_result_pairs_in_order() {
+            let engine = RigEngine::new(
+                ScriptedToolModel::new(2),
+                "fake",
+                "fake-model-id",
+            );
+            let echo: Arc<dyn ToolDyn> = Arc::new(EchoTool);
+            let stream = engine
+                .stream(
+                    vec![rig::message::Message::user("ask")],
+                    &Settings::default(),
+                    &[echo],
+                    "label",
+                )
+                .expect("stream() should succeed");
+            let events: Vec<EngineEvent> = stream.collect().await;
+
+            let kinds: Vec<&'static str> = events
+                .iter()
+                .filter_map(|e| match e {
+                    EngineEvent::ToolCall(_) => Some("call"),
+                    EngineEvent::ToolResult(_) => Some("result"),
+                    EngineEvent::Final(_) => Some("final"),
+                    EngineEvent::Text(_) => None,
+                })
+                .collect();
+
+            assert_eq!(
+                kinds,
+                vec!["call", "result", "call", "result", "final"],
+                "two consecutive tool round-trips must surface as ToolCall, ToolResult, ToolCall, ToolResult, then Final; got {events:?}"
+            );
+
+            let final_event = events
+                .iter()
+                .find_map(|e| match e {
+                    EngineEvent::Final(r) => Some(r),
+                    _ => None,
+                })
+                .expect("Final event must be present");
+            assert!(matches!(final_event.stop_reason, StopReason::EndTurn));
+        }
+
+        #[tokio::test]
+        async fn tool_limit_exhaustion_yields_stop_reason_tool_limit() {
+            let engine = RigEngine::new(
+                ScriptedToolModel::new(usize::MAX),
+                "fake",
+                "fake-model-id",
+            );
+            let echo: Arc<dyn ToolDyn> = Arc::new(EchoTool);
+            let mut settings = Settings::default();
+            settings.max_tool_turns = 0;
+
+            let stream = engine
+                .stream(
+                    vec![rig::message::Message::user("ask")],
+                    &settings,
+                    &[echo],
+                    "label",
+                )
+                .expect("stream() should succeed");
+            let events: Vec<EngineEvent> = stream.collect().await;
+
+            let final_event = events
+                .iter()
+                .find_map(|e| match e {
+                    EngineEvent::Final(r) => Some(r),
+                    _ => None,
+                })
+                .expect("Final event must be present even when max turns are exhausted");
+            assert!(
+                matches!(final_event.stop_reason, StopReason::ToolLimit),
+                "exhausting max_tool_turns must surface as StopReason::ToolLimit; got {:?}",
+                final_event.stop_reason
+            );
         }
     }
 }

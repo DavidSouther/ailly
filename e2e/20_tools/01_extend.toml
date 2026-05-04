@@ -1,0 +1,2 @@
+prompt = "extend chain with shout"
+tools = ["shout"]

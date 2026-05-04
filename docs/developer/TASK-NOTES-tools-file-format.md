@@ -1,0 +1,8 @@
+# Tools — on-disk format extensions
+
+Four narrow extensions to the `MessageFile::ToolCall` and `MessageFile::ToolResult` variants defined in `docs/developer/2026-05-03-B-tool-calls/design.md` "MessageFile and TurnMessage". Each item is independent. Land them as concrete tools that exercise each path arrive.
+
+- **Round-trip `call_id`**: v1 stores `id`, `name`, and `arguments`, and drops `rig::message::ToolCall`'s `call_id`, `signature`, and `additional_params`. Some providers require `call_id` correlation on the follow-up request. Add `call_id: Option<String>` to `MessageFile::ToolCall` once a provider exercises the path. The field stays optional for back-compat.
+- **Non-text `ToolResultContent`**: v1 expects `ToolResultContent::Text` and returns `ContentError::NonTextToolResult` from load and write boundaries. Rig also models image and multi-part tool results. When a real caller needs them, extend `MessageFile::ToolResult` with an enum or a `serde_json::Value` content representation that round-trips the full rig shape.
+- **Image content in tool-call `arguments`**: v1 stores the full `serde_json::Value` rig provided, so this round-trips today as opaque JSON. Verify the round-trip survives once a provider emits image-bearing arguments, and add an explicit test fixture.
+- **Structured `is_error` flag**: rig surfaces a tool-call failure as a `ToolResult` whose content explains the failure, and the engine emits it as `EngineEvent::ToolResult` like any other. A future revision adds a structured `is_error: bool` field on `MessageFile::ToolResult` so consumers can branch on failure without parsing content strings.

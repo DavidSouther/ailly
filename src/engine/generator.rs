@@ -7,7 +7,7 @@ use tokio_util::sync::CancellationToken;
 use vfs::VfsPath;
 
 use crate::content::{AssistantResponse, Conversation, ResponseUsage};
-use crate::engine::{Engine, EngineEvent, EngineInput, Settings, StopReason, Usage};
+use crate::engine::{Engine, EngineEvent, EmptyRegistry, EngineInput, Settings, StopReason, ToolRegistry, Usage};
 
 #[derive(Debug, Clone)]
 pub enum SkipReason {
@@ -53,7 +53,7 @@ pub struct Generator {
     conversation: Conversation,
     engine: Arc<dyn Engine>,
     settings: Settings,
-    tools: Vec<Arc<dyn ToolDyn>>,
+    registry: Arc<dyn ToolRegistry>,
     cancel: CancellationToken,
 }
 
@@ -63,18 +63,69 @@ impl Generator {
             conversation,
             engine,
             settings,
-            tools: Vec::new(),
+            registry: Arc::new(EmptyRegistry),
             cancel: CancellationToken::new(),
         }
     }
 
-    pub fn with_tools(mut self, tools: Vec<Arc<dyn ToolDyn>>) -> Self {
-        self.tools = tools;
+    pub fn with_registry(mut self, registry: Arc<dyn ToolRegistry>) -> Self {
+        self.registry = registry;
         self
     }
 
     pub fn cancel_token(&self) -> CancellationToken {
         self.cancel.clone()
+    }
+
+    /// Flush any accrued text into the conversation as a metadata-less
+    /// assistant entry, leaving `buffer` empty. Used to close out the
+    /// preceding text run before a tool call or tool result.
+    fn flush_text_buffer(&mut self, idx: usize, buffer: &mut String) {
+        if buffer.is_empty() {
+            return;
+        }
+        self.conversation.record_response(
+            idx,
+            AssistantResponse {
+                text: std::mem::take(buffer),
+                model: None,
+                engine: None,
+                stop_reason: None,
+                usage: None,
+            },
+        );
+    }
+
+    fn resolve_tools_for_turn(
+        &self,
+        idx: usize,
+        path: &VfsPath,
+    ) -> anyhow::Result<Vec<Arc<dyn ToolDyn>>> {
+        let mut resolved: Vec<Arc<dyn ToolDyn>> = Vec::new();
+        let mut unknown: Vec<String> = Vec::new();
+        for name in self.conversation.turn(idx).tool_names() {
+            match self.registry.resolve(name) {
+                Some(tool) => resolved.push(tool),
+                None => unknown.push(name.to_string()),
+            }
+        }
+        if unknown.is_empty() {
+            return Ok(resolved);
+        }
+        if self.settings.strict_tools {
+            Err(anyhow::anyhow!(
+                "unknown tool name(s) at {}: {}",
+                path.as_str(),
+                unknown.join(", ")
+            ))
+        } else {
+            log::warn!(
+                "unknown tool name(s) at {}: {}",
+                path.as_str(),
+                unknown.join(", ")
+            );
+            Ok(resolved)
+        }
     }
 
     pub fn run(mut self) -> Pin<Box<dyn Stream<Item = TurnEvent> + Send>> {
@@ -84,11 +135,19 @@ impl Generator {
 
                 yield TurnEvent::Started { path: path.clone() };
 
+                let resolved = match self.resolve_tools_for_turn(idx, &path) {
+                    Ok(t) => t,
+                    Err(e) => {
+                        yield TurnEvent::Failed { path, error: Arc::new(e) };
+                        continue;
+                    }
+                };
+
                 let preamble = self.conversation.preamble_for(self.conversation.turn(idx));
                 let history = self.conversation.messages_for(self.conversation.turn(idx));
                 let input = EngineInput { preamble, history };
 
-                let mut events = match self.engine.stream(input, &self.settings, &self.tools, path.as_str()) {
+                let mut events = match self.engine.stream(input, &self.settings, &resolved, path.as_str()) {
                     Ok(s) => s,
                     Err(e) => {
                         yield TurnEvent::Failed { path, error: Arc::new(e) };
@@ -104,28 +163,12 @@ impl Generator {
                             yield TurnEvent::Delta { path: path.clone(), text: t };
                         }
                         EngineEvent::ToolCall(call) => {
-                            if !text_buffer.is_empty() {
-                                self.conversation.record_response(idx, AssistantResponse {
-                                    text: std::mem::take(&mut text_buffer),
-                                    model: None,
-                                    engine: None,
-                                    stop_reason: None,
-                                    usage: None,
-                                });
-                            }
+                            self.flush_text_buffer(idx, &mut text_buffer);
                             self.conversation.record_tool_call(idx, call.clone());
                             yield TurnEvent::ToolCall { path: path.clone(), call };
                         }
                         EngineEvent::ToolResult(result) => {
-                            if !text_buffer.is_empty() {
-                                self.conversation.record_response(idx, AssistantResponse {
-                                    text: std::mem::take(&mut text_buffer),
-                                    model: None,
-                                    engine: None,
-                                    stop_reason: None,
-                                    usage: None,
-                                });
-                            }
+                            self.flush_text_buffer(idx, &mut text_buffer);
                             self.conversation.record_tool_result(idx, result.clone());
                             yield TurnEvent::ToolResult { path: path.clone(), result };
                         }

@@ -2,9 +2,10 @@ use futures::Stream;
 use rig::completion::Usage as RigUsage;
 use rig::message::Message;
 use rig::tool::ToolDyn;
-use std::{fmt, sync::Arc};
+use std::collections::HashMap;
 use std::pin::Pin;
 use std::sync::Arc;
+use std::{fmt, sync::Arc};
 
 use crate::content::Preamble;
 
@@ -28,6 +29,11 @@ pub struct Settings {
     pub max_tool_turns: usize,
     pub isolated: bool,
     pub overwrite: bool,
+    /// When `true`, an unknown tool name on a turn's chain produces a
+    /// `TurnEvent::Failed` and the engine is never invoked for that turn.
+    /// When `false`, unknown names are dropped with a `log::warn!` and the
+    /// resolved subset is passed to the engine.
+    pub strict_tools: bool,
 }
 
 impl Default for Settings {
@@ -38,6 +44,7 @@ impl Default for Settings {
             max_tool_turns: DEFAULT_MAX_TOOL_TURNS,
             isolated: false,
             overwrite: false,
+            strict_tools: true,
         }
     }
 }
@@ -108,8 +115,11 @@ pub struct EngineInput {
 }
 
 impl EngineInput {
-    pub fn with_history(history: Vec<Message>)-> Self {
-        Self { preamble: Preamble::default(), history }
+    pub fn with_history(history: Vec<Message>) -> Self {
+        Self {
+            preamble: Preamble::default(),
+            history,
+        }
     }
 }
 
@@ -123,6 +133,40 @@ pub trait Engine: Send + Sync {
         tools: &[Arc<dyn ToolDyn>],
         request_label: &str,
     ) -> anyhow::Result<EngineStream>;
+}
+
+/// Resolves a tool name declared on disk to a concrete `ToolDyn` implementation.
+pub trait ToolRegistry: Send + Sync {
+    fn resolve(&self, name: &str) -> Option<Arc<dyn rig::tool::ToolDyn>>;
+}
+
+/// Registry that knows about no tools. Used as the default when the CLI does
+/// not register implementations.
+#[derive(Debug, Default)]
+pub struct EmptyRegistry;
+
+impl ToolRegistry for EmptyRegistry {
+    fn resolve(&self, _name: &str) -> Option<Arc<dyn rig::tool::ToolDyn>> {
+        None
+    }
+}
+
+/// In-memory registry mapping names to `ToolDyn` implementations.
+#[derive(Default, Clone)]
+pub struct HashMapRegistry {
+    tools: HashMap<String, Arc<dyn rig::tool::ToolDyn>>,
+}
+
+impl HashMapRegistry {
+    pub fn insert(&mut self, name: impl Into<String>, tool: Arc<dyn rig::tool::ToolDyn>) {
+        self.tools.insert(name.into(), tool);
+    }
+}
+
+impl ToolRegistry for HashMapRegistry {
+    fn resolve(&self, name: &str) -> Option<Arc<dyn rig::tool::ToolDyn>> {
+        self.tools.get(name).cloned()
+    }
 }
 
 #[cfg(test)]
@@ -153,6 +197,67 @@ mod tests {
 
         assert_eq!(usage.input_tokens, 1234);
         assert_eq!(usage.output_tokens, u32::MAX);
+    }
+
+    /// Layering guard. The `engine/` tree must not reach into the content
+    /// vocabulary. The single allowed exception is the conversation type,
+    /// which appears as the typed `Generator::conversation` field and its
+    /// loader sites in tests. Forbidden tokens are constructed from fragments
+    /// so this test's own source does not match the assertion.
+    #[test]
+    fn engine_module_does_not_leak_content_metadata_vocabulary() {
+        use std::path::Path;
+
+        fn collect_rs_files(dir: &Path, out: &mut Vec<std::path::PathBuf>) {
+            for entry in std::fs::read_dir(dir).unwrap() {
+                let entry = entry.unwrap();
+                let path = entry.path();
+                if path.is_dir() {
+                    collect_rs_files(&path, out);
+                } else if path.extension().and_then(|s| s.to_str()) == Some("rs") {
+                    out.push(path);
+                }
+            }
+        }
+
+        let mut rs_files = Vec::new();
+        collect_rs_files(Path::new("src/engine"), &mut rs_files);
+        assert!(
+            !rs_files.is_empty(),
+            "engine module must contain at least one .rs file (cwd: {:?})",
+            std::env::current_dir().ok()
+        );
+
+        let conversation = format!("{}{}", "Conver", "sation");
+        let forbidden = [
+            format!("{}{}", "Content", "Meta"),
+            format!("{}{}{}", "Conver", "sation", "Turn"),
+            format!("{}{}", "ailly", "rc"),
+        ];
+        for path in &rs_files {
+            let body = std::fs::read_to_string(path).unwrap();
+            for token in &forbidden {
+                assert!(
+                    !body.contains(token.as_str()),
+                    "{}: engine layer must not reference forbidden token {token:?}",
+                    path.display()
+                );
+            }
+        }
+
+        let allow = Path::new("src/engine/generator.rs");
+        for path in &rs_files {
+            if path == allow {
+                continue;
+            }
+            let body = std::fs::read_to_string(path).unwrap();
+            assert!(
+                !body.contains(conversation.as_str()),
+                "{}: only {} may reference the conversation type; this file must not",
+                path.display(),
+                allow.display()
+            );
+        }
     }
 
     #[test]

@@ -156,6 +156,14 @@ pub enum Parent {
     Never,
 }
 
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ToolsParent {
+    #[default]
+    Extend,
+    Replace,
+}
+
 #[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ContentMeta {
     #[serde(default)]
@@ -191,6 +199,14 @@ pub struct ConversationTurn {
     prompt: OneOrMany<Message>,
     /// All subsequent messages, for this turn.
     response: Vec<TurnMessage>,
+    /// Tool names resolved for this turn after combining the inherited
+    /// chain with the per-turn declaration.
+    tool_names: Vec<String>,
+    /// Per-turn `tools` literal, exactly as authored on disk. Captured so
+    /// `write` can reproduce the source file byte-stably.
+    declared_tools: Vec<String>,
+    /// Per-turn `parent_tools` literal, exactly as authored on disk.
+    declared_parent_tools: Option<ToolsParent>,
 }
 
 impl ConversationTurn {
@@ -214,6 +230,7 @@ impl ConversationTurn {
         system: Vec<Message>,
         local_system_count: usize,
         skills: Vec<Skill>,
+        tools: Vec<String>,
     ) -> Result<Self, ContentError> {
         // Out of scope: `combined`, `view`, `edit`, `template-view`, `mcp`,
         // `tools`, `temperature`, `maxTokens`, `out`/`root`, and `augment`
@@ -237,6 +254,10 @@ impl ConversationTurn {
 
         let response: Vec<TurnMessage> = file.response.into_iter().map(TurnMessage::from).collect();
 
+        let declared_tools = file.tools.clone();
+        let declared_parent_tools = file.parent_tools;
+        let tool_names = combine_tools(tools, &file.tools, file.parent_tools);
+
         Ok(Self {
             path,
             meta,
@@ -245,7 +266,16 @@ impl ConversationTurn {
             skills,
             prompt,
             response,
+            tool_names,
+            declared_tools,
+            declared_parent_tools,
         })
+    }
+
+    /// Tool names resolved for this turn after walking the directory chain
+    /// and applying any per-turn `tools`/`parent_tools` override.
+    pub fn tool_names(&self) -> &[String] {
+        &self.tool_names
     }
 
     /// Serialize this turn to its `path` as TOML.
@@ -287,6 +317,8 @@ impl ConversationTurn {
 
         let file = ConversationTurnFile {
             prompt: prompt_text,
+            tools: self.declared_tools.clone(),
+            parent_tools: self.declared_parent_tools,
             response,
         };
         let text = toml::to_string(&file).map_err(|source| ContentError::SerializeToml {
@@ -404,7 +436,10 @@ impl Conversation {
     /// calls and the on-disk file observe it in stream order paired with the
     /// preceding `ToolCall`.
     pub fn record_tool_result(&mut self, idx: usize, result: ToolResult) {
-        self.turns[idx].1.response.push(TurnMessage::ToolResult(result));
+        self.turns[idx]
+            .1
+            .response
+            .push(TurnMessage::ToolResult(result));
     }
 
     /// Append a synthetic user-prompt turn to the conversation.
@@ -418,14 +453,21 @@ impl Conversation {
     /// Used by the CLI to support `--root <dir> --prompt <text>` where
     /// the prompt is the trailing turn over the root's loaded context.
     pub fn push_synthetic_prompt(&mut self, prompt: &str) -> Result<(), ContentError> {
-        let (system, local_system_count, skills, meta) = match self.turns.last() {
+        let (system, local_system_count, skills, meta, tool_names) = match self.turns.last() {
             Some((_, last)) => (
                 last.system.clone(),
                 last.local_system_count,
                 last.skills.clone(),
                 last.meta.clone(),
+                last.tool_names.clone(),
             ),
-            None => (Vec::new(), 0, Vec::new(), ContentMeta::default()),
+            None => (
+                Vec::new(),
+                0,
+                Vec::new(),
+                ContentMeta::default(),
+                Vec::new(),
+            ),
         };
 
         let fs = VfsPath::new(MemoryFS::new());
@@ -455,6 +497,9 @@ impl Conversation {
             skills,
             prompt: OneOrMany::one(Message::user(prompt.to_string())),
             response: Vec::new(),
+            tool_names,
+            declared_tools: Vec::new(),
+            declared_parent_tools: None,
         };
         self.turns.push((path, turn));
         Ok(())
@@ -610,6 +655,7 @@ impl Conversation {
                 acc.system.clone(),
                 acc.local_system_count,
                 acc.skills.clone(),
+                acc.tools.clone(),
             )
             .await?;
             turns.push((entry.clone(), turn));
@@ -636,10 +682,7 @@ fn extend_with_response_run(out: &mut Vec<Message>, response: &[TurnMessage]) {
         let drained: Vec<AssistantContent> = std::mem::take(buf);
         let content = OneOrMany::many(drained)
             .expect("flush only runs when assistant_buf has at least one entry");
-        out.push(Message::Assistant {
-            id: None,
-            content,
-        });
+        out.push(Message::Assistant { id: None, content });
     };
 
     for msg in response {
@@ -684,6 +727,10 @@ fn is_turn_file(entry: &VfsPath) -> bool {
 #[derive(Debug, Default, Serialize, Deserialize)]
 struct ConversationTurnFile {
     prompt: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    tools: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    parent_tools: Option<ToolsParent>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     response: Vec<MessageFile>,
 }
@@ -807,6 +854,7 @@ pub struct AillyRc {
     pub local_system_count: usize,
     pub skills: Vec<Skill>,
     pub meta: ContentMeta,
+    pub tools: Vec<String>,
 }
 
 impl AillyRc {
@@ -821,6 +869,7 @@ impl AillyRc {
             local_system_count: _prior_local_count,
             mut skills,
             mut meta,
+            mut tools,
         } = prior;
 
         let path = dir
@@ -876,6 +925,7 @@ impl AillyRc {
                             local_system_count: 0,
                             skills: Vec::new(),
                             meta: meta.clone(),
+                            tools: Vec::new(),
                         },
                         skills_repo,
                     ))
@@ -913,13 +963,37 @@ impl AillyRc {
             }
         }
 
+        tools = combine_tools(tools, &file.tools, file.parent_tools);
+
         Ok(AillyRc {
             system,
             local_system_count,
             skills,
             meta,
+            tools,
         })
     }
+}
+
+/// Combine an inherited `tools` chain with a local declaration per
+/// `parent_tools`. `Extend` (the default) appends new names while preserving
+/// declaration order and dropping duplicates; `Replace` discards the inherited
+/// chain and uses only the local names (also deduped, preserving order).
+fn combine_tools(
+    inherited: Vec<String>,
+    local: &[String],
+    parent: Option<ToolsParent>,
+) -> Vec<String> {
+    let mut out = match parent.unwrap_or_default() {
+        ToolsParent::Extend => inherited,
+        ToolsParent::Replace => Vec::new(),
+    };
+    for name in local {
+        if !out.iter().any(|n| n == name) {
+            out.push(name.clone());
+        }
+    }
+    out
 }
 
 /// On-disk format of a `.ailly.toml` file. Each meta field is `Option`
@@ -942,6 +1016,10 @@ struct AillyRcFile {
     skip_head: Option<bool>,
     #[serde(default)]
     isolated: Option<bool>,
+    #[serde(default)]
+    tools: Vec<String>,
+    #[serde(default)]
+    parent_tools: Option<ToolsParent>,
 }
 
 impl AillyRcFile {
@@ -1023,6 +1101,7 @@ mod tests {
             local_system_count: 0,
             skills: Vec::new(),
             meta: ContentMeta::default(),
+            tools: Vec::new(),
         };
         let acc = AillyRc::load(&cwd, prior, &NullSkillRepository)
             .await
@@ -1047,6 +1126,7 @@ mod tests {
             local_system_count: 0,
             skills: Vec::new(),
             meta: ContentMeta::default(),
+            tools: Vec::new(),
         };
         let acc = AillyRc::load(&cwd, prior, &NullSkillRepository)
             .await
@@ -1074,6 +1154,7 @@ mod tests {
                 parent: Parent::Always,
                 ..Default::default()
             },
+            tools: Vec::new(),
         };
         let acc = AillyRc::load(&cwd, prior, &NullSkillRepository)
             .await
@@ -1106,6 +1187,7 @@ mod tests {
                 parent: Parent::Always,
                 ..Default::default()
             },
+            tools: Vec::new(),
         };
         let acc = AillyRc::load(&cwd, prior, &NullSkillRepository)
             .await
@@ -1140,6 +1222,7 @@ mod tests {
                 parent: Parent::Always,
                 ..Default::default()
             },
+            tools: Vec::new(),
         };
         let acc = AillyRc::load(&cwd, prior, &NullSkillRepository)
             .await
@@ -1171,6 +1254,7 @@ mod tests {
                 parent: Parent::Always,
                 ..Default::default()
             },
+            tools: Vec::new(),
         };
         let acc = AillyRc::load(&cwd, prior, &NullSkillRepository)
             .await
@@ -1198,6 +1282,7 @@ mod tests {
                 parent: Parent::Never,
                 ..Default::default()
             },
+            tools: Vec::new(),
         };
         let acc = AillyRc::load(&cwd, prior, &NullSkillRepository)
             .await
@@ -1220,6 +1305,7 @@ mod tests {
                 parent: Parent::Never,
                 ..Default::default()
             },
+            tools: Vec::new(),
         };
         let acc = AillyRc::load(&cwd, prior, &NullSkillRepository)
             .await
@@ -1227,6 +1313,193 @@ mod tests {
 
         let texts: Vec<String> = acc.system.iter().map(message_text).collect();
         assert_eq!(texts, Vec::<String>::new());
+    }
+
+    #[tokio::test]
+    async fn tools_chain_extends_by_default() {
+        let fs = mem_fs! {
+            "root": {
+                ".ailly.toml": r#"tools = ["b"]"#,
+            },
+        };
+        let cwd = fs.join("root").unwrap();
+        let prior = AillyRc {
+            system: Vec::new(),
+            meta: ContentMeta::default(),
+            tools: vec!["a".to_string()],
+            skills: vec![],
+            local_system_count: 0,
+        };
+        let acc = AillyRc::load(&cwd, prior, &NullSkillRepository {})
+            .await
+            .unwrap();
+        assert_eq!(acc.tools, vec!["a".to_string(), "b".to_string()]);
+    }
+
+    #[tokio::test]
+    async fn tools_chain_replace_drops_inherited() {
+        let fs = mem_fs! {
+            "root": {
+                ".ailly.toml": "tools = [\"b\"]\nparent_tools = \"replace\"\n",
+            },
+        };
+        let cwd = fs.join("root").unwrap();
+        let prior = AillyRc {
+            system: Vec::new(),
+            meta: ContentMeta::default(),
+            tools: vec!["a".to_string()],
+            skills: vec![],
+            local_system_count: 0,
+        };
+        let acc = AillyRc::load(&cwd, prior, &NullSkillRepository {})
+            .await
+            .unwrap();
+        assert_eq!(acc.tools, vec!["b".to_string()]);
+    }
+
+    #[tokio::test]
+    async fn tools_chain_extend_dedupes_in_declaration_order() {
+        let fs = mem_fs! {
+            "root": {
+                ".ailly.toml": r#"tools = ["a", "b"]"#,
+            },
+        };
+        let cwd = fs.join("root").unwrap();
+        let prior = AillyRc {
+            system: Vec::new(),
+            meta: ContentMeta::default(),
+            tools: vec!["a".to_string()],
+            skills: vec![],
+            local_system_count: 0,
+        };
+        let acc = AillyRc::load(&cwd, prior, &NullSkillRepository {})
+            .await
+            .unwrap();
+        assert_eq!(acc.tools, vec!["a".to_string(), "b".to_string()]);
+    }
+
+    #[tokio::test]
+    async fn tools_chain_omitted_field_inherits_unchanged() {
+        let fs = mem_fs! {
+            "root": {
+                ".ailly.toml": r#"system = "s""#,
+            },
+        };
+        let cwd = fs.join("root").unwrap();
+        let prior = AillyRc {
+            system: Vec::new(),
+            meta: ContentMeta::default(),
+            tools: vec!["a".to_string()],
+            skills: vec![],
+            local_system_count: 0,
+        };
+        let acc = AillyRc::load(&cwd, prior, &NullSkillRepository {})
+            .await
+            .unwrap();
+        assert_eq!(acc.tools, vec!["a".to_string()]);
+    }
+
+    #[tokio::test]
+    async fn turn_tools_extend_inherited_chain_by_default() {
+        let fs = mem_fs! {
+            "root": { "01.toml": "prompt = \"hi\"\ntools = [\"b\"]\n" },
+        };
+        let path = fs.join("root/01.toml").unwrap();
+        let turn = ConversationTurn::load(
+            path,
+            ContentMeta::default(),
+            Vec::new(),
+            0,
+            vec![],
+            vec!["a".to_string()],
+        )
+        .await
+        .unwrap();
+        assert_eq!(turn.tool_names(), &["a".to_string(), "b".to_string()]);
+    }
+
+    #[tokio::test]
+    async fn turn_tools_replace_drops_inherited_chain() {
+        let fs = mem_fs! {
+            "root": {
+                "01.toml": "prompt = \"hi\"\ntools = [\"b\"]\nparent_tools = \"replace\"\n",
+            },
+        };
+        let path = fs.join("root/01.toml").unwrap();
+        let turn = ConversationTurn::load(
+            path,
+            ContentMeta::default(),
+            Vec::new(),
+            0,
+            vec![],
+            vec!["a".to_string()],
+        )
+        .await
+        .unwrap();
+        assert_eq!(turn.tool_names(), &["b".to_string()]);
+    }
+
+    #[tokio::test]
+    async fn turn_tools_omitted_inherits_chain_unchanged() {
+        let fs = mem_fs! {
+            "root": { "01.toml": r#"prompt = "hi""# },
+        };
+        let path = fs.join("root/01.toml").unwrap();
+        let turn = ConversationTurn::load(
+            path,
+            ContentMeta::default(),
+            Vec::new(),
+            0,
+            vec![],
+            vec!["a".to_string()],
+        )
+        .await
+        .unwrap();
+        assert_eq!(turn.tool_names(), &["a".to_string()]);
+    }
+
+    #[tokio::test]
+    async fn turn_file_without_tools_round_trips_byte_stably() {
+        let fs = mem_fs! {
+            "root": { "01.toml": "prompt = \"q\"\n" },
+        };
+        let path = fs.join("root/01.toml").unwrap();
+        let original = path.read_to_string().unwrap();
+        let turn = ConversationTurn::load(
+            path.clone(),
+            ContentMeta::default(),
+            Vec::new(),
+            0,
+            vec![],
+            Vec::new(),
+        )
+        .await
+        .unwrap();
+        turn.write().await.unwrap();
+        assert_eq!(path.read_to_string().unwrap(), original);
+    }
+
+    #[tokio::test]
+    async fn turn_file_with_tools_and_parent_tools_round_trips_byte_stably() {
+        let fs = mem_fs! {
+            "root": {
+                "01.toml": "prompt = \"q\"\ntools = [\"x\"]\nparent_tools = \"replace\"\n",
+            },
+        };
+        let path = fs.join("root/01.toml").unwrap();
+        let original = path.read_to_string().unwrap();
+        let turn = ConversationTurn::load(
+            path.clone(),
+            ContentMeta::default(),
+            Vec::new(),
+            0,
+            Vec::new(),
+            Vec::new(),
+        )
+        .await
+        .unwrap();
+        turn.write().await.unwrap();
+        assert_eq!(path.read_to_string().unwrap(), original);
     }
 
     #[tokio::test]
@@ -1242,6 +1515,7 @@ mod tests {
             ContentMeta::default(),
             Vec::new(),
             0,
+            Vec::new(),
             Vec::new(),
         )
         .await
@@ -1367,9 +1641,16 @@ mod tests {
             },
         };
         let path = fs.join("root/01_intro.toml").unwrap();
-        let turn = ConversationTurn::load(path, ContentMeta::default(), Vec::new(), 0, Vec::new())
-            .await
-            .unwrap();
+        let turn = ConversationTurn::load(
+            path,
+            ContentMeta::default(),
+            Vec::new(),
+            0,
+            Vec::new(),
+            Vec::new(),
+        )
+        .await
+        .unwrap();
         assert_eq!(turn.response.len(), 1);
     }
 
@@ -1377,9 +1658,16 @@ mod tests {
     async fn rejects_turn_with_empty_prompt() {
         let fs = mem_fs! { "root": { "01.toml": r#"prompt = """# } };
         let path = fs.join("root/01.toml").unwrap();
-        let err = ConversationTurn::load(path, ContentMeta::default(), Vec::new(), 0, Vec::new())
-            .await
-            .unwrap_err();
+        let err = ConversationTurn::load(
+            path,
+            ContentMeta::default(),
+            Vec::new(),
+            0,
+            Vec::new(),
+            Vec::new(),
+        )
+        .await
+        .unwrap_err();
         assert!(err.to_string().contains("empty prompt"));
     }
 
@@ -1388,9 +1676,16 @@ mod tests {
         let fs = mem_fs! { "root": { "01.toml": r#"prompt = "x""# } };
         let path = fs.join("root/01.toml").unwrap();
         let sys = vec![Message::system("inherited")];
-        let turn = ConversationTurn::load(path, ContentMeta::default(), sys.clone(), 0, Vec::new())
-            .await
-            .unwrap();
+        let turn = ConversationTurn::load(
+            path,
+            ContentMeta::default(),
+            sys.clone(),
+            0,
+            Vec::new(),
+            Vec::new(),
+        )
+        .await
+        .unwrap();
         assert_eq!(turn.system.len(), 1);
     }
 
@@ -1420,6 +1715,8 @@ text = "hi"
     fn serializes_turn_file_with_prompt_and_response() {
         let file = ConversationTurnFile {
             prompt: "hello\nworld".to_string(),
+            tools: Vec::new(),
+            parent_tools: None,
             response: vec![MessageFile::Assistant {
                 text: "hi".to_string(),
                 model: None,
@@ -1438,6 +1735,8 @@ text = "hi"
     fn serializes_turn_file_omits_empty_response() {
         let file = ConversationTurnFile {
             prompt: "hi".to_string(),
+            tools: Vec::new(),
+            parent_tools: None,
             response: Vec::new(),
         };
         let toml_text = toml::to_string(&file).unwrap();
@@ -1448,6 +1747,8 @@ text = "hi"
     fn assistant_message_file_round_trips_with_all_metadata() {
         let file = ConversationTurnFile {
             prompt: "q".to_string(),
+            tools: Vec::new(),
+            parent_tools: None,
             response: vec![MessageFile::Assistant {
                 text: "a".to_string(),
                 model: Some("test-model".to_string()),
@@ -1601,6 +1902,7 @@ text = "hi"
             Vec::new(),
             0,
             Vec::new(),
+            Vec::new(),
         )
         .await
         .unwrap();
@@ -1629,6 +1931,9 @@ text = "hi"
             skills: Vec::new(),
             prompt,
             response: Vec::new(),
+            tool_names: Vec::new(),
+            declared_tools: Vec::new(),
+            declared_parent_tools: None,
         };
 
         let err = turn.write().await.unwrap_err();
@@ -1691,16 +1996,23 @@ text = "hi"
             Vec::new(),
             0,
             Vec::new(),
+            Vec::new(),
         )
         .await
         .unwrap();
 
         turn.write().await.unwrap();
 
-        let reloaded =
-            ConversationTurn::load(path, ContentMeta::default(), Vec::new(), 0, Vec::new())
-                .await
-                .unwrap();
+        let reloaded = ConversationTurn::load(
+            path,
+            ContentMeta::default(),
+            Vec::new(),
+            0,
+            Vec::new(),
+            Vec::new(),
+        )
+        .await
+        .unwrap();
         assert_eq!(reloaded.response.len(), 1);
     }
 
@@ -1718,16 +2030,23 @@ text = "hi"
             Vec::new(),
             0,
             Vec::new(),
+            Vec::new(),
         )
         .await
         .unwrap();
 
         turn.write().await.unwrap();
 
-        let reloaded =
-            ConversationTurn::load(path, ContentMeta::default(), Vec::new(), 0, Vec::new())
-                .await
-                .unwrap();
+        let reloaded = ConversationTurn::load(
+            path,
+            ContentMeta::default(),
+            Vec::new(),
+            0,
+            Vec::new(),
+            Vec::new(),
+        )
+        .await
+        .unwrap();
         assert_eq!(reloaded.response.len(), 3);
     }
 
@@ -1736,11 +2055,18 @@ text = "hi"
         use serde_json::json;
 
         let fs = mem_fs! {
-            "root": { "01.toml": r#"prompt = "q""# } };
+        "root": { "01.toml": r#"prompt = "q""# } };
         let path = fs.join("root/01.toml").unwrap();
-        let mut turn = ConversationTurn::load(path.clone(), ContentMeta::default(), Vec::new())
-            .await
-            .unwrap();
+        let mut turn = ConversationTurn::load(
+            path.clone(),
+            ContentMeta::default(),
+            Vec::new(),
+            0,
+            Vec::new(),
+            Vec::new(),
+        )
+        .await
+        .unwrap();
 
         turn.response = vec![
             TurnMessage::Assistant(AssistantResponse {
@@ -1772,9 +2098,16 @@ text = "hi"
         turn.write().await.unwrap();
         let after_first = path.read_to_string().unwrap();
 
-        let turn = ConversationTurn::load(path.clone(), ContentMeta::default(), Vec::new())
-            .await
-            .unwrap();
+        let turn = ConversationTurn::load(
+            path.clone(),
+            ContentMeta::default(),
+            Vec::new(),
+            0,
+            Vec::new(),
+            Vec::new(),
+        )
+        .await
+        .unwrap();
         turn.write().await.unwrap();
         let after_second = path.read_to_string().unwrap();
 
@@ -1800,16 +2133,23 @@ text = "hi"
             Vec::new(),
             0,
             Vec::new(),
+            Vec::new(),
         )
         .await
         .unwrap();
 
         turn.write().await.unwrap();
 
-        let reloaded =
-            ConversationTurn::load(path, ContentMeta::default(), Vec::new(), 0, Vec::new())
-                .await
-                .unwrap();
+        let reloaded = ConversationTurn::load(
+            path,
+            ContentMeta::default(),
+            Vec::new(),
+            0,
+            Vec::new(),
+            Vec::new(),
+        )
+        .await
+        .unwrap();
         assert_eq!(reloaded.prompt.len(), 1);
         assert_eq!(reloaded.response.len(), 0);
     }

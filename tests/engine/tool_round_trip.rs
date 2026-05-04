@@ -20,7 +20,7 @@ use serde::Deserialize;
 use serde_json::json;
 
 use ailly::content::Conversation;
-use ailly::engine::{Generator, Noop, Settings, StopReason, TurnEvent};
+use ailly::engine::{Generator, HashMapRegistry, Noop, Settings, StopReason, ToolRegistry, TurnEvent};
 use ailly::mem_fs;
 
 use rig::completion::request::ToolDefinition;
@@ -65,7 +65,7 @@ impl Tool for EchoTool {
 async fn engine_surfaces_one_tool_round_trip_through_generator_and_file() {
     let fs = mem_fs! {
         "root": {
-            "01.toml": "prompt = 'USE echo WITH {\"text\":\"ok\"}'",
+            "01.toml": "prompt = 'USE echo WITH {\"text\":\"ok\"}'\ntools = [\"echo\"]\n",
         },
     };
     let conversation = Conversation::load(fs.join("root").unwrap())
@@ -74,8 +74,11 @@ async fn engine_surfaces_one_tool_round_trip_through_generator_and_file() {
 
     let engine = Arc::new(Noop::default());
     let echo: Arc<dyn ToolDyn> = Arc::new(EchoTool);
-    let generator = Generator::new(conversation, engine, Settings::default())
-        .with_tools(vec![echo]);
+    let mut registry = HashMapRegistry::default();
+    registry.insert("echo", echo);
+    let registry: Arc<dyn ToolRegistry> = Arc::new(registry);
+    let generator =
+        Generator::new(conversation, engine, Settings::default()).with_registry(registry);
 
     let events: Vec<TurnEvent> = generator.run().collect().await;
 

@@ -1,0 +1,3 @@
+prompt = "replace chain with solo"
+tools = ["solo"]
+parent_tools = "replace"
