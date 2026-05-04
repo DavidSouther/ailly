@@ -7,7 +7,7 @@
 //! adapter applies to the Gemini path identically to Anthropic and OpenAI,
 //! proving the new constructor is a true slot-in and not a placeholder.
 
-use ailly::engine::{Engine, Settings, gemini_from_env};
+use ailly::engine::{Engine, EngineInput, Settings, gemini_from_env};
 
 #[test]
 fn gemini_from_env_returns_a_rig_engine_without_network() {
@@ -19,7 +19,7 @@ fn gemini_from_env_returns_a_rig_engine_without_network() {
     let engine = gemini_from_env("gemini-2.5-flash")
         .expect("gemini_from_env should construct from a populated env var");
 
-    let result = engine.stream(Vec::new(), &Settings::default(), "feature-test");
+    let result = engine.stream(EngineInput::default(), &Settings::default(), "feature-test");
     let err = match result {
         Ok(_) => panic!("empty history must error synchronously through the shared adapter"),
         Err(e) => e,

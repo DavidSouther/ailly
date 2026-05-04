@@ -9,8 +9,8 @@ use std::sync::Arc;
 use futures::StreamExt;
 
 use ailly::content::Conversation;
-use ailly::knowledge::skills::FsSkillRepository;
 use ailly::engine::{Generator, Noop, Settings, StopReason, TurnEvent};
+use ailly::knowledge::skills::FsSkillRepository;
 use ailly::mem_fs;
 
 #[tokio::test]

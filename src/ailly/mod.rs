@@ -15,16 +15,13 @@ use futures::StreamExt;
 use vfs::{PhysicalFS, VfsPath};
 
 use crate::content::Conversation;
-use crate::knowledge::skills::FsSkillRepository;
-use crate::engine::{
-    Engine, Generator, Noop, Settings, StopReason, TurnEvent, anthropic_from_env, openai_from_env,
-};
 #[cfg(feature = "bedrock")]
 use crate::engine::bedrock_from_env;
 use crate::engine::{
     Engine, Generator, Noop, Settings, StopReason, TurnEvent, anthropic_from_env, gemini_from_env,
     openai_from_env,
 };
+use crate::knowledge::skills::FsSkillRepository;
 
 const DEFAULT_ANTHROPIC_MODEL: &str = "claude-sonnet-4-5";
 const DEFAULT_OPENAI_MODEL: &str = "gpt-4o-mini";

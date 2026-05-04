@@ -82,7 +82,7 @@ pub enum ContentError {
 
     #[error("failed to load skill `{name}` referenced in {origin}")]
     Skill {
-        name: SkillName,
+        name: String,
         origin: String,
         #[source]
         source: SkillError,
@@ -804,19 +804,15 @@ impl AillyRc {
         if !local_skill_names.is_empty() {
             let origin = path.as_str().to_string();
             for raw in local_skill_names {
-                let parsed = SkillName::try_from(&raw).map_err(|err| {
-                    let name_for_error = SkillName::try_from("invalid")
-                        .expect("`invalid` is a valid placeholder skill name");
-                    ContentError::Skill {
-                        name: name_for_error,
-                        origin: origin.clone(),
-                        source: err,
-                    }
+                let parsed = SkillName::try_from(&raw).map_err(|err| ContentError::Skill {
+                    name: raw.clone(),
+                    origin: origin.clone(),
+                    source: err,
                 })?;
                 let skill = skills_repo
                     .get(&parsed)
                     .map_err(|source| ContentError::Skill {
-                        name: parsed.clone(),
+                        name: parsed.as_str().to_string(),
                         origin: origin.clone(),
                         source,
                     })?;
@@ -1897,5 +1893,124 @@ text = "hi"
             PreambleBlock::LocalSystem { text } => assert_eq!(text, "LOCAL"),
             other => panic!("block 2 should be LocalSystem, got {other:?}"),
         }
+    }
+
+    /// `Conversation::load` must walk the directory tree without ever
+    /// touching the skills repository when no `.ailly.toml` declares
+    /// `skills =`. A panicking repository proves it: any `get` call
+    /// fails the test loudly.
+    struct PanickingSkillRepository;
+
+    impl crate::knowledge::skills::SkillRepository for PanickingSkillRepository {
+        fn get(
+            &self,
+            name: &crate::knowledge::skills::SkillName,
+        ) -> Result<crate::knowledge::skills::Skill, crate::knowledge::skills::SkillError> {
+            panic!("SkillRepository::get called for `{name}` when no skills were declared");
+        }
+    }
+
+    #[tokio::test]
+    async fn no_skills_declared_performs_zero_skill_md_reads() {
+        let fs = mem_fs! {
+            "root": {
+                ".ailly.toml": r#"system = "sys""#,
+                "01.toml": r#"prompt = "first""#,
+                "child": {
+                    ".ailly.toml": r#"system = "child""#,
+                    "02.toml": r#"prompt = "second""#,
+                },
+            },
+        };
+        let project_root = fs.join("root").unwrap();
+
+        let convo = Conversation::load(project_root, &PanickingSkillRepository)
+            .await
+            .unwrap();
+
+        assert_eq!(convo.turn_count(), 2);
+        for idx in 0..convo.turn_count() {
+            assert!(convo.skills(convo.turn(idx)).is_empty());
+        }
+    }
+
+    #[tokio::test]
+    async fn multi_skill_ordering_preserves_walk_then_declaration_order() {
+        let fs = mem_fs! {
+            "root": {
+                ".ailly": {
+                    "skills": {
+                        "alpha": { "SKILL.md": "---\nname: alpha\ndescription: a\n---\nA\n" },
+                        "beta":  { "SKILL.md": "---\nname: beta\ndescription: b\n---\nB\n" },
+                        "gamma": { "SKILL.md": "---\nname: gamma\ndescription: g\n---\nG\n" },
+                        "delta": { "SKILL.md": "---\nname: delta\ndescription: d\n---\nD\n" },
+                    },
+                },
+                ".ailly.toml": r#"skills = ["alpha", "beta"]"#,
+                "child": {
+                    ".ailly.toml": "skills = [\"gamma\", \"delta\"]\n",
+                    "01.toml": r#"prompt = "p""#,
+                },
+            },
+        };
+        let project_root = fs.join("root").unwrap();
+        let skills = FsSkillRepository::new(&project_root);
+
+        let convo = Conversation::load(project_root, &skills).await.unwrap();
+
+        assert_eq!(convo.turn_count(), 1);
+        let turn = convo.turn(0);
+        let names: Vec<&str> = convo.skills(turn).iter().map(|s| s.name.as_str()).collect();
+        assert_eq!(names, vec!["alpha", "beta", "gamma", "delta"]);
+    }
+
+    #[tokio::test]
+    async fn missing_skill_surfaces_origin_aillyrc_path_in_error() {
+        let fs = mem_fs! {
+            "root": {
+                ".ailly.toml": r#"skills = ["does-not-exist"]"#,
+                "01.toml": r#"prompt = "p""#,
+            },
+        };
+        let project_root = fs.join("root").unwrap();
+        let skills = FsSkillRepository::new(&project_root);
+
+        let err = match Conversation::load(project_root, &skills).await {
+            Ok(_) => panic!("expected ContentError::Skill"),
+            Err(e) => e,
+        };
+
+        let msg = format!("{err:#}");
+        assert!(
+            msg.contains("does-not-exist"),
+            "missing skill name absent: {msg}"
+        );
+        assert!(
+            msg.contains(".ailly.toml"),
+            "origin .ailly.toml absent: {msg}"
+        );
+    }
+
+    #[tokio::test]
+    async fn invalid_skill_name_surfaces_raw_name_in_error() {
+        let fs = mem_fs! {
+            "root": {
+                ".ailly.toml": r#"skills = ["UPPER-CASE"]"#,
+                "01.toml": r#"prompt = "p""#,
+            },
+        };
+        let project_root = fs.join("root").unwrap();
+        let skills = FsSkillRepository::new(&project_root);
+
+        let err = match Conversation::load(project_root, &skills).await {
+            Ok(_) => panic!("expected ContentError::Skill for invalid name"),
+            Err(e) => e,
+        };
+
+        let msg = format!("{err}");
+        assert!(
+            msg.contains("UPPER-CASE"),
+            "raw invalid name must appear in top-level error: {msg}"
+        );
     }
 }

@@ -9,10 +9,7 @@ pub enum SkillError {
     },
 
     #[error("skill `{expected}` declares name `{found}` in its frontmatter")]
-    NameMismatch {
-        expected: SkillName,
-        found: String,
-    },
+    NameMismatch { expected: SkillName, found: String },
 
     #[error("skill `{name}` SKILL.md is missing required frontmatter field `{field}`")]
     FrontmatterMissing {

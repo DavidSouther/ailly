@@ -120,10 +120,7 @@ where
 /// Flatten an `EngineInput` preamble into a single string, joined onto any
 /// constructor-supplied preamble. Inherited and local system blocks render
 /// as their text; skill blocks render as `## <name>\n\n<body>`.
-fn merge_preamble(
-    constructor: Option<String>,
-    input: &crate::content::Preamble,
-) -> Option<String> {
+fn merge_preamble(constructor: Option<String>, input: &crate::content::Preamble) -> Option<String> {
     let mut parts: Vec<String> = Vec::new();
     if let Some(c) = constructor.filter(|s| !s.is_empty()) {
         parts.push(c);
@@ -207,6 +204,8 @@ pub fn bedrock_from_env(
 
 #[cfg(test)]
 mod tests {
+    use crate::content::Preamble;
+
     use super::*;
     use rig::message::Message;
 
@@ -231,11 +230,7 @@ mod tests {
     #[test]
     fn rejects_empty_history() {
         let engine = build_dummy_anthropic();
-        let msg = err_message(engine.stream(
-            EngineInput::default(),
-            &Settings::default(),
-            "label",
-        ));
+        let msg = err_message(engine.stream(EngineInput::default(), &Settings::default(), "label"));
         assert!(msg.contains("history is empty"));
     }
 
@@ -293,7 +288,14 @@ mod tests {
     fn gemini_rejects_assistant_last_message() {
         let engine = build_dummy_gemini();
         let history = vec![Message::user("hi"), Message::assistant("there")];
-        let msg = err_message(engine.stream(EngineInput::default(), &Settings::default(), "label"));
+        let msg = err_message(engine.stream(
+            EngineInput {
+                preamble: Preamble::default(),
+                history,
+            },
+            &Settings::default(),
+            "label",
+        ));
         assert!(msg.contains("must be a User message"));
     }
 
@@ -421,11 +423,7 @@ mod bedrock_tests {
     #[test]
     fn bedrock_rejects_empty_history() {
         let engine = build_dummy_bedrock();
-        let msg = err_message(engine.stream(
-            EngineInput::default(),
-            &Settings::default(),
-            "label",
-        ));
+        let msg = err_message(engine.stream(EngineInput::default(), &Settings::default(), "label"));
         assert!(msg.contains("history is empty"));
     }
 

@@ -121,29 +121,25 @@ impl Skill {
                 source,
             })?;
 
-        let name_raw = frontmatter
-            .name
+        let name_raw = frontmatter.name.ok_or(SkillError::FrontmatterMissing {
+            name: expected_name.clone(),
+            field: "name",
+        })?;
+        let description_raw = frontmatter
+            .description
             .ok_or(SkillError::FrontmatterMissing {
                 name: expected_name.clone(),
-                field: "name",
+                field: "description",
             })?;
-        let description_raw =
-            frontmatter
-                .description
-                .ok_or(SkillError::FrontmatterMissing {
-                    name: expected_name.clone(),
-                    field: "description",
-                })?;
 
-        let parsed_name =
-            SkillName::try_from(&name_raw).map_err(|err| match err {
-                SkillError::InvalidName { reason, .. } => SkillError::FrontmatterInvalid {
-                    name: expected_name.clone(),
-                    field: "name",
-                    reason,
-                },
-                other => other,
-            })?;
+        let parsed_name = SkillName::try_from(&name_raw).map_err(|err| match err {
+            SkillError::InvalidName { reason, .. } => SkillError::FrontmatterInvalid {
+                name: expected_name.clone(),
+                field: "name",
+                reason,
+            },
+            other => other,
+        })?;
 
         if parsed_name != *expected_name {
             return Err(SkillError::NameMismatch {
@@ -152,16 +148,15 @@ impl Skill {
             });
         }
 
-        let description = SkillDescription::try_from(description_raw.trim()).map_err(|err| {
-            match err {
+        let description =
+            SkillDescription::try_from(description_raw.trim()).map_err(|err| match err {
                 SkillError::InvalidDescription { reason } => SkillError::FrontmatterInvalid {
                     name: expected_name.clone(),
                     field: "description",
                     reason,
                 },
                 other => other,
-            }
-        })?;
+            })?;
 
         Ok(Skill {
             name: parsed_name,
@@ -208,9 +203,7 @@ fn find_closing_fence(after_open: &str) -> Option<usize> {
         let abs = start + rel;
         let preceded_by_newline = abs == 0 || matches!(after_open.as_bytes()[abs - 1], b'\n');
         let after = &after_open[abs + 3..];
-        let followed_ok = after.is_empty()
-            || after.starts_with('\n')
-            || after.starts_with("\r\n");
+        let followed_ok = after.is_empty() || after.starts_with('\n') || after.starts_with("\r\n");
         if preceded_by_newline && followed_ok {
             return Some(abs);
         }

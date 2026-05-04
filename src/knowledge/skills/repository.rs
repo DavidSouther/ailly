@@ -30,14 +30,14 @@ impl FsSkillRepository {
 
 impl SkillRepository for FsSkillRepository {
     fn get(&self, name: &SkillName) -> Result<Skill, SkillError> {
-        let dir =
-            self.root
-                .join(name.as_str())
-                .map_err(|source| SkillError::Read {
-                    name: name.clone(),
-                    path: self.root.as_str().to_string(),
-                    source,
-                })?;
+        let dir = self
+            .root
+            .join(name.as_str())
+            .map_err(|source| SkillError::Read {
+                name: name.clone(),
+                path: self.root.as_str().to_string(),
+                source,
+            })?;
         let exists = dir.exists().map_err(|source| SkillError::Read {
             name: name.clone(),
             path: dir.as_str().to_string(),

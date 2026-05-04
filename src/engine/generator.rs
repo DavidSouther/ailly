@@ -123,8 +123,8 @@ impl Generator {
 mod tests {
     use super::*;
     use crate::content::Conversation;
-    use crate::knowledge::skills::FsSkillRepository;
     use crate::engine::Noop;
+    use crate::knowledge::skills::FsSkillRepository;
     use crate::mem_fs;
 
     #[tokio::test]
@@ -135,7 +135,12 @@ mod tests {
                 "01.toml": r#"prompt = "first""#,
             },
         };
-        let convo = Conversation::load(fs.join("root").unwrap(), &FsSkillRepository::new(&fs.join("root").unwrap())).await.unwrap();
+        let convo = Conversation::load(
+            fs.join("root").unwrap(),
+            &FsSkillRepository::new(&fs.join("root").unwrap()),
+        )
+        .await
+        .unwrap();
         let generator = Generator::new(convo, Arc::new(Noop::default()), Settings::default());
 
         let events: Vec<TurnEvent> = generator.run().collect().await;
@@ -209,7 +214,9 @@ mod tests {
             },
         };
         let dir = fs.join("root").unwrap();
-        let convo = Conversation::load(dir.clone(), &FsSkillRepository::new(&dir)).await.unwrap();
+        let convo = Conversation::load(dir.clone(), &FsSkillRepository::new(&dir))
+            .await
+            .unwrap();
         let generator = Generator::new(convo, Arc::new(MetadataEngine), Settings::default());
 
         let _events: Vec<TurnEvent> = generator.run().collect().await;
@@ -243,7 +250,12 @@ mod tests {
                 "02.toml": r#"prompt = "second""#,
             },
         };
-        let convo = Conversation::load(fs.join("root").unwrap(), &FsSkillRepository::new(&fs.join("root").unwrap())).await.unwrap();
+        let convo = Conversation::load(
+            fs.join("root").unwrap(),
+            &FsSkillRepository::new(&fs.join("root").unwrap()),
+        )
+        .await
+        .unwrap();
         let generator = Generator::new(convo, Arc::new(Noop::default()), Settings::default());
 
         let events: Vec<TurnEvent> = generator.run().collect().await;
