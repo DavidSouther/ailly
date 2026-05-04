@@ -3,9 +3,9 @@ use rig::completion::Usage as RigUsage;
 use rig::message::Message;
 use rig::tool::ToolDyn;
 use std::collections::HashMap;
+use std::fmt;
 use std::pin::Pin;
 use std::sync::Arc;
-use std::{fmt, sync::Arc};
 
 use crate::content::Preamble;
 

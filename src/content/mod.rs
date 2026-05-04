@@ -1,5 +1,6 @@
 use rig::{
     OneOrMany,
+    agent::Text,
     message::{
         AssistantContent, Message, ToolCall, ToolFunction, ToolResult, ToolResultContent,
         UserContent,
@@ -104,6 +105,14 @@ pub struct AssistantResponse {
     pub usage: Option<ResponseUsage>,
 }
 
+impl From<AssistantResponse> for AssistantContent {
+    fn from(value: AssistantResponse) -> Self {
+        AssistantContent::Text(Text {
+            text: value.text.clone(),
+        })
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ResponseUsage {
     pub input_tokens: u32,
@@ -117,6 +126,28 @@ pub enum TurnMessage {
     System(String),
     ToolCall(ToolCall),
     ToolResult(ToolResult),
+}
+
+impl From<TurnMessage> for rig::completion::Message {
+    fn from(value: TurnMessage) -> Self {
+        match value {
+            TurnMessage::User(text) => Message::User {
+                content: OneOrMany::one(UserContent::Text(text.into())),
+            },
+            TurnMessage::Assistant(assistant_response) => Message::Assistant {
+                id: None,
+                content: OneOrMany::one(assistant_response.into()),
+            },
+            TurnMessage::System(content) => Message::System { content },
+            TurnMessage::ToolCall(tool_call) => Message::Assistant {
+                id: None,
+                content: OneOrMany::one(AssistantContent::ToolCall(tool_call)),
+            },
+            TurnMessage::ToolResult(tool_result) => Message::User {
+                content: OneOrMany::one(UserContent::ToolResult(tool_result)),
+            },
+        }
+    }
 }
 
 /// The preamble for a turn: everything that should be sent to an engine
@@ -577,7 +608,7 @@ impl Conversation {
             }
             for prev in chain.into_iter().rev() {
                 out.extend(prev.prompt.iter().cloned());
-                out.extend(prev.response.iter().map(Message::from));
+                out.extend(prev.response.iter().cloned().map(Message::from));
             }
         }
 

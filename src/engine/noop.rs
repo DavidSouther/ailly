@@ -47,7 +47,7 @@ impl Engine for Noop {
         let request_label = request_label.to_string();
         let tools: Vec<Arc<dyn ToolDyn>> = tools.to_vec();
 
-        let last_user_text = history
+        let last_user_text = input.history
             .iter()
             .rev()
             .find(|m| matches!(m, Message::User { .. }))
@@ -104,7 +104,7 @@ impl Engine for Noop {
 
             let text = match &override_text {
                 Some(s) => s.clone(),
-                None => build_envelope(&request_label, &history),
+                None => build_envelope(&request_label, &input),
             };
             for piece in split_into_chunks(&text, chunk) {
                 yield EngineEvent::Text(piece);
