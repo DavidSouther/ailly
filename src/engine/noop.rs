@@ -1,6 +1,12 @@
 use std::fmt::Write;
+use std::sync::Arc;
 
-use rig::message::{AssistantContent, Message, UserContent};
+use rig::OneOrMany;
+use rig::message::{
+    AssistantContent, Message, Text as RigText, ToolCall, ToolFunction, ToolResult,
+    ToolResultContent, UserContent,
+};
+use rig::tool::ToolDyn;
 
 use crate::content::PreambleBlock;
 use crate::engine::{
@@ -8,6 +14,7 @@ use crate::engine::{
 };
 
 pub const DEFAULT_CHUNK_BYTES: usize = 32;
+const TOOL_CALL_ID: &str = "call_1";
 
 pub struct Noop {
     pub chunk: usize,
@@ -32,26 +39,103 @@ impl Engine for Noop {
         &self,
         input: EngineInput,
         _settings: &Settings,
+        tools: &[Arc<dyn ToolDyn>],
         request_label: &str,
     ) -> anyhow::Result<EngineStream> {
-        let text = match &self.override_response {
-            Some(s) => s.clone(),
-            None => build_envelope(request_label, &input),
-        };
+        let chunk = self.chunk;
+        let override_text = self.override_response.clone();
+        let request_label = request_label.to_string();
+        let tools: Vec<Arc<dyn ToolDyn>> = tools.to_vec();
 
-        let mut events: Vec<EngineEvent> = split_into_chunks(&text, self.chunk)
-            .into_iter()
-            .map(EngineEvent::Text)
-            .collect();
-        events.push(EngineEvent::Final(EngineResponse {
-            text,
-            model: None,
-            stop_reason: StopReason::EndTurn,
-            usage: None,
-        }));
+        let last_user_text = history
+            .iter()
+            .rev()
+            .find(|m| matches!(m, Message::User { .. }))
+            .map(message_text)
+            .unwrap_or_default();
+        let directive = parse_use_directive(&last_user_text);
+        let matched_tool = directive
+            .as_ref()
+            .and_then(|d| tools.iter().find(|t| t.name() == d.tool).cloned());
 
-        Ok(Box::pin(futures::stream::iter(events)))
+        Ok(Box::pin(async_stream::stream! {
+            if override_text.is_none()
+                && let Some(directive) = directive
+                && let Some(tool) = matched_tool
+            {
+                let pre = format!("using {}. ", directive.tool);
+                for piece in split_into_chunks(&pre, chunk) {
+                    yield EngineEvent::Text(piece);
+                }
+
+                let arguments: serde_json::Value = serde_json::from_str(&directive.args)
+                    .unwrap_or(serde_json::Value::Null);
+                let call = ToolCall::new(
+                    TOOL_CALL_ID.to_string(),
+                    ToolFunction::new(directive.tool.clone(), arguments),
+                );
+                yield EngineEvent::ToolCall(call);
+
+                let tool_text = match tool.call(directive.args.clone()).await {
+                    Ok(s) => s,
+                    Err(e) => format!("TOOL FAILED {e}"),
+                };
+                yield EngineEvent::ToolResult(ToolResult {
+                    id: TOOL_CALL_ID.to_string(),
+                    call_id: None,
+                    content: OneOrMany::one(ToolResultContent::Text(RigText {
+                        text: tool_text,
+                    })),
+                });
+
+                let post = "done.".to_string();
+                for piece in split_into_chunks(&post, chunk) {
+                    yield EngineEvent::Text(piece);
+                }
+
+                yield EngineEvent::Final(EngineResponse {
+                    text: format!("{pre}{post}"),
+                    model: None,
+                    stop_reason: StopReason::EndTurn,
+                    usage: None,
+                });
+                return;
+            }
+
+            let text = match &override_text {
+                Some(s) => s.clone(),
+                None => build_envelope(&request_label, &history),
+            };
+            for piece in split_into_chunks(&text, chunk) {
+                yield EngineEvent::Text(piece);
+            }
+            yield EngineEvent::Final(EngineResponse {
+                text,
+                model: None,
+                stop_reason: StopReason::EndTurn,
+                usage: None,
+            });
+        }))
     }
+}
+
+struct UseDirective {
+    tool: String,
+    args: String,
+}
+
+fn parse_use_directive(text: &str) -> Option<UseDirective> {
+    let start = text.find("USE ")?;
+    let after = &text[start + "USE ".len()..];
+    let with_pos = after.find(" WITH ")?;
+    let tool = after[..with_pos].trim().to_string();
+    if tool.is_empty() {
+        return None;
+    }
+    let after_with = &after[with_pos + " WITH ".len()..];
+    let end = after_with.find('\n').unwrap_or(after_with.len());
+    let args = after_with[..end].trim().to_string();
+    Some(UseDirective { tool, args })
 }
 
 fn build_envelope(request_label: &str, input: &EngineInput) -> String {
@@ -138,6 +222,10 @@ fn split_into_chunks(text: &str, chunk: usize) -> Vec<String> {
 mod tests {
     use super::*;
     use futures::StreamExt;
+    use rig::completion::request::ToolDefinition;
+    use rig::tool::Tool;
+    use serde::Deserialize;
+    use serde_json::json;
 
     fn collect_text_and_final(events: Vec<EngineEvent>) -> (Vec<String>, EngineResponse) {
         let mut texts: Vec<String> = Vec::new();
@@ -148,6 +236,9 @@ mod tests {
                 EngineEvent::Final(r) => {
                     assert!(final_ev.is_none(), "exactly one Final per stream");
                     final_ev = Some(r);
+                }
+                EngineEvent::ToolCall(_) | EngineEvent::ToolResult(_) => {
+                    panic!("envelope path never emits tool events");
                 }
             }
         }
@@ -168,7 +259,7 @@ mod tests {
         };
 
         let stream = noop
-            .stream(EngineInput::default(), &Settings::default(), "alpha")
+            .stream(EngineInput::default(), &Settings::default(), &[], "alpha")
             .unwrap();
         let events: Vec<EngineEvent> = stream.collect().await;
 
@@ -203,6 +294,7 @@ mod tests {
                     history: vec![Message::user("ignored")],
                 },
                 &Settings::default(),
+                &[],
                 "label",
             )
             .unwrap();
@@ -230,6 +322,7 @@ mod tests {
                     history: history.clone(),
                 },
                 &Settings::default(),
+                &[],
                 "label",
             )
             .unwrap();
@@ -241,6 +334,7 @@ mod tests {
                     history: history.clone(),
                 },
                 &Settings::default(),
+                &[],
                 "label",
             )
             .unwrap();
@@ -261,5 +355,150 @@ mod tests {
             })
             .collect();
         assert_eq!(texts1, texts2);
+    }
+
+    #[derive(Debug, thiserror::Error)]
+    #[error("echo tool error")]
+    struct EchoError;
+
+    #[derive(Deserialize)]
+    struct EchoArgs {
+        text: String,
+    }
+
+    #[derive(Default)]
+    struct EchoTool;
+
+    impl Tool for EchoTool {
+        const NAME: &'static str = "echo";
+        type Error = EchoError;
+        type Args = EchoArgs;
+        type Output = String;
+
+        async fn definition(&self, _prompt: String) -> ToolDefinition {
+            ToolDefinition {
+                name: "echo".to_string(),
+                description: "echoes the input text".to_string(),
+                parameters: json!({
+                    "type": "object",
+                    "properties": { "text": { "type": "string" } },
+                    "required": ["text"]
+                }),
+            }
+        }
+
+        async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
+            Ok(args.text)
+        }
+    }
+
+    #[test]
+    fn parse_use_directive_extracts_tool_and_args() {
+        let d = parse_use_directive(r#"please USE echo WITH {"text":"ok"} now"#).unwrap();
+        assert_eq!(d.tool, "echo");
+        assert_eq!(d.args, r#"{"text":"ok"} now"#);
+    }
+
+    #[test]
+    fn parse_use_directive_stops_at_newline() {
+        let d = parse_use_directive("USE echo WITH ok\nmore text").unwrap();
+        assert_eq!(d.tool, "echo");
+        assert_eq!(d.args, "ok");
+    }
+
+    #[test]
+    fn parse_use_directive_returns_none_when_pattern_absent() {
+        assert!(parse_use_directive("just a normal prompt").is_none());
+        assert!(parse_use_directive("USE echo without with-clause").is_none());
+    }
+
+    #[tokio::test]
+    async fn use_directive_drives_tool_round_trip() {
+        let noop = Noop {
+            chunk: DEFAULT_CHUNK_BYTES,
+            override_response: None,
+        };
+        let echo: Arc<dyn ToolDyn> = Arc::new(EchoTool);
+
+        let stream = noop
+            .stream(
+                EngineInput::with_history(vec![Message::user(r#"USE echo WITH {"text":"ok"}"#)]),
+                &Settings::default(),
+                &[echo],
+                "label",
+            )
+            .unwrap();
+        let events: Vec<EngineEvent> = stream.collect().await;
+
+        let kinds: Vec<&str> = events
+            .iter()
+            .map(|e| match e {
+                EngineEvent::Text(_) => "text",
+                EngineEvent::ToolCall(_) => "tool_call",
+                EngineEvent::ToolResult(_) => "tool_result",
+                EngineEvent::Final(_) => "final",
+            })
+            .collect();
+
+        let tc = kinds
+            .iter()
+            .position(|k| *k == "tool_call")
+            .expect("tool_call present");
+        let tr = kinds
+            .iter()
+            .position(|k| *k == "tool_result")
+            .expect("tool_result present");
+        let fi = kinds
+            .iter()
+            .position(|k| *k == "final")
+            .expect("final present");
+        assert!(tc > 0, "at least one text event before tool_call");
+        assert!(tc < tr, "tool_call before tool_result");
+        assert!(tr < fi, "tool_result before final");
+        for k in &kinds[..tc] {
+            assert_eq!(*k, "text", "events before tool_call must be text");
+        }
+        for k in &kinds[tr + 1..fi] {
+            assert_eq!(
+                *k, "text",
+                "events between tool_result and final must be text"
+            );
+        }
+
+        let EngineEvent::ToolCall(call) = &events[tc] else {
+            unreachable!()
+        };
+        assert_eq!(call.function.name, "echo");
+        assert_eq!(call.id, "call_1");
+
+        let EngineEvent::ToolResult(result) = &events[tr] else {
+            unreachable!()
+        };
+        assert_eq!(result.id, "call_1");
+        let ToolResultContent::Text(t) = result.content.first() else {
+            panic!("tool result must be text");
+        };
+        assert_eq!(t.text, "ok");
+    }
+
+    #[tokio::test]
+    async fn use_directive_without_matching_tool_falls_back_to_envelope() {
+        let noop = Noop {
+            chunk: DEFAULT_CHUNK_BYTES,
+            override_response: None,
+        };
+
+        let stream = noop
+            .stream(
+                EngineInput::with_history(vec![Message::user("USE missing WITH whatever")]),
+                &Settings::default(),
+                &[],
+                "label",
+            )
+            .unwrap();
+        let events: Vec<EngineEvent> = stream.collect().await;
+
+        let (_texts, final_resp) = collect_text_and_final(events);
+        assert!(final_resp.text.contains("noop response for label:"));
     }
 }

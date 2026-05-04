@@ -1,7 +1,8 @@
 use futures::Stream;
 use rig::completion::Usage as RigUsage;
 use rig::message::Message;
-use std::fmt;
+use rig::tool::ToolDyn;
+use std::{fmt, sync::Arc};
 use std::pin::Pin;
 
 use crate::content::Preamble;
@@ -98,6 +99,12 @@ pub struct EngineInput {
     pub history: Vec<Message>,
 }
 
+impl EngineInput {
+    pub fn with_history(history: Vec<Message>)-> Self {
+        Self { preamble: Preamble::default(), history }
+    }
+}
+
 pub trait Engine: Send + Sync {
     fn name(&self) -> &'static str;
 
@@ -105,6 +112,7 @@ pub trait Engine: Send + Sync {
         &self,
         input: EngineInput,
         settings: &Settings,
+        tools: &[Arc<dyn ToolDyn>],
         request_label: &str,
     ) -> anyhow::Result<EngineStream>;
 }
