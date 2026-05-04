@@ -2,6 +2,7 @@ use std::pin::Pin;
 use std::sync::Arc;
 
 use futures::{Stream, StreamExt};
+use rig::tool::ToolDyn;
 use tokio_util::sync::CancellationToken;
 use vfs::VfsPath;
 
@@ -24,6 +25,14 @@ pub enum TurnEvent {
         path: VfsPath,
         text: String,
     },
+    ToolCall {
+        path: VfsPath,
+        call: rig::message::ToolCall,
+    },
+    ToolResult {
+        path: VfsPath,
+        result: rig::message::ToolResult,
+    },
     Skipped {
         path: VfsPath,
         reason: SkipReason,
@@ -44,6 +53,7 @@ pub struct Generator {
     conversation: Conversation,
     engine: Arc<dyn Engine>,
     settings: Settings,
+    tools: Vec<Arc<dyn ToolDyn>>,
     cancel: CancellationToken,
 }
 
@@ -53,8 +63,14 @@ impl Generator {
             conversation,
             engine,
             settings,
+            tools: Vec::new(),
             cancel: CancellationToken::new(),
         }
+    }
+
+    pub fn with_tools(mut self, tools: Vec<Arc<dyn ToolDyn>>) -> Self {
+        self.tools = tools;
+        self
     }
 
     pub fn cancel_token(&self) -> CancellationToken {
@@ -72,7 +88,7 @@ impl Generator {
                 let history = self.conversation.messages_for(self.conversation.turn(idx));
                 let input = EngineInput { preamble, history };
 
-                let mut events = match self.engine.stream(input, &self.settings, path.as_str()) {
+                let mut events = match self.engine.stream(input, &self.settings, &self.tools, path.as_str()) {
                     Ok(s) => s,
                     Err(e) => {
                         yield TurnEvent::Failed { path, error: Arc::new(e) };
@@ -80,14 +96,47 @@ impl Generator {
                     }
                 };
 
+                let mut text_buffer = String::new();
                 while let Some(ev) = events.next().await {
                     match ev {
                         EngineEvent::Text(t) => {
+                            text_buffer.push_str(&t);
                             yield TurnEvent::Delta { path: path.clone(), text: t };
                         }
+                        EngineEvent::ToolCall(call) => {
+                            if !text_buffer.is_empty() {
+                                self.conversation.record_response(idx, AssistantResponse {
+                                    text: std::mem::take(&mut text_buffer),
+                                    model: None,
+                                    engine: None,
+                                    stop_reason: None,
+                                    usage: None,
+                                });
+                            }
+                            self.conversation.record_tool_call(idx, call.clone());
+                            yield TurnEvent::ToolCall { path: path.clone(), call };
+                        }
+                        EngineEvent::ToolResult(result) => {
+                            if !text_buffer.is_empty() {
+                                self.conversation.record_response(idx, AssistantResponse {
+                                    text: std::mem::take(&mut text_buffer),
+                                    model: None,
+                                    engine: None,
+                                    stop_reason: None,
+                                    usage: None,
+                                });
+                            }
+                            self.conversation.record_tool_result(idx, result.clone());
+                            yield TurnEvent::ToolResult { path: path.clone(), result };
+                        }
                         EngineEvent::Final(r) => {
+                            let final_text = if text_buffer.is_empty() {
+                                r.text.clone()
+                            } else {
+                                std::mem::take(&mut text_buffer)
+                            };
                             let response = AssistantResponse {
-                                text: r.text.clone(),
+                                text: final_text,
                                 model: r.model.clone(),
                                 engine: Some(self.engine.name().to_string()),
                                 stop_reason: Some(r.stop_reason.to_string()),
@@ -191,6 +240,7 @@ mod tests {
                 &self,
                 _input: EngineInput,
                 _settings: &Settings,
+                _tools: &[Arc<dyn rig::tool::ToolDyn>],
                 _request_label: &str,
             ) -> anyhow::Result<EngineStream> {
                 let response = EngineResponse {

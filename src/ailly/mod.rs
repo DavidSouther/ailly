@@ -125,6 +125,17 @@ async fn run_async(cli: Cli) -> Result<(), RunError> {
                 }
                 log::info!("turn finished: {} ({:?})", path.as_str(), stop_reason);
             }
+            TurnEvent::ToolCall { path, call } => {
+                log::info!(
+                    "turn tool_call: {} {} id={}",
+                    path.as_str(),
+                    call.function.name,
+                    call.id
+                );
+            }
+            TurnEvent::ToolResult { path, result } => {
+                log::info!("turn tool_result: {} id={}", path.as_str(), result.id);
+            }
             TurnEvent::Skipped { path, reason } => {
                 log::info!("turn skipped: {} ({:?})", path.as_str(), reason);
             }

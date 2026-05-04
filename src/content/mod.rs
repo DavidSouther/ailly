@@ -1,6 +1,9 @@
 use rig::{
     OneOrMany,
-    message::{Message, UserContent},
+    message::{
+        AssistantContent, Message, ToolCall, ToolFunction, ToolResult, ToolResultContent,
+        UserContent,
+    },
 };
 use serde::{Deserialize, Serialize};
 use vfs::{MemoryFS, VfsPath};
@@ -87,6 +90,9 @@ pub enum ContentError {
         #[source]
         source: SkillError,
     },
+
+    #[error("non-text tool result at {path} cannot be serialized")]
+    NonTextToolResult { path: String },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -109,6 +115,8 @@ pub enum TurnMessage {
     User(String),
     Assistant(AssistantResponse),
     System(String),
+    ToolCall(ToolCall),
+    ToolResult(ToolResult),
 }
 
 /// The preamble for a turn: everything that should be sent to an engine
@@ -274,9 +282,8 @@ impl ConversationTurn {
         let response: Vec<MessageFile> = self
             .response
             .iter()
-            .cloned()
-            .map(MessageFile::from)
-            .collect();
+            .map(|m| turn_message_to_file(m, self.path.as_str()))
+            .collect::<Result<_, _>>()?;
 
         let file = ConversationTurnFile {
             prompt: prompt_text,
@@ -384,6 +391,20 @@ impl Conversation {
             .1
             .response
             .push(TurnMessage::Assistant(response));
+    }
+
+    /// Append a tool call onto the turn at `idx` so subsequent `history_for`
+    /// calls and the on-disk file observe it in stream order alongside the
+    /// surrounding assistant text and the matching `ToolResult`.
+    pub fn record_tool_call(&mut self, idx: usize, call: ToolCall) {
+        self.turns[idx].1.response.push(TurnMessage::ToolCall(call));
+    }
+
+    /// Append a tool result onto the turn at `idx` so subsequent `history_for`
+    /// calls and the on-disk file observe it in stream order paired with the
+    /// preceding `ToolCall`.
+    pub fn record_tool_result(&mut self, idx: usize, result: ToolResult) {
+        self.turns[idx].1.response.push(TurnMessage::ToolResult(result));
     }
 
     /// Append a synthetic user-prompt turn to the conversation.
@@ -546,7 +567,7 @@ impl Conversation {
             }
             for prev in chain.into_iter().rev() {
                 out.extend(prev.prompt.iter().cloned());
-                out.extend(prev.response.iter().map(Message::from));
+                extend_with_response_run(&mut out, &prev.response);
             }
         }
 
@@ -606,6 +627,50 @@ impl Conversation {
     }
 }
 
+fn extend_with_response_run(out: &mut Vec<Message>, response: &[TurnMessage]) {
+    let mut assistant_buf: Vec<AssistantContent> = Vec::new();
+    let flush = |buf: &mut Vec<AssistantContent>, out: &mut Vec<Message>| {
+        if buf.is_empty() {
+            return;
+        }
+        let drained: Vec<AssistantContent> = std::mem::take(buf);
+        let content = OneOrMany::many(drained)
+            .expect("flush only runs when assistant_buf has at least one entry");
+        out.push(Message::Assistant {
+            id: None,
+            content,
+        });
+    };
+
+    for msg in response {
+        match msg {
+            TurnMessage::Assistant(response) => {
+                assistant_buf.push(AssistantContent::Text(rig::message::Text {
+                    text: response.text.clone(),
+                }));
+            }
+            TurnMessage::ToolCall(call) => {
+                assistant_buf.push(AssistantContent::ToolCall(call.clone()));
+            }
+            TurnMessage::ToolResult(result) => {
+                flush(&mut assistant_buf, out);
+                out.push(Message::User {
+                    content: OneOrMany::one(UserContent::ToolResult(result.clone())),
+                });
+            }
+            TurnMessage::User(text) => {
+                flush(&mut assistant_buf, out);
+                out.push(Message::user(text.clone()));
+            }
+            TurnMessage::System(text) => {
+                flush(&mut assistant_buf, out);
+                out.push(Message::system(text.clone()));
+            }
+        }
+    }
+    flush(&mut assistant_buf, out);
+}
+
 /// True when `entry` is a turn file: a regular `.toml` file other than
 /// the `.ailly.toml` marker.
 fn is_turn_file(entry: &VfsPath) -> bool {
@@ -624,7 +689,7 @@ struct ConversationTurnFile {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-#[serde(tag = "role", rename_all = "lowercase")]
+#[serde(tag = "role", rename_all = "snake_case")]
 enum MessageFile {
     User {
         text: String,
@@ -642,6 +707,15 @@ enum MessageFile {
     },
     System {
         text: String,
+    },
+    ToolCall {
+        id: String,
+        name: String,
+        arguments: serde_json::Value,
+    },
+    ToolResult {
+        id: String,
+        content: String,
     },
 }
 
@@ -672,37 +746,56 @@ impl From<MessageFile> for TurnMessage {
                 }),
             }),
             MessageFile::System { text } => TurnMessage::System(text),
+            MessageFile::ToolCall {
+                id,
+                name,
+                arguments,
+            } => TurnMessage::ToolCall(ToolCall::new(id, ToolFunction::new(name, arguments))),
+            MessageFile::ToolResult { id, content } => TurnMessage::ToolResult(ToolResult {
+                id,
+                call_id: None,
+                content: OneOrMany::one(ToolResultContent::Text(rig::message::Text {
+                    text: content,
+                })),
+            }),
         }
     }
 }
 
-impl From<TurnMessage> for MessageFile {
-    fn from(value: TurnMessage) -> Self {
-        match value {
-            TurnMessage::User(text) => MessageFile::User { text },
-            TurnMessage::Assistant(response) => MessageFile::Assistant {
-                text: response.text,
-                model: response.model,
-                engine: response.engine,
-                stop_reason: response.stop_reason,
-                usage: response.usage.map(|u| UsageFile {
-                    input_tokens: u.input_tokens,
-                    output_tokens: u.output_tokens,
-                }),
-            },
-            TurnMessage::System(text) => MessageFile::System { text },
+fn turn_message_to_file(value: &TurnMessage, path: &str) -> Result<MessageFile, ContentError> {
+    Ok(match value {
+        TurnMessage::User(text) => MessageFile::User { text: text.clone() },
+        TurnMessage::Assistant(response) => MessageFile::Assistant {
+            text: response.text.clone(),
+            model: response.model.clone(),
+            engine: response.engine.clone(),
+            stop_reason: response.stop_reason.clone(),
+            usage: response.usage.as_ref().map(|u| UsageFile {
+                input_tokens: u.input_tokens,
+                output_tokens: u.output_tokens,
+            }),
+        },
+        TurnMessage::System(text) => MessageFile::System { text: text.clone() },
+        TurnMessage::ToolCall(call) => MessageFile::ToolCall {
+            id: call.id.clone(),
+            name: call.function.name.clone(),
+            arguments: call.function.arguments.clone(),
+        },
+        TurnMessage::ToolResult(result) => {
+            let text = match result.content.first() {
+                ToolResultContent::Text(t) => t.text.clone(),
+                _ => {
+                    return Err(ContentError::NonTextToolResult {
+                        path: path.to_string(),
+                    });
+                }
+            };
+            MessageFile::ToolResult {
+                id: result.id.clone(),
+                content: text,
+            }
         }
-    }
-}
-
-impl From<&TurnMessage> for Message {
-    fn from(value: &TurnMessage) -> Self {
-        match value {
-            TurnMessage::User(text) => Message::user(text.clone()),
-            TurnMessage::Assistant(response) => Message::assistant(response.text.clone()),
-            TurnMessage::System(text) => Message::system(text.clone()),
-        }
-    }
+    })
 }
 
 /// Accumulated state from walking up `.ailly.toml` files.
@@ -1636,6 +1729,63 @@ text = "hi"
                 .await
                 .unwrap();
         assert_eq!(reloaded.response.len(), 3);
+    }
+
+    #[tokio::test]
+    async fn write_then_load_round_trips_tool_call_and_tool_result() {
+        use serde_json::json;
+
+        let fs = mem_fs! {
+            "root": { "01.toml": r#"prompt = "q""# } };
+        let path = fs.join("root/01.toml").unwrap();
+        let mut turn = ConversationTurn::load(path.clone(), ContentMeta::default(), Vec::new())
+            .await
+            .unwrap();
+
+        turn.response = vec![
+            TurnMessage::Assistant(AssistantResponse {
+                text: "thinking".to_string(),
+                model: None,
+                engine: None,
+                stop_reason: None,
+                usage: None,
+            }),
+            TurnMessage::ToolCall(ToolCall::new(
+                "call_1".to_string(),
+                ToolFunction::new("echo".to_string(), json!({"text": "hi"})),
+            )),
+            TurnMessage::ToolResult(ToolResult {
+                id: "call_1".to_string(),
+                call_id: None,
+                content: OneOrMany::one(ToolResultContent::Text(rig::message::Text {
+                    text: "hi".to_string(),
+                })),
+            }),
+            TurnMessage::Assistant(AssistantResponse {
+                text: "done".to_string(),
+                model: None,
+                engine: None,
+                stop_reason: None,
+                usage: None,
+            }),
+        ];
+        turn.write().await.unwrap();
+        let after_first = path.read_to_string().unwrap();
+
+        let turn = ConversationTurn::load(path.clone(), ContentMeta::default(), Vec::new())
+            .await
+            .unwrap();
+        turn.write().await.unwrap();
+        let after_second = path.read_to_string().unwrap();
+
+        assert_eq!(
+            after_first, after_second,
+            "load-write cycle must be byte-stable across tool_call and tool_result entries",
+        );
+        assert!(after_first.contains(r#"role = "tool_call""#));
+        assert!(after_first.contains(r#"role = "tool_result""#));
+        assert!(after_first.contains(r#"name = "echo""#));
+        assert!(after_first.contains(r#"id = "call_1""#));
     }
 
     #[tokio::test]

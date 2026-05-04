@@ -5,19 +5,45 @@
 //! `openai_from_env`, `gemini_from_env`, and `bedrock_from_env` under the
 //! `bedrock` feature) live alongside the adapter.
 
+use std::sync::Arc;
+
 use anyhow::{Result, anyhow};
 use futures::StreamExt;
 use rig::agent::{AgentBuilder, MultiTurnStreamItem};
 use rig::client::ProviderClient;
 use rig::client::completion::CompletionClient;
 use rig::completion::{CompletionModel, GetTokenUsage};
+use rig::completion::request::{PromptError, ToolDefinition};
 use rig::message::{Message, Text, UserContent};
-use rig::streaming::{StreamedAssistantContent, StreamingChat};
+use rig::agent::StreamingError;
+use rig::streaming::{StreamedAssistantContent, StreamedUserContent, StreamingChat};
+use rig::tool::{ToolDyn, ToolError};
+use rig::wasm_compat::WasmBoxedFuture;
 
 use crate::content::PreambleBlock;
 use crate::engine::{
     Engine, EngineEvent, EngineInput, EngineResponse, EngineStream, Settings, StopReason, Usage,
 };
+
+/// Re-box a shared `Arc<dyn ToolDyn>` as the `Box<dyn ToolDyn>` shape that
+/// `AgentBuilder::tools` requires, while leaving the caller's `Arc` intact.
+/// `Box<dyn ToolDyn>` is not `Clone`, but every method on the trait can be
+/// forwarded to the inner `Arc`.
+struct DynToolHandle(Arc<dyn ToolDyn>);
+
+impl ToolDyn for DynToolHandle {
+    fn name(&self) -> String {
+        self.0.name()
+    }
+
+    fn definition<'a>(&'a self, prompt: String) -> WasmBoxedFuture<'a, ToolDefinition> {
+        self.0.definition(prompt)
+    }
+
+    fn call<'a>(&'a self, args: String) -> WasmBoxedFuture<'a, Result<String, ToolError>> {
+        self.0.call(args)
+    }
+}
 
 const ANTHROPIC: &str = "anthropic";
 const OPENAI: &str = "openai";
@@ -60,7 +86,8 @@ where
     fn stream(
         &self,
         input: EngineInput,
-        _settings: &Settings,
+        settings: &Settings,
+        tools: &[Arc<dyn ToolDyn>],
         _request_label: &str,
     ) -> Result<EngineStream> {
         let EngineInput {
@@ -74,15 +101,23 @@ where
         let constructor_preamble = self.preamble.clone();
         let preamble = merge_preamble(constructor_preamble, &input_preamble);
         let model_id = self.model_id.clone();
+        let max_tool_turns = settings.max_tool_turns;
+        let dyn_tools: Vec<Box<dyn ToolDyn>> = tools
+            .iter()
+            .map(|t| Box::new(DynToolHandle(t.clone())) as Box<dyn ToolDyn>)
+            .collect();
 
         Ok(Box::pin(async_stream::stream! {
             let mut builder = AgentBuilder::new(model);
             if let Some(p) = preamble.as_deref() {
                 builder = builder.preamble(p);
             }
-            let agent = builder.build();
+            let agent = builder.tools(dyn_tools).build();
 
-            let mut stream = agent.stream_chat(last_user_text, prior).await;
+            let mut stream = agent
+                .stream_chat(last_user_text, prior)
+                .multi_turn(max_tool_turns)
+                .await;
 
             let mut assembled = String::new();
             let mut usage: Option<Usage> = None;
@@ -94,15 +129,28 @@ where
                         assembled.push_str(&text);
                         yield EngineEvent::Text(text);
                     }
-                    // ToolCall, ToolCallDelta, Reasoning, ReasoningDelta, and
-                    // StreamUserItem are intentionally ignored in this slice.
-                    // Per-provider mapping is deferred.
+                    Some(Ok(MultiTurnStreamItem::StreamAssistantItem(
+                        StreamedAssistantContent::ToolCall { tool_call, .. },
+                    ))) => {
+                        yield EngineEvent::ToolCall(tool_call);
+                    }
+                    Some(Ok(MultiTurnStreamItem::StreamUserItem(
+                        StreamedUserContent::ToolResult { tool_result, .. },
+                    ))) => {
+                        yield EngineEvent::ToolResult(tool_result);
+                    }
+                    // ToolCallDelta, Reasoning, ReasoningDelta fall through.
                     Some(Ok(MultiTurnStreamItem::FinalResponse(final_response))) => {
                         usage = Some(Usage::from(final_response.usage()));
                         break StopReason::EndTurn;
                     }
                     None => break StopReason::EndTurn,
                     Some(Ok(_)) => {}
+                    Some(Err(StreamingError::Prompt(boxed)))
+                        if matches!(*boxed, PromptError::MaxTurnsError { .. }) =>
+                    {
+                        break StopReason::ToolLimit;
+                    }
                     Some(Err(e)) => break StopReason::Error(e.to_string()),
                 }
             };
@@ -230,7 +278,7 @@ mod tests {
     #[test]
     fn rejects_empty_history() {
         let engine = build_dummy_anthropic();
-        let msg = err_message(engine.stream(EngineInput::default(), &Settings::default(), "label"));
+        let msg = err_message(engine.stream(EngineInput::default(), &Settings::default(), &[], "label"));
         assert!(msg.contains("history is empty"));
     }
 
@@ -244,6 +292,7 @@ mod tests {
                 history,
             },
             &Settings::default(),
+            &[],
             "label",
         ));
         assert!(msg.contains("must be a User message"));
@@ -370,6 +419,7 @@ mod tests {
                         history: vec![rig::message::Message::user("ask")],
                     },
                     &Settings::default(),
+                    &[],
                     "label",
                 )
                 .expect("stream() should succeed");
@@ -423,7 +473,7 @@ mod bedrock_tests {
     #[test]
     fn bedrock_rejects_empty_history() {
         let engine = build_dummy_bedrock();
-        let msg = err_message(engine.stream(EngineInput::default(), &Settings::default(), "label"));
+        let msg = err_message(engine.stream(EngineInput::default(), &Settings::default(), &[], "label"));
         assert!(msg.contains("history is empty"));
     }
 
@@ -437,6 +487,7 @@ mod bedrock_tests {
                 history,
             },
             &Settings::default(),
+            &[],
             "label",
         ));
         assert!(msg.contains("must be a User message"));

@@ -37,3 +37,7 @@ bedrock = [
 [[test]]
 name = "engine_simple_noop"
 path = "tests/engine/simple_noop.rs"
+
+[[test]]
+name = "engine_tool_round_trip"
+path = "tests/engine/tool_round_trip.rs"

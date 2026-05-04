@@ -4,6 +4,7 @@ use rig::message::Message;
 use rig::tool::ToolDyn;
 use std::{fmt, sync::Arc};
 use std::pin::Pin;
+use std::sync::Arc;
 
 use crate::content::Preamble;
 
@@ -18,11 +19,13 @@ pub use rig_engine::bedrock_from_env;
 pub use rig_engine::{RigEngine, anthropic_from_env, gemini_from_env, openai_from_env};
 
 pub const DEFAULT_REQUEST_LIMIT: usize = 5;
+pub const DEFAULT_MAX_TOOL_TURNS: usize = 5;
 
 #[derive(Debug, Clone)]
 pub struct Settings {
     pub model: Option<String>,
     pub request_limit: usize,
+    pub max_tool_turns: usize,
     pub isolated: bool,
     pub overwrite: bool,
 }
@@ -32,6 +35,7 @@ impl Default for Settings {
         Self {
             model: None,
             request_limit: DEFAULT_REQUEST_LIMIT,
+            max_tool_turns: DEFAULT_MAX_TOOL_TURNS,
             isolated: false,
             overwrite: false,
         }
@@ -60,6 +64,7 @@ pub enum StopReason {
     StopSequence,
     MaxTokens,
     Refusal,
+    ToolLimit,
     Error(String),
 }
 
@@ -70,6 +75,7 @@ impl fmt::Display for StopReason {
             StopReason::StopSequence => "stop_sequence",
             StopReason::MaxTokens => "max_tokens",
             StopReason::Refusal => "refusal",
+            StopReason::ToolLimit => "tool_limit",
             StopReason::Error(_) => "error",
         };
         f.write_str(s)
@@ -88,6 +94,8 @@ pub struct EngineResponse {
 #[derive(Debug, Clone)]
 pub enum EngineEvent {
     Text(String),
+    ToolCall(rig::message::ToolCall),
+    ToolResult(rig::message::ToolResult),
     Final(EngineResponse),
 }
 
@@ -127,6 +135,7 @@ mod tests {
         assert_eq!(StopReason::StopSequence.to_string(), "stop_sequence");
         assert_eq!(StopReason::MaxTokens.to_string(), "max_tokens");
         assert_eq!(StopReason::Refusal.to_string(), "refusal");
+        assert_eq!(StopReason::ToolLimit.to_string(), "tool_limit");
         assert_eq!(StopReason::Error(String::new()).to_string(), "error");
         assert_eq!(
             StopReason::Error("anything at all".to_string()).to_string(),
