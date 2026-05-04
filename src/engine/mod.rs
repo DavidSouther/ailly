@@ -4,6 +4,8 @@ use rig::message::Message;
 use std::fmt;
 use std::pin::Pin;
 
+use crate::content::Preamble;
+
 pub mod generator;
 pub mod noop;
 pub mod rig_engine;
@@ -90,12 +92,18 @@ pub enum EngineEvent {
 
 pub type EngineStream = Pin<Box<dyn Stream<Item = EngineEvent> + Send>>;
 
+#[derive(Debug, Clone, Default)]
+pub struct EngineInput {
+    pub preamble: Preamble,
+    pub history: Vec<Message>,
+}
+
 pub trait Engine: Send + Sync {
     fn name(&self) -> &'static str;
 
     fn stream(
         &self,
-        history: Vec<Message>,
+        input: EngineInput,
         settings: &Settings,
         request_label: &str,
     ) -> anyhow::Result<EngineStream>;

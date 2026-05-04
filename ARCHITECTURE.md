@@ -40,6 +40,21 @@ A hybrid approach, inspired by Thinking Fast and Slow, will use local, small, fa
 
 A new tool, `Clarify`, can be used when additional context is desired. An agent can implement this tool as "search or ask". That is, for questions that are likely answerable via information local to the project, the local agent will use local LSP or file tools to answer. Otherwise, it can ask the user for guidance.
 
+### Thinking, Fast and Slow
+
+Fast = local model to match user prompts to workflows
+Slow = remove model to perform workflow tasks
+
+Kahneman's work "thinking fast and slow" describes a two-tier reasoning system in the human brain. The fast brain is responsible for immediate attention needing tasks, while the slow brain takes time to work through reasoning tasks.
+
+Coding agents circa 2026 use Foundational models for all aspects of their output. The agent takes a user prompt, combines certain preloaded bits of context, and responds to LLM tool use calls to get additional context data. (Claude's "Assist" tool is taking a stab at this.)
+
+A hybrid approach, inspired by Thinking Fast and Slow, will use local, small, fast models to determine a better initial set of context. The remote foundation model then only requests clarification for any points, rather than driving the LLM through tool usage.
+
+Tool: `Clarify` to be used when additional context is desired. An agent can implement this tool as "search or ask". That is, for questions that are likely answerable via information local to the project, the local agent will use local LSP or file tools to answer. Otherwise, it can ask the user for guidance.
+
+This conceptual framework of choosing which context to provide a model is a central portion of Ailly's codign agent model.
+
 ### Project map and code map
 
 The Knowledge subsystem provides a code map utility. Graph RAG 
@@ -69,13 +84,13 @@ Loading is three-tier progressive disclosure:
 
 Search paths, in order of precedence: `<project>/.ailly/skills/`, then `~/.ailly/skills/`, then `~/.claude/skills/`. The optional `allowed-tools` frontmatter composes with the Engine's "reads safe, writes dangerous" permission model rather than replacing it. The loader is hand-rolled on `walkdir` plus a YAML parser. No skills crate is taken as a runtime dependency.
 
+As discussed in Thinking, Fast and Slow section, Skills are loaded and added to the conversation outside of and before sent to the LLM.
+
 ### MCP sessions
 
 The Knowledge subsystem owns MCP sessions for **resources**, distinct from the Engine's use of MCP for **tools**. A configured MCP server can expose document URIs, search endpoints, or other live read-only data. The Knowledge layer maintains the client connection through `rmcp` (gated by rig-core's `rmcp` feature), surfaces resources to the `augment` hook for inclusion in retrieval, and shuts the session through `clean`. Tool-bearing MCP servers stay with the Engine. A single MCP server may expose both surfaces, in which case the Engine and Knowledge subsystems share the underlying `rmcp` connection but consume different parts of its catalog.
 
 ### Notes for the Rust port
-
-The Rust crate currently has no Knowledge code. Implementation lands after the Engine slice ([docs/developer/2026-05-01-A-engine/](docs/developer/2026-05-01-A-engine/)) and follows the same design-then-feature-test cadence. The CodeGraph choice drives the rest of the dependency set:
 
 - **In-process route:** `anvanster/codegraph` v0.2.0 plus `tree-sitter` and the language grammars (codegraph is parser-agnostic), plus rig-core's embeddings and vector-store surface for the documentation corpus, plus `walkdir` and a YAML parser for the Skills loader.
 - **MCP route:** `rmcp` (gated by rig-core's `rmcp` feature) for the CodeGraph subprocess, plus rig-core's embeddings and vector-store surface, plus `walkdir` and a YAML parser. No tree-sitter in our process.

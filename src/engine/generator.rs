@@ -6,7 +6,7 @@ use tokio_util::sync::CancellationToken;
 use vfs::VfsPath;
 
 use crate::content::{AssistantResponse, Conversation, ResponseUsage};
-use crate::engine::{Engine, EngineEvent, Settings, StopReason, Usage};
+use crate::engine::{Engine, EngineEvent, EngineInput, Settings, StopReason, Usage};
 
 #[derive(Debug, Clone)]
 pub enum SkipReason {
@@ -68,9 +68,11 @@ impl Generator {
 
                 yield TurnEvent::Started { path: path.clone() };
 
-                let history = self.conversation.history_for(self.conversation.turn(idx));
+                let preamble = self.conversation.preamble_for(self.conversation.turn(idx));
+                let history = self.conversation.messages_for(self.conversation.turn(idx));
+                let input = EngineInput { preamble, history };
 
-                let mut events = match self.engine.stream(history, &self.settings, path.as_str()) {
+                let mut events = match self.engine.stream(input, &self.settings, path.as_str()) {
                     Ok(s) => s,
                     Err(e) => {
                         yield TurnEvent::Failed { path, error: Arc::new(e) };
@@ -121,6 +123,7 @@ impl Generator {
 mod tests {
     use super::*;
     use crate::content::Conversation;
+    use crate::knowledge::skills::FsSkillRepository;
     use crate::engine::Noop;
     use crate::mem_fs;
 
@@ -132,7 +135,7 @@ mod tests {
                 "01.toml": r#"prompt = "first""#,
             },
         };
-        let convo = Conversation::load(fs.join("root").unwrap()).await.unwrap();
+        let convo = Conversation::load(fs.join("root").unwrap(), &FsSkillRepository::new(&fs.join("root").unwrap())).await.unwrap();
         let generator = Generator::new(convo, Arc::new(Noop::default()), Settings::default());
 
         let events: Vec<TurnEvent> = generator.run().collect().await;
@@ -173,7 +176,6 @@ mod tests {
     #[tokio::test]
     async fn final_event_persists_engine_model_stop_reason_and_usage_to_file() {
         use crate::engine::{EngineEvent, EngineResponse, EngineStream, Usage};
-        use rig::message::Message;
 
         struct MetadataEngine;
         impl Engine for MetadataEngine {
@@ -182,7 +184,7 @@ mod tests {
             }
             fn stream(
                 &self,
-                _history: Vec<Message>,
+                _input: EngineInput,
                 _settings: &Settings,
                 _request_label: &str,
             ) -> anyhow::Result<EngineStream> {
@@ -207,7 +209,7 @@ mod tests {
             },
         };
         let dir = fs.join("root").unwrap();
-        let convo = Conversation::load(dir.clone()).await.unwrap();
+        let convo = Conversation::load(dir.clone(), &FsSkillRepository::new(&dir)).await.unwrap();
         let generator = Generator::new(convo, Arc::new(MetadataEngine), Settings::default());
 
         let _events: Vec<TurnEvent> = generator.run().collect().await;
@@ -241,7 +243,7 @@ mod tests {
                 "02.toml": r#"prompt = "second""#,
             },
         };
-        let convo = Conversation::load(fs.join("root").unwrap()).await.unwrap();
+        let convo = Conversation::load(fs.join("root").unwrap(), &FsSkillRepository::new(&fs.join("root").unwrap())).await.unwrap();
         let generator = Generator::new(convo, Arc::new(Noop::default()), Settings::default());
 
         let events: Vec<TurnEvent> = generator.run().collect().await;

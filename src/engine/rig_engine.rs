@@ -14,8 +14,9 @@ use rig::completion::{CompletionModel, GetTokenUsage};
 use rig::message::{Message, Text, UserContent};
 use rig::streaming::{StreamedAssistantContent, StreamingChat};
 
+use crate::content::PreambleBlock;
 use crate::engine::{
-    Engine, EngineEvent, EngineResponse, EngineStream, Settings, StopReason, Usage,
+    Engine, EngineEvent, EngineInput, EngineResponse, EngineStream, Settings, StopReason, Usage,
 };
 
 const ANTHROPIC: &str = "anthropic";
@@ -58,15 +59,20 @@ where
 
     fn stream(
         &self,
-        history: Vec<Message>,
+        input: EngineInput,
         _settings: &Settings,
         _request_label: &str,
     ) -> Result<EngineStream> {
+        let EngineInput {
+            preamble: input_preamble,
+            history,
+        } = input;
         let last_user_text = extract_last_user_text(&history)?;
         let prior: Vec<Message> = history[..history.len() - 1].to_vec();
 
         let model = self.model.clone();
-        let preamble = self.preamble.clone();
+        let constructor_preamble = self.preamble.clone();
+        let preamble = merge_preamble(constructor_preamble, &input_preamble);
         let model_id = self.model_id.clone();
 
         Ok(Box::pin(async_stream::stream! {
@@ -108,6 +114,40 @@ where
                 usage,
             });
         }))
+    }
+}
+
+/// Flatten an `EngineInput` preamble into a single string, joined onto any
+/// constructor-supplied preamble. Inherited and local system blocks render
+/// as their text; skill blocks render as `## <name>\n\n<body>`.
+fn merge_preamble(
+    constructor: Option<String>,
+    input: &crate::content::Preamble,
+) -> Option<String> {
+    let mut parts: Vec<String> = Vec::new();
+    if let Some(c) = constructor.filter(|s| !s.is_empty()) {
+        parts.push(c);
+    }
+    for block in &input.blocks {
+        match block {
+            PreambleBlock::InheritedSystem { text } | PreambleBlock::LocalSystem { text } => {
+                if !text.is_empty() {
+                    parts.push(text.clone());
+                }
+            }
+            PreambleBlock::Skill(skill) => {
+                parts.push(format!(
+                    "## {name}\n\n{body}",
+                    name = skill.name.as_str(),
+                    body = skill.body.as_str()
+                ));
+            }
+        }
+    }
+    if parts.is_empty() {
+        None
+    } else {
+        Some(parts.join("\n\n"))
     }
 }
 
@@ -191,7 +231,11 @@ mod tests {
     #[test]
     fn rejects_empty_history() {
         let engine = build_dummy_anthropic();
-        let msg = err_message(engine.stream(Vec::new(), &Settings::default(), "label"));
+        let msg = err_message(engine.stream(
+            EngineInput::default(),
+            &Settings::default(),
+            "label",
+        ));
         assert!(msg.contains("history is empty"));
     }
 
@@ -199,7 +243,14 @@ mod tests {
     fn rejects_assistant_last_message() {
         let engine = build_dummy_anthropic();
         let history = vec![Message::user("hi"), Message::assistant("there")];
-        let msg = err_message(engine.stream(history, &Settings::default(), "label"));
+        let msg = err_message(engine.stream(
+            EngineInput {
+                preamble: Default::default(),
+                history,
+            },
+            &Settings::default(),
+            "label",
+        ));
         assert!(msg.contains("must be a User message"));
     }
 
@@ -234,7 +285,7 @@ mod tests {
     #[test]
     fn gemini_rejects_empty_history() {
         let engine = build_dummy_gemini();
-        let msg = err_message(engine.stream(Vec::new(), &Settings::default(), "label"));
+        let msg = err_message(engine.stream(EngineInput::default(), &Settings::default(), "label"));
         assert!(msg.contains("history is empty"));
     }
 
@@ -242,7 +293,7 @@ mod tests {
     fn gemini_rejects_assistant_last_message() {
         let engine = build_dummy_gemini();
         let history = vec![Message::user("hi"), Message::assistant("there")];
-        let msg = err_message(engine.stream(history, &Settings::default(), "label"));
+        let msg = err_message(engine.stream(EngineInput::default(), &Settings::default(), "label"));
         assert!(msg.contains("must be a User message"));
     }
 
@@ -312,7 +363,10 @@ mod tests {
             let engine = RigEngine::new(FakeModel, "fake", "fake-model-id");
             let stream = engine
                 .stream(
-                    vec![rig::message::Message::user("ask")],
+                    EngineInput {
+                        preamble: Default::default(),
+                        history: vec![rig::message::Message::user("ask")],
+                    },
                     &Settings::default(),
                     "label",
                 )
@@ -367,7 +421,11 @@ mod bedrock_tests {
     #[test]
     fn bedrock_rejects_empty_history() {
         let engine = build_dummy_bedrock();
-        let msg = err_message(engine.stream(Vec::new(), &Settings::default(), "label"));
+        let msg = err_message(engine.stream(
+            EngineInput::default(),
+            &Settings::default(),
+            "label",
+        ));
         assert!(msg.contains("history is empty"));
     }
 
@@ -375,7 +433,14 @@ mod bedrock_tests {
     fn bedrock_rejects_assistant_last_message() {
         let engine = build_dummy_bedrock();
         let history = vec![Message::user("hi"), Message::assistant("there")];
-        let msg = err_message(engine.stream(history, &Settings::default(), "label"));
+        let msg = err_message(engine.stream(
+            EngineInput {
+                preamble: Default::default(),
+                history,
+            },
+            &Settings::default(),
+            "label",
+        ));
         assert!(msg.contains("must be a User message"));
     }
 

@@ -2,7 +2,10 @@ use std::fmt::Write;
 
 use rig::message::{AssistantContent, Message, UserContent};
 
-use crate::engine::{Engine, EngineEvent, EngineResponse, EngineStream, Settings, StopReason};
+use crate::content::PreambleBlock;
+use crate::engine::{
+    Engine, EngineEvent, EngineInput, EngineResponse, EngineStream, Settings, StopReason,
+};
 
 pub const DEFAULT_CHUNK_BYTES: usize = 32;
 
@@ -27,13 +30,13 @@ impl Engine for Noop {
 
     fn stream(
         &self,
-        history: Vec<Message>,
+        input: EngineInput,
         _settings: &Settings,
         request_label: &str,
     ) -> anyhow::Result<EngineStream> {
         let text = match &self.override_response {
             Some(s) => s.clone(),
-            None => build_envelope(request_label, &history),
+            None => build_envelope(request_label, &input),
         };
 
         let mut events: Vec<EngineEvent> = split_into_chunks(&text, self.chunk)
@@ -51,14 +54,34 @@ impl Engine for Noop {
     }
 }
 
-fn build_envelope(request_label: &str, history: &[Message]) -> String {
+fn build_envelope(request_label: &str, input: &EngineInput) -> String {
     let mut out = String::new();
     writeln!(out, "noop response for {request_label}:").unwrap();
+    for (i, block) in input.preamble.blocks.iter().enumerate() {
+        match block {
+            PreambleBlock::InheritedSystem { text } => {
+                writeln!(out, "[preamble {i}] inherited: {text}").unwrap();
+            }
+            PreambleBlock::Skill(skill) => {
+                writeln!(
+                    out,
+                    "[preamble {i}] skill {name}: {body}",
+                    name = skill.name.as_str(),
+                    body = skill.body.as_str()
+                )
+                .unwrap();
+            }
+            PreambleBlock::LocalSystem { text } => {
+                writeln!(out, "[preamble {i}] local: {text}").unwrap();
+            }
+        }
+    }
     out.push_str("[history follows]\n");
-    for (i, m) in history.iter().enumerate() {
+    for (i, m) in input.history.iter().enumerate() {
         writeln!(out, "[message {i}] {}: {}", role_str(m), message_text(m)).unwrap();
     }
-    let last_user = history
+    let last_user = input
+        .history
         .iter()
         .rev()
         .find(|m| matches!(m, Message::User { .. }))
@@ -145,7 +168,7 @@ mod tests {
         };
 
         let stream = noop
-            .stream(Vec::new(), &Settings::default(), "alpha")
+            .stream(EngineInput::default(), &Settings::default(), "alpha")
             .unwrap();
         let events: Vec<EngineEvent> = stream.collect().await;
 
@@ -175,7 +198,10 @@ mod tests {
 
         let stream = noop
             .stream(
-                vec![Message::user("ignored")],
+                EngineInput {
+                    preamble: Default::default(),
+                    history: vec![Message::user("ignored")],
+                },
                 &Settings::default(),
                 "label",
             )
@@ -198,11 +224,25 @@ mod tests {
         let history = vec![Message::system("sys"), Message::user("ask something")];
 
         let s1 = noop
-            .stream(history.clone(), &Settings::default(), "label")
+            .stream(
+                EngineInput {
+                    preamble: Default::default(),
+                    history: history.clone(),
+                },
+                &Settings::default(),
+                "label",
+            )
             .unwrap();
         let e1: Vec<EngineEvent> = s1.collect().await;
         let s2 = noop
-            .stream(history.clone(), &Settings::default(), "label")
+            .stream(
+                EngineInput {
+                    preamble: Default::default(),
+                    history: history.clone(),
+                },
+                &Settings::default(),
+                "label",
+            )
             .unwrap();
         let e2: Vec<EngineEvent> = s2.collect().await;
 

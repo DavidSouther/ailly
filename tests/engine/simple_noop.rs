@@ -9,6 +9,7 @@ use std::sync::Arc;
 use futures::StreamExt;
 
 use ailly::content::Conversation;
+use ailly::knowledge::skills::FsSkillRepository;
 use ailly::engine::{Generator, Noop, Settings, StopReason, TurnEvent};
 use ailly::mem_fs;
 
@@ -21,7 +22,9 @@ async fn generator_runs_two_turn_sequence_through_noop() {
             "02.toml": r#"prompt = "second turn""#,
         },
     };
-    let conversation = Conversation::load(fs.join("root").unwrap())
+    let root = fs.join("root").unwrap();
+    let skills = FsSkillRepository::new(&root);
+    let conversation = Conversation::load(root, &skills)
         .await
         .expect("load conversation");
 

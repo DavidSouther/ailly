@@ -1,0 +1,2 @@
+system = "You are running the skills integration test."
+skills = ["echo"]

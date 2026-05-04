@@ -15,6 +15,10 @@ use futures::StreamExt;
 use vfs::{PhysicalFS, VfsPath};
 
 use crate::content::Conversation;
+use crate::knowledge::skills::FsSkillRepository;
+use crate::engine::{
+    Engine, Generator, Noop, Settings, StopReason, TurnEvent, anthropic_from_env, openai_from_env,
+};
 #[cfg(feature = "bedrock")]
 use crate::engine::bedrock_from_env;
 use crate::engine::{
@@ -261,7 +265,8 @@ async fn run_clean(cli: &Cli) -> Result<(), RunError> {
 
 async fn load_from_root(root: &Path) -> Result<Conversation> {
     let vfs_root = VfsPath::new(PhysicalFS::new(root));
-    Conversation::load(vfs_root)
+    let skills = FsSkillRepository::new(&vfs_root);
+    Conversation::load(vfs_root, &skills)
         .await
         .with_context(|| format!("loading conversation at {}", root.display()))
 }

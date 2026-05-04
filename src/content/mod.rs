@@ -8,6 +8,8 @@ use vfs::{MemoryFS, VfsPath};
 mod gitignore_fs;
 mod gitignore_fs_constants;
 
+use crate::knowledge::skills::{Skill, SkillError, SkillName, SkillRepository};
+
 pub const AILLYRC: &str = ".ailly.toml";
 pub const EXTENSION: &str = ".toml";
 
@@ -77,6 +79,14 @@ pub enum ContentError {
 
     #[error("non-text user prompt at {path} cannot be serialized")]
     NonTextUserPrompt { path: String },
+
+    #[error("failed to load skill `{name}` referenced in {origin}")]
+    Skill {
+        name: SkillName,
+        origin: String,
+        #[source]
+        source: SkillError,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -99,6 +109,25 @@ pub enum TurnMessage {
     User(String),
     Assistant(AssistantResponse),
     System(String),
+}
+
+/// The preamble for a turn: everything that should be sent to an engine
+/// before the chat history. Blocks appear in the order produced by
+/// `Conversation::preamble_for`.
+#[derive(Debug, Clone, Default)]
+pub struct Preamble {
+    pub blocks: Vec<PreambleBlock>,
+}
+
+#[derive(Debug, Clone)]
+pub enum PreambleBlock {
+    /// A `Message::System` inherited from an ancestor `.ailly.toml`.
+    InheritedSystem { text: String },
+    /// A `Skill` resolved at this turn's location, in walk-then-declaration
+    /// order.
+    Skill(Skill),
+    /// The `Message::System` that originates in the turn's own directory.
+    LocalSystem { text: String },
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -141,8 +170,15 @@ pub struct ConversationTurn {
     path: VfsPath,
     /// Metadata for how this ConversationTurn should run
     meta: ContentMeta,
-    /// System message chain inherited at this turn's location
+    /// System message chain visible at this turn's location, in walk order.
+    /// The trailing `local_system_count` entries originate in this turn's own
+    /// directory; the remaining leading entries are inherited from ancestors.
     system: Vec<Message>,
+    /// Number of trailing entries of `system` that come from this turn's own
+    /// directory (0 or 1 in practice).
+    local_system_count: usize,
+    /// Skills resolved at this turn's location, in walk-then-declaration order
+    skills: Vec<Skill>,
     /// The original user prompt for this turn
     prompt: OneOrMany<Message>,
     /// All subsequent messages, for this turn.
@@ -168,6 +204,8 @@ impl ConversationTurn {
         path: VfsPath,
         meta: ContentMeta,
         system: Vec<Message>,
+        local_system_count: usize,
+        skills: Vec<Skill>,
     ) -> Result<Self, ContentError> {
         // Out of scope: `combined`, `view`, `edit`, `template-view`, `mcp`,
         // `tools`, `temperature`, `maxTokens`, `out`/`root`, and `augment`
@@ -195,6 +233,8 @@ impl ConversationTurn {
             path,
             meta,
             system,
+            local_system_count,
+            skills,
             prompt,
             response,
         })
@@ -279,12 +319,12 @@ impl Conversation {
     /// child, lexicographic among siblings within a directory. A directory
     /// whose `.ailly.toml` sets `skip = true` contributes no turns and
     /// is not recursed into.
-    pub async fn load(path: VfsPath) -> Result<Self, ContentError> {
+    pub async fn load(path: VfsPath, skills: &dyn SkillRepository) -> Result<Self, ContentError> {
         // Out of scope: the `.vectors` directory skip, synthetic CLI content,
         // and folder-context wiring. See the implementation plan's
         // "Deferred" list.
         let mut turns: Vec<(VfsPath, ConversationTurn)> = Vec::new();
-        Self::load_into(&path, AillyRc::default(), &mut turns).await?;
+        Self::load_into(&path, AillyRc::default(), skills, &mut turns).await?;
         Ok(Self { turns })
     }
 
@@ -357,9 +397,14 @@ impl Conversation {
     /// Used by the CLI to support `--root <dir> --prompt <text>` where
     /// the prompt is the trailing turn over the root's loaded context.
     pub fn push_synthetic_prompt(&mut self, prompt: &str) -> Result<(), ContentError> {
-        let (system, meta) = match self.turns.last() {
-            Some((_, last)) => (last.system.clone(), last.meta.clone()),
-            None => (Vec::new(), ContentMeta::default()),
+        let (system, local_system_count, skills, meta) = match self.turns.last() {
+            Some((_, last)) => (
+                last.system.clone(),
+                last.local_system_count,
+                last.skills.clone(),
+                last.meta.clone(),
+            ),
+            None => (Vec::new(), 0, Vec::new(), ContentMeta::default()),
         };
 
         let fs = VfsPath::new(MemoryFS::new());
@@ -385,6 +430,8 @@ impl Conversation {
             path: path.clone(),
             meta,
             system,
+            local_system_count,
+            skills,
             prompt: OneOrMany::one(Message::user(prompt.to_string())),
             response: Vec::new(),
         };
@@ -404,6 +451,77 @@ impl Conversation {
     /// Return the inherited system messages for `turn`.
     pub fn system<'a>(&self, turn: &'a ConversationTurn) -> &'a [Message] {
         &turn.system
+    }
+
+    /// Return the resolved skills for `turn`, in walk-then-declaration order.
+    pub fn skills<'a>(&self, turn: &'a ConversationTurn) -> &'a [Skill] {
+        &turn.skills
+    }
+
+    /// Assemble the preamble for `turn`.
+    ///
+    /// Block order matches the design contract: every ancestor system
+    /// message becomes one `InheritedSystem` block (inherited blocks are
+    /// not collapsed), then every `Skill` becomes one `Skill` block in
+    /// walk-then-declaration order, then the local system message (if any)
+    /// becomes a `LocalSystem` block. `meta.skip_head` suppresses the
+    /// entire preamble. Empty system messages are elided.
+    pub fn preamble_for(&self, turn: &ConversationTurn) -> Preamble {
+        let mut blocks: Vec<PreambleBlock> = Vec::new();
+        if turn.meta.skip_head {
+            return Preamble { blocks };
+        }
+        let inherited_end = turn.system.len().saturating_sub(turn.local_system_count);
+        for m in &turn.system[..inherited_end] {
+            if let Message::System { content } = m
+                && !content.is_empty()
+            {
+                blocks.push(PreambleBlock::InheritedSystem {
+                    text: content.clone(),
+                });
+            }
+        }
+        for s in &turn.skills {
+            blocks.push(PreambleBlock::Skill(s.clone()));
+        }
+        for m in &turn.system[inherited_end..] {
+            if let Message::System { content } = m
+                && !content.is_empty()
+            {
+                blocks.push(PreambleBlock::LocalSystem {
+                    text: content.clone(),
+                });
+            }
+        }
+        Preamble { blocks }
+    }
+
+    /// Chat history (user/assistant turns only) for `turn`, gated by
+    /// `meta.isolated` and `meta.continue`. Excludes the system entries —
+    /// those flow through `preamble_for`.
+    pub fn messages_for(&self, turn: &ConversationTurn) -> Vec<Message> {
+        let mut out: Vec<Message> = Vec::new();
+
+        if !turn.meta.isolated {
+            let mut chain: Vec<&ConversationTurn> = Vec::new();
+            let mut cursor: &ConversationTurn = turn;
+            while let Some(prev) = self.predecessor(cursor) {
+                chain.push(prev);
+                cursor = prev;
+            }
+            for prev in chain.into_iter().rev() {
+                out.extend(prev.prompt.iter().cloned());
+                out.extend(prev.response.iter().map(Message::from));
+            }
+        }
+
+        out.extend(turn.prompt.iter().cloned());
+
+        if !turn.meta.r#continue && matches!(out.last(), Some(Message::Assistant { .. })) {
+            out.pop();
+        }
+
+        out
     }
 
     /// Build the chat history that should be sent to the engine for `turn`.
@@ -444,9 +562,10 @@ impl Conversation {
     async fn load_into(
         dir: &VfsPath,
         prior: AillyRc,
+        skills_repo: &dyn SkillRepository,
         turns: &mut Vec<(VfsPath, ConversationTurn)>,
     ) -> Result<(), ContentError> {
-        let acc = AillyRc::load(dir, prior).await?;
+        let acc = AillyRc::load(dir, prior, skills_repo).await?;
         if acc.meta.skip {
             return Ok(());
         }
@@ -464,8 +583,14 @@ impl Conversation {
             if !is_turn_file(entry) {
                 continue;
             }
-            let turn =
-                ConversationTurn::load(entry.clone(), acc.meta.clone(), acc.system.clone()).await?;
+            let turn = ConversationTurn::load(
+                entry.clone(),
+                acc.meta.clone(),
+                acc.system.clone(),
+                acc.local_system_count,
+                acc.skills.clone(),
+            )
+            .await?;
             turns.push((entry.clone(), turn));
         }
 
@@ -474,7 +599,7 @@ impl Conversation {
             .filter(|e| e.is_dir().unwrap_or(false))
             .collect();
         for sub in subdirs {
-            Box::pin(Self::load_into(&sub, acc.clone(), turns)).await?;
+            Box::pin(Self::load_into(&sub, acc.clone(), skills_repo, turns)).await?;
         }
 
         Ok(())
@@ -584,14 +709,24 @@ impl From<&TurnMessage> for Message {
 #[derive(Debug, Default, Clone)]
 pub struct AillyRc {
     pub system: Vec<Message>,
+    /// Trailing entries of `system` that originate in this dir's own
+    /// `.ailly.toml`. Always 0 or 1 in practice.
+    pub local_system_count: usize,
+    pub skills: Vec<Skill>,
     pub meta: ContentMeta,
 }
 
 impl AillyRc {
     /// Read `.ailly.toml` at `dir` and merge it into `prior` per the `parent` mode.
-    pub async fn load(dir: &VfsPath, prior: AillyRc) -> Result<Self, ContentError> {
+    pub async fn load(
+        dir: &VfsPath,
+        prior: AillyRc,
+        skills_repo: &dyn SkillRepository,
+    ) -> Result<Self, ContentError> {
         let AillyRc {
             mut system,
+            local_system_count: _prior_local_count,
+            mut skills,
             mut meta,
         } = prior;
 
@@ -630,9 +765,14 @@ impl AillyRc {
             .filter(|s| !s.is_empty())
             .map(Message::system);
 
+        let local_skill_names: Vec<String> = file.skills.clone().unwrap_or_default();
+
         match meta.parent {
             Parent::Root => {}
-            Parent::Never => system.clear(),
+            Parent::Never => {
+                system.clear();
+                skills.clear();
+            }
             Parent::Always => {
                 if system.is_empty() && !dir.is_root() {
                     let parent_dir = dir.parent();
@@ -640,20 +780,56 @@ impl AillyRc {
                         &parent_dir,
                         AillyRc {
                             system: Vec::new(),
+                            local_system_count: 0,
+                            skills: Vec::new(),
                             meta: meta.clone(),
                         },
+                        skills_repo,
                     ))
                     .await?;
                     system = recursed.system;
+                    if skills.is_empty() {
+                        skills = recursed.skills;
+                    }
                 }
             }
         }
 
+        let mut local_system_count = 0usize;
         if let Some(m) = local {
             system.push(m);
+            local_system_count = 1;
         }
 
-        Ok(AillyRc { system, meta })
+        if !local_skill_names.is_empty() {
+            let origin = path.as_str().to_string();
+            for raw in local_skill_names {
+                let parsed = SkillName::try_from(&raw).map_err(|err| {
+                    let name_for_error = SkillName::try_from("invalid")
+                        .expect("`invalid` is a valid placeholder skill name");
+                    ContentError::Skill {
+                        name: name_for_error,
+                        origin: origin.clone(),
+                        source: err,
+                    }
+                })?;
+                let skill = skills_repo
+                    .get(&parsed)
+                    .map_err(|source| ContentError::Skill {
+                        name: parsed.clone(),
+                        origin: origin.clone(),
+                        source,
+                    })?;
+                skills.push(skill);
+            }
+        }
+
+        Ok(AillyRc {
+            system,
+            local_system_count,
+            skills,
+            meta,
+        })
     }
 }
 
@@ -663,6 +839,8 @@ impl AillyRc {
 struct AillyRcFile {
     #[serde(default)]
     system: Option<String>,
+    #[serde(default)]
+    skills: Option<Vec<String>>,
     #[serde(default)]
     context: Option<ContentMetaContext>,
     #[serde(default)]
@@ -705,15 +883,22 @@ impl AillyRcFile {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::knowledge::skills::{FsSkillRepository, NullSkillRepository};
     use crate::mem_fs;
     use rig::message::AssistantContent;
+
+    fn test_skills(fs: &VfsPath) -> FsSkillRepository {
+        FsSkillRepository::new(fs)
+    }
 
     #[tokio::test]
     async fn at_root_with_no_aillyrc_in_cwd() {
         let fs = mem_fs! { "root": {} };
         let cwd = fs.join("root").unwrap();
 
-        let acc = AillyRc::load(&cwd, AillyRc::default()).await.unwrap();
+        let acc = AillyRc::load(&cwd, AillyRc::default(), &NullSkillRepository)
+            .await
+            .unwrap();
 
         let texts: Vec<String> = acc.system.iter().map(message_text).collect();
         assert_eq!(texts, Vec::<String>::new());
@@ -726,7 +911,9 @@ mod tests {
         };
         let cwd = fs.join("root").unwrap();
 
-        let acc = AillyRc::load(&cwd, AillyRc::default()).await.unwrap();
+        let acc = AillyRc::load(&cwd, AillyRc::default(), &NullSkillRepository)
+            .await
+            .unwrap();
 
         let texts: Vec<String> = acc.system.iter().map(message_text).collect();
         assert_eq!(texts, vec!["system".to_string()]);
@@ -744,9 +931,13 @@ mod tests {
 
         let prior = AillyRc {
             system: vec![Message::system("root")],
+            local_system_count: 0,
+            skills: Vec::new(),
             meta: ContentMeta::default(),
         };
-        let acc = AillyRc::load(&cwd, prior).await.unwrap();
+        let acc = AillyRc::load(&cwd, prior, &NullSkillRepository)
+            .await
+            .unwrap();
 
         let texts: Vec<String> = acc.system.iter().map(message_text).collect();
         assert_eq!(texts, vec!["root".to_string()]);
@@ -764,9 +955,13 @@ mod tests {
 
         let prior = AillyRc {
             system: vec![Message::system("root")],
+            local_system_count: 0,
+            skills: Vec::new(),
             meta: ContentMeta::default(),
         };
-        let acc = AillyRc::load(&cwd, prior).await.unwrap();
+        let acc = AillyRc::load(&cwd, prior, &NullSkillRepository)
+            .await
+            .unwrap();
 
         let texts: Vec<String> = acc.system.iter().map(message_text).collect();
         assert_eq!(texts, vec!["root".to_string(), "below".to_string()]);
@@ -784,12 +979,16 @@ mod tests {
 
         let prior = AillyRc {
             system: Vec::new(),
+            local_system_count: 0,
+            skills: Vec::new(),
             meta: ContentMeta {
                 parent: Parent::Always,
                 ..Default::default()
             },
         };
-        let acc = AillyRc::load(&cwd, prior).await.unwrap();
+        let acc = AillyRc::load(&cwd, prior, &NullSkillRepository)
+            .await
+            .unwrap();
 
         let texts: Vec<String> = acc.system.iter().map(message_text).collect();
         assert_eq!(texts, vec!["root".to_string(), "below".to_string()]);
@@ -812,12 +1011,16 @@ mod tests {
 
         let prior = AillyRc {
             system: Vec::new(),
+            local_system_count: 0,
+            skills: Vec::new(),
             meta: ContentMeta {
                 parent: Parent::Always,
                 ..Default::default()
             },
         };
-        let acc = AillyRc::load(&cwd, prior).await.unwrap();
+        let acc = AillyRc::load(&cwd, prior, &NullSkillRepository)
+            .await
+            .unwrap();
 
         let texts: Vec<String> = acc.system.iter().map(message_text).collect();
         assert_eq!(
@@ -842,12 +1045,16 @@ mod tests {
 
         let prior = AillyRc {
             system: Vec::new(),
+            local_system_count: 0,
+            skills: Vec::new(),
             meta: ContentMeta {
                 parent: Parent::Always,
                 ..Default::default()
             },
         };
-        let acc = AillyRc::load(&cwd, prior).await.unwrap();
+        let acc = AillyRc::load(&cwd, prior, &NullSkillRepository)
+            .await
+            .unwrap();
 
         let texts: Vec<String> = acc.system.iter().map(message_text).collect();
         assert_eq!(texts, vec!["deep".to_string()]);
@@ -869,12 +1076,16 @@ mod tests {
 
         let prior = AillyRc {
             system: vec![Message::system("below")],
+            local_system_count: 0,
+            skills: Vec::new(),
             meta: ContentMeta {
                 parent: Parent::Always,
                 ..Default::default()
             },
         };
-        let acc = AillyRc::load(&cwd, prior).await.unwrap();
+        let acc = AillyRc::load(&cwd, prior, &NullSkillRepository)
+            .await
+            .unwrap();
 
         let texts: Vec<String> = acc.system.iter().map(message_text).collect();
         assert_eq!(texts, vec!["below".to_string(), "deep".to_string()]);
@@ -892,12 +1103,16 @@ mod tests {
 
         let prior = AillyRc {
             system: vec![Message::system("root")],
+            local_system_count: 0,
+            skills: Vec::new(),
             meta: ContentMeta {
                 parent: Parent::Never,
                 ..Default::default()
             },
         };
-        let acc = AillyRc::load(&cwd, prior).await.unwrap();
+        let acc = AillyRc::load(&cwd, prior, &NullSkillRepository)
+            .await
+            .unwrap();
 
         let texts: Vec<String> = acc.system.iter().map(message_text).collect();
         assert_eq!(texts, vec!["below".to_string()]);
@@ -910,12 +1125,16 @@ mod tests {
 
         let prior = AillyRc {
             system: vec![Message::system("root")],
+            local_system_count: 0,
+            skills: Vec::new(),
             meta: ContentMeta {
                 parent: Parent::Never,
                 ..Default::default()
             },
         };
-        let acc = AillyRc::load(&cwd, prior).await.unwrap();
+        let acc = AillyRc::load(&cwd, prior, &NullSkillRepository)
+            .await
+            .unwrap();
 
         let texts: Vec<String> = acc.system.iter().map(message_text).collect();
         assert_eq!(texts, Vec::<String>::new());
@@ -929,9 +1148,15 @@ mod tests {
             },
         };
         let path = fs.join("root/01_intro.toml").unwrap();
-        let turn = ConversationTurn::load(path.clone(), ContentMeta::default(), Vec::new())
-            .await
-            .unwrap();
+        let turn = ConversationTurn::load(
+            path.clone(),
+            ContentMeta::default(),
+            Vec::new(),
+            0,
+            Vec::new(),
+        )
+        .await
+        .unwrap();
         assert_eq!(turn.path.as_str(), path.as_str());
         assert_eq!(turn.response.len(), 0);
         assert_eq!(turn.prompt.len(), 1);
@@ -946,7 +1171,9 @@ mod tests {
                 "02.toml": r#"prompt = "second""#,
             },
         };
-        let convo = Conversation::load(fs.join("root").unwrap()).await.unwrap();
+        let convo = Conversation::load(fs.join("root").unwrap(), &test_skills(&fs))
+            .await
+            .unwrap();
         let first = &convo.turns[0].1;
         let second = &convo.turns[1].1;
 
@@ -963,7 +1190,9 @@ mod tests {
                 "01.toml": r#"prompt = "x""#,
             },
         };
-        let convo = Conversation::load(fs.join("root").unwrap()).await.unwrap();
+        let convo = Conversation::load(fs.join("root").unwrap(), &test_skills(&fs))
+            .await
+            .unwrap();
         let only = &convo.turns[0].1;
         assert_eq!(convo.system(only).len(), 1);
     }
@@ -979,7 +1208,9 @@ mod tests {
                 },
             },
         };
-        let convo = Conversation::load(fs.join("root").unwrap()).await.unwrap();
+        let convo = Conversation::load(fs.join("root").unwrap(), &test_skills(&fs))
+            .await
+            .unwrap();
         let paths: Vec<String> = convo
             .turns
             .iter()
@@ -1001,7 +1232,9 @@ mod tests {
                 },
             },
         };
-        let convo = Conversation::load(fs.join("root").unwrap()).await.unwrap();
+        let convo = Conversation::load(fs.join("root").unwrap(), &test_skills(&fs))
+            .await
+            .unwrap();
         assert_eq!(convo.turns.len(), 1);
         assert_eq!(convo.turns[0].1.system.len(), 2);
     }
@@ -1016,7 +1249,7 @@ mod tests {
             },
         };
         let dir = fs.join("root").unwrap();
-        let convo = Conversation::load(dir).await.unwrap();
+        let convo = Conversation::load(dir, &test_skills(&fs)).await.unwrap();
         assert_eq!(convo.turns.len(), 2);
         assert!(convo.turns[0].0.as_str().ends_with("01_a.toml"));
         assert!(convo.turns[1].0.as_str().ends_with("02_b.toml"));
@@ -1031,7 +1264,9 @@ mod tests {
                 "01.toml": r#"prompt = "x""#,
             },
         };
-        let convo = Conversation::load(fs.join("root").unwrap()).await.unwrap();
+        let convo = Conversation::load(fs.join("root").unwrap(), &test_skills(&fs))
+            .await
+            .unwrap();
         assert!(convo.turns.is_empty());
     }
 
@@ -1043,7 +1278,7 @@ mod tests {
             },
         };
         let path = fs.join("root/01_intro.toml").unwrap();
-        let turn = ConversationTurn::load(path, ContentMeta::default(), Vec::new())
+        let turn = ConversationTurn::load(path, ContentMeta::default(), Vec::new(), 0, Vec::new())
             .await
             .unwrap();
         assert_eq!(turn.response.len(), 1);
@@ -1053,7 +1288,7 @@ mod tests {
     async fn rejects_turn_with_empty_prompt() {
         let fs = mem_fs! { "root": { "01.toml": r#"prompt = """# } };
         let path = fs.join("root/01.toml").unwrap();
-        let err = ConversationTurn::load(path, ContentMeta::default(), Vec::new())
+        let err = ConversationTurn::load(path, ContentMeta::default(), Vec::new(), 0, Vec::new())
             .await
             .unwrap_err();
         assert!(err.to_string().contains("empty prompt"));
@@ -1064,7 +1299,7 @@ mod tests {
         let fs = mem_fs! { "root": { "01.toml": r#"prompt = "x""# } };
         let path = fs.join("root/01.toml").unwrap();
         let sys = vec![Message::system("inherited")];
-        let turn = ConversationTurn::load(path, ContentMeta::default(), sys.clone())
+        let turn = ConversationTurn::load(path, ContentMeta::default(), sys.clone(), 0, Vec::new())
             .await
             .unwrap();
         assert_eq!(turn.system.len(), 1);
@@ -1190,7 +1425,9 @@ text = "hi"
         let dir = fs.join("root").unwrap();
         let path = fs.join("root/01.toml").unwrap();
 
-        let mut convo = Conversation::load(dir.clone()).await.unwrap();
+        let mut convo = Conversation::load(dir.clone(), &test_skills(&fs))
+            .await
+            .unwrap();
         convo.clean().await.unwrap();
 
         let after_first = path.read_to_string().unwrap();
@@ -1203,7 +1440,7 @@ text = "hi"
             "first clean dropped prompt: {after_first}"
         );
 
-        let mut convo = Conversation::load(dir).await.unwrap();
+        let mut convo = Conversation::load(dir, &test_skills(&fs)).await.unwrap();
         convo.clean().await.unwrap();
         let after_second = path.read_to_string().unwrap();
 
@@ -1225,7 +1462,7 @@ text = "hi"
         let path = fs.join("root/01.toml").unwrap();
         let original = path.read_to_string().unwrap();
 
-        let mut convo = Conversation::load(dir).await.unwrap();
+        let mut convo = Conversation::load(dir, &test_skills(&fs)).await.unwrap();
         assert_eq!(
             convo.turn_count(),
             0,
@@ -1252,7 +1489,7 @@ text = "hi"
         let aillyrc = fs.join("root/.ailly.toml").unwrap();
         let original = aillyrc.read_to_string().unwrap();
 
-        let mut convo = Conversation::load(dir).await.unwrap();
+        let mut convo = Conversation::load(dir, &test_skills(&fs)).await.unwrap();
         convo.clean().await.unwrap();
 
         let after = aillyrc.read_to_string().unwrap();
@@ -1269,9 +1506,15 @@ text = "hi"
         let path = fs.join("root/01.toml").unwrap();
         let original = path.read_to_string().unwrap();
 
-        let turn = ConversationTurn::load(path.clone(), ContentMeta::default(), Vec::new())
-            .await
-            .unwrap();
+        let turn = ConversationTurn::load(
+            path.clone(),
+            ContentMeta::default(),
+            Vec::new(),
+            0,
+            Vec::new(),
+        )
+        .await
+        .unwrap();
         turn.write().await.unwrap();
 
         let after = path.read_to_string().unwrap();
@@ -1293,6 +1536,8 @@ text = "hi"
             path: path.clone(),
             meta: ContentMeta::default(),
             system: Vec::new(),
+            local_system_count: 0,
+            skills: Vec::new(),
             prompt,
             response: Vec::new(),
         };
@@ -1307,7 +1552,7 @@ text = "hi"
 
         let fs = mem_fs! { "root": { "01.toml": r#"prompt = "x""# } };
         let dir = fs.join("root").unwrap();
-        let mut convo = Conversation::load(dir).await.unwrap();
+        let mut convo = Conversation::load(dir, &test_skills(&fs)).await.unwrap();
 
         let image = UserContent::Image(Image::default());
         convo.turns[0].1.prompt = OneOrMany::one(Message::User {
@@ -1329,12 +1574,14 @@ text = "hi"
             },
         };
         let dir = fs.join("root").unwrap();
-        let convo = Conversation::load(dir.clone()).await.unwrap();
+        let convo = Conversation::load(dir.clone(), &test_skills(&fs))
+            .await
+            .unwrap();
         assert_eq!(convo.turns.len(), 2);
 
         convo.write().await.unwrap();
 
-        let reloaded = Conversation::load(dir).await.unwrap();
+        let reloaded = Conversation::load(dir, &test_skills(&fs)).await.unwrap();
         assert_eq!(reloaded.turns.len(), 2);
         assert!(reloaded.turns[0].0.as_str().ends_with("01.toml"));
         assert!(reloaded.turns[1].0.as_str().ends_with("02.toml"));
@@ -1349,15 +1596,22 @@ text = "hi"
             },
         };
         let path = fs.join("root/01.toml").unwrap();
-        let turn = ConversationTurn::load(path.clone(), ContentMeta::default(), Vec::new())
-            .await
-            .unwrap();
+        let turn = ConversationTurn::load(
+            path.clone(),
+            ContentMeta::default(),
+            Vec::new(),
+            0,
+            Vec::new(),
+        )
+        .await
+        .unwrap();
 
         turn.write().await.unwrap();
 
-        let reloaded = ConversationTurn::load(path, ContentMeta::default(), Vec::new())
-            .await
-            .unwrap();
+        let reloaded =
+            ConversationTurn::load(path, ContentMeta::default(), Vec::new(), 0, Vec::new())
+                .await
+                .unwrap();
         assert_eq!(reloaded.response.len(), 1);
     }
 
@@ -1369,15 +1623,22 @@ text = "hi"
             },
         };
         let path = fs.join("root/01.toml").unwrap();
-        let turn = ConversationTurn::load(path.clone(), ContentMeta::default(), Vec::new())
-            .await
-            .unwrap();
+        let turn = ConversationTurn::load(
+            path.clone(),
+            ContentMeta::default(),
+            Vec::new(),
+            0,
+            Vec::new(),
+        )
+        .await
+        .unwrap();
 
         turn.write().await.unwrap();
 
-        let reloaded = ConversationTurn::load(path, ContentMeta::default(), Vec::new())
-            .await
-            .unwrap();
+        let reloaded =
+            ConversationTurn::load(path, ContentMeta::default(), Vec::new(), 0, Vec::new())
+                .await
+                .unwrap();
         assert_eq!(reloaded.response.len(), 3);
     }
 
@@ -1387,15 +1648,22 @@ text = "hi"
             "root": { "01.toml": r#"prompt = "hello""# },
         };
         let path = fs.join("root/01.toml").unwrap();
-        let turn = ConversationTurn::load(path.clone(), ContentMeta::default(), Vec::new())
-            .await
-            .unwrap();
+        let turn = ConversationTurn::load(
+            path.clone(),
+            ContentMeta::default(),
+            Vec::new(),
+            0,
+            Vec::new(),
+        )
+        .await
+        .unwrap();
 
         turn.write().await.unwrap();
 
-        let reloaded = ConversationTurn::load(path, ContentMeta::default(), Vec::new())
-            .await
-            .unwrap();
+        let reloaded =
+            ConversationTurn::load(path, ContentMeta::default(), Vec::new(), 0, Vec::new())
+                .await
+                .unwrap();
         assert_eq!(reloaded.prompt.len(), 1);
         assert_eq!(reloaded.response.len(), 0);
     }
@@ -1422,7 +1690,9 @@ text = "hi"
                 "01.toml": r#"prompt = "first""#,
             },
         };
-        let convo = Conversation::load(fs.join("root").unwrap()).await.unwrap();
+        let convo = Conversation::load(fs.join("root").unwrap(), &test_skills(&fs))
+            .await
+            .unwrap();
         let only = &convo.turns[0].1;
 
         let history = convo.history_for(only);
@@ -1440,7 +1710,9 @@ text = "hi"
                 "02.toml": r#"prompt = "second""#,
             },
         };
-        let convo = Conversation::load(fs.join("root").unwrap()).await.unwrap();
+        let convo = Conversation::load(fs.join("root").unwrap(), &test_skills(&fs))
+            .await
+            .unwrap();
         let second = &convo.turns[1].1;
 
         let history = convo.history_for(second);
@@ -1466,7 +1738,9 @@ text = "hi"
                 "02.toml": r#"prompt = "second""#,
             },
         };
-        let mut convo = Conversation::load(fs.join("root").unwrap()).await.unwrap();
+        let mut convo = Conversation::load(fs.join("root").unwrap(), &test_skills(&fs))
+            .await
+            .unwrap();
         convo.turns[1].1.meta.skip_head = true;
         let second = &convo.turns[1].1;
 
@@ -1492,7 +1766,9 @@ text = "hi"
                 "02.toml": r#"prompt = "second""#,
             },
         };
-        let mut convo = Conversation::load(fs.join("root").unwrap()).await.unwrap();
+        let mut convo = Conversation::load(fs.join("root").unwrap(), &test_skills(&fs))
+            .await
+            .unwrap();
         convo.turns[1].1.meta.isolated = true;
         let second = &convo.turns[1].1;
 
@@ -1510,7 +1786,9 @@ text = "hi"
                 "01.toml": r#"prompt = "first""#,
             },
         };
-        let mut convo = Conversation::load(fs.join("root").unwrap()).await.unwrap();
+        let mut convo = Conversation::load(fs.join("root").unwrap(), &test_skills(&fs))
+            .await
+            .unwrap();
         convo.turns[0].1.prompt =
             OneOrMany::many([Message::user("first"), Message::assistant("partial")]).unwrap();
         let only = &convo.turns[0].1;
@@ -1529,7 +1807,9 @@ text = "hi"
                 "01.toml": r#"prompt = "first""#,
             },
         };
-        let mut convo = Conversation::load(fs.join("root").unwrap()).await.unwrap();
+        let mut convo = Conversation::load(fs.join("root").unwrap(), &test_skills(&fs))
+            .await
+            .unwrap();
         convo.turns[0].1.prompt =
             OneOrMany::many([Message::user("first"), Message::assistant("partial")]).unwrap();
         convo.turns[0].1.meta.r#continue = true;
@@ -1546,5 +1826,76 @@ text = "hi"
                 "partial".to_string(),
             ]
         );
+    }
+
+    /// Feature test for the Knowledge Skills slice
+    /// (`docs/developer/2026-05-03-B-knowledge-skills/`).
+    ///
+    /// User story: an operator declares `skills = ["foo"]` in a
+    /// `.ailly.toml`, drops a `SKILL.md` at `<root>/.ailly/skills/foo/`,
+    /// and the resulting `ConversationTurn`'s preamble carries the skill
+    /// body between the ancestor (inherited) system text and the local
+    /// system text from the turn's own directory.
+    #[tokio::test]
+    async fn skill_body_is_injected_between_inherited_and_local_system() {
+        use crate::knowledge::skills::FsSkillRepository;
+
+        let fs = mem_fs! {
+            "root": {
+                ".ailly": {
+                    "skills": {
+                        "foo": {
+                            "SKILL.md": "---\nname: foo\ndescription: a foo skill\n---\nFOO BODY\n",
+                        },
+                    },
+                },
+                "parent": {
+                    ".ailly.toml": r#"system = "INHERITED""#,
+                    "child": {
+                        ".ailly.toml": "system = \"LOCAL\"\nskills = [\"foo\"]\n",
+                        "01.toml": r#"prompt = "p""#,
+                    },
+                },
+            },
+        };
+
+        let project_root = fs.join("root").unwrap();
+        let skills = FsSkillRepository::new(&project_root);
+        let convo = Conversation::load(project_root, &skills).await.unwrap();
+
+        assert_eq!(convo.turn_count(), 1);
+        let turn = convo.turn(0);
+        let preamble = convo.preamble_for(turn);
+
+        let kinds: Vec<&'static str> = preamble
+            .blocks
+            .iter()
+            .map(|b| match b {
+                PreambleBlock::InheritedSystem { .. } => "inherited",
+                PreambleBlock::Skill(_) => "skill",
+                PreambleBlock::LocalSystem { .. } => "local",
+            })
+            .collect();
+        assert_eq!(
+            kinds,
+            vec!["inherited", "skill", "local"],
+            "preamble blocks must be ordered inherited -> skill -> local"
+        );
+
+        match &preamble.blocks[0] {
+            PreambleBlock::InheritedSystem { text } => assert_eq!(text, "INHERITED"),
+            other => panic!("block 0 should be InheritedSystem, got {other:?}"),
+        }
+        match &preamble.blocks[1] {
+            PreambleBlock::Skill(skill) => {
+                assert_eq!(skill.name.as_str(), "foo");
+                assert_eq!(skill.body.as_str(), "FOO BODY");
+            }
+            other => panic!("block 1 should be Skill, got {other:?}"),
+        }
+        match &preamble.blocks[2] {
+            PreambleBlock::LocalSystem { text } => assert_eq!(text, "LOCAL"),
+            other => panic!("block 2 should be LocalSystem, got {other:?}"),
+        }
     }
 }
