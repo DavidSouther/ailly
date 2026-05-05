@@ -252,6 +252,9 @@ pub struct ConversationTurn {
     declared_tools: Vec<String>,
     /// Per-turn `parent_tools` literal, exactly as authored on disk.
     declared_parent_tools: Option<ToolsParent>,
+    /// Per-turn `skills` literal, exactly as authored on disk. Captured so
+    /// `write` can reproduce the source file byte-stably.
+    declared_skills: Vec<String>,
 }
 
 impl ConversationTurn {
@@ -301,6 +304,7 @@ impl ConversationTurn {
 
         let declared_tools = file.tools.clone();
         let declared_parent_tools = file.parent_tools;
+        let declared_skills = file.skills.clone();
         let tool_names = combine_tools(tools, &file.tools, file.parent_tools);
         let mut meta = meta;
         if file.step.is_some() {
@@ -318,6 +322,7 @@ impl ConversationTurn {
             tool_names,
             declared_tools,
             declared_parent_tools,
+            declared_skills,
         })
     }
 
@@ -326,7 +331,13 @@ impl ConversationTurn {
     ///
     /// Used by the workflow runtime to materialize a synthesized turn file
     /// for a task before driving the engine over it.
-    pub fn new(path: VfsPath, meta: ContentMeta, system: Vec<Message>, prompt: String) -> Self {
+    pub fn new(
+        path: VfsPath,
+        meta: ContentMeta,
+        system: Vec<Message>,
+        declared_skills: Vec<String>,
+        prompt: String,
+    ) -> Self {
         Self {
             path,
             meta,
@@ -338,7 +349,13 @@ impl ConversationTurn {
             tool_names: vec![],
             declared_tools: vec![],
             declared_parent_tools: None,
+            declared_skills,
         }
+    }
+
+    /// Per-turn `skills` literal as authored on disk, in declared order.
+    pub fn declared_skills(&self) -> &[String] {
+        &self.declared_skills
     }
 
     /// Tool names resolved for this turn after walking the directory chain
@@ -389,6 +406,7 @@ impl ConversationTurn {
             prompt: prompt_text,
             tools: self.declared_tools.clone(),
             parent_tools: self.declared_parent_tools,
+            skills: self.declared_skills.clone(),
             response,
         };
         let text = toml::to_string(&file).map_err(|source| ContentError::SerializeToml {
@@ -612,6 +630,7 @@ impl Conversation {
             tool_names,
             declared_tools: Vec::new(),
             declared_parent_tools: None,
+            declared_skills: Vec::new(),
         };
         self.turns.push((path, turn));
         Ok(())
@@ -761,7 +780,7 @@ impl Conversation {
             if !is_turn_file(entry) {
                 continue;
             }
-            let turn = ConversationTurn::load(
+            let mut turn = ConversationTurn::load(
                 entry.clone(),
                 acc.meta.clone(),
                 acc.system.clone(),
@@ -770,6 +789,22 @@ impl Conversation {
                 acc.tools.clone(),
             )
             .await?;
+            let origin = entry.as_str().to_string();
+            for raw in turn.declared_skills.clone() {
+                let parsed = SkillName::try_from(&raw).map_err(|err| ContentError::Skill {
+                    name: raw.clone(),
+                    origin: origin.clone(),
+                    source: err,
+                })?;
+                let skill = skills_repo
+                    .get(&parsed)
+                    .map_err(|source| ContentError::Skill {
+                        name: parsed.as_str().to_string(),
+                        origin: origin.clone(),
+                        source,
+                    })?;
+                turn.skills.push(skill);
+            }
             turns.push((entry.clone(), turn));
         }
 
@@ -845,6 +880,8 @@ struct ConversationTurnFile {
     tools: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     parent_tools: Option<ToolsParent>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    skills: Vec<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     response: Vec<MessageFile>,
 }
@@ -1832,6 +1869,7 @@ text = "hi"
             prompt: "hello\nworld".to_string(),
             tools: Vec::new(),
             parent_tools: None,
+            skills: Vec::new(),
             response: vec![MessageFile::Assistant {
                 text: "hi".to_string(),
                 model: None,
@@ -1853,6 +1891,7 @@ text = "hi"
             prompt: "hi".to_string(),
             tools: Vec::new(),
             parent_tools: None,
+            skills: Vec::new(),
             response: Vec::new(),
         };
         let toml_text = toml::to_string(&file).unwrap();
@@ -1866,6 +1905,7 @@ text = "hi"
             prompt: "q".to_string(),
             tools: Vec::new(),
             parent_tools: None,
+            skills: Vec::new(),
             response: vec![MessageFile::Assistant {
                 text: "a".to_string(),
                 model: Some("test-model".to_string()),
@@ -2051,6 +2091,7 @@ text = "hi"
             tool_names: Vec::new(),
             declared_tools: Vec::new(),
             declared_parent_tools: None,
+            declared_skills: Vec::new(),
         };
 
         let err = turn.write().await.unwrap_err();
@@ -2238,12 +2279,90 @@ text = "hi"
         assert!(after_first.contains(r#"id = "call_1""#));
     }
 
+    #[tokio::test]
+    async fn write_then_load_round_trips_declared_skills_in_declared_order() {
+        let fs = mem_fs! { "root": { "01.toml": r#"prompt = "x""# } };
+        let path = fs.join("root/01.toml").unwrap();
+
+        let turn = ConversationTurn::new(
+            path.clone(),
+            ContentMeta::default(),
+            Vec::new(),
+            vec![
+                "developer:design".to_string(),
+                "developer:thinking".to_string(),
+            ],
+            "x".to_string(),
+        );
+        turn.write().await.unwrap();
+
+        let written_first = path.read_to_string().unwrap();
+        let dev_design_idx = written_first
+            .find("developer:design")
+            .expect("developer:design present");
+        let dev_thinking_idx = written_first
+            .find("developer:thinking")
+            .expect("developer:thinking present");
+        assert!(
+            dev_design_idx < dev_thinking_idx,
+            "skills must serialize in declared order: {written_first}"
+        );
+
+        let reloaded = ConversationTurn::load(
+            path.clone(),
+            ContentMeta::default(),
+            Vec::new(),
+            0,
+            Vec::new(),
+            Vec::new(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            reloaded.declared_skills(),
+            &[
+                "developer:design".to_string(),
+                "developer:thinking".to_string(),
+            ]
+        );
+
+        reloaded.write().await.unwrap();
+        let written_second = path.read_to_string().unwrap();
+        assert_eq!(
+            written_first, written_second,
+            "load-write cycle must be byte-stable across declared_skills"
+        );
+    }
+
+    #[tokio::test]
+    async fn turn_without_declared_skills_omits_field_in_serialized_form() {
+        let fs = mem_fs! { "root": { "01.toml": r#"prompt = "x""# } };
+        let path = fs.join("root/01.toml").unwrap();
+
+        let turn = ConversationTurn::new(
+            path.clone(),
+            ContentMeta::default(),
+            Vec::new(),
+            Vec::new(),
+            "x".to_string(),
+        );
+        turn.write().await.unwrap();
+
+        let written = path.read_to_string().unwrap();
+        assert!(
+            !written.contains("skills ="),
+            "empty declared_skills must be omitted: {written}"
+        );
+    }
+
+    #[tokio::test]
     async fn write_then_load_round_trips_step_field() {
         let fs = mem_fs! { "root": { "01.toml": r#"prompt = "x""# } };
         let path = fs.join("root/01.toml").unwrap();
 
         let meta = ContentMeta::with_step("design");
-        let turn = ConversationTurn::new(path.clone(), meta, Vec::new(), "x".to_string());
+        let turn =
+            ConversationTurn::new(path.clone(), meta, Vec::new(), Vec::new(), "x".to_string());
         turn.write().await.unwrap();
 
         let written = path.read_to_string().unwrap();
@@ -2715,6 +2834,104 @@ text = "hi"
         assert!(
             msg.contains("UPPER-CASE"),
             "raw invalid name must appear in top-level error: {msg}"
+        );
+    }
+
+    #[tokio::test]
+    async fn turn_declared_skill_resolves_via_repository_in_declared_order() {
+        let fs = mem_fs! {
+            "root": {
+                ".ailly": {
+                    "skills": {
+                        "one": { "SKILL.md": "---\nname: one\ndescription: a\n---\nA\n" },
+                        "two": { "SKILL.md": "---\nname: two\ndescription: b\n---\nB\n" },
+                    },
+                },
+                "01.toml": "prompt = \"p\"\nskills = [\"one\", \"two\"]\n",
+            },
+        };
+        let project_root = fs.join("root").unwrap();
+        let skills = FsSkillRepository::new(&project_root);
+
+        let convo = Conversation::load(project_root, &skills).await.unwrap();
+
+        assert_eq!(convo.turn_count(), 1);
+        let turn = convo.turn(0);
+        let names: Vec<&str> = convo.skills(turn).iter().map(|s| s.name.as_str()).collect();
+        assert_eq!(names, vec!["one", "two"]);
+    }
+
+    #[tokio::test]
+    async fn turn_declared_unknown_skill_surfaces_content_error() {
+        let fs = mem_fs! {
+            "root": {
+                "01.toml": "prompt = \"p\"\nskills = [\"missing\"]\n",
+            },
+        };
+        let project_root = fs.join("root").unwrap();
+        let skills = FsSkillRepository::new(&project_root);
+
+        let err = match Conversation::load(project_root, &skills).await {
+            Ok(_) => panic!("expected ContentError::Skill for unknown turn-declared skill"),
+            Err(e) => e,
+        };
+
+        let msg = format!("{err:#}");
+        assert!(
+            msg.contains("missing"),
+            "missing skill name absent from error: {msg}"
+        );
+        assert!(
+            msg.contains("01.toml"),
+            "turn file path must appear as origin in error: {msg}"
+        );
+    }
+
+    #[tokio::test]
+    async fn single_turn_load_carries_declared_skills_without_resolving() {
+        let fs = mem_fs! {
+            "root": {
+                "01.toml": "prompt = \"p\"\nskills = [\"unresolved\"]\n",
+            },
+        };
+        let path = fs.join("root/01.toml").unwrap();
+
+        let convo = Conversation::single_turn(path).await.unwrap();
+
+        assert_eq!(convo.turn_count(), 1);
+        let turn = convo.turn(0);
+        assert_eq!(turn.declared_skills(), &["unresolved".to_string()]);
+        assert!(
+            convo.skills(turn).is_empty(),
+            "single_turn must not resolve declared skills against any repository"
+        );
+    }
+
+    #[tokio::test]
+    async fn turn_declared_skills_appended_after_inherited_walk_skills() {
+        let fs = mem_fs! {
+            "root": {
+                ".ailly": {
+                    "skills": {
+                        "alpha": { "SKILL.md": "---\nname: alpha\ndescription: a\n---\nA\n" },
+                        "beta":  { "SKILL.md": "---\nname: beta\ndescription: b\n---\nB\n" },
+                    },
+                },
+                ".ailly.toml": r#"skills = ["alpha"]"#,
+                "01.toml": "prompt = \"p\"\nskills = [\"beta\"]\n",
+            },
+        };
+        let project_root = fs.join("root").unwrap();
+        let skills = FsSkillRepository::new(&project_root);
+
+        let convo = Conversation::load(project_root, &skills).await.unwrap();
+
+        let turn = convo.turn(0);
+        let names: Vec<&str> = convo.skills(turn).iter().map(|s| s.name.as_str()).collect();
+        assert_eq!(
+            names,
+            vec!["alpha", "beta"],
+            "walk-inherited skills must precede turn-declared skills",
         );
     }
 }

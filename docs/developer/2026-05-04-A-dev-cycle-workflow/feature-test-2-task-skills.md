@@ -1,7 +1,5 @@
 # Feature Test 2: `Task::skills`
 
-*Draft 2026-05-04*
-
 ## User Story
 
 **Given** a workflow file declares a task with `skills = ["developer:design", "developer:thinking"]`,

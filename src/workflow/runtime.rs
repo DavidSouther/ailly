@@ -170,6 +170,7 @@ impl Runtime {
                     &conversation_root,
                     &task.name,
                     &task.name,
+                    &task.skills,
                     &rendered_prompt,
                 )
                 .await
@@ -236,6 +237,7 @@ impl Runtime {
                         &conversation_root,
                         &eval_label,
                         &eval_label,
+                        &[],
                         eval_text,
                     )
                     .await
@@ -498,6 +500,7 @@ async fn synthesize_turn_file(
     root: &VfsPath,
     suffix: &str,
     step: &str,
+    skills: &[String],
     prompt: &str,
 ) -> Result<VfsPath, ContentError> {
     let next_n = find_next_n(root)?;
@@ -511,7 +514,13 @@ async fn synthesize_turn_file(
         })?;
 
     let meta = ContentMeta::with_step(step);
-    let turn = ConversationTurn::new(path.clone(), meta, Vec::new(), prompt.to_string());
+    let turn = ConversationTurn::new(
+        path.clone(),
+        meta,
+        Vec::new(),
+        skills.to_vec(),
+        prompt.to_string(),
+    );
     turn.write().await?;
 
     Ok(path)
@@ -564,6 +573,7 @@ mod tests {
         }
         Task {
             name: name.to_string(),
+            skills: Vec::new(),
             task: TaskAction::Prompt {
                 text: prompt.to_string(),
             },
@@ -876,6 +886,7 @@ mod tests {
         );
     }
 
+
     #[test]
     fn malformed_input_pattern_surfaces_as_input_pattern_mismatch() {
         use crate::workflow::schema::{InputSpec, Workflow};
@@ -1071,5 +1082,97 @@ mod tests {
         .expect_err("missing required input must reject construction");
         let msg2 = format!("{err2:#}");
         assert!(msg2.contains("topic"), "{msg2}");
+    }
+    
+    #[tokio::test]
+    async fn task_skills_propagate_into_synthesized_turn_toml_in_declared_order() {
+        use crate::content::Conversation;
+
+        let fs = mem_fs! { "root": {} };
+        let root = fs.join("root").unwrap();
+
+        let workflow = Workflow {
+            name: "skilled".to_string(),
+            start: "design".to_string(),
+            inputs: BTreeMap::new(),
+            tasks: vec![
+                Task {
+                    name: "design".to_string(),
+                    skills: vec![
+                        "developer:design".to_string(),
+                        "developer:thinking".to_string(),
+                    ],
+                    task: TaskAction::Prompt {
+                        text: "Produce design.md.".to_string(),
+                    },
+                    evaluation: None,
+                    next: BTreeMap::from([("end_turn".to_string(), "bare".to_string())]),
+                },
+                Task {
+                    name: "bare".to_string(),
+                    skills: vec![],
+                    task: TaskAction::Prompt {
+                        text: "Run.".to_string(),
+                    },
+                    evaluation: None,
+                    next: BTreeMap::new(),
+                },
+            ],
+        };
+        let state = WorkflowState::initial(&workflow);
+
+        let runtime = Runtime::new(
+            workflow,
+            state,
+            root.clone(),
+            Arc::new(Noop::default()),
+            Settings::default(),
+        ).unwrap();
+        let _: Vec<WorkflowEvent> = runtime.run().collect().await;
+
+        let design_name = root
+            .read_dir()
+            .unwrap()
+            .map(|e| e.filename())
+            .find(|n| n.ends_with("_design.toml"))
+            .expect("design turn file written");
+        let design_path = root.join(&design_name).unwrap();
+        let design_text = design_path.read_to_string().unwrap();
+        let skills_idx = design_text
+            .find("skills")
+            .expect("skills field missing in synthesized turn");
+        let after = &design_text[skills_idx..];
+        let dev_design_idx = after
+            .find("developer:design")
+            .expect("developer:design absent");
+        let dev_thinking_idx = after
+            .find("developer:thinking")
+            .expect("developer:thinking absent");
+        assert!(
+            dev_design_idx < dev_thinking_idx,
+            "skills must preserve declared order: {design_text}"
+        );
+
+        let convo = Conversation::single_turn(design_path).await.unwrap();
+        let resolved: Vec<String> = convo.turn(0).declared_skills().to_vec();
+        assert_eq!(
+            resolved,
+            vec![
+                "developer:design".to_string(),
+                "developer:thinking".to_string(),
+            ]
+        );
+
+        let bare_name = root
+            .read_dir()
+            .unwrap()
+            .map(|e| e.filename())
+            .find(|n| n.ends_with("_bare.toml"))
+            .expect("bare turn file written");
+        let bare_text = root.join(&bare_name).unwrap().read_to_string().unwrap();
+        assert!(
+            !bare_text.contains("skills ="),
+            "empty skills slice must omit the field: {bare_text}"
+        );
     }
 }
