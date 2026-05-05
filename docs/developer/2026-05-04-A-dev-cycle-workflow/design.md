@@ -55,9 +55,7 @@ A workflow file at `e2e/09_dev_cycle/dev_cycle.toml`, exercised with a `Noop` en
 
 8. **Skills propagate into the synthesized turn.** The `design` task's `01_design.toml` carries `skills = ["developer:design"]` in its turn TOML. The `rgr` task's turn TOML carries both `developer:red-green-refactor` and `developer:thinking`. Loading these names is exercised by the existing engine-layer skill resolution; the workflow-side metric is the round-trip through the synthesized turn file.
 
-9. **Clarify pause-and-resume.** A `design` prompt that calls `user.clarify` with `{ question: "What database backs the inbox queue?" }` halts the workflow with `WorkflowStopReason::AwaitingInput { task: "design", question: "What database backs..." }`. `workflow.state.toml` shows `pending_clarification` populated. The harness writes the answer to `state.clarifications.design` and clears `pending_clarification`. Re-running the workflow replays the prompt turn. The same `user.clarify` call, finding its question now in `state.clarifications`, returns the recorded answer to the prompt without re-halting. The turn proceeds to write `design.md` and the eval routes the workflow normally.
-
-10. **Clarify deduplicates within a run.** A second prompt iteration that calls `user.clarify` with the same `question` string in the same task returns the same recorded answer without halting. Two distinct questions in the same task each receive their own answer slot in `state.clarifications.<task>`.
+9. **Clarify pause-and-resume.** A `design` prompt that calls `user.clarify` with `{ question: "What database backs the inbox queue?" }` uses tool calling to execute a tool that performs the clarification. The tool delegates to the `knowledge` subsystem. The `knowledge` subsystem first determines if there are any piece of knowledge in its graph that would fit; otherwise, it uses an elicitation to trigger a UI request for the User. These answers are returned as the ToolResult. If the `knowledge` subsystem asked the user for clarification, it records the question and answer in the knowledge base. The turn proceeds to write `design.md` and the eval routes the workflow normally.
 
 ## Specification
 
@@ -159,12 +157,6 @@ pub enum WorkflowStopReason {
     /// with `task` at the head of the queue. Re-running the workflow
     /// re-evaluates the gate.
     Paused { task: String, result: String },
-    /// The current task called the reserved `user.clarify` tool with a
-    /// question that has no answer recorded in `state.clarifications`.
-    /// State is persisted with the gated task at the head of the queue and
-    /// `pending_clarification` populated. The harness collects the answer
-    /// out-of-band and writes it back into state before re-running.
-    AwaitingInput { task: String, question: String },
 }
 ```
 
@@ -283,25 +275,7 @@ Skill declarations on the workflow task do not propagate to the evaluation turn,
 
 A task that needs additional information from the user must obtain it through a tool call. Ending a turn without a recorded response, or with a response whose body asks a question and offers no routing key, is treated as "task done, run evaluation" and the workflow continues with no opportunity to capture the answer. Workflow authors must therefore route every user interaction through the reserved `user.clarify` tool.
 
-`user.clarify` is registered automatically into every `Runtime`'s tool registry alongside any harness-provided tools. The tool accepts `{ question: String, default: Option<String> }` and is intercepted by name before dispatch reaches the registry's resolver:
-
-1. The runtime checks `state.clarifications: BTreeMap<String, BTreeMap<String, String>>` keyed by `task_name -> question` for an existing answer.
-2. If found, the answer is returned to the prompt turn as the tool result and the turn continues normally.
-3. If not found, the runtime persists `state.pending_clarification = Some(PendingClarification { task, question, default })`, halts the workflow with `WorkflowStopReason::AwaitingInput { task, question }`, and the run exits.
-
-On resume, the harness:
-
-1. Reads `state.pending_clarification`.
-2. Collects the answer through whatever surface the harness exposes (CLI prompt, IDE input, web form).
-3. Writes the answer into `state.clarifications[task][question]` and clears `pending_clarification`.
-4. Re-runs the workflow.
-
-The runtime, on the second run, replays the prompt turn against the recorded transcript. When the tool call for `user.clarify` re-fires with the same `question` argument, the answer is now in `state.clarifications` and the runtime returns it directly without halting. Multiple clarifications within a single task are supported by storing one answer per question.
-
-This pattern is parallel to but distinct from `paused`:
-
-- `paused` halts after a task finishes its turn, gated by an evaluation. The artifact already exists. The human reviews it.
-- `AwaitingInput` halts mid-turn, before the task can complete. The human supplies a missing input.
+`user.clarify` is registered automatically into every `Runtime`'s tool registry alongside any harness-provided tools. The tool accepts `{ question: String, default: Option<String> }` and is provided in the tool registry.
 
 `user.clarify` is the only sanctioned mechanism for in-turn user interaction. A task that ends its turn awaiting an unrouted answer is a workflow author error and not a runtime feature.
 
@@ -381,9 +355,8 @@ The tool reads through the same `VfsPath` interface used elsewhere in the codeba
 - Swapping the prompt-evaluation path from direct `engine.stream` to a second `Generator::run`. Tracked in `TASKS.md:40`. Orthogonal to this slice.
 - Input types other than `String`. Number, datetime, and multi-select inputs can be added later by extending `InputSpec`.
 - Conditional or looping template expressions. The substitution engine is single-pass with no logic. Workflows needing richer composition wait on `task = ToolCall` to extend context.
-- Re-prompting a Clarify question after the user gives an unparseable answer. The harness owns answer validation today.
+- Re-prompting a Clarify question after the user gives an unparseable answer. The `knowledge` system should have those details.
 - Multi-question Clarify in a single tool call. One question per call.
-- Promoting Clarify answers into the template context as `{{ clarifications.<task>.<question> }}`. Defer until a second consumer asks.
 
 ## Alternatives
 
