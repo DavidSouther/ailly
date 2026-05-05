@@ -49,3 +49,7 @@ path = "tests/engine/tool_round_trip.rs"
 [[test]]
 name = "knowledge_clarify_tool_round_trip"
 path = "tests/knowledge/clarify_tool_round_trip.rs"
+
+[[test]]
+name = "permissions_gate_round_trip"
+path = "tests/permissions/gate_round_trip.rs"
