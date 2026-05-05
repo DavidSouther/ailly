@@ -42,6 +42,8 @@ pub enum FsAbsentError {
         #[source]
         source: vfs::VfsError,
     },
+    #[error("artifact {path} outside {root}")]
+    OutsideRoot { path: String, root: String },
 }
 
 impl Tool for FsAbsent {
@@ -86,6 +88,14 @@ impl Tool for FsAbsent {
                 path: args.path.clone(),
                 source,
             })?;
+
+        if !path.as_str().starts_with(self.root.as_str()) {
+            return Err(FsAbsentError::OutsideRoot {
+                path: path.as_str().into(),
+                root: self.root.as_str().into(),
+            });
+        }
+
         let exists = path.exists().map_err(|source| FsAbsentError::Exists {
             path: args.path.clone(),
             source,
@@ -178,5 +188,26 @@ mod tests {
         let result = tool.call(args("design.md", "*Draft")).await.unwrap();
 
         assert_eq!(result, "cleared");
+    }
+
+    #[tokio::test]
+    async fn path_is_rejected_if_outside_root() {
+        let fs = mem_fs! {
+            "root": {
+                "file": "contents"
+            }
+        };
+
+        let scoped_root = fs.join("root").unwrap();
+        let tool = FsAbsent::new(scoped_root);
+
+        let result = tool.call(args("../design.md", "*Draft")).await;
+
+        assert!(result.is_err());
+        let Err(FsAbsentError::OutsideRoot { path, root }) = result else {
+            panic!("unexpected Err variant")
+        };
+        assert_eq!(path, String::from("/design.md"));
+        assert_eq!(root, String::from("/root"));
     }
 }
