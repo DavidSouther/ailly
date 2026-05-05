@@ -8,7 +8,9 @@ use vfs::VfsPath;
 use crate::content::{
     AssistantResponse, ContentError, ContentMeta, Conversation, ConversationTurn,
 };
-use crate::engine::{Engine, EngineEvent, EngineInput, Generator, Settings, StopReason, TurnEvent};
+use crate::engine::{
+    Engine, EngineEvent, EngineInput, Generator, Settings, StopReason, ToolRegistry, TurnEvent,
+};
 use crate::workflow::schema::{TaskAction, Workflow, WorkflowError};
 use crate::workflow::state::{HistoryEntry, WorkflowState};
 use crate::workflow::template::{self, Context, UnresolvedPlaceholder};
@@ -49,6 +51,15 @@ pub enum WorkflowStopReason {
         error: Arc<anyhow::Error>,
     },
     Cancelled,
+    /// The most recent evaluation returned the reserved string `"paused"`.
+    /// State is persisted with `task` at the head of the queue, ready to
+    /// resume on the next run. The reserved-word check precedes the `next`
+    /// lookup, so a workflow author who declares `next.paused = "..."` is
+    /// overridden.
+    Paused {
+        task: String,
+        result: String,
+    },
 }
 
 pub struct Runtime {
@@ -56,6 +67,7 @@ pub struct Runtime {
     state: WorkflowState,
     conversation_root: VfsPath,
     engine: Arc<dyn Engine>,
+    tool_registry: Arc<dyn ToolRegistry>,
     settings: Settings,
     cancel: CancellationToken,
 }
@@ -80,6 +92,7 @@ impl Runtime {
         state: WorkflowState,
         conversation_root: VfsPath,
         engine: Arc<dyn Engine>,
+        tool_registry: Arc<dyn ToolRegistry>,
         settings: Settings,
     ) -> Result<Self, WorkflowError> {
         validate_inputs(&workflow, &state)?;
@@ -88,6 +101,7 @@ impl Runtime {
             state,
             conversation_root,
             engine,
+            tool_registry,
             settings,
             cancel: CancellationToken::new(),
         })
@@ -104,6 +118,7 @@ impl Runtime {
                 mut state,
                 conversation_root,
                 engine,
+                tool_registry,
                 settings,
                 cancel,
             } = self;
@@ -148,86 +163,116 @@ impl Runtime {
                 resolve_context_seed(&mut state);
                 let ctx = build_template_context(&state);
 
-                let TaskAction::Prompt { text: main_prompt } = &task.task;
-                let rendered_prompt = match template::substitute(main_prompt, &ctx) {
-                    Ok(text) => text,
-                    Err(UnresolvedPlaceholder { placeholder }) => {
-                        requeue_and_persist(&mut state, &conversation_root, &task_name);
-                        yield WorkflowEvent::WorkflowFinished {
-                            reason: task_failed(
-                                &task_name,
-                                WorkflowError::UnresolvedTemplate {
-                                    task: task_name.clone(),
-                                    placeholder,
-                                },
-                            ),
-                        };
-                        return;
-                    }
-                };
+                let resumed = find_resumable_turn(&state, &conversation_root, &task_name).await;
 
-                let turn_path = match synthesize_turn_file(
-                    &conversation_root,
-                    &task.name,
-                    &task.name,
-                    &task.skills,
-                    &rendered_prompt,
-                )
-                .await
-                {
-                    Ok(p) => p,
-                    Err(error) => {
-                        requeue_and_persist(&mut state, &conversation_root, &task_name);
-                        yield WorkflowEvent::WorkflowFinished {
-                            reason: task_failed(&task_name, error),
-                        };
-                        return;
-                    }
-                };
-
-                yield WorkflowEvent::TaskStarted {
-                    name: task_name.clone(),
-                    turn: turn_path.clone(),
-                };
-
-                let convo = match Conversation::single_turn(turn_path.clone()).await {
-                    Ok(c) => c,
-                    Err(error) => {
-                        requeue_and_persist(&mut state, &conversation_root, &task_name);
-                        yield WorkflowEvent::WorkflowFinished {
-                            reason: task_failed(&task_name, error),
-                        };
-                        return;
-                    }
-                };
-
-                let generator = Generator::new(convo, engine.clone(), settings.clone());
-                let mut events = generator.run();
+                let turn_path: VfsPath;
                 let mut last_stop_reason: Option<StopReason> = None;
-                let mut failure: Option<Arc<anyhow::Error>> = None;
+                let mut resumed_stop_str: Option<String> = None;
 
-                while let Some(ev) = events.next().await {
-                    match &ev {
-                        TurnEvent::Failed { error, .. } => {
-                            failure = Some(error.clone());
-                        }
-                        TurnEvent::Finished { stop_reason, .. } => {
-                            last_stop_reason = Some(stop_reason.clone());
-                        }
-                        _ => {}
-                    }
-                    yield WorkflowEvent::TaskTurn(ev);
-                }
+                if let Some((path, recorded_stop)) = resumed {
+                    turn_path = path;
+                    resumed_stop_str = recorded_stop;
 
-                if let Some(error) = failure {
-                    requeue_and_persist(&mut state, &conversation_root, &task_name);
-                    yield WorkflowEvent::WorkflowFinished {
-                        reason: WorkflowStopReason::TaskFailed {
-                            task: task_name,
-                            error,
-                        },
+                    yield WorkflowEvent::TaskStarted {
+                        name: task_name.clone(),
+                        turn: turn_path.clone(),
                     };
-                    return;
+                } else {
+                    let main_prompt = match &task.task {
+                        TaskAction::Prompt { text } => text,
+                        TaskAction::ToolCall { .. } => {
+                            requeue_and_persist(&mut state, &conversation_root, &task_name);
+                            yield WorkflowEvent::WorkflowFinished {
+                                reason: task_failed(
+                                    &task_name,
+                                    WorkflowError::ToolCallTaskNotImplemented {
+                                        task: task_name.clone(),
+                                    },
+                                ),
+                            };
+                            return;
+                        }
+                    };
+                    let rendered_prompt = match template::substitute(main_prompt, &ctx) {
+                        Ok(text) => text,
+                        Err(UnresolvedPlaceholder { placeholder }) => {
+                            requeue_and_persist(&mut state, &conversation_root, &task_name);
+                            yield WorkflowEvent::WorkflowFinished {
+                                reason: task_failed(
+                                    &task_name,
+                                    WorkflowError::UnresolvedTemplate {
+                                        task: task_name.clone(),
+                                        placeholder,
+                                    },
+                                ),
+                            };
+                            return;
+                        }
+                    };
+
+                    turn_path = match synthesize_turn_file(
+                        &conversation_root,
+                        &task.name,
+                        &task.name,
+                        &task.skills,
+                        &rendered_prompt,
+                    )
+                    .await
+                    {
+                        Ok(p) => p,
+                        Err(error) => {
+                            requeue_and_persist(&mut state, &conversation_root, &task_name);
+                            yield WorkflowEvent::WorkflowFinished {
+                                reason: task_failed(&task_name, error),
+                            };
+                            return;
+                        }
+                    };
+
+                    yield WorkflowEvent::TaskStarted {
+                        name: task_name.clone(),
+                        turn: turn_path.clone(),
+                    };
+
+                    let convo = match Conversation::single_turn(turn_path.clone()).await {
+                        Ok(c) => c,
+                        Err(error) => {
+                            requeue_and_persist(&mut state, &conversation_root, &task_name);
+                            yield WorkflowEvent::WorkflowFinished {
+                                reason: task_failed(&task_name, error),
+                            };
+                            return;
+                        }
+                    };
+
+                    let generator = Generator::new(convo, engine.clone(), settings.clone())
+                        .with_registry(tool_registry.clone());
+                    let mut events = generator.run();
+                    let mut failure: Option<Arc<anyhow::Error>> = None;
+
+                    while let Some(ev) = events.next().await {
+                        match &ev {
+                            TurnEvent::Failed { error, .. } => {
+                                failure = Some(error.clone());
+                            }
+                            TurnEvent::Finished { stop_reason, .. } => {
+                                last_stop_reason = Some(stop_reason.clone());
+                            }
+                            _ => {}
+                        }
+                        yield WorkflowEvent::TaskTurn(ev);
+                    }
+
+                    if let Some(error) = failure {
+                        requeue_and_persist(&mut state, &conversation_root, &task_name);
+                        yield WorkflowEvent::WorkflowFinished {
+                            reason: WorkflowStopReason::TaskFailed {
+                                task: task_name,
+                                error,
+                            },
+                        };
+                        return;
+                    }
                 }
 
                 let eval_result: String;
@@ -361,18 +406,128 @@ impl Runtime {
                         Some(t) => t.trim().to_string(),
                         None => "error".to_string(),
                     };
+                } else if let Some(TaskAction::ToolCall {
+                    tool: tool_name,
+                    args: tool_args,
+                }) = &task.evaluation
+                {
+                    let mut substituted = tool_args.clone();
+                    if let Err(UnresolvedPlaceholder { placeholder }) =
+                        template::substitute_value(&mut substituted, &ctx)
+                    {
+                        requeue_and_persist(&mut state, &conversation_root, &task_name);
+                        yield WorkflowEvent::WorkflowFinished {
+                            reason: task_failed(
+                                &task_name,
+                                WorkflowError::UnresolvedTemplate {
+                                    task: task_name.clone(),
+                                    placeholder,
+                                },
+                            ),
+                        };
+                        return;
+                    }
+                    let tool = match tool_registry.resolve(tool_name) {
+                        Some(t) => t,
+                        None => {
+                            requeue_and_persist(&mut state, &conversation_root, &task_name);
+                            yield WorkflowEvent::WorkflowFinished {
+                                reason: task_failed(
+                                    &task_name,
+                                    WorkflowError::UnknownEvalTool {
+                                        task: task_name.clone(),
+                                        tool: tool_name.clone(),
+                                    },
+                                ),
+                            };
+                            return;
+                        }
+                    };
+                    let json_value = match serde_json::to_value(&substituted) {
+                        Ok(v) => v,
+                        Err(source) => {
+                            requeue_and_persist(&mut state, &conversation_root, &task_name);
+                            yield WorkflowEvent::WorkflowFinished {
+                                reason: task_failed(
+                                    &task_name,
+                                    WorkflowError::EvalArgsEncode {
+                                        task: task_name.clone(),
+                                        tool: tool_name.clone(),
+                                        source,
+                                    },
+                                ),
+                            };
+                            return;
+                        }
+                    };
+                    let args_str = match serde_json::to_string(&json_value) {
+                        Ok(s) => s,
+                        Err(source) => {
+                            requeue_and_persist(&mut state, &conversation_root, &task_name);
+                            yield WorkflowEvent::WorkflowFinished {
+                                reason: task_failed(
+                                    &task_name,
+                                    WorkflowError::EvalArgsEncode {
+                                        task: task_name.clone(),
+                                        tool: tool_name.clone(),
+                                        source,
+                                    },
+                                ),
+                            };
+                            return;
+                        }
+                    };
+                    eval_result = match tool.call(args_str).await {
+                        Ok(s) => s.trim().to_string(),
+                        Err(err) => {
+                            let arc_err = Arc::new(anyhow::Error::new(err));
+                            requeue_and_persist(&mut state, &conversation_root, &task_name);
+                            yield WorkflowEvent::WorkflowFinished {
+                                reason: WorkflowStopReason::TaskFailed {
+                                    task: task_name,
+                                    error: arc_err,
+                                },
+                            };
+                            return;
+                        }
+                    };
                 } else {
-                    eval_result = last_stop_reason
-                        .as_ref()
-                        .map(StopReason::to_string)
-                        .unwrap_or_else(|| "error".to_string());
+                    eval_result = if let Some(s) = resumed_stop_str.clone() {
+                        s
+                    } else {
+                        last_stop_reason
+                            .as_ref()
+                            .map(StopReason::to_string)
+                            .unwrap_or_else(|| "error".to_string())
+                    };
                 }
 
-                state.history.push(HistoryEntry {
-                    task: task_name.clone(),
-                    turn: turn_path.filename(),
-                    result: eval_result.clone(),
-                });
+                let turn_filename = turn_path.filename();
+
+                if eval_result == "paused" {
+                    record_history_entry(
+                        &mut state.history,
+                        &task_name,
+                        &turn_filename,
+                        &eval_result,
+                    );
+                    state.last_result = Some(eval_result.clone());
+                    requeue_and_persist(&mut state, &conversation_root, &task_name);
+                    yield WorkflowEvent::WorkflowFinished {
+                        reason: WorkflowStopReason::Paused {
+                            task: task_name,
+                            result: eval_result,
+                        },
+                    };
+                    return;
+                }
+
+                record_history_entry(
+                    &mut state.history,
+                    &task_name,
+                    &turn_filename,
+                    &eval_result,
+                );
                 state.last_result = Some(eval_result.clone());
 
                 let next_in_map = task.next.get(&eval_result).cloned();
@@ -417,15 +572,17 @@ impl Runtime {
 /// reading the clock.
 fn resolve_context_seed(state: &mut WorkflowState) {
     if state.context_seed.today.is_none() {
-        let today = chrono::Local::now().date_naive().format("%Y-%m-%d").to_string();
+        let today = chrono::Local::now()
+            .date_naive()
+            .format("%Y-%m-%d")
+            .to_string();
         state.context_seed.today = Some(today);
     }
     if state.context_seed.session_dir.is_none()
         && let Some(today) = state.context_seed.today.as_deref()
         && let Some(topic) = state.inputs.get("topic")
     {
-        state.context_seed.session_dir =
-            Some(format!("docs/developer/{today}-A-{topic}"));
+        state.context_seed.session_dir = Some(format!("docs/developer/{today}-A-{topic}"));
     }
 }
 
@@ -496,6 +653,52 @@ fn requeue_and_persist(state: &mut WorkflowState, root: &VfsPath, task_name: &st
     let _ = state.write(root);
 }
 
+/// Push a history entry, or replace the most recent matching one when its
+/// `(task, turn)` already names this turn file. Keeps `state.history`
+/// 1:1 with turn files in a single complete run, while still recording
+/// the eval-result transitions across pauses.
+fn record_history_entry(
+    history: &mut Vec<HistoryEntry>,
+    task_name: &str,
+    turn_filename: &str,
+    eval_result: &str,
+) {
+    if let Some(existing) = history
+        .iter_mut()
+        .rev()
+        .find(|h| h.task == task_name && h.turn == turn_filename)
+    {
+        existing.result = eval_result.to_string();
+        return;
+    }
+    history.push(HistoryEntry {
+        task: task_name.to_string(),
+        turn: turn_filename.to_string(),
+        result: eval_result.to_string(),
+    });
+}
+
+/// Walk `state.history` in reverse for the most recent entry naming
+/// `task_name`. When the entry's referenced turn file already carries a
+/// recorded `[[response]]`, return its path along with the recorded
+/// `stop_reason` (or `None` when the response did not carry one). The
+/// runtime uses this to skip prompt synthesis and re-running the engine
+/// across a workflow resume.
+async fn find_resumable_turn(
+    state: &WorkflowState,
+    root: &VfsPath,
+    task_name: &str,
+) -> Option<(VfsPath, Option<String>)> {
+    let entry = state.history.iter().rev().find(|h| h.task == task_name)?;
+    let path = root.join(&entry.turn).ok()?;
+    if !path.exists().ok().unwrap_or(false) {
+        return None;
+    }
+    let convo = Conversation::single_turn(path.clone()).await.ok()?;
+    let recorded = convo.turn(0).recorded_response()?;
+    Some((path, recorded.stop_reason.clone()))
+}
+
 async fn synthesize_turn_file(
     root: &VfsPath,
     suffix: &str,
@@ -560,7 +763,11 @@ fn find_next_n(root: &VfsPath) -> Result<u32, ContentError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::engine::Noop;
+    use crate::engine::{EmptyRegistry, Noop};
+
+    fn empty_registry() -> Arc<dyn ToolRegistry> {
+        Arc::new(EmptyRegistry)
+    }
     use crate::mem_fs;
     use crate::workflow::schema::{Task, TaskAction, Workflow};
     use crate::workflow::state::WorkflowState;
@@ -600,6 +807,7 @@ mod tests {
             state,
             root.clone(),
             Arc::new(Noop::default()),
+            empty_registry(),
             Settings::default(),
         )
         .unwrap();
@@ -668,6 +876,7 @@ mod tests {
             state,
             root.clone(),
             Arc::new(Noop::default()),
+            empty_registry(),
             Settings::default(),
         )
         .unwrap();
@@ -728,6 +937,7 @@ mod tests {
             state,
             root.clone(),
             Arc::new(Noop::default()),
+            empty_registry(),
             Settings::default(),
         )
         .unwrap();
@@ -774,6 +984,7 @@ mod tests {
             state,
             root.clone(),
             Arc::new(noop_with("approved")),
+            empty_registry(),
             Settings::default(),
         )
         .unwrap();
@@ -860,6 +1071,7 @@ mod tests {
             state,
             root.clone(),
             Arc::new(noop_with("rejected")),
+            empty_registry(),
             Settings::default(),
         )
         .unwrap();
@@ -885,7 +1097,6 @@ mod tests {
             "eval file missing recorded response: {eval_text}"
         );
     }
-
 
     #[test]
     fn malformed_input_pattern_surfaces_as_input_pattern_mismatch() {
@@ -921,6 +1132,7 @@ mod tests {
             state,
             root,
             Arc::new(Noop::default()),
+            empty_registry(),
             Settings::default(),
         )
         .expect_err("malformed pattern must reject construction");
@@ -992,6 +1204,7 @@ mod tests {
             state,
             root.clone(),
             Arc::new(Noop::default()),
+            empty_registry(),
             Settings::default(),
         )
         .expect("inputs validate");
@@ -1036,6 +1249,7 @@ mod tests {
             state2,
             root2,
             Arc::new(Noop::default()),
+            empty_registry(),
             Settings::default(),
         )
         .expect("construction OK; substitution runs at dispatch");
@@ -1064,6 +1278,7 @@ mod tests {
             bad_inputs,
             root.clone(),
             Arc::new(Noop::default()),
+            empty_registry(),
             Settings::default(),
         )
         .expect_err("pattern mismatch must reject construction");
@@ -1077,13 +1292,14 @@ mod tests {
             empty,
             root,
             Arc::new(Noop::default()),
+            empty_registry(),
             Settings::default(),
         )
         .expect_err("missing required input must reject construction");
         let msg2 = format!("{err2:#}");
         assert!(msg2.contains("topic"), "{msg2}");
     }
-    
+
     #[tokio::test]
     async fn task_skills_propagate_into_synthesized_turn_toml_in_declared_order() {
         use crate::content::Conversation;
@@ -1126,8 +1342,10 @@ mod tests {
             state,
             root.clone(),
             Arc::new(Noop::default()),
+            empty_registry(),
             Settings::default(),
-        ).unwrap();
+        )
+        .unwrap();
         let _: Vec<WorkflowEvent> = runtime.run().collect().await;
 
         let design_name = root
@@ -1174,5 +1392,684 @@ mod tests {
             !bare_text.contains("skills ="),
             "empty skills slice must omit the field: {bare_text}"
         );
+    }
+
+    fn fs_absent_args(path: &str, needle: &str) -> toml::Value {
+        let mut t = toml::value::Table::new();
+        t.insert("path".to_string(), toml::Value::String(path.to_string()));
+        t.insert(
+            "needle".to_string(),
+            toml::Value::String(needle.to_string()),
+        );
+        toml::Value::Table(t)
+    }
+
+    fn registry_with_fs_absent(root: &VfsPath) -> Arc<dyn ToolRegistry> {
+        use crate::engine::HashMapRegistry;
+        use crate::tools::FsAbsent;
+        let mut registry = HashMapRegistry::default();
+        registry.insert(FsAbsent::NAME, Arc::new(FsAbsent::new(root.clone())));
+        Arc::new(registry)
+    }
+
+    #[tokio::test]
+    async fn tool_call_eval_paused_yields_paused_stop_reason_and_requeues_task() {
+        let fs = mem_fs! {
+            "root": {
+                "design.md": "# Design\n\n*Draft 2026-05-04*\n\nbody\n",
+            }
+        };
+        let root = fs.join("root").unwrap();
+
+        let mut first = task("first", "First task.", &[("cleared", "second")]);
+        first.evaluation = Some(TaskAction::ToolCall {
+            tool: "fs.absent".to_string(),
+            args: fs_absent_args("design.md", "*Draft"),
+        });
+        let workflow = Workflow {
+            name: "paused".to_string(),
+            start: "first".to_string(),
+            inputs: BTreeMap::new(),
+            tasks: vec![first, task("second", "Second.", &[])],
+        };
+        let state = WorkflowState::initial(&workflow);
+
+        let runtime = Runtime::new(
+            workflow,
+            state,
+            root.clone(),
+            Arc::new(Noop::default()),
+            registry_with_fs_absent(&root),
+            Settings::default(),
+        )
+        .unwrap();
+        let events: Vec<WorkflowEvent> = runtime.run().collect().await;
+
+        match events.last().unwrap() {
+            WorkflowEvent::WorkflowFinished {
+                reason: WorkflowStopReason::Paused { task, result },
+            } => {
+                assert_eq!(task, "first");
+                assert_eq!(result, "paused");
+            }
+            other => panic!("expected Paused, got {other:?}"),
+        }
+
+        let reloaded = WorkflowState::read(&root).unwrap().expect("state written");
+        assert_eq!(reloaded.queue.front().map(String::as_str), Some("first"));
+        assert!(
+            reloaded
+                .history
+                .iter()
+                .any(|h| h.task == "first" && h.result == "paused"),
+            "history must record the pause: {:?}",
+            reloaded.history
+        );
+    }
+
+    #[tokio::test]
+    async fn tool_call_eval_cleared_routes_via_next() {
+        let fs = mem_fs! {
+            "root": {
+                "design.md": "# Design\n\nbody\n",
+            }
+        };
+        let root = fs.join("root").unwrap();
+
+        let mut first = task("first", "First.", &[("cleared", "second")]);
+        first.evaluation = Some(TaskAction::ToolCall {
+            tool: "fs.absent".to_string(),
+            args: fs_absent_args("design.md", "*Draft"),
+        });
+        let workflow = Workflow {
+            name: "cleared".to_string(),
+            start: "first".to_string(),
+            inputs: BTreeMap::new(),
+            tasks: vec![first, task("second", "Second.", &[])],
+        };
+        let state = WorkflowState::initial(&workflow);
+
+        let runtime = Runtime::new(
+            workflow,
+            state,
+            root.clone(),
+            Arc::new(Noop::default()),
+            registry_with_fs_absent(&root),
+            Settings::default(),
+        )
+        .unwrap();
+        let events: Vec<WorkflowEvent> = runtime.run().collect().await;
+
+        assert!(matches!(
+            events.last().unwrap(),
+            WorkflowEvent::WorkflowFinished {
+                reason: WorkflowStopReason::Completed,
+            }
+        ));
+        let started: Vec<String> = events
+            .iter()
+            .filter_map(|e| match e {
+                WorkflowEvent::TaskStarted { name, .. } => Some(name.clone()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(started, vec!["first".to_string(), "second".to_string()]);
+    }
+
+    #[tokio::test]
+    async fn tool_call_eval_unknown_tool_yields_task_failed() {
+        let fs = mem_fs! { "root": {} };
+        let root = fs.join("root").unwrap();
+
+        let mut first = task("first", "First.", &[]);
+        first.evaluation = Some(TaskAction::ToolCall {
+            tool: "tool.does_not_exist".to_string(),
+            args: fs_absent_args("design.md", "*Draft"),
+        });
+        let workflow = Workflow {
+            name: "unknown_tool".to_string(),
+            start: "first".to_string(),
+            inputs: BTreeMap::new(),
+            tasks: vec![first],
+        };
+        let state = WorkflowState::initial(&workflow);
+
+        let runtime = Runtime::new(
+            workflow,
+            state,
+            root.clone(),
+            Arc::new(Noop::default()),
+            empty_registry(),
+            Settings::default(),
+        )
+        .unwrap();
+        let events: Vec<WorkflowEvent> = runtime.run().collect().await;
+
+        match events.last().unwrap() {
+            WorkflowEvent::WorkflowFinished {
+                reason: WorkflowStopReason::TaskFailed { task, error },
+            } => {
+                assert_eq!(task, "first");
+                let msg = format!("{error:#}");
+                assert!(
+                    msg.contains("tool.does_not_exist"),
+                    "error must name the missing tool: {msg}"
+                );
+            }
+            other => panic!("expected TaskFailed, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn next_paused_is_overridden_by_reserved_word() {
+        let fs = mem_fs! {
+            "root": {
+                "design.md": "# Design\n\n*Draft 2026-05-04*\n\nbody\n",
+            }
+        };
+        let root = fs.join("root").unwrap();
+
+        let mut first = task("first", "First.", &[]);
+        first.evaluation = Some(TaskAction::ToolCall {
+            tool: "fs.absent".to_string(),
+            args: fs_absent_args("design.md", "*Draft"),
+        });
+        first.next.insert("paused".to_string(), "skip".to_string());
+        let workflow = Workflow {
+            name: "reserved".to_string(),
+            start: "first".to_string(),
+            inputs: BTreeMap::new(),
+            tasks: vec![first, task("skip", "Should never run.", &[])],
+        };
+        let state = WorkflowState::initial(&workflow);
+
+        let runtime = Runtime::new(
+            workflow,
+            state,
+            root.clone(),
+            Arc::new(Noop::default()),
+            registry_with_fs_absent(&root),
+            Settings::default(),
+        )
+        .unwrap();
+        let events: Vec<WorkflowEvent> = runtime.run().collect().await;
+
+        match events.last().unwrap() {
+            WorkflowEvent::WorkflowFinished {
+                reason: WorkflowStopReason::Paused { task, .. },
+            } => assert_eq!(task, "first"),
+            other => panic!("expected Paused, got {other:?}"),
+        }
+
+        let reloaded = WorkflowState::read(&root).unwrap().expect("state written");
+        let queue: Vec<&str> = reloaded.queue.iter().map(String::as_str).collect();
+        assert_eq!(
+            queue,
+            vec!["first"],
+            "reserved-word halt must not push next.paused onto the queue: {:?}",
+            reloaded.queue
+        );
+    }
+
+    #[tokio::test]
+    async fn tool_call_eval_args_substitute_via_template_context() {
+        // Args carry {{ vars.path }}; the runtime renders it before
+        // dispatching the tool. The fixture's file is only readable when
+        // the placeholder resolves.
+        let fs = mem_fs! {
+            "root": {
+                "design.md": "# Design\n\nbody\n",
+            }
+        };
+        let root = fs.join("root").unwrap();
+
+        use crate::workflow::schema::InputSpec;
+        let mut inputs_spec = BTreeMap::new();
+        inputs_spec.insert(
+            "path".to_string(),
+            InputSpec {
+                description: "artifact path".to_string(),
+                required: true,
+                pattern: None,
+            },
+        );
+
+        let mut args_table = toml::value::Table::new();
+        args_table.insert(
+            "path".to_string(),
+            toml::Value::String("{{ vars.path }}".to_string()),
+        );
+        args_table.insert(
+            "needle".to_string(),
+            toml::Value::String("*Draft".to_string()),
+        );
+
+        let mut first = task("first", "First.", &[]);
+        first.evaluation = Some(TaskAction::ToolCall {
+            tool: "fs.absent".to_string(),
+            args: toml::Value::Table(args_table),
+        });
+        let workflow = Workflow {
+            name: "substituted".to_string(),
+            start: "first".to_string(),
+            inputs: inputs_spec,
+            tasks: vec![first],
+        };
+        let mut state = WorkflowState::initial(&workflow);
+        state
+            .inputs
+            .insert("path".to_string(), "design.md".to_string());
+
+        let runtime = Runtime::new(
+            workflow,
+            state,
+            root.clone(),
+            Arc::new(Noop::default()),
+            registry_with_fs_absent(&root),
+            Settings::default(),
+        )
+        .unwrap();
+        let events: Vec<WorkflowEvent> = runtime.run().collect().await;
+
+        assert!(matches!(
+            events.last().unwrap(),
+            WorkflowEvent::WorkflowFinished {
+                reason: WorkflowStopReason::Completed,
+            }
+        ));
+    }
+
+    fn write_file(root: &VfsPath, filename: &str, body: &str) -> VfsPath {
+        let path = root.join(filename).unwrap();
+        let mut writer = path.create_file().unwrap();
+        std::io::Write::write_all(&mut writer, body.as_bytes()).unwrap();
+        path
+    }
+
+    fn seed_turn_with_response(root: &VfsPath, filename: &str, body: &str) -> VfsPath {
+        write_file(root, filename, body)
+    }
+
+    #[tokio::test]
+    async fn resume_skips_prompt_when_history_names_a_recorded_turn_file() {
+        let fs = mem_fs! { "root": {} };
+        let root = fs.join("root").unwrap();
+
+        let pre_seeded = "prompt = \"original prompt\"\n\n[[response]]\nrole = \"assistant\"\ntext = \"recorded response\"\nstop_reason = \"end_turn\"\n";
+        let turn_path = seed_turn_with_response(&root, "01_only.toml", pre_seeded);
+
+        let workflow = Workflow {
+            name: "resumer".to_string(),
+            start: "only".to_string(),
+            inputs: BTreeMap::new(),
+            tasks: vec![task("only", "ignored on resume", &[])],
+        };
+        let mut state = WorkflowState::initial(&workflow);
+        state.history.push(HistoryEntry {
+            task: "only".to_string(),
+            turn: "01_only.toml".to_string(),
+            result: "paused".to_string(),
+        });
+
+        let runtime = Runtime::new(
+            workflow,
+            state,
+            root.clone(),
+            Arc::new(noop_with("DIFFERENT_RESPONSE")),
+            empty_registry(),
+            Settings::default(),
+        )
+        .unwrap();
+        let _: Vec<WorkflowEvent> = runtime.run().collect().await;
+
+        let after = turn_path.read_to_string().unwrap();
+        assert_eq!(
+            after, pre_seeded,
+            "resume must not rewrite the recorded turn file"
+        );
+    }
+
+    #[tokio::test]
+    async fn resume_proceeds_to_evaluation_using_recorded_stop_reason() {
+        let fs = mem_fs! { "root": {} };
+        let root = fs.join("root").unwrap();
+
+        let pre_seeded = "prompt = \"resumed\"\n\n[[response]]\nrole = \"assistant\"\ntext = \"hi\"\nstop_reason = \"end_turn\"\n";
+        seed_turn_with_response(&root, "01_first.toml", pre_seeded);
+
+        let workflow = Workflow {
+            name: "evald-resume".to_string(),
+            start: "first".to_string(),
+            inputs: BTreeMap::new(),
+            tasks: vec![
+                task("first", "ignored", &[("end_turn", "second")]),
+                task("second", "Second.", &[]),
+            ],
+        };
+        let mut state = WorkflowState::initial(&workflow);
+        state.history.push(HistoryEntry {
+            task: "first".to_string(),
+            turn: "01_first.toml".to_string(),
+            result: "paused".to_string(),
+        });
+
+        let runtime = Runtime::new(
+            workflow,
+            state,
+            root.clone(),
+            Arc::new(Noop::default()),
+            empty_registry(),
+            Settings::default(),
+        )
+        .unwrap();
+        let events: Vec<WorkflowEvent> = runtime.run().collect().await;
+
+        let started: Vec<String> = events
+            .iter()
+            .filter_map(|e| match e {
+                WorkflowEvent::TaskStarted { name, .. } => Some(name.clone()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(started, vec!["first".to_string(), "second".to_string()]);
+        assert!(matches!(
+            events.last().unwrap(),
+            WorkflowEvent::WorkflowFinished {
+                reason: WorkflowStopReason::Completed,
+            }
+        ));
+    }
+
+    #[tokio::test]
+    async fn resume_falls_through_to_fresh_prompt_when_recorded_turn_lacks_response() {
+        let fs = mem_fs! { "root": {} };
+        let root = fs.join("root").unwrap();
+
+        let pre_seeded = "prompt = \"stale\"\n";
+        seed_turn_with_response(&root, "01_first.toml", pre_seeded);
+
+        let workflow = Workflow {
+            name: "fresh-fallthrough".to_string(),
+            start: "first".to_string(),
+            inputs: BTreeMap::new(),
+            tasks: vec![task("first", "Fresh prompt.", &[])],
+        };
+        let mut state = WorkflowState::initial(&workflow);
+        state.history.push(HistoryEntry {
+            task: "first".to_string(),
+            turn: "01_first.toml".to_string(),
+            result: "paused".to_string(),
+        });
+
+        let runtime = Runtime::new(
+            workflow,
+            state,
+            root.clone(),
+            Arc::new(Noop::default()),
+            empty_registry(),
+            Settings::default(),
+        )
+        .unwrap();
+        let _: Vec<WorkflowEvent> = runtime.run().collect().await;
+
+        let entries: Vec<String> = root.read_dir().unwrap().map(|e| e.filename()).collect();
+        assert!(
+            entries.iter().any(|n| n.ends_with("_first.toml")),
+            "fresh first turn file expected: {entries:?}"
+        );
+        let synthesized_name = entries
+            .iter()
+            .find(|n| n.ends_with("_first.toml") && *n != "01_first.toml")
+            .expect("a freshly synthesized turn file distinct from the pre-seeded stale one");
+        let synthesized = root
+            .join(synthesized_name)
+            .unwrap()
+            .read_to_string()
+            .unwrap();
+        assert!(
+            synthesized.contains("Fresh prompt."),
+            "fresh turn must carry the rendered prompt: {synthesized}"
+        );
+        assert!(
+            synthesized.contains("[[response]]"),
+            "fresh turn must carry a recorded response: {synthesized}"
+        );
+    }
+
+    #[tokio::test]
+    async fn workflow_pauses_and_resumes_across_design_feature_test_and_plan() {
+        use crate::engine::{HashMapRegistry, ToolRegistry};
+        use crate::tools::FsAbsent;
+
+        let fs = mem_fs! {
+            "root": {
+                "design.md": "# Design\n\n*Draft 2026-05-04*\n\nbody\n",
+                "feature-test.md": "# FT\n\n*Draft 2026-05-04*\n\nbody\n",
+                "plan.md": "# Plan\n\n*Draft 2026-05-04*\n\nbody\n",
+            }
+        };
+        let root = fs.join("root").unwrap();
+
+        fn fs_absent_args(path: &str) -> toml::Value {
+            let mut t = toml::value::Table::new();
+            t.insert("path".to_string(), toml::Value::String(path.to_string()));
+            t.insert(
+                "needle".to_string(),
+                toml::Value::String("*Draft".to_string()),
+            );
+            toml::Value::Table(t)
+        }
+
+        fn gated(name: &str, skill: &str, artifact: &str, next: Option<&str>) -> Task {
+            let mut next_map = BTreeMap::new();
+            if let Some(n) = next {
+                next_map.insert("cleared".to_string(), n.to_string());
+            }
+            Task {
+                name: name.to_string(),
+                skills: vec![skill.to_string()],
+                task: TaskAction::Prompt {
+                    text: format!("Produce {artifact}."),
+                },
+                evaluation: Some(TaskAction::ToolCall {
+                    tool: "fs.absent".to_string(),
+                    args: fs_absent_args(artifact),
+                }),
+                next: next_map,
+            }
+        }
+
+        let workflow = Workflow {
+            name: "ailly-dev-cycle".to_string(),
+            start: "design".to_string(),
+            inputs: BTreeMap::new(),
+            tasks: vec![
+                gated(
+                    "design",
+                    "developer:design",
+                    "design.md",
+                    Some("feature_test"),
+                ),
+                gated(
+                    "feature_test",
+                    "developer:feature-test",
+                    "feature-test.md",
+                    Some("plan"),
+                ),
+                gated("plan", "developer:plan", "plan.md", None),
+            ],
+        };
+
+        let mut registry = HashMapRegistry::default();
+        registry.insert("fs.absent", Arc::new(FsAbsent::new(root.clone())));
+        let registry: Arc<dyn ToolRegistry> = Arc::new(registry);
+
+        async fn run_once(
+            workflow: &Workflow,
+            state: WorkflowState,
+            root: &VfsPath,
+            registry: Arc<dyn ToolRegistry>,
+        ) -> Vec<WorkflowEvent> {
+            let runtime = Runtime::new(
+                workflow.clone(),
+                state,
+                root.clone(),
+                Arc::new(Noop::default()),
+                registry,
+                Settings::default(),
+            )
+            .expect("construction OK");
+            runtime.run().collect().await
+        }
+
+        fn turn_file(root: &VfsPath, suffix: &str) -> VfsPath {
+            let name = root
+                .read_dir()
+                .unwrap()
+                .map(|e| e.filename())
+                .find(|n| n.ends_with(suffix))
+                .unwrap_or_else(|| panic!("turn file ending in {suffix} missing"));
+            root.join(&name).unwrap()
+        }
+
+        fn assert_paused_at(events: &[WorkflowEvent], task_name: &str) {
+            match events.last().unwrap() {
+                WorkflowEvent::WorkflowFinished {
+                    reason: WorkflowStopReason::Paused { task, result },
+                } => {
+                    assert_eq!(task, task_name, "expected pause at {task_name}");
+                    assert_eq!(result, "paused");
+                }
+                other => panic!("expected Paused at {task_name}, got {other:?}"),
+            }
+        }
+
+        fn assert_no_restart(events: &[WorkflowEvent], turn_path: &VfsPath) {
+            let started = events.iter().any(|e| {
+                matches!(
+                    e,
+                    WorkflowEvent::TaskTurn(TurnEvent::Started { path })
+                        if path.as_str() == turn_path.as_str()
+                )
+            });
+            assert!(
+                !started,
+                "resume must not re-emit Started for {}",
+                turn_path.as_str()
+            );
+        }
+
+        // Run 1: design pauses on its own draft marker.
+        let events = run_once(
+            &workflow,
+            WorkflowState::initial(&workflow),
+            &root,
+            registry.clone(),
+        )
+        .await;
+        assert_paused_at(&events, "design");
+
+        let design_turn = turn_file(&root, "_design.toml");
+        let design_before = design_turn.read_to_string().unwrap();
+        assert!(
+            design_before.contains("[[response]]"),
+            "design turn must carry a recorded response: {design_before}"
+        );
+
+        let state = WorkflowState::read(&root)
+            .unwrap()
+            .expect("state persisted");
+        assert_eq!(state.queue.front().map(String::as_str), Some("design"));
+        assert!(
+            state
+                .history
+                .iter()
+                .any(|h| h.task == "design" && h.result == "paused"),
+            "history must record the design pause: {:?}",
+            state.history
+        );
+
+        write_file(&root, "design.md", "# Design\n\nbody\n");
+
+        // Run 2: design resumes cleared, feature_test pauses.
+        let events = run_once(&workflow, state, &root, registry.clone()).await;
+        assert_no_restart(&events, &design_turn);
+        assert_eq!(
+            design_turn.read_to_string().unwrap(),
+            design_before,
+            "design turn file must be byte-identical across resume"
+        );
+        assert_paused_at(&events, "feature_test");
+
+        let ft_turn = turn_file(&root, "_feature_test.toml");
+        let ft_before = ft_turn.read_to_string().unwrap();
+
+        let state = WorkflowState::read(&root)
+            .unwrap()
+            .expect("state persisted");
+        assert_eq!(
+            state.queue.front().map(String::as_str),
+            Some("feature_test")
+        );
+
+        write_file(&root, "feature-test.md", "# FT\n\nbody\n");
+
+        // Run 3: feature_test resumes cleared, plan pauses.
+        let events = run_once(&workflow, state, &root, registry.clone()).await;
+        assert_no_restart(&events, &ft_turn);
+        assert_eq!(
+            ft_turn.read_to_string().unwrap(),
+            ft_before,
+            "feature_test turn file must be byte-identical across resume"
+        );
+        assert_paused_at(&events, "plan");
+
+        let plan_turn = turn_file(&root, "_plan.toml");
+        let plan_before = plan_turn.read_to_string().unwrap();
+
+        let state = WorkflowState::read(&root)
+            .unwrap()
+            .expect("state persisted");
+        assert_eq!(state.queue.front().map(String::as_str), Some("plan"));
+
+        write_file(&root, "plan.md", "# Plan\n\nbody\n");
+
+        // Run 4: plan resumes cleared, workflow completes.
+        let events = run_once(&workflow, state, &root, registry).await;
+        assert_no_restart(&events, &plan_turn);
+        assert_eq!(
+            plan_turn.read_to_string().unwrap(),
+            plan_before,
+            "plan turn file must be byte-identical across resume"
+        );
+        assert!(
+            matches!(
+                events.last().unwrap(),
+                WorkflowEvent::WorkflowFinished {
+                    reason: WorkflowStopReason::Completed,
+                }
+            ),
+            "expected Completed, got {:?}",
+            events.last()
+        );
+
+        let final_state = WorkflowState::read(&root)
+            .unwrap()
+            .expect("state persisted");
+        assert!(
+            final_state.queue.is_empty(),
+            "completed workflow has empty queue"
+        );
+        let stages_in_history: Vec<&str> = final_state
+            .history
+            .iter()
+            .map(|h| h.task.as_str())
+            .collect();
+        for stage in ["design", "feature_test", "plan"] {
+            assert!(
+                stages_in_history.contains(&stage),
+                "history must record {stage}; got {stages_in_history:?}"
+            );
+        }
     }
 }

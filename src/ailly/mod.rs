@@ -342,7 +342,16 @@ async fn run_workflow(cli: &Cli, engine: Arc<dyn Engine>, raw: &str) -> Result<(
         state.queue.push_back(workflow.start.clone());
     }
 
-    let runtime = Runtime::new(workflow, state, vfs_root, engine, Settings::default())?;
+    let tool_registry: std::sync::Arc<dyn crate::engine::ToolRegistry> =
+        std::sync::Arc::new(crate::engine::EmptyRegistry);
+    let runtime = Runtime::new(
+        workflow,
+        state,
+        vfs_root,
+        engine,
+        tool_registry,
+        Settings::default(),
+    )?;
     let mut events = runtime.run();
 
     let mut stdout = std::io::stdout().lock();
@@ -418,6 +427,10 @@ async fn run_workflow(cli: &Cli, engine: Arc<dyn Engine>, raw: &str) -> Result<(
                 WorkflowStopReason::Cancelled => {
                     log::info!("workflow cancelled");
                     return Err(RunError::Reported);
+                }
+                WorkflowStopReason::Paused { task, result } => {
+                    log::info!("workflow paused at {task:?} (result={result:?})");
+                    return Ok(());
                 }
             },
         }

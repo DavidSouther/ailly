@@ -358,6 +358,16 @@ impl ConversationTurn {
         &self.declared_skills
     }
 
+    /// The last recorded assistant response on this turn, or `None` when no
+    /// `[[response]]` block has been written yet. Used by callers to decide
+    /// whether a turn already carries a model reply (e.g. workflow resume).
+    pub fn recorded_response(&self) -> Option<&AssistantResponse> {
+        self.response.iter().rev().find_map(|m| match m {
+            TurnMessage::Assistant(r) => Some(r),
+            _ => None,
+        })
+    }
+
     /// Tool names resolved for this turn after walking the directory chain
     /// and applying any per-turn `tools`/`parent_tools` override.
     pub fn tool_names(&self) -> &[String] {

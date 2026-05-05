@@ -10,13 +10,24 @@ pub enum WorkflowError {
     UnresolvedTemplate { task: String, placeholder: String },
     #[error("workflow input {name:?} is required but the harness supplied no value")]
     MissingInput { name: String },
-    #[error(
-        "workflow input {name:?} value {value:?} does not match required pattern {pattern:?}"
-    )]
+    #[error("workflow input {name:?} value {value:?} does not match required pattern {pattern:?}")]
     InputPatternMismatch {
         name: String,
         value: String,
         pattern: String,
+    },
+    #[error(
+        "task {task:?} uses TaskAction::ToolCall, which is not yet supported as a `task` action (only as `evaluation`)"
+    )]
+    ToolCallTaskNotImplemented { task: String },
+    #[error("task {task:?} evaluation references unknown tool {tool:?}")]
+    UnknownEvalTool { task: String, tool: String },
+    #[error("task {task:?} evaluation tool {tool:?} could not encode args as JSON: {source}")]
+    EvalArgsEncode {
+        task: String,
+        tool: String,
+        #[source]
+        source: serde_json::Error,
     },
 }
 
@@ -54,6 +65,7 @@ pub struct Task {
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum TaskAction {
     Prompt { text: String },
+    ToolCall { tool: String, args: toml::Value },
 }
 
 impl Workflow {
@@ -124,6 +136,52 @@ text = "Produce design.md."
             !serialized.contains("skills ="),
             "empty skills must be omitted: {serialized}"
         );
+    }
+
+    #[test]
+    fn task_evaluation_tool_call_round_trips_through_toml() {
+        let toml_in = r#"name = "design"
+
+[task]
+kind = "prompt"
+text = "Produce design.md."
+
+[evaluation]
+kind = "tool_call"
+tool = "fs.absent"
+
+[evaluation.args]
+path = "design.md"
+needle = "*Draft"
+"#;
+        let task: Task = toml::from_str(toml_in).expect("parse");
+        match task.evaluation.as_ref().expect("evaluation present") {
+            TaskAction::ToolCall { tool, args } => {
+                assert_eq!(tool, "fs.absent");
+                let table = args.as_table().expect("args is a table");
+                assert_eq!(
+                    table.get("path").and_then(|v| v.as_str()),
+                    Some("design.md")
+                );
+                assert_eq!(table.get("needle").and_then(|v| v.as_str()), Some("*Draft"));
+            }
+            other => panic!("expected ToolCall, got {other:?}"),
+        }
+
+        let serialized = toml::to_string(&task).expect("serialize");
+        let reparsed: Task = toml::from_str(&serialized).expect("reparse");
+        match reparsed.evaluation.as_ref().expect("evaluation present") {
+            TaskAction::ToolCall { tool, args } => {
+                assert_eq!(tool, "fs.absent");
+                let table = args.as_table().expect("args is a table");
+                assert_eq!(
+                    table.get("path").and_then(|v| v.as_str()),
+                    Some("design.md")
+                );
+                assert_eq!(table.get("needle").and_then(|v| v.as_str()), Some("*Draft"));
+            }
+            other => panic!("expected ToolCall, got {other:?}"),
+        }
     }
 
     #[test]
