@@ -1,7 +1,5 @@
 # Feature Test 1: Workflow inputs and `{{ template }}` substitution
 
-*Draft 2026-05-04*
-
 ## User Story
 
 **Given** a workflow file declares `[inputs.topic]` with a kebab-case `pattern` and a non-required `[inputs.goal]`,
@@ -20,10 +18,10 @@ Cohort: parallel slice 1 of 3. Independent of slices 2 and 3. Slice 4 (pause and
 
 ## Acceptance Criteria
 
-- `Workflow::inputs: BTreeMap<String, InputSpec>` lands on the schema.
+- `Workflow::inputs: BTreeMap<String, InputSpec>` in the domain model.
 - `WorkflowState` persists `inputs: BTreeMap<String, String>` and `context_seed: { today: String, session_dir: String }`.
 - A `substitute(text: &str, ctx: &Context) -> Result<String, WorkflowError>` helper handles single-pass `{{ name }}` replacement against a flat string-keyed context, with `vars.<name>` populated from inputs and `today` plus `session_dir` derived per the design.
-- The same helper is exposed for `toml::Value` walks so slice 4 can apply it to ToolCall args without re-implementing the recursion.
+- The same helper is exposed for `toml::Value` so it can be reused as a helper API.
 - Substitution runs at task dispatch, not at workflow-load time.
 - `Pattern` and `MissingInput` validation runs at `Runtime::new` time, before any task dispatches.
 

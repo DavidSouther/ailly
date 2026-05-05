@@ -1,4 +1,4 @@
-use std::collections::VecDeque;
+use std::collections::{BTreeMap, VecDeque};
 
 use serde::{Deserialize, Serialize};
 use vfs::VfsPath;
@@ -60,8 +60,24 @@ pub enum WorkflowStateError {
 }
 
 #[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq, Eq)]
+pub struct ContextSeed {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub today: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session_dir: Option<String>,
+}
+
+fn is_default_context_seed(seed: &ContextSeed) -> bool {
+    seed.today.is_none() && seed.session_dir.is_none()
+}
+
+#[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq, Eq)]
 pub struct WorkflowState {
     pub workflow: String,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub inputs: BTreeMap<String, String>,
+    #[serde(default, skip_serializing_if = "is_default_context_seed")]
+    pub context_seed: ContextSeed,
     #[serde(default)]
     pub queue: VecDeque<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -82,6 +98,8 @@ impl WorkflowState {
     pub fn initial(workflow: &Workflow) -> Self {
         Self {
             workflow: workflow.name.clone(),
+            inputs: BTreeMap::new(),
+            context_seed: ContextSeed::default(),
             queue: VecDeque::from(vec![workflow.start.clone()]),
             last_result: None,
             history: Vec::new(),
@@ -157,6 +175,8 @@ mod tests {
     fn round_trips_state_with_history_and_empty_queue() {
         let original = WorkflowState {
             workflow: "basic".to_string(),
+            inputs: BTreeMap::new(),
+            context_seed: ContextSeed::default(),
             queue: VecDeque::new(),
             last_result: Some("end_turn".to_string()),
             history: vec![
@@ -213,6 +233,8 @@ mod tests {
 
         let mut state = WorkflowState {
             workflow: "basic".to_string(),
+            inputs: BTreeMap::new(),
+            context_seed: ContextSeed::default(),
             queue: VecDeque::new(),
             last_result: None,
             history: Vec::new(),

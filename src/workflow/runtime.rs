@@ -9,8 +9,9 @@ use crate::content::{
     AssistantResponse, ContentError, ContentMeta, Conversation, ConversationTurn,
 };
 use crate::engine::{Engine, EngineEvent, EngineInput, Generator, Settings, StopReason, TurnEvent};
-use crate::workflow::schema::{TaskAction, Workflow};
+use crate::workflow::schema::{TaskAction, Workflow, WorkflowError};
 use crate::workflow::state::{HistoryEntry, WorkflowState};
+use crate::workflow::template::{self, Context, UnresolvedPlaceholder};
 
 #[non_exhaustive]
 #[derive(Debug, Clone)]
@@ -59,6 +60,15 @@ pub struct Runtime {
     cancel: CancellationToken,
 }
 
+impl std::fmt::Debug for Runtime {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Runtime")
+            .field("workflow", &self.workflow.name)
+            .field("conversation_root", &self.conversation_root.as_str())
+            .finish_non_exhaustive()
+    }
+}
+
 impl Runtime {
     /// Build a Runtime ready to drive `workflow` against `engine`.
     ///
@@ -71,15 +81,16 @@ impl Runtime {
         conversation_root: VfsPath,
         engine: Arc<dyn Engine>,
         settings: Settings,
-    ) -> Self {
-        Self {
+    ) -> Result<Self, WorkflowError> {
+        validate_inputs(&workflow, &state)?;
+        Ok(Self {
             workflow,
             state,
             conversation_root,
             engine,
             settings,
             cancel: CancellationToken::new(),
-        }
+        })
     }
 
     pub fn cancel_token(&self) -> CancellationToken {
@@ -134,12 +145,32 @@ impl Runtime {
                     }
                 };
 
+                resolve_context_seed(&mut state);
+                let ctx = build_template_context(&state);
+
                 let TaskAction::Prompt { text: main_prompt } = &task.task;
+                let rendered_prompt = match template::substitute(main_prompt, &ctx) {
+                    Ok(text) => text,
+                    Err(UnresolvedPlaceholder { placeholder }) => {
+                        requeue_and_persist(&mut state, &conversation_root, &task_name);
+                        yield WorkflowEvent::WorkflowFinished {
+                            reason: task_failed(
+                                &task_name,
+                                WorkflowError::UnresolvedTemplate {
+                                    task: task_name.clone(),
+                                    placeholder,
+                                },
+                            ),
+                        };
+                        return;
+                    }
+                };
+
                 let turn_path = match synthesize_turn_file(
                     &conversation_root,
                     &task.name,
                     &task.name,
-                    main_prompt,
+                    &rendered_prompt,
                 )
                 .await
                 {
@@ -376,6 +407,78 @@ impl Runtime {
     }
 }
 
+/// Fill `state.context_seed` for the current run. Sets `today` to the local
+/// date in `YYYY-MM-DD` when absent, and derives `session_dir` as
+/// `docs/developer/{today}-A-{vars.topic}` when both `today` and
+/// `state.inputs["topic"]` are present. Idempotent: a pre-seeded
+/// `context_seed` is left untouched so a test can pin both fields without
+/// reading the clock.
+fn resolve_context_seed(state: &mut WorkflowState) {
+    if state.context_seed.today.is_none() {
+        let today = chrono::Local::now().date_naive().format("%Y-%m-%d").to_string();
+        state.context_seed.today = Some(today);
+    }
+    if state.context_seed.session_dir.is_none()
+        && let Some(today) = state.context_seed.today.as_deref()
+        && let Some(topic) = state.inputs.get("topic")
+    {
+        state.context_seed.session_dir =
+            Some(format!("docs/developer/{today}-A-{topic}"));
+    }
+}
+
+/// Build a substitution context populated from `state.inputs` (under
+/// `vars.<name>`) and the resolved `context_seed`.
+fn build_template_context(state: &WorkflowState) -> Context {
+    let mut ctx = Context::new();
+    for (name, value) in &state.inputs {
+        ctx.insert(format!("vars.{name}"), value.clone());
+    }
+    if let Some(today) = &state.context_seed.today {
+        ctx.insert("today", today.clone());
+    }
+    if let Some(session_dir) = &state.context_seed.session_dir {
+        ctx.insert("session_dir", session_dir.clone());
+    }
+    ctx
+}
+
+/// Validate `state.inputs` against `workflow.inputs`. Required inputs must be
+/// present; supplied inputs whose spec carries a `pattern` must match. A
+/// malformed regex in `pattern` surfaces as `InputPatternMismatch` with a
+/// diagnostic value so the workflow author sees which input's pattern is
+/// broken.
+fn validate_inputs(workflow: &Workflow, state: &WorkflowState) -> Result<(), WorkflowError> {
+    for (name, spec) in &workflow.inputs {
+        match state.inputs.get(name) {
+            None => {
+                if spec.required {
+                    return Err(WorkflowError::MissingInput { name: name.clone() });
+                }
+            }
+            Some(value) => {
+                if let Some(pattern) = &spec.pattern {
+                    let re = regex::Regex::new(pattern).map_err(|_| {
+                        WorkflowError::InputPatternMismatch {
+                            name: name.clone(),
+                            value: "<pattern compile error>".to_string(),
+                            pattern: pattern.clone(),
+                        }
+                    })?;
+                    if !re.is_match(value) {
+                        return Err(WorkflowError::InputPatternMismatch {
+                            name: name.clone(),
+                            value: value.clone(),
+                            pattern: pattern.clone(),
+                        });
+                    }
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
 /// Build a `TaskFailed` stop reason from any error.
 fn task_failed(task: &str, error: impl Into<anyhow::Error>) -> WorkflowStopReason {
     WorkflowStopReason::TaskFailed {
@@ -477,6 +580,7 @@ mod tests {
         let workflow = Workflow {
             name: "lone".to_string(),
             start: "only".to_string(),
+            inputs: BTreeMap::new(),
             tasks: vec![task("only", "Do it.", &[])],
         };
         let state = WorkflowState::initial(&workflow);
@@ -487,7 +591,8 @@ mod tests {
             root.clone(),
             Arc::new(Noop::default()),
             Settings::default(),
-        );
+        )
+        .unwrap();
         let events: Vec<WorkflowEvent> = runtime.run().collect().await;
 
         assert!(matches!(
@@ -540,6 +645,7 @@ mod tests {
         let workflow = Workflow {
             name: "basic".to_string(),
             start: "first".to_string(),
+            inputs: BTreeMap::new(),
             tasks: vec![
                 task("first", "First task.", &[("end_turn", "second")]),
                 task("second", "Second task.", &[]),
@@ -553,7 +659,8 @@ mod tests {
             root.clone(),
             Arc::new(Noop::default()),
             Settings::default(),
-        );
+        )
+        .unwrap();
         let events: Vec<WorkflowEvent> = runtime.run().collect().await;
 
         let started_names: Vec<String> = events
@@ -601,6 +708,7 @@ mod tests {
         let workflow = Workflow {
             name: "broken".to_string(),
             start: "nope".to_string(),
+            inputs: BTreeMap::new(),
             tasks: vec![task("only", "Do it.", &[])],
         };
         let state = WorkflowState::initial(&workflow);
@@ -611,7 +719,8 @@ mod tests {
             root.clone(),
             Arc::new(Noop::default()),
             Settings::default(),
-        );
+        )
+        .unwrap();
         let events: Vec<WorkflowEvent> = runtime.run().collect().await;
 
         match events.last().unwrap() {
@@ -645,6 +754,7 @@ mod tests {
         let workflow = Workflow {
             name: "evald".to_string(),
             start: "first".to_string(),
+            inputs: BTreeMap::new(),
             tasks: vec![first, second],
         };
         let state = WorkflowState::initial(&workflow);
@@ -655,7 +765,8 @@ mod tests {
             root.clone(),
             Arc::new(noop_with("approved")),
             Settings::default(),
-        );
+        )
+        .unwrap();
         let events: Vec<WorkflowEvent> = runtime.run().collect().await;
 
         let started_names: Vec<String> = events
@@ -729,6 +840,7 @@ mod tests {
         let workflow = Workflow {
             name: "evald".to_string(),
             start: "first".to_string(),
+            inputs: BTreeMap::new(),
             tasks: vec![first, second],
         };
         let state = WorkflowState::initial(&workflow);
@@ -739,7 +851,8 @@ mod tests {
             root.clone(),
             Arc::new(noop_with("rejected")),
             Settings::default(),
-        );
+        )
+        .unwrap();
         let events: Vec<WorkflowEvent> = runtime.run().collect().await;
 
         match events.last().unwrap() {
@@ -761,5 +874,202 @@ mod tests {
             eval_text.contains("[[response]]"),
             "eval file missing recorded response: {eval_text}"
         );
+    }
+
+    #[test]
+    fn malformed_input_pattern_surfaces_as_input_pattern_mismatch() {
+        use crate::workflow::schema::{InputSpec, Workflow};
+        use crate::workflow::state::WorkflowState;
+
+        let fs = mem_fs! { "root": {} };
+        let root = fs.join("root").unwrap();
+
+        let mut inputs = BTreeMap::new();
+        inputs.insert(
+            "topic".to_string(),
+            InputSpec {
+                description: "broken regex".to_string(),
+                required: true,
+                // Unclosed character class — fails to compile as a Regex.
+                pattern: Some("[".to_string()),
+            },
+        );
+        let workflow = Workflow {
+            name: "broken-pattern".to_string(),
+            start: "first".to_string(),
+            inputs,
+            tasks: vec![task("first", "noop", &[])],
+        };
+        let mut state = WorkflowState::initial(&workflow);
+        state
+            .inputs
+            .insert("topic".to_string(), "anything".to_string());
+
+        let err = Runtime::new(
+            workflow,
+            state,
+            root,
+            Arc::new(Noop::default()),
+            Settings::default(),
+        )
+        .expect_err("malformed pattern must reject construction");
+        match err {
+            WorkflowError::InputPatternMismatch {
+                name,
+                value,
+                pattern,
+            } => {
+                assert_eq!(name, "topic");
+                assert_eq!(pattern, "[");
+                assert!(
+                    value.contains("pattern compile error"),
+                    "value should signal compile failure: {value}"
+                );
+            }
+            other => panic!("expected InputPatternMismatch, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn workflow_inputs_substitute_into_prompt_text_and_validate_at_construction() {
+        use crate::workflow::schema::{InputSpec, Workflow};
+        use crate::workflow::state::WorkflowState;
+
+        // Happy path: substitution renders into the synthesized turn file.
+        let fs = mem_fs! { "root": {} };
+        let root = fs.join("root").unwrap();
+
+        let mut inputs = BTreeMap::new();
+        inputs.insert(
+            "topic".to_string(),
+            InputSpec {
+                description: "kebab-case slug".to_string(),
+                required: true,
+                pattern: Some("^[a-z][a-z0-9-]*$".to_string()),
+            },
+        );
+        inputs.insert(
+            "goal".to_string(),
+            InputSpec {
+                description: "what is being built".to_string(),
+                required: false,
+                pattern: None,
+            },
+        );
+
+        let workflow = Workflow {
+            name: "templated".to_string(),
+            start: "first".to_string(),
+            inputs: inputs.clone(),
+            tasks: vec![task(
+                "first",
+                "Build {{ session_dir }}/design.md for {{ vars.topic }} on {{ today }}: {{ vars.goal }}.",
+                &[],
+            )],
+        };
+
+        let mut state = WorkflowState::initial(&workflow);
+        state
+            .inputs
+            .insert("topic".to_string(), "dev-cycle-workflow".to_string());
+        state
+            .inputs
+            .insert("goal".to_string(), "ship pause-and-resume".to_string());
+
+        let runtime = Runtime::new(
+            workflow.clone(),
+            state,
+            root.clone(),
+            Arc::new(Noop::default()),
+            Settings::default(),
+        )
+        .expect("inputs validate");
+        let _: Vec<WorkflowEvent> = runtime.run().collect().await;
+
+        let turn_name = root
+            .read_dir()
+            .unwrap()
+            .map(|e| e.filename())
+            .find(|n| n.ends_with("_first.toml"))
+            .expect("turn file written");
+        let turn_text = root.join(&turn_name).unwrap().read_to_string().unwrap();
+        assert!(
+            !turn_text.contains("{{"),
+            "unsubstituted placeholder remains: {turn_text}"
+        );
+        assert!(
+            turn_text.contains("docs/developer/")
+                && turn_text.contains("-A-dev-cycle-workflow/design.md"),
+            "session_dir not rendered: {turn_text}"
+        );
+        assert!(
+            turn_text.contains("ship pause-and-resume"),
+            "goal not rendered: {turn_text}"
+        );
+
+        // Unresolved placeholder surfaces as TaskFailed.
+        let fs2 = mem_fs! { "root": {} };
+        let root2 = fs2.join("root").unwrap();
+        let workflow2 = Workflow {
+            name: "typo".to_string(),
+            start: "first".to_string(),
+            inputs: inputs.clone(),
+            tasks: vec![task("first", "{{ vars.tpic }}", &[])],
+        };
+        let mut state2 = WorkflowState::initial(&workflow2);
+        state2
+            .inputs
+            .insert("topic".to_string(), "dev-cycle-workflow".to_string());
+        let runtime2 = Runtime::new(
+            workflow2,
+            state2,
+            root2,
+            Arc::new(Noop::default()),
+            Settings::default(),
+        )
+        .expect("construction OK; substitution runs at dispatch");
+        let events2: Vec<WorkflowEvent> = runtime2.run().collect().await;
+        match events2.last().unwrap() {
+            WorkflowEvent::WorkflowFinished {
+                reason: WorkflowStopReason::TaskFailed { task, error },
+            } => {
+                assert_eq!(task, "first");
+                let msg = format!("{error:#}");
+                assert!(
+                    msg.contains("vars.tpic"),
+                    "error must name the unresolved placeholder: {msg}"
+                );
+            }
+            other => panic!("expected TaskFailed, got {other:?}"),
+        }
+
+        // Pattern violation halts at construction.
+        let mut bad_inputs = WorkflowState::initial(&workflow);
+        bad_inputs
+            .inputs
+            .insert("topic".to_string(), "Bad Slug".to_string());
+        let err = Runtime::new(
+            workflow.clone(),
+            bad_inputs,
+            root.clone(),
+            Arc::new(Noop::default()),
+            Settings::default(),
+        )
+        .expect_err("pattern mismatch must reject construction");
+        let msg = format!("{err:#}");
+        assert!(msg.contains("topic") && msg.contains("Bad Slug"), "{msg}");
+
+        // Missing required input halts at construction.
+        let empty = WorkflowState::initial(&workflow);
+        let err2 = Runtime::new(
+            workflow,
+            empty,
+            root,
+            Arc::new(Noop::default()),
+            Settings::default(),
+        )
+        .expect_err("missing required input must reject construction");
+        let msg2 = format!("{err2:#}");
+        assert!(msg2.contains("topic"), "{msg2}");
     }
 }

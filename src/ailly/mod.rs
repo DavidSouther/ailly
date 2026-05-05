@@ -342,7 +342,7 @@ async fn run_workflow(cli: &Cli, engine: Arc<dyn Engine>, raw: &str) -> Result<(
         state.queue.push_back(workflow.start.clone());
     }
 
-    let runtime = Runtime::new(workflow, state, vfs_root, engine, Settings::default());
+    let runtime = Runtime::new(workflow, state, vfs_root, engine, Settings::default())?;
     let mut events = runtime.run();
 
     let mut stdout = std::io::stdout().lock();
