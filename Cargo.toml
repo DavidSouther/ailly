@@ -27,6 +27,7 @@ toml = "1.1.2"
 vfs = { version = "0.13.0", features = ["tokio"] }
 serde_with = "3.19.0"
 regex = { version = "1.12.3", default-features = false, features = ["std", "unicode-perl"] }
+globset = "0.4.16"
 chrono = { version = "0.4.44", default-features = false, features = ["clock"] }
 
 [features]
@@ -53,3 +54,7 @@ path = "tests/knowledge/clarify_tool_round_trip.rs"
 [[test]]
 name = "permissions_gate_round_trip"
 path = "tests/permissions/gate_round_trip.rs"
+
+[[test]]
+name = "tools_vfs_round_trip"
+path = "tests/tools/vfs_round_trip.rs"

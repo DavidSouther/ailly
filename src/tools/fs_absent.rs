@@ -2,6 +2,8 @@ use rig::completion::ToolDefinition;
 use rig::tool::Tool;
 use vfs::VfsPath;
 
+use super::root::{ResolveError, resolve_under_root};
+
 pub struct FsAbsent {
     root: VfsPath,
 }
@@ -22,12 +24,8 @@ pub struct FsAbsentArgs {
 
 #[derive(Debug, thiserror::Error)]
 pub enum FsAbsentError {
-    #[error("resolving {path}")]
-    ResolvePath {
-        path: String,
-        #[source]
-        source: vfs::VfsError,
-    },
+    #[error(transparent)]
+    Resolve(#[from] ResolveError),
     #[error("checking existence of {path}")]
     Exists {
         path: String,
@@ -42,8 +40,6 @@ pub enum FsAbsentError {
         #[source]
         source: vfs::VfsError,
     },
-    #[error("artifact {path} outside {root}")]
-    OutsideRoot { path: String, root: String },
 }
 
 impl Tool for FsAbsent {
@@ -81,20 +77,7 @@ impl Tool for FsAbsent {
     }
 
     async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
-        let path = self
-            .root
-            .join(&args.path)
-            .map_err(|source| FsAbsentError::ResolvePath {
-                path: args.path.clone(),
-                source,
-            })?;
-
-        if !path.as_str().starts_with(self.root.as_str()) {
-            return Err(FsAbsentError::OutsideRoot {
-                path: path.as_str().into(),
-                root: self.root.as_str().into(),
-            });
-        }
+        let path = resolve_under_root(&self.root, &args.path)?;
 
         let exists = path.exists().map_err(|source| FsAbsentError::Exists {
             path: args.path.clone(),
@@ -204,7 +187,7 @@ mod tests {
         let result = tool.call(args("../design.md", "*Draft")).await;
 
         assert!(result.is_err());
-        let Err(FsAbsentError::OutsideRoot { path, root }) = result else {
+        let Err(FsAbsentError::Resolve(ResolveError::OutsideRoot { path, root })) = result else {
             panic!("unexpected Err variant")
         };
         assert_eq!(path, String::from("/design.md"));
