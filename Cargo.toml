@@ -7,39 +7,45 @@ edition = "2024"
 anyhow = "1.0.102"
 async-stream = "0.3.6"
 async-trait = "0.1.83"
+aws-config = { version = "1.8", optional = true }
+aws-credential-types = { version = "1.2", optional = true }
+aws-sdk-bedrockruntime = { version = "1.102", optional = true }
+chrono = { version = "0.4.44", default-features = false, features = ["clock"] }
 clap = { version = "4.6.1", features = ["derive", "env"] }
 dotenvy = "0.15.7"
 env_logger = "0.11.10"
 futures = "0.3.31"
+globset = "0.4.16"
 log = "0.4.29"
-aws-config = { version = "1.8", optional = true }
-aws-credential-types = { version = "1.2", optional = true }
-aws-sdk-bedrockruntime = { version = "1.102", optional = true }
+regex = { version = "1.12.3", default-features = false, features = ["std", "unicode-perl"] }
+reqwest = { version = "0.12", optional = true, default-features = false, features = ["rustls-tls", "http2", "charset", "gzip", "brotli", "stream"] }
 rig-bedrock = { version = "0.4.5", optional = true }
 rig-core = "0.36.0"
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.149"
+serde_with = "3.19.0"
 serde_yml = "0.0.12"
+shlex = "1.3.0"
 thiserror = "2.0.18"
 tokio = { version = "1.52.1", features = ["macros", "process", "rt-multi-thread"] }
 tokio-util = { version = "0.7.16", features = ["rt"] }
 toml = "1.1.2"
+url = { version = "2.5", optional = true }
 vfs = { version = "0.13.0", features = ["tokio"] }
-serde_with = "3.19.0"
-regex = { version = "1.12.3", default-features = false, features = ["std", "unicode-perl"] }
-globset = "0.4.16"
-chrono = { version = "0.4.44", default-features = false, features = ["clock"] }
-shlex = "1.3.0"
-globset = "0.4.16"
+websearch = { version = "0.1", optional = true }
+
+[dev-dependencies]
+mockito = "1.7"
 
 [features]
-default = []
+default = ["web"]
 bedrock = [
     "dep:rig-bedrock",
     "dep:aws-config",
     "dep:aws-credential-types",
     "dep:aws-sdk-bedrockruntime",
 ]
+web = ["dep:reqwest", "dep:websearch", "dep:url"]
 
 [[test]]
 name = "engine_simple_noop"
@@ -60,3 +66,7 @@ path = "tests/permissions/gate_round_trip.rs"
 [[test]]
 name = "tools_vfs_round_trip"
 path = "tests/tools/vfs_round_trip.rs"
+[[test]]
+name = "tools_web_round_trip"
+path = "tests/tools/web_round_trip.rs"
+required-features = ["web"]

@@ -7,6 +7,8 @@ mod fs_read;
 pub mod range;
 pub mod root;
 mod walk;
+#[cfg(feature = "web")]
+pub mod web;
 
 pub use bash::{Bash, BashArgs, BashClassifier, BashClassifierBuilder, BashError};
 pub use fs_absent::{FsAbsent, FsAbsentError};
