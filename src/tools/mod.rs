@@ -1,3 +1,4 @@
+mod bash;
 mod fs_absent;
 mod fs_edit;
 mod fs_grep;
@@ -7,6 +8,7 @@ pub mod range;
 pub mod root;
 mod walk;
 
+pub use bash::{Bash, BashArgs, BashClassifier, BashClassifierBuilder, BashError};
 pub use fs_absent::{FsAbsent, FsAbsentError};
 pub use fs_edit::{FsEdit, FsEditArgs, FsEditError};
 pub use fs_grep::{FsGrep, FsGrepArgs, FsGrepError};
