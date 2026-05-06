@@ -6,6 +6,13 @@ use rig::{
         UserContent,
     },
 };
+
+/// Re-exported so consumers of `Conversation` and `TurnMessage` can construct
+/// and pattern-match reasoning without depending on `rig::message` directly.
+/// Keeps the layering rule "engine knows rig, content does not reach across
+/// to engine" honest: content does not import from `crate::engine`, but it
+/// does carry rig vocabulary verbatim.
+pub use rig::message::{Reasoning, ReasoningContent};
 use serde::{Deserialize, Serialize};
 use vfs::{MemoryFS, VfsPath};
 
@@ -104,6 +111,9 @@ pub enum ContentError {
     #[error("non-text tool result at {path} cannot be serialized")]
     NonTextToolResult { path: String },
 
+    #[error("reasoning block kind at {path} is not represented by the on-disk schema")]
+    UnsupportedReasoningContent { path: String },
+
     #[error("NN width exceeded 99 in {path} (out of scope for first slice)")]
     NextNWidthExceeded { path: String },
 }
@@ -138,6 +148,12 @@ pub enum TurnMessage {
     System(String),
     ToolCall(ToolCall),
     ToolResult(ToolResult),
+    /// Recorded reasoning entry. Carried as a peer of `Assistant` and
+    /// `ToolCall` so insertion order survives across the disk round-trip
+    /// and the next turn's history assembly. `id == None` is meaningful:
+    /// rig keeps such entries in distinct slots, and the recorder must
+    /// preserve that distinction.
+    Reasoning(Reasoning),
 }
 
 impl From<TurnMessage> for rig::completion::Message {
@@ -157,6 +173,10 @@ impl From<TurnMessage> for rig::completion::Message {
             },
             TurnMessage::ToolResult(tool_result) => Message::User {
                 content: OneOrMany::one(UserContent::ToolResult(tool_result)),
+            },
+            TurnMessage::Reasoning(reasoning) => Message::Assistant {
+                id: None,
+                content: OneOrMany::one(AssistantContent::Reasoning(reasoning)),
             },
         }
     }
@@ -606,6 +626,19 @@ impl Conversation {
             .push(TurnMessage::ToolResult(result));
     }
 
+    /// Append a reasoning entry onto the response chain of turn `idx`.
+    /// Insertion order across `record_response`, `record_tool_call`,
+    /// `record_tool_result`, and `record_reasoning` is preserved on disk
+    /// and on history reload. Callers must invoke this before
+    /// `record_response` for the same turn so reasoning precedes the
+    /// assistant text in the rig content array.
+    pub fn record_reasoning(&mut self, idx: usize, reasoning: Reasoning) {
+        self.turns[idx]
+            .1
+            .response
+            .push(TurnMessage::Reasoning(reasoning));
+    }
+
     /// Append a synthetic user-prompt turn to the conversation.
     ///
     /// The new turn lives on an in-memory `VfsPath`, inheriting the
@@ -913,6 +946,9 @@ fn extend_with_response_run(out: &mut Vec<Message>, response: &[TurnMessage]) {
                 flush(&mut assistant_buf, out);
                 out.push(Message::system(text.clone()));
             }
+            TurnMessage::Reasoning(reasoning) => {
+                assistant_buf.push(AssistantContent::Reasoning(reasoning.clone()));
+            }
         }
     }
     flush(&mut assistant_buf, out);
@@ -972,6 +1008,41 @@ enum MessageFile {
         id: String,
         content: String,
     },
+    /// On-disk shape for one recorded reasoning entry. `id` is the
+    /// provider's reasoning slot key (Anthropic block id, OpenAI Responses
+    /// item id, etc.); skipped when absent. `blocks` preserves the in-rig
+    /// `Reasoning.content` order verbatim.
+    Reasoning {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        id: Option<String>,
+        blocks: Vec<ReasoningBlockFile>,
+    },
+}
+
+/// Parse-and-validate boundary for `ReasoningContent`. Round-trip is
+/// total: every `rig::message::ReasoningContent` variant maps 1:1 here,
+/// and every `ReasoningBlockFile` produces a valid `ReasoningContent`.
+/// Adding a new rig variant requires updating this enum and the two
+/// `From` arms; `#[non_exhaustive]` is NOT applied because the on-disk
+/// shape is the schema and total coverage must be a compile error, not
+/// a runtime one.
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+enum ReasoningBlockFile {
+    Text {
+        text: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        signature: Option<String>,
+    },
+    Encrypted {
+        data: String,
+    },
+    Redacted {
+        data: String,
+    },
+    Summary {
+        text: String,
+    },
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -1013,8 +1084,51 @@ impl From<MessageFile> for TurnMessage {
                     text: content,
                 })),
             }),
+            MessageFile::Reasoning { id, blocks } => {
+                let mut reasoning = Reasoning::new("").optional_id(id);
+                reasoning.content = blocks.into_iter().map(ReasoningContent::from).collect();
+                TurnMessage::Reasoning(reasoning)
+            }
         }
     }
+}
+
+impl From<ReasoningBlockFile> for ReasoningContent {
+    fn from(value: ReasoningBlockFile) -> Self {
+        match value {
+            ReasoningBlockFile::Text { text, signature } => {
+                ReasoningContent::Text { text, signature }
+            }
+            ReasoningBlockFile::Encrypted { data } => ReasoningContent::Encrypted(data),
+            ReasoningBlockFile::Redacted { data } => ReasoningContent::Redacted { data },
+            ReasoningBlockFile::Summary { text } => ReasoningContent::Summary(text),
+        }
+    }
+}
+
+/// Convert a rig `ReasoningContent` into its on-disk shape. Returns
+/// `Err(ContentError::UnsupportedReasoningContent)` if rig adds a new
+/// variant the on-disk schema does not yet model. The schema is total
+/// today; the wildcard arm exists only because the rig enum is
+/// `#[non_exhaustive]`.
+fn reasoning_content_to_file(
+    value: &ReasoningContent,
+    path: &str,
+) -> Result<ReasoningBlockFile, ContentError> {
+    Ok(match value {
+        ReasoningContent::Text { text, signature } => ReasoningBlockFile::Text {
+            text: text.clone(),
+            signature: signature.clone(),
+        },
+        ReasoningContent::Encrypted(data) => ReasoningBlockFile::Encrypted { data: data.clone() },
+        ReasoningContent::Redacted { data } => ReasoningBlockFile::Redacted { data: data.clone() },
+        ReasoningContent::Summary(text) => ReasoningBlockFile::Summary { text: text.clone() },
+        _ => {
+            return Err(ContentError::UnsupportedReasoningContent {
+                path: path.to_string(),
+            });
+        }
+    })
 }
 
 fn turn_message_to_file(value: &TurnMessage, path: &str) -> Result<MessageFile, ContentError> {
@@ -1048,6 +1162,17 @@ fn turn_message_to_file(value: &TurnMessage, path: &str) -> Result<MessageFile, 
             MessageFile::ToolResult {
                 id: result.id.clone(),
                 content: text,
+            }
+        }
+        TurnMessage::Reasoning(reasoning) => {
+            let blocks = reasoning
+                .content
+                .iter()
+                .map(|c| reasoning_content_to_file(c, path))
+                .collect::<Result<Vec<_>, _>>()?;
+            MessageFile::Reasoning {
+                id: reasoning.id.clone(),
+                blocks,
             }
         }
     })
@@ -2372,6 +2497,153 @@ text = "hi"
         assert!(after_first.contains(r#"role = "tool_result""#));
         assert!(after_first.contains(r#"name = "echo""#));
         assert!(after_first.contains(r#"id = "call_1""#));
+    }
+
+    #[tokio::test]
+    async fn messages_for_groups_reasoning_text_and_tool_call_into_single_assistant_message() {
+        use serde_json::json;
+
+        let fs = mem_fs! {
+            "root": {
+                "01.toml": r#"prompt = "ask""#,
+                "02.toml": r#"prompt = "next""#,
+            },
+        };
+        let first = fs.join("root/01.toml").unwrap();
+        let second = fs.join("root/02.toml").unwrap();
+
+        let mut convo = Conversation::from_paths(vec![first, second]).await.unwrap();
+
+        let mut reasoning = Reasoning::new_with_signature("thinking", Some("sig".to_string()))
+            .with_id("r1".to_string());
+        reasoning
+            .content
+            .push(ReasoningContent::Encrypted("enc".to_string()));
+
+        convo.turns[0].1.response = vec![
+            TurnMessage::Reasoning(reasoning.clone()),
+            TurnMessage::Assistant(AssistantResponse {
+                text: "answer".to_string(),
+                model: None,
+                engine: None,
+                stop_reason: None,
+                usage: None,
+            }),
+            TurnMessage::ToolCall(ToolCall::new(
+                "call_1".to_string(),
+                ToolFunction::new("echo".to_string(), json!({"text": "hi"})),
+            )),
+        ];
+
+        let history = convo.history_for(convo.turn(1));
+        let assistant = history
+            .iter()
+            .find(|m| matches!(m, Message::Assistant { .. }))
+            .expect("predecessor assistant message in turn-02 history");
+        let Message::Assistant { content, .. } = assistant else {
+            unreachable!()
+        };
+        let kinds: Vec<&'static str> = content
+            .iter()
+            .map(|c| match c {
+                AssistantContent::Reasoning(_) => "reasoning",
+                AssistantContent::Text(_) => "text",
+                AssistantContent::ToolCall(_) => "tool_call",
+                _ => "other",
+            })
+            .collect();
+        assert_eq!(
+            kinds,
+            vec!["reasoning", "text", "tool_call"],
+            "contiguous Reasoning, Assistant, ToolCall must collapse into one Assistant message whose content preserves insertion order"
+        );
+
+        let AssistantContent::Reasoning(rebuilt) = content
+            .iter()
+            .find(|c| matches!(c, AssistantContent::Reasoning(_)))
+            .unwrap()
+        else {
+            unreachable!()
+        };
+        assert_eq!(rebuilt.id.as_deref(), Some("r1"));
+        assert_eq!(rebuilt.content, reasoning.content);
+    }
+
+    #[tokio::test]
+    async fn write_then_load_round_trips_reasoning_with_all_four_block_variants() {
+        let fs = mem_fs! {
+        "root": { "01.toml": r#"prompt = "q""# } };
+        let path = fs.join("root/01.toml").unwrap();
+        let mut turn = ConversationTurn::load(
+            path.clone(),
+            ContentMeta::default(),
+            Vec::new(),
+            0,
+            Vec::new(),
+            Vec::new(),
+        )
+        .await
+        .unwrap();
+
+        let mut reasoning = Reasoning::new_with_signature("deeper", Some("sig-xyz".to_string()))
+            .with_id("r1".to_string());
+        reasoning
+            .content
+            .push(ReasoningContent::Encrypted("enc".to_string()));
+        reasoning.content.push(ReasoningContent::Redacted {
+            data: "red".to_string(),
+        });
+        reasoning
+            .content
+            .push(ReasoningContent::Summary("sum".to_string()));
+
+        turn.response = vec![TurnMessage::Reasoning(reasoning.clone())];
+        turn.write().await.unwrap();
+        let after_first = path.read_to_string().unwrap();
+
+        let turn = ConversationTurn::load(
+            path.clone(),
+            ContentMeta::default(),
+            Vec::new(),
+            0,
+            Vec::new(),
+            Vec::new(),
+        )
+        .await
+        .unwrap();
+        turn.write().await.unwrap();
+        let after_second = path.read_to_string().unwrap();
+
+        assert_eq!(
+            after_first, after_second,
+            "load-write cycle must be byte-stable across all four reasoning block variants",
+        );
+        assert!(after_first.contains(r#"role = "reasoning""#));
+        assert!(after_first.contains(r#"id = "r1""#));
+        for needle in [
+            r#"type = "text""#,
+            r#"type = "encrypted""#,
+            r#"type = "redacted""#,
+            r#"type = "summary""#,
+            "deeper",
+            "sig-xyz",
+            "enc",
+            "red",
+            "sum",
+        ] {
+            assert!(
+                after_first.contains(needle),
+                "expected {needle:?} in:\n{after_first}"
+            );
+        }
+
+        let loaded_response = &turn.response;
+        assert_eq!(loaded_response.len(), 1);
+        let TurnMessage::Reasoning(loaded) = &loaded_response[0] else {
+            panic!("expected Reasoning entry, got {:?}", loaded_response[0]);
+        };
+        assert_eq!(loaded.id.as_deref(), Some("r1"));
+        assert_eq!(loaded.content, reasoning.content);
     }
 
     #[tokio::test]

@@ -381,6 +381,10 @@ impl Runtime {
                                     result,
                                 });
                             }
+                            EngineEvent::Reasoning(_) | EngineEvent::ReasoningDelta { .. } => {
+                                // Workflow evaluator turns ignore reasoning events;
+                                // the generator path is the recorder for thinking.
+                            }
                             EngineEvent::Final(mut r) => {
                                 r.engine_name = engine.name().into();
                                 let response: AssistantResponse = (&r).into();

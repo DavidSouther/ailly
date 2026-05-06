@@ -56,6 +56,10 @@ name = "engine_tool_round_trip"
 path = "tests/engine/tool_round_trip.rs"
 
 [[test]]
+name = "engine_thinking_round_trip"
+path = "tests/engine/thinking_round_trip.rs"
+
+[[test]]
 name = "knowledge_clarify_tool_round_trip"
 path = "tests/knowledge/clarify_tool_round_trip.rs"
 

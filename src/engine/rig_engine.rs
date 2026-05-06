@@ -141,7 +141,22 @@ where
                     ))) => {
                         yield EngineEvent::ToolResult(tool_result);
                     }
-                    // ToolCallDelta, Reasoning, ReasoningDelta fall through.
+                    // Forward whole reasoning blocks. `Reasoning` is rig
+                    // vocabulary; the engine layer never reaches into
+                    // content::* to translate it.
+                    Some(Ok(MultiTurnStreamItem::StreamAssistantItem(
+                        StreamedAssistantContent::Reasoning(reasoning),
+                    ))) => {
+                        yield EngineEvent::Reasoning(reasoning);
+                    }
+                    // Forward reasoning deltas. The recorder is responsible
+                    // for the id-keyed merge; the engine is purely a forwarder.
+                    Some(Ok(MultiTurnStreamItem::StreamAssistantItem(
+                        StreamedAssistantContent::ReasoningDelta { id, reasoning },
+                    ))) => {
+                        yield EngineEvent::ReasoningDelta { id, text: reasoning };
+                    }
+                    // ToolCallDelta falls through.
                     Some(Ok(MultiTurnStreamItem::FinalResponse(final_response))) => {
                         usage = Some(Usage::from(final_response.usage()));
                         break StopReason::EndTurn;
@@ -378,9 +393,6 @@ mod tests {
         use std::sync::Arc;
         use std::sync::atomic::{AtomicUsize, Ordering};
 
-        #[derive(Clone)]
-        struct FakeModel;
-
         #[derive(Clone, Debug, Serialize, Deserialize)]
         struct FakeStreamingResponse;
 
@@ -393,13 +405,28 @@ mod tests {
             }
         }
 
-        impl CompletionModel for FakeModel {
+        /// `CompletionModel` impl that replays a fixed sequence of
+        /// `RawStreamingChoice` items on every `stream()` call. Use to
+        /// script one-shot scenarios; reach for `ScriptedToolModel`
+        /// instead when the script must vary per call.
+        #[derive(Clone)]
+        struct ScriptedFake {
+            items: Vec<RawStreamingChoice<FakeStreamingResponse>>,
+        }
+
+        impl ScriptedFake {
+            fn new(items: Vec<RawStreamingChoice<FakeStreamingResponse>>) -> Self {
+                Self { items }
+            }
+        }
+
+        impl CompletionModel for ScriptedFake {
             type Response = serde_json::Value;
             type StreamingResponse = FakeStreamingResponse;
             type Client = ();
 
             fn make(_client: &Self::Client, _model: impl Into<String>) -> Self {
-                Self
+                Self::new(Vec::new())
             }
 
             async fn completion(
@@ -414,9 +441,11 @@ mod tests {
                 _request: CompletionRequest,
             ) -> Result<StreamingCompletionResponse<Self::StreamingResponse>, CompletionError>
             {
+                let items = self.items.clone();
                 let inner = Box::pin(async_stream::stream! {
-                    yield Ok(RawStreamingChoice::Message("hi".to_string()));
-                    yield Ok(RawStreamingChoice::FinalResponse(FakeStreamingResponse));
+                    for item in items {
+                        yield Ok(item);
+                    }
                 });
                 Ok(StreamingCompletionResponse::stream(inner))
             }
@@ -424,7 +453,14 @@ mod tests {
 
         #[tokio::test]
         async fn populates_model_and_usage_from_final_response() {
-            let engine = RigEngine::new(FakeModel, "fake", "fake-model-id");
+            let engine = RigEngine::new(
+                ScriptedFake::new(vec![
+                    RawStreamingChoice::Message("hi".to_string()),
+                    RawStreamingChoice::FinalResponse(FakeStreamingResponse),
+                ]),
+                "fake",
+                "fake-model-id",
+            );
             let stream = engine
                 .stream(
                     EngineInput {
@@ -565,7 +601,9 @@ mod tests {
                     EngineEvent::ToolCall(_) => Some("call"),
                     EngineEvent::ToolResult(_) => Some("result"),
                     EngineEvent::Final(_) => Some("final"),
-                    EngineEvent::Text(_) => None,
+                    EngineEvent::Text(_)
+                    | EngineEvent::Reasoning(_)
+                    | EngineEvent::ReasoningDelta { .. } => None,
                 })
                 .collect();
 
@@ -583,6 +621,114 @@ mod tests {
                 })
                 .expect("Final event must be present");
             assert!(matches!(final_event.stop_reason, StopReason::EndTurn));
+        }
+
+        #[tokio::test]
+        async fn forwards_reasoning_whole_block_before_text_with_signature_intact() {
+            let engine = RigEngine::new(
+                ScriptedFake::new(vec![
+                    RawStreamingChoice::Reasoning {
+                        id: Some("r1".to_string()),
+                        content: rig::message::ReasoningContent::Text {
+                            text: "thinking".to_string(),
+                            signature: Some("sig".to_string()),
+                        },
+                    },
+                    RawStreamingChoice::Message("answer".to_string()),
+                    RawStreamingChoice::FinalResponse(FakeStreamingResponse),
+                ]),
+                "fake",
+                "fake-model-id",
+            );
+            let stream = engine
+                .stream(
+                    EngineInput::with_history(vec![rig::message::Message::user("ask")]),
+                    &Settings::default(),
+                    &[],
+                    "label",
+                )
+                .expect("stream() should succeed");
+            let events: Vec<EngineEvent> = stream.collect().await;
+
+            let kinds: Vec<&'static str> = events
+                .iter()
+                .map(|e| match e {
+                    EngineEvent::Text(_) => "text",
+                    EngineEvent::ToolCall(_) => "tool_call",
+                    EngineEvent::ToolResult(_) => "tool_result",
+                    EngineEvent::Reasoning(_) => "reasoning",
+                    EngineEvent::ReasoningDelta { .. } => "reasoning_delta",
+                    EngineEvent::Final(_) => "final",
+                })
+                .collect();
+            assert_eq!(
+                kinds,
+                vec!["reasoning", "text", "final"],
+                "rig adapter must forward Reasoning before Text and end with Final; got {events:?}"
+            );
+
+            let reasoning = events
+                .iter()
+                .find_map(|e| match e {
+                    EngineEvent::Reasoning(r) => Some(r),
+                    _ => None,
+                })
+                .expect("Reasoning event present");
+            assert_eq!(reasoning.id.as_deref(), Some("r1"));
+            assert_eq!(reasoning.content.len(), 1);
+            let rig::message::ReasoningContent::Text { text, signature } = &reasoning.content[0]
+            else {
+                panic!(
+                    "expected Text reasoning block, got {:?}",
+                    reasoning.content[0]
+                );
+            };
+            assert_eq!(text, "thinking");
+            assert_eq!(signature.as_deref(), Some("sig"));
+        }
+
+        #[tokio::test]
+        async fn forwards_reasoning_deltas_with_matching_id() {
+            let engine = RigEngine::new(
+                ScriptedFake::new(vec![
+                    RawStreamingChoice::ReasoningDelta {
+                        id: Some("r1".to_string()),
+                        reasoning: "ab".to_string(),
+                    },
+                    RawStreamingChoice::ReasoningDelta {
+                        id: Some("r1".to_string()),
+                        reasoning: "cd".to_string(),
+                    },
+                    RawStreamingChoice::FinalResponse(FakeStreamingResponse),
+                ]),
+                "fake",
+                "fake-model-id",
+            );
+            let stream = engine
+                .stream(
+                    EngineInput::with_history(vec![rig::message::Message::user("ask")]),
+                    &Settings::default(),
+                    &[],
+                    "label",
+                )
+                .expect("stream() should succeed");
+            let events: Vec<EngineEvent> = stream.collect().await;
+
+            let deltas: Vec<(Option<&str>, &str)> = events
+                .iter()
+                .filter_map(|e| match e {
+                    EngineEvent::ReasoningDelta { id, text } => {
+                        Some((id.as_deref(), text.as_str()))
+                    }
+                    _ => None,
+                })
+                .collect();
+
+            assert_eq!(
+                deltas,
+                vec![(Some("r1"), "ab"), (Some("r1"), "cd")],
+                "rig adapter must forward both ReasoningDelta items with matching id and texts in arrival order; got {events:?}"
+            );
         }
 
         #[tokio::test]

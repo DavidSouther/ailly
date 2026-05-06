@@ -117,6 +117,28 @@ pub struct EngineResponse {
     pub(crate) usage: Option<Usage>,
 }
 
+impl EngineResponse {
+    /// Build a final engine response. The four metadata fields
+    /// (`engine`, `model`, `stop_reason`, `usage`) are required because
+    /// downstream consumers (recorder, layering guard) rely on them being
+    /// populated for any non-error final.
+    pub fn new(
+        text: String,
+        engine: EngineName,
+        model: ModelId,
+        stop_reason: StopReason,
+        usage: Option<Usage>,
+    ) -> Self {
+        Self {
+            text,
+            engine_name: engine,
+            model_id: model,
+            stop_reason,
+            usage,
+        }
+    }
+}
+
 /// Map an engine's `EngineResponse` onto a content-layer `AssistantResponse`,
 /// preserving the engine name, model, stop reason, and usage so each turn
 /// file carries the same provenance regardless of which call site recorded
@@ -137,12 +159,23 @@ impl From<&EngineResponse> for AssistantResponse {
     }
 }
 
+/// Outbound events from an `Engine::stream` impl.
+///
+/// `Reasoning` and `ReasoningDelta` carry the model's thinking trace.
+/// They MUST be emitted in arrival order so the recorder's accumulator
+/// can interleave them with `Text` and `ToolCall` correctly. `id` on
+/// `ReasoningDelta` is the provider-supplied reasoning slot key; deltas
+/// with a matching `Some(id)` are merged by the recorder. `id: None`
+/// deltas are kept in distinct slots, mirroring rig's
+/// `merge_reasoning_blocks_keeps_none_ids_separate_items`.
 #[non_exhaustive]
 #[derive(Debug, Clone)]
 pub enum EngineEvent {
     Text(String),
     ToolCall(rig::message::ToolCall),
     ToolResult(rig::message::ToolResult),
+    Reasoning(rig::message::Reasoning),
+    ReasoningDelta { id: Option<String>, text: String },
     Final(EngineResponse),
 }
 

@@ -246,6 +246,9 @@ mod tests {
                 EngineEvent::ToolCall(_) | EngineEvent::ToolResult(_) => {
                     panic!("envelope path never emits tool events");
                 }
+                EngineEvent::Reasoning(_) | EngineEvent::ReasoningDelta { .. } => {
+                    panic!("envelope path never emits reasoning events");
+                }
             }
         }
         (texts, final_ev.expect("Noop must emit a Final"))
@@ -442,6 +445,8 @@ mod tests {
                 EngineEvent::Text(_) => "text",
                 EngineEvent::ToolCall(_) => "tool_call",
                 EngineEvent::ToolResult(_) => "tool_result",
+                EngineEvent::Reasoning(_) => "reasoning",
+                EngineEvent::ReasoningDelta { .. } => "reasoning_delta",
                 EngineEvent::Final(_) => "final",
             })
             .collect();

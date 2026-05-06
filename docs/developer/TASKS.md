@@ -1,5 +1,16 @@
 # Tasks
 
+- Thinking-responses follow-on slices (build on `docs/developer/2026-05-06-A-thinking-responses/design.md`):
+    - Capture OpenAI Responses provider message id and persist it on `MessageFile::Assistant.provider_message_id` so OpenAI Responses cache keys survive across turns. Source is `StreamingCompletionResponse::message_id`. Land when an OpenAI Responses consumer needs cache continuity.
+    - Surface `EngineEvent::ToolCallDelta` for live UI consumers. Today the catch-all arm in `RigEngine::stream` absorbs `StreamedAssistantContent::ToolCallDelta`. Promote when a live UI consumer materializes.
+    - Add `AssistantContent::Image` round-trip across `EngineEvent`, `MessageFile`, and history assembly. Provider survey and on-disk envelope decision (path reference vs base64 inline vs out-of-band store) required.
+    - Add `UserContent::Image` round-trip (input modality on the user side). Provider survey and on-disk envelope decision required.
+    - Add `UserContent::Audio` round-trip. Provider survey and on-disk envelope decision required.
+    - Add `UserContent::Video` round-trip. Provider survey and on-disk envelope decision required.
+    - Add `UserContent::Document` round-trip. Provider survey and on-disk envelope decision required.
+    - Add `TurnEvent::ReasoningDelta` so the generator surfaces streaming thinking deltas to live UI consumers. The recorder-internal accumulator already does the id-keyed merge; promoting deltas to `TurnEvent` is additive. Land when a UI consumer asks for it.
+    - Ship a render-to-text helper on the content side that surfaces `ReasoningContent::Text` and `Summary` as a displayable block while hiding `Encrypted` and `Redacted` opaque payloads. Land when a CLI/TUI render consumer materializes.
+    - Add an Anthropic extended-thinking signature verification e2e under `e2e/` that exercises a two-turn fixture and asserts the second turn's request body carries the prior turn's reasoning blocks (signature, encrypted payload). Gated on a paid Anthropic key in CI.
 - Evaluate the `ignore` crate (https://docs.rs/ignore/latest/ignore/) as a replacement for the in-tree `GitignoreParser` in `src/content/gitignore_fs.rs`. See `TASK-NOTES-ignore-crate.md`.
 - Reconsider Engine `TurnEvent` shape: switch from inline `Delta { path, text }` to embedded per-turn `ReceiverStream<String>` on `Started`. Channels are cheap; the embedded-stream variant gives consumers per-turn ownership without re-partitioning by path. Revisit once a real consumer (CLI/TUI/ACP) is built against the inline form. Decided 2026-05-01 in `docs/developer/2026-05-01-A-engine/design.md`.
 - Implement the deferred `Generator` behaviors named in `docs/developer/2026-05-01-A-engine/design.md` and excluded from Step 3 of the engine plan: skip filter, overwrite filter, isolated partition, cancellation, mid-stream `StopReason::Error`, and engine setup-error partition behavior. See `TASK-NOTES-engine-deferred.md`.
