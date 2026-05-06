@@ -11,8 +11,10 @@ pub struct FsAbsent {
 impl FsAbsent {
     pub const NAME: &'static str = "fs.absent";
 
-    pub fn new(root: VfsPath) -> Self {
-        Self { root }
+    pub fn new(conversation: &crate::project::ConversationRoot) -> Self {
+        Self {
+            root: conversation.as_path().clone(),
+        }
     }
 }
 
@@ -120,7 +122,7 @@ mod tests {
             }
         };
         let root = fs.join("root").unwrap();
-        let tool = FsAbsent::new(root);
+        let tool = FsAbsent::new(&crate::project::ConversationRoot::try_from(root).unwrap());
 
         let result = tool.call(args("design.md", "*Draft")).await.unwrap();
 
@@ -135,7 +137,7 @@ mod tests {
             }
         };
         let root = fs.join("root").unwrap();
-        let tool = FsAbsent::new(root);
+        let tool = FsAbsent::new(&crate::project::ConversationRoot::try_from(root).unwrap());
 
         let result = tool.call(args("design.md", "*Draft")).await.unwrap();
 
@@ -146,7 +148,7 @@ mod tests {
     async fn returns_missing_error_when_file_absent() {
         let fs = mem_fs! { "root": {} };
         let root = fs.join("root").unwrap();
-        let tool = FsAbsent::new(root);
+        let tool = FsAbsent::new(&crate::project::ConversationRoot::try_from(root).unwrap());
 
         let err = tool.call(args("design.md", "*Draft")).await.unwrap_err();
 
@@ -166,7 +168,7 @@ mod tests {
             }
         };
         let scoped_root = fs.join("root").unwrap().join("sub").unwrap();
-        let tool = FsAbsent::new(scoped_root);
+        let tool = FsAbsent::new(&crate::project::ConversationRoot::try_from(scoped_root).unwrap());
 
         let result = tool.call(args("design.md", "*Draft")).await.unwrap();
 
@@ -182,7 +184,7 @@ mod tests {
         };
 
         let scoped_root = fs.join("root").unwrap();
-        let tool = FsAbsent::new(scoped_root);
+        let tool = FsAbsent::new(&crate::project::ConversationRoot::try_from(scoped_root).unwrap());
 
         let result = tool.call(args("../design.md", "*Draft")).await;
 

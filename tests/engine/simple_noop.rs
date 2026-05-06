@@ -10,8 +10,9 @@ use futures::StreamExt;
 
 use ailly::content::Conversation;
 use ailly::engine::{Generator, Noop, Settings, StopReason, TurnEvent};
-use ailly::knowledge::skills::FsSkillRepository;
+use ailly::knowledge::base::EmptyKnowledgeBase;
 use ailly::mem_fs;
+use ailly::project::ConversationRoot;
 
 #[tokio::test]
 async fn generator_runs_two_turn_sequence_through_noop() {
@@ -23,10 +24,12 @@ async fn generator_runs_two_turn_sequence_through_noop() {
         },
     };
     let root = fs.join("root").unwrap();
-    let skills = FsSkillRepository::new(&root);
-    let conversation = Conversation::load(root, &skills)
-        .await
-        .expect("load conversation");
+    let conversation = Conversation::load(
+        &ConversationRoot::try_from(root).unwrap(),
+        &EmptyKnowledgeBase,
+    )
+    .await
+    .expect("load conversation");
 
     let engine = Arc::new(Noop::default());
     let generator = Generator::new(conversation, engine, Settings::default());

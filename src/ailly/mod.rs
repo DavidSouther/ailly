@@ -5,14 +5,13 @@ pub use args::{Cli, LogFormat, parse_workflow_arg};
 pub use logging::init as init_logging;
 
 use std::io::Write;
-use std::path::Path;
 use std::process::ExitCode;
 use std::sync::Arc;
 
 use anyhow::{Context, Result, anyhow};
 use clap::Parser;
 use futures::StreamExt;
-use vfs::{PhysicalFS, VfsPath};
+use vfs::VfsPath;
 
 use crate::content::Conversation;
 #[cfg(feature = "bedrock")]
@@ -21,7 +20,6 @@ use crate::engine::{
     Engine, Generator, Noop, Settings, StopReason, TurnEvent, anthropic_from_env, gemini_from_env,
     openai_from_env,
 };
-use crate::knowledge::skills::FsSkillRepository;
 use crate::workflow::{Runtime, Workflow, WorkflowEvent, WorkflowState, WorkflowStopReason};
 
 use std::collections::VecDeque;
@@ -248,7 +246,7 @@ fn build_engine(kind: EngineKind, model: Option<&str>) -> Result<Arc<dyn Engine>
 async fn load_conversation(cli: &Cli) -> Result<Conversation> {
     let root = cli.root();
     let mut conversation = if root.exists() {
-        load_from_root(&root).await?
+        load_from_root(cli).await?
     } else if cli.prompt.is_some() {
         Conversation::empty()
     } else {
@@ -271,7 +269,7 @@ async fn run_clean(cli: &Cli) -> Result<(), RunError> {
         )));
     }
 
-    let mut conversation = load_from_root(&root).await?;
+    let mut conversation = load_from_root(cli).await?;
     conversation.clean().await?;
     for idx in 0..conversation.turn_count() {
         log::info!("cleaned: {}", conversation.turn(idx).path().as_str());
@@ -311,12 +309,12 @@ fn load_workflow_definition(
     Ok(workflow)
 }
 
-async fn load_from_root(root: &Path) -> Result<Conversation> {
-    let vfs_root = VfsPath::new(PhysicalFS::new(root));
-    let skills = FsSkillRepository::new(&vfs_root);
-    Conversation::load(vfs_root, &skills)
+async fn load_from_root(cli: &Cli) -> Result<Conversation> {
+    let project = cli.project()?;
+    let knowledge = crate::knowledge::base::FsKnowledgeBase::new(project.knowledge.clone());
+    Conversation::load(&project.conversations, &knowledge)
         .await
-        .with_context(|| format!("loading conversation at {}", root.display()))
+        .with_context(|| format!("loading conversation at {}", cli.root().display()))
 }
 
 async fn run_workflow(cli: &Cli, engine: Arc<dyn Engine>, raw: &str) -> Result<(), RunError> {
@@ -329,7 +327,14 @@ async fn run_workflow(cli: &Cli, engine: Arc<dyn Engine>, raw: &str) -> Result<(
             root.display()
         )));
     }
-    let vfs_root = VfsPath::new(PhysicalFS::new(&root));
+    let project = cli
+        .project()
+        .with_context(|| format!("assembling project from {}", root.display()))?;
+    let vfs_root = project.root.as_path().clone();
+    let conversation = project.conversations.clone();
+    let knowledge: std::sync::Arc<dyn crate::knowledge::base::KnowledgeBase> = std::sync::Arc::new(
+        crate::knowledge::base::FsKnowledgeBase::new(project.knowledge.clone()),
+    );
 
     let workflow = load_workflow_definition(&vfs_root, &workflow_name, raw)?;
 
@@ -347,7 +352,8 @@ async fn run_workflow(cli: &Cli, engine: Arc<dyn Engine>, raw: &str) -> Result<(
     let runtime = Runtime::new(
         workflow,
         state,
-        vfs_root,
+        conversation,
+        knowledge,
         engine,
         tool_registry,
         Settings::default(),

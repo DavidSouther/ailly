@@ -25,9 +25,10 @@ use ailly::content::Conversation;
 use ailly::engine::{
     Generator, HashMapRegistry, Noop, Settings, StopReason, ToolRegistry, TurnEvent,
 };
+use ailly::knowledge::base::EmptyKnowledgeBase;
 use ailly::knowledge::clarify::{ClarifyTool, KnowledgeBase, MapKnowledgeBase};
-use ailly::knowledge::skills::NullSkillRepository;
 use ailly::mem_fs;
+use ailly::project::ConversationRoot;
 
 use rig::tool::ToolDyn;
 
@@ -41,9 +42,12 @@ async fn clarify_tool_returns_recorded_answer_through_generator_and_file() {
             "01.toml": "prompt = 'USE user.clarify WITH {\"question\":\"What database backs the inbox queue?\"}'\ntools = [\"user.clarify\"]\n",
         },
     };
-    let conversation = Conversation::load(fs.join("root").unwrap(), &NullSkillRepository)
-        .await
-        .expect("load conversation");
+    let conversation = Conversation::load(
+        &ConversationRoot::try_from(fs.join("root").unwrap()).unwrap(),
+        &EmptyKnowledgeBase,
+    )
+    .await
+    .expect("load conversation");
 
     let kb: Arc<dyn KnowledgeBase> = Arc::new(MapKnowledgeBase::new([(question, answer)]));
     let clarify: Arc<dyn ToolDyn> = Arc::new(ClarifyTool::new(kb));

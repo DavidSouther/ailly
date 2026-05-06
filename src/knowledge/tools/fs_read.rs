@@ -12,8 +12,10 @@ pub struct FsRead {
 impl FsRead {
     pub const NAME: &'static str = "fs.read";
 
-    pub fn new(root: VfsPath) -> Self {
-        Self { root }
+    pub fn new(project: &crate::project::ProjectRoot) -> Self {
+        Self {
+            root: project.as_path().clone(),
+        }
     }
 }
 
@@ -147,7 +149,7 @@ mod tests {
     async fn returns_full_body_when_range_is_none() {
         let fs = mem_fs! { "root": { "a.txt": "one\ntwo\nthree\n" } };
         let root = fs.join("root").unwrap();
-        let tool = FsRead::new(root);
+        let tool = FsRead::new(&crate::project::ProjectRoot::try_from(root).unwrap());
 
         let body = tool.call(args("a.txt", None)).await.unwrap();
         assert_eq!(body, "one\ntwo\nthree\n");
@@ -157,7 +159,7 @@ mod tests {
     async fn returns_first_line_for_one_one_range() {
         let fs = mem_fs! { "root": { "a.txt": "one\ntwo\nthree\n" } };
         let root = fs.join("root").unwrap();
-        let tool = FsRead::new(root);
+        let tool = FsRead::new(&crate::project::ProjectRoot::try_from(root).unwrap());
 
         let body = tool.call(args("a.txt", Some((1, 1)))).await.unwrap();
         assert_eq!(body, "one");
@@ -167,7 +169,7 @@ mod tests {
     async fn returns_mid_file_range_joined_by_newlines() {
         let fs = mem_fs! { "root": { "a.txt": "one\ntwo\nthree\nfour\n" } };
         let root = fs.join("root").unwrap();
-        let tool = FsRead::new(root);
+        let tool = FsRead::new(&crate::project::ProjectRoot::try_from(root).unwrap());
 
         let body = tool.call(args("a.txt", Some((2, 3)))).await.unwrap();
         assert_eq!(body, "two\nthree");
@@ -177,7 +179,7 @@ mod tests {
     async fn out_of_range_when_end_exceeds_total_lines() {
         let fs = mem_fs! { "root": { "a.txt": "one\ntwo\n" } };
         let root = fs.join("root").unwrap();
-        let tool = FsRead::new(root);
+        let tool = FsRead::new(&crate::project::ProjectRoot::try_from(root).unwrap());
 
         let err = tool.call(args("a.txt", Some((1, 10)))).await.unwrap_err();
         match err {
@@ -193,7 +195,7 @@ mod tests {
     async fn not_a_file_when_path_is_a_directory() {
         let fs = mem_fs! { "root": { "sub": { "a.txt": "x\n" } } };
         let root = fs.join("root").unwrap();
-        let tool = FsRead::new(root);
+        let tool = FsRead::new(&crate::project::ProjectRoot::try_from(root).unwrap());
 
         let err = tool.call(args("sub", None)).await.unwrap_err();
         assert!(matches!(err, FsReadError::NotAFile { .. }));
@@ -203,7 +205,7 @@ mod tests {
     async fn outside_root_is_rejected() {
         let fs = mem_fs! { "root": { "a.txt": "x\n" } };
         let root = fs.join("root").unwrap();
-        let tool = FsRead::new(root);
+        let tool = FsRead::new(&crate::project::ProjectRoot::try_from(root).unwrap());
 
         let err = tool.call(args("../oops", None)).await.unwrap_err();
         assert!(matches!(

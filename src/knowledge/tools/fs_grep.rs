@@ -12,8 +12,10 @@ pub struct FsGrep {
 impl FsGrep {
     pub const NAME: &'static str = "fs.grep";
 
-    pub fn new(root: VfsPath) -> Self {
-        Self { root }
+    pub fn new(project: &crate::project::ProjectRoot) -> Self {
+        Self {
+            root: project.as_path().clone(),
+        }
     }
 }
 
@@ -234,7 +236,7 @@ mod tests {
     async fn single_file_happy_path_returns_one_result_with_one_match() {
         let fs = mem_fs! { "root": { "a.txt": "TODO: write\nbody\n" } };
         let root = fs.join("root").unwrap();
-        let tool = FsGrep::new(root);
+        let tool = FsGrep::new(&crate::project::ProjectRoot::try_from(root).unwrap());
 
         let raw = tool.call(args("a.txt", "TODO", None)).await.unwrap();
         let value: serde_json::Value = serde_json::from_str(&raw).unwrap();
@@ -256,7 +258,7 @@ mod tests {
             }
         };
         let root = fs.join("root").unwrap();
-        let tool = FsGrep::new(root);
+        let tool = FsGrep::new(&crate::project::ProjectRoot::try_from(root).unwrap());
 
         let raw = tool.call(args(".", "TODO", Some("**/*.rs"))).await.unwrap();
         let value: serde_json::Value = serde_json::from_str(&raw).unwrap();
@@ -278,7 +280,7 @@ mod tests {
             }
         };
         let root = fs.join("root").unwrap();
-        let tool = FsGrep::new(root);
+        let tool = FsGrep::new(&crate::project::ProjectRoot::try_from(root).unwrap());
 
         let raw = tool.call(args(".", "TODO", Some("*.rs"))).await.unwrap();
         let value: serde_json::Value = serde_json::from_str(&raw).unwrap();
@@ -289,7 +291,7 @@ mod tests {
     async fn invalid_pattern_surfaces() {
         let fs = mem_fs! { "root": { "a.txt": "x\n" } };
         let root = fs.join("root").unwrap();
-        let tool = FsGrep::new(root);
+        let tool = FsGrep::new(&crate::project::ProjectRoot::try_from(root).unwrap());
 
         let err = tool.call(args("a.txt", "[broken", None)).await.unwrap_err();
         assert!(matches!(err, FsGrepError::InvalidPattern { .. }));
@@ -299,7 +301,7 @@ mod tests {
     async fn invalid_glob_surfaces() {
         let fs = mem_fs! { "root": { "a.txt": "x\n", "sub": { "b.txt": "x\n" } } };
         let root = fs.join("root").unwrap();
-        let tool = FsGrep::new(root);
+        let tool = FsGrep::new(&crate::project::ProjectRoot::try_from(root).unwrap());
 
         let err = tool
             .call(args(".", "x", Some("[broken")))
@@ -312,7 +314,7 @@ mod tests {
     async fn not_found_when_path_does_not_exist() {
         let fs = mem_fs! { "root": {} };
         let root = fs.join("root").unwrap();
-        let tool = FsGrep::new(root);
+        let tool = FsGrep::new(&crate::project::ProjectRoot::try_from(root).unwrap());
 
         let err = tool.call(args("missing", "x", None)).await.unwrap_err();
         assert!(matches!(err, FsGrepError::NotFound { .. }));
@@ -322,7 +324,7 @@ mod tests {
     async fn outside_root_is_rejected() {
         let fs = mem_fs! { "root": { "a.txt": "x\n" } };
         let root = fs.join("root").unwrap();
-        let tool = FsGrep::new(root);
+        let tool = FsGrep::new(&crate::project::ProjectRoot::try_from(root).unwrap());
 
         let err = tool.call(args("../oops", "x", None)).await.unwrap_err();
         assert!(matches!(
@@ -335,7 +337,7 @@ mod tests {
     async fn match_text_is_the_full_source_line() {
         let fs = mem_fs! { "root": { "a.txt": "  leading TODO trailing  \n" } };
         let root = fs.join("root").unwrap();
-        let tool = FsGrep::new(root);
+        let tool = FsGrep::new(&crate::project::ProjectRoot::try_from(root).unwrap());
 
         let raw = tool.call(args("a.txt", "TODO", None)).await.unwrap();
         let value: serde_json::Value = serde_json::from_str(&raw).unwrap();

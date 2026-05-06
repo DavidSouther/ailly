@@ -1,6 +1,6 @@
 use serde_json::Value;
 
-use crate::permissions::{Classification, Classifier};
+use crate::knowledge::permissions::{Classification, Classifier};
 
 pub struct WebSearchClassifier;
 

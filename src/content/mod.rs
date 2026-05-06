@@ -12,10 +12,18 @@ use vfs::{MemoryFS, VfsPath};
 mod gitignore_fs;
 mod gitignore_fs_constants;
 
-use crate::knowledge::skills::{Skill, SkillError, SkillName, SkillRepository};
+use crate::knowledge::base::{KnowledgeBase, KnowledgeError, KnowledgeKind};
+use crate::knowledge::skills::{Skill, SkillName};
+use crate::project::ConversationRoot;
 
 pub const AILLYRC: &str = ".ailly.toml";
 pub const EXTENSION: &str = ".toml";
+pub const AILLY_DIR: &str = ".ailly";
+
+/// Subdirectory names skipped from the recursive `Conversation::load` walk
+/// in conversation mode. Workflow mode (root leaf is `.ailly`) walks all
+/// subdirectories without exclusion.
+const CONVERSATION_WALK_EXCLUDE: &[&str] = &[AILLY_DIR, "skills", "workflows"];
 
 #[derive(Debug, thiserror::Error)]
 pub enum ContentError {
@@ -84,12 +92,13 @@ pub enum ContentError {
     #[error("non-text user prompt at {path} cannot be serialized")]
     NonTextUserPrompt { path: String },
 
-    #[error("failed to load skill `{name}` referenced in {origin}")]
-    Skill {
+    #[error("failed to load {kind:?} `{name}` referenced in {origin}")]
+    Knowledge {
+        kind: KnowledgeKind,
         name: String,
         origin: String,
         #[source]
-        source: SkillError,
+        source: KnowledgeError,
     },
 
     #[error("non-text tool result at {path} cannot be serialized")]
@@ -456,12 +465,27 @@ impl Conversation {
     /// child, lexicographic among siblings within a directory. A directory
     /// whose `.ailly.toml` sets `skip = true` contributes no turns and
     /// is not recursed into.
-    pub async fn load(path: VfsPath, skills: &dyn SkillRepository) -> Result<Self, ContentError> {
+    pub async fn load(
+        root: &ConversationRoot,
+        knowledge: &dyn KnowledgeBase,
+    ) -> Result<Self, ContentError> {
         // Out of scope: the `.vectors` directory skip, synthetic CLI content,
         // and folder-context wiring. See the implementation plan's
         // "Deferred" list.
+        let walk_excluded: &[&str] = if root.as_path().filename() == AILLY_DIR {
+            &[]
+        } else {
+            CONVERSATION_WALK_EXCLUDE
+        };
         let mut turns: Vec<(VfsPath, ConversationTurn)> = Vec::new();
-        Self::load_into(&path, AillyRc::default(), skills, &mut turns).await?;
+        Self::load_into(
+            root.as_path(),
+            AillyRc::default(),
+            knowledge,
+            walk_excluded,
+            &mut turns,
+        )
+        .await?;
         Ok(Self { turns })
     }
 
@@ -769,10 +793,11 @@ impl Conversation {
     async fn load_into(
         dir: &VfsPath,
         prior: AillyRc,
-        skills_repo: &dyn SkillRepository,
+        knowledge: &dyn KnowledgeBase,
+        walk_excluded: &[&str],
         turns: &mut Vec<(VfsPath, ConversationTurn)>,
     ) -> Result<(), ContentError> {
-        let acc = AillyRc::load(dir, prior, skills_repo).await?;
+        let acc = AillyRc::load(dir, prior, knowledge).await?;
         if acc.meta.skip {
             return Ok(());
         }
@@ -801,18 +826,7 @@ impl Conversation {
             .await?;
             let origin = entry.as_str().to_string();
             for raw in turn.declared_skills.clone() {
-                let parsed = SkillName::try_from(&raw).map_err(|err| ContentError::Skill {
-                    name: raw.clone(),
-                    origin: origin.clone(),
-                    source: err,
-                })?;
-                let skill = skills_repo
-                    .get(&parsed)
-                    .map_err(|source| ContentError::Skill {
-                        name: parsed.as_str().to_string(),
-                        origin: origin.clone(),
-                        source,
-                    })?;
+                let skill = resolve_declared_skill(&raw, &origin, knowledge)?;
                 turn.skills.push(skill);
             }
             turns.push((entry.clone(), turn));
@@ -821,13 +835,46 @@ impl Conversation {
         let subdirs: Vec<VfsPath> = entries
             .into_iter()
             .filter(|e| e.is_dir().unwrap_or(false))
+            .filter(|e| !walk_excluded.contains(&e.filename().as_str()))
             .collect();
         for sub in subdirs {
-            Box::pin(Self::load_into(&sub, acc.clone(), skills_repo, turns)).await?;
+            Box::pin(Self::load_into(
+                &sub,
+                acc.clone(),
+                knowledge,
+                walk_excluded,
+                turns,
+            ))
+            .await?;
         }
 
         Ok(())
     }
+}
+
+fn resolve_declared_skill(
+    raw: &str,
+    origin: &str,
+    knowledge: &dyn KnowledgeBase,
+) -> Result<Skill, ContentError> {
+    let parsed = SkillName::try_from(raw).map_err(|err| ContentError::Knowledge {
+        kind: KnowledgeKind::Skill,
+        name: raw.to_string(),
+        origin: origin.to_string(),
+        source: KnowledgeError::InvalidName {
+            kind: KnowledgeKind::Skill,
+            raw: raw.to_string(),
+            reason: err.to_string(),
+        },
+    })?;
+    knowledge
+        .skill(&parsed)
+        .map_err(|source| ContentError::Knowledge {
+            kind: KnowledgeKind::Skill,
+            name: parsed.as_str().to_string(),
+            origin: origin.to_string(),
+            source,
+        })
 }
 
 fn extend_with_response_run(out: &mut Vec<Message>, response: &[TurnMessage]) {
@@ -1023,7 +1070,7 @@ impl AillyRc {
     pub async fn load(
         dir: &VfsPath,
         prior: AillyRc,
-        skills_repo: &dyn SkillRepository,
+        knowledge: &dyn KnowledgeBase,
     ) -> Result<Self, ContentError> {
         let AillyRc {
             mut system,
@@ -1088,7 +1135,7 @@ impl AillyRc {
                             meta: meta.clone(),
                             tools: Vec::new(),
                         },
-                        skills_repo,
+                        knowledge,
                     ))
                     .await?;
                     system = recursed.system;
@@ -1108,18 +1155,7 @@ impl AillyRc {
         if !local_skill_names.is_empty() {
             let origin = path.as_str().to_string();
             for raw in local_skill_names {
-                let parsed = SkillName::try_from(&raw).map_err(|err| ContentError::Skill {
-                    name: raw.clone(),
-                    origin: origin.clone(),
-                    source: err,
-                })?;
-                let skill = skills_repo
-                    .get(&parsed)
-                    .map_err(|source| ContentError::Skill {
-                        name: parsed.as_str().to_string(),
-                        origin: origin.clone(),
-                        source,
-                    })?;
+                let skill = resolve_declared_skill(&raw, &origin, knowledge)?;
                 skills.push(skill);
             }
         }
@@ -1211,12 +1247,14 @@ impl AillyRcFile {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::knowledge::skills::{FsSkillRepository, NullSkillRepository};
+    use crate::knowledge::base::FsKnowledgeBase;
     use crate::mem_fs;
+    use crate::project::KnowledgeRoot;
     use rig::message::AssistantContent;
 
-    fn test_skills(fs: &VfsPath) -> FsSkillRepository {
-        FsSkillRepository::new(fs)
+    fn test_skills(fs: &VfsPath) -> FsKnowledgeBase {
+        let root = KnowledgeRoot::try_from(fs.clone()).expect("knowledge root from test fs");
+        FsKnowledgeBase::new(vec![root])
     }
 
     #[tokio::test]
@@ -1224,9 +1262,13 @@ mod tests {
         let fs = mem_fs! { "root": {} };
         let cwd = fs.join("root").unwrap();
 
-        let acc = AillyRc::load(&cwd, AillyRc::default(), &NullSkillRepository)
-            .await
-            .unwrap();
+        let acc = AillyRc::load(
+            &cwd,
+            AillyRc::default(),
+            &crate::knowledge::base::EmptyKnowledgeBase,
+        )
+        .await
+        .unwrap();
 
         let texts: Vec<String> = acc.system.iter().map(message_text).collect();
         assert_eq!(texts, Vec::<String>::new());
@@ -1239,9 +1281,13 @@ mod tests {
         };
         let cwd = fs.join("root").unwrap();
 
-        let acc = AillyRc::load(&cwd, AillyRc::default(), &NullSkillRepository)
-            .await
-            .unwrap();
+        let acc = AillyRc::load(
+            &cwd,
+            AillyRc::default(),
+            &crate::knowledge::base::EmptyKnowledgeBase,
+        )
+        .await
+        .unwrap();
 
         let texts: Vec<String> = acc.system.iter().map(message_text).collect();
         assert_eq!(texts, vec!["system".to_string()]);
@@ -1264,7 +1310,7 @@ mod tests {
             meta: ContentMeta::default(),
             tools: Vec::new(),
         };
-        let acc = AillyRc::load(&cwd, prior, &NullSkillRepository)
+        let acc = AillyRc::load(&cwd, prior, &crate::knowledge::base::EmptyKnowledgeBase)
             .await
             .unwrap();
 
@@ -1289,7 +1335,7 @@ mod tests {
             meta: ContentMeta::default(),
             tools: Vec::new(),
         };
-        let acc = AillyRc::load(&cwd, prior, &NullSkillRepository)
+        let acc = AillyRc::load(&cwd, prior, &crate::knowledge::base::EmptyKnowledgeBase)
             .await
             .unwrap();
 
@@ -1317,7 +1363,7 @@ mod tests {
             },
             tools: Vec::new(),
         };
-        let acc = AillyRc::load(&cwd, prior, &NullSkillRepository)
+        let acc = AillyRc::load(&cwd, prior, &crate::knowledge::base::EmptyKnowledgeBase)
             .await
             .unwrap();
 
@@ -1350,7 +1396,7 @@ mod tests {
             },
             tools: Vec::new(),
         };
-        let acc = AillyRc::load(&cwd, prior, &NullSkillRepository)
+        let acc = AillyRc::load(&cwd, prior, &crate::knowledge::base::EmptyKnowledgeBase)
             .await
             .unwrap();
 
@@ -1385,7 +1431,7 @@ mod tests {
             },
             tools: Vec::new(),
         };
-        let acc = AillyRc::load(&cwd, prior, &NullSkillRepository)
+        let acc = AillyRc::load(&cwd, prior, &crate::knowledge::base::EmptyKnowledgeBase)
             .await
             .unwrap();
 
@@ -1417,7 +1463,7 @@ mod tests {
             },
             tools: Vec::new(),
         };
-        let acc = AillyRc::load(&cwd, prior, &NullSkillRepository)
+        let acc = AillyRc::load(&cwd, prior, &crate::knowledge::base::EmptyKnowledgeBase)
             .await
             .unwrap();
 
@@ -1445,7 +1491,7 @@ mod tests {
             },
             tools: Vec::new(),
         };
-        let acc = AillyRc::load(&cwd, prior, &NullSkillRepository)
+        let acc = AillyRc::load(&cwd, prior, &crate::knowledge::base::EmptyKnowledgeBase)
             .await
             .unwrap();
 
@@ -1468,7 +1514,7 @@ mod tests {
             },
             tools: Vec::new(),
         };
-        let acc = AillyRc::load(&cwd, prior, &NullSkillRepository)
+        let acc = AillyRc::load(&cwd, prior, &crate::knowledge::base::EmptyKnowledgeBase)
             .await
             .unwrap();
 
@@ -1491,7 +1537,7 @@ mod tests {
             skills: vec![],
             local_system_count: 0,
         };
-        let acc = AillyRc::load(&cwd, prior, &NullSkillRepository {})
+        let acc = AillyRc::load(&cwd, prior, &crate::knowledge::base::EmptyKnowledgeBase {})
             .await
             .unwrap();
         assert_eq!(acc.tools, vec!["a".to_string(), "b".to_string()]);
@@ -1512,7 +1558,7 @@ mod tests {
             skills: vec![],
             local_system_count: 0,
         };
-        let acc = AillyRc::load(&cwd, prior, &NullSkillRepository {})
+        let acc = AillyRc::load(&cwd, prior, &crate::knowledge::base::EmptyKnowledgeBase {})
             .await
             .unwrap();
         assert_eq!(acc.tools, vec!["b".to_string()]);
@@ -1533,7 +1579,7 @@ mod tests {
             skills: vec![],
             local_system_count: 0,
         };
-        let acc = AillyRc::load(&cwd, prior, &NullSkillRepository {})
+        let acc = AillyRc::load(&cwd, prior, &crate::knowledge::base::EmptyKnowledgeBase {})
             .await
             .unwrap();
         assert_eq!(acc.tools, vec!["a".to_string(), "b".to_string()]);
@@ -1554,7 +1600,7 @@ mod tests {
             skills: vec![],
             local_system_count: 0,
         };
-        let acc = AillyRc::load(&cwd, prior, &NullSkillRepository {})
+        let acc = AillyRc::load(&cwd, prior, &crate::knowledge::base::EmptyKnowledgeBase {})
             .await
             .unwrap();
         assert_eq!(acc.tools, vec!["a".to_string()]);
@@ -1695,9 +1741,12 @@ mod tests {
                 "02.toml": r#"prompt = "second""#,
             },
         };
-        let convo = Conversation::load(fs.join("root").unwrap(), &test_skills(&fs))
-            .await
-            .unwrap();
+        let convo = Conversation::load(
+            &ConversationRoot::try_from(fs.join("root").unwrap()).unwrap(),
+            &test_skills(&fs),
+        )
+        .await
+        .unwrap();
         let first = &convo.turns[0].1;
         let second = &convo.turns[1].1;
 
@@ -1714,9 +1763,12 @@ mod tests {
                 "01.toml": r#"prompt = "x""#,
             },
         };
-        let convo = Conversation::load(fs.join("root").unwrap(), &test_skills(&fs))
-            .await
-            .unwrap();
+        let convo = Conversation::load(
+            &ConversationRoot::try_from(fs.join("root").unwrap()).unwrap(),
+            &test_skills(&fs),
+        )
+        .await
+        .unwrap();
         let only = &convo.turns[0].1;
         assert_eq!(convo.system(only).len(), 1);
     }
@@ -1732,9 +1784,12 @@ mod tests {
                 },
             },
         };
-        let convo = Conversation::load(fs.join("root").unwrap(), &test_skills(&fs))
-            .await
-            .unwrap();
+        let convo = Conversation::load(
+            &ConversationRoot::try_from(fs.join("root").unwrap()).unwrap(),
+            &test_skills(&fs),
+        )
+        .await
+        .unwrap();
         let paths: Vec<String> = convo
             .turns
             .iter()
@@ -1756,9 +1811,12 @@ mod tests {
                 },
             },
         };
-        let convo = Conversation::load(fs.join("root").unwrap(), &test_skills(&fs))
-            .await
-            .unwrap();
+        let convo = Conversation::load(
+            &ConversationRoot::try_from(fs.join("root").unwrap()).unwrap(),
+            &test_skills(&fs),
+        )
+        .await
+        .unwrap();
         assert_eq!(convo.turns.len(), 1);
         assert_eq!(convo.turns[0].1.system.len(), 2);
     }
@@ -1773,7 +1831,10 @@ mod tests {
             },
         };
         let dir = fs.join("root").unwrap();
-        let convo = Conversation::load(dir, &test_skills(&fs)).await.unwrap();
+        let convo =
+            Conversation::load(&ConversationRoot::try_from(dir).unwrap(), &test_skills(&fs))
+                .await
+                .unwrap();
         assert_eq!(convo.turns.len(), 2);
         assert!(convo.turns[0].0.as_str().ends_with("01_a.toml"));
         assert!(convo.turns[1].0.as_str().ends_with("02_b.toml"));
@@ -1788,9 +1849,12 @@ mod tests {
                 "01.toml": r#"prompt = "x""#,
             },
         };
-        let convo = Conversation::load(fs.join("root").unwrap(), &test_skills(&fs))
-            .await
-            .unwrap();
+        let convo = Conversation::load(
+            &ConversationRoot::try_from(fs.join("root").unwrap()).unwrap(),
+            &test_skills(&fs),
+        )
+        .await
+        .unwrap();
         assert!(convo.turns.is_empty());
     }
 
@@ -1982,9 +2046,12 @@ text = "hi"
         let dir = fs.join("root").unwrap();
         let path = fs.join("root/01.toml").unwrap();
 
-        let mut convo = Conversation::load(dir.clone(), &test_skills(&fs))
-            .await
-            .unwrap();
+        let mut convo = Conversation::load(
+            &ConversationRoot::try_from(dir.clone()).unwrap(),
+            &test_skills(&fs),
+        )
+        .await
+        .unwrap();
         convo.clean().await.unwrap();
 
         let after_first = path.read_to_string().unwrap();
@@ -1997,7 +2064,10 @@ text = "hi"
             "first clean dropped prompt: {after_first}"
         );
 
-        let mut convo = Conversation::load(dir, &test_skills(&fs)).await.unwrap();
+        let mut convo =
+            Conversation::load(&ConversationRoot::try_from(dir).unwrap(), &test_skills(&fs))
+                .await
+                .unwrap();
         convo.clean().await.unwrap();
         let after_second = path.read_to_string().unwrap();
 
@@ -2019,7 +2089,10 @@ text = "hi"
         let path = fs.join("root/01.toml").unwrap();
         let original = path.read_to_string().unwrap();
 
-        let mut convo = Conversation::load(dir, &test_skills(&fs)).await.unwrap();
+        let mut convo =
+            Conversation::load(&ConversationRoot::try_from(dir).unwrap(), &test_skills(&fs))
+                .await
+                .unwrap();
         assert_eq!(
             convo.turn_count(),
             0,
@@ -2046,7 +2119,10 @@ text = "hi"
         let aillyrc = fs.join("root/.ailly.toml").unwrap();
         let original = aillyrc.read_to_string().unwrap();
 
-        let mut convo = Conversation::load(dir, &test_skills(&fs)).await.unwrap();
+        let mut convo =
+            Conversation::load(&ConversationRoot::try_from(dir).unwrap(), &test_skills(&fs))
+                .await
+                .unwrap();
         convo.clean().await.unwrap();
 
         let after = aillyrc.read_to_string().unwrap();
@@ -2114,7 +2190,10 @@ text = "hi"
 
         let fs = mem_fs! { "root": { "01.toml": r#"prompt = "x""# } };
         let dir = fs.join("root").unwrap();
-        let mut convo = Conversation::load(dir, &test_skills(&fs)).await.unwrap();
+        let mut convo =
+            Conversation::load(&ConversationRoot::try_from(dir).unwrap(), &test_skills(&fs))
+                .await
+                .unwrap();
 
         let image = UserContent::Image(Image::default());
         convo.turns[0].1.prompt = OneOrMany::one(Message::User {
@@ -2136,14 +2215,20 @@ text = "hi"
             },
         };
         let dir = fs.join("root").unwrap();
-        let convo = Conversation::load(dir.clone(), &test_skills(&fs))
-            .await
-            .unwrap();
+        let convo = Conversation::load(
+            &ConversationRoot::try_from(dir.clone()).unwrap(),
+            &test_skills(&fs),
+        )
+        .await
+        .unwrap();
         assert_eq!(convo.turns.len(), 2);
 
         convo.write().await.unwrap();
 
-        let reloaded = Conversation::load(dir, &test_skills(&fs)).await.unwrap();
+        let reloaded =
+            Conversation::load(&ConversationRoot::try_from(dir).unwrap(), &test_skills(&fs))
+                .await
+                .unwrap();
         assert_eq!(reloaded.turns.len(), 2);
         assert!(reloaded.turns[0].0.as_str().ends_with("01.toml"));
         assert!(reloaded.turns[1].0.as_str().ends_with("02.toml"));
@@ -2519,9 +2604,12 @@ text = "hi"
                 "01.toml": r#"prompt = "first""#,
             },
         };
-        let convo = Conversation::load(fs.join("root").unwrap(), &test_skills(&fs))
-            .await
-            .unwrap();
+        let convo = Conversation::load(
+            &ConversationRoot::try_from(fs.join("root").unwrap()).unwrap(),
+            &test_skills(&fs),
+        )
+        .await
+        .unwrap();
         let only = &convo.turns[0].1;
 
         let history = convo.history_for(only);
@@ -2539,9 +2627,12 @@ text = "hi"
                 "02.toml": r#"prompt = "second""#,
             },
         };
-        let convo = Conversation::load(fs.join("root").unwrap(), &test_skills(&fs))
-            .await
-            .unwrap();
+        let convo = Conversation::load(
+            &ConversationRoot::try_from(fs.join("root").unwrap()).unwrap(),
+            &test_skills(&fs),
+        )
+        .await
+        .unwrap();
         let second = &convo.turns[1].1;
 
         let history = convo.history_for(second);
@@ -2567,9 +2658,12 @@ text = "hi"
                 "02.toml": r#"prompt = "second""#,
             },
         };
-        let mut convo = Conversation::load(fs.join("root").unwrap(), &test_skills(&fs))
-            .await
-            .unwrap();
+        let mut convo = Conversation::load(
+            &ConversationRoot::try_from(fs.join("root").unwrap()).unwrap(),
+            &test_skills(&fs),
+        )
+        .await
+        .unwrap();
         convo.turns[1].1.meta.skip_head = true;
         let second = &convo.turns[1].1;
 
@@ -2595,9 +2689,12 @@ text = "hi"
                 "02.toml": r#"prompt = "second""#,
             },
         };
-        let mut convo = Conversation::load(fs.join("root").unwrap(), &test_skills(&fs))
-            .await
-            .unwrap();
+        let mut convo = Conversation::load(
+            &ConversationRoot::try_from(fs.join("root").unwrap()).unwrap(),
+            &test_skills(&fs),
+        )
+        .await
+        .unwrap();
         convo.turns[1].1.meta.isolated = true;
         let second = &convo.turns[1].1;
 
@@ -2615,9 +2712,12 @@ text = "hi"
                 "01.toml": r#"prompt = "first""#,
             },
         };
-        let mut convo = Conversation::load(fs.join("root").unwrap(), &test_skills(&fs))
-            .await
-            .unwrap();
+        let mut convo = Conversation::load(
+            &ConversationRoot::try_from(fs.join("root").unwrap()).unwrap(),
+            &test_skills(&fs),
+        )
+        .await
+        .unwrap();
         convo.turns[0].1.prompt =
             OneOrMany::many([Message::user("first"), Message::assistant("partial")]).unwrap();
         let only = &convo.turns[0].1;
@@ -2636,9 +2736,12 @@ text = "hi"
                 "01.toml": r#"prompt = "first""#,
             },
         };
-        let mut convo = Conversation::load(fs.join("root").unwrap(), &test_skills(&fs))
-            .await
-            .unwrap();
+        let mut convo = Conversation::load(
+            &ConversationRoot::try_from(fs.join("root").unwrap()).unwrap(),
+            &test_skills(&fs),
+        )
+        .await
+        .unwrap();
         convo.turns[0].1.prompt =
             OneOrMany::many([Message::user("first"), Message::assistant("partial")]).unwrap();
         convo.turns[0].1.meta.r#continue = true;
@@ -2661,21 +2764,17 @@ text = "hi"
     /// (`docs/developer/2026-05-03-B-knowledge-skills/`).
     ///
     /// User story: an operator declares `skills = ["foo"]` in a
-    /// `.ailly.toml`, drops a `SKILL.md` at `<root>/.ailly/skills/foo/`,
+    /// `.ailly.toml`, drops a `SKILL.md` at `<root>/skills/foo/`,
     /// and the resulting `ConversationTurn`'s preamble carries the skill
     /// body between the ancestor (inherited) system text and the local
     /// system text from the turn's own directory.
     #[tokio::test]
     async fn skill_body_is_injected_between_inherited_and_local_system() {
-        use crate::knowledge::skills::FsSkillRepository;
-
         let fs = mem_fs! {
             "root": {
-                ".ailly": {
-                    "skills": {
-                        "foo": {
-                            "SKILL.md": "---\nname: foo\ndescription: a foo skill\n---\nFOO BODY\n",
-                        },
+                "skills": {
+                    "foo": {
+                        "SKILL.md": "---\nname: foo\ndescription: a foo skill\n---\nFOO BODY\n",
                     },
                 },
                 "parent": {
@@ -2689,8 +2788,10 @@ text = "hi"
         };
 
         let project_root = fs.join("root").unwrap();
-        let skills = FsSkillRepository::new(&project_root);
-        let convo = Conversation::load(project_root, &skills).await.unwrap();
+        let skills = test_skills(&project_root);
+        let convo = Conversation::load(&ConversationRoot::try_from(project_root).unwrap(), &skills)
+            .await
+            .unwrap();
 
         assert_eq!(convo.turn_count(), 1);
         let turn = convo.turn(0);
@@ -2732,14 +2833,34 @@ text = "hi"
     /// touching the skills repository when no `.ailly.toml` declares
     /// `skills =`. A panicking repository proves it: any `get` call
     /// fails the test loudly.
-    struct PanickingSkillRepository;
+    use crate::knowledge::base::{
+        AgentsDoc, KnowledgeHit, SkillSummary, WorkflowName, WorkflowSummary,
+    };
+    use crate::workflow::Workflow;
 
-    impl crate::knowledge::skills::SkillRepository for PanickingSkillRepository {
-        fn get(
-            &self,
-            name: &crate::knowledge::skills::SkillName,
-        ) -> Result<crate::knowledge::skills::Skill, crate::knowledge::skills::SkillError> {
-            panic!("SkillRepository::get called for `{name}` when no skills were declared");
+    struct PanickingKnowledgeBase;
+
+    impl KnowledgeBase for PanickingKnowledgeBase {
+        fn skill(&self, name: &SkillName) -> Result<Skill, KnowledgeError> {
+            panic!("KnowledgeBase::skill called for `{name}` when no skills were declared");
+        }
+        fn workflow(&self, name: &WorkflowName) -> Result<Workflow, KnowledgeError> {
+            panic!(
+                "KnowledgeBase::workflow called for `{}` in panicking double",
+                name.as_str()
+            );
+        }
+        fn agents(&self) -> Result<Vec<AgentsDoc>, KnowledgeError> {
+            Ok(Vec::new())
+        }
+        fn list_skills(&self) -> Result<Vec<SkillSummary>, KnowledgeError> {
+            Ok(Vec::new())
+        }
+        fn list_workflows(&self) -> Result<Vec<WorkflowSummary>, KnowledgeError> {
+            Ok(Vec::new())
+        }
+        fn search(&self, _query: &str) -> Result<Vec<KnowledgeHit>, KnowledgeError> {
+            Ok(Vec::new())
         }
     }
 
@@ -2757,9 +2878,12 @@ text = "hi"
         };
         let project_root = fs.join("root").unwrap();
 
-        let convo = Conversation::load(project_root, &PanickingSkillRepository)
-            .await
-            .unwrap();
+        let convo = Conversation::load(
+            &ConversationRoot::try_from(project_root).unwrap(),
+            &PanickingKnowledgeBase,
+        )
+        .await
+        .unwrap();
 
         assert_eq!(convo.turn_count(), 2);
         for idx in 0..convo.turn_count() {
@@ -2771,13 +2895,11 @@ text = "hi"
     async fn multi_skill_ordering_preserves_walk_then_declaration_order() {
         let fs = mem_fs! {
             "root": {
-                ".ailly": {
-                    "skills": {
-                        "alpha": { "SKILL.md": "---\nname: alpha\ndescription: a\n---\nA\n" },
-                        "beta":  { "SKILL.md": "---\nname: beta\ndescription: b\n---\nB\n" },
-                        "gamma": { "SKILL.md": "---\nname: gamma\ndescription: g\n---\nG\n" },
-                        "delta": { "SKILL.md": "---\nname: delta\ndescription: d\n---\nD\n" },
-                    },
+                "skills": {
+                    "alpha": { "SKILL.md": "---\nname: alpha\ndescription: a\n---\nA\n" },
+                    "beta":  { "SKILL.md": "---\nname: beta\ndescription: b\n---\nB\n" },
+                    "gamma": { "SKILL.md": "---\nname: gamma\ndescription: g\n---\nG\n" },
+                    "delta": { "SKILL.md": "---\nname: delta\ndescription: d\n---\nD\n" },
                 },
                 ".ailly.toml": r#"skills = ["alpha", "beta"]"#,
                 "child": {
@@ -2787,9 +2909,11 @@ text = "hi"
             },
         };
         let project_root = fs.join("root").unwrap();
-        let skills = FsSkillRepository::new(&project_root);
+        let skills = test_skills(&project_root);
 
-        let convo = Conversation::load(project_root, &skills).await.unwrap();
+        let convo = Conversation::load(&ConversationRoot::try_from(project_root).unwrap(), &skills)
+            .await
+            .unwrap();
 
         assert_eq!(convo.turn_count(), 1);
         let turn = convo.turn(0);
@@ -2806,12 +2930,15 @@ text = "hi"
             },
         };
         let project_root = fs.join("root").unwrap();
-        let skills = FsSkillRepository::new(&project_root);
+        let skills = test_skills(&project_root);
 
-        let err = match Conversation::load(project_root, &skills).await {
-            Ok(_) => panic!("expected ContentError::Skill"),
-            Err(e) => e,
-        };
+        let err =
+            match Conversation::load(&ConversationRoot::try_from(project_root).unwrap(), &skills)
+                .await
+            {
+                Ok(_) => panic!("expected ContentError::Skill"),
+                Err(e) => e,
+            };
 
         let msg = format!("{err:#}");
         assert!(
@@ -2833,12 +2960,15 @@ text = "hi"
             },
         };
         let project_root = fs.join("root").unwrap();
-        let skills = FsSkillRepository::new(&project_root);
+        let skills = test_skills(&project_root);
 
-        let err = match Conversation::load(project_root, &skills).await {
-            Ok(_) => panic!("expected ContentError::Skill for invalid name"),
-            Err(e) => e,
-        };
+        let err =
+            match Conversation::load(&ConversationRoot::try_from(project_root).unwrap(), &skills)
+                .await
+            {
+                Ok(_) => panic!("expected ContentError::Skill for invalid name"),
+                Err(e) => e,
+            };
 
         let msg = format!("{err}");
         assert!(
@@ -2851,19 +2981,19 @@ text = "hi"
     async fn turn_declared_skill_resolves_via_repository_in_declared_order() {
         let fs = mem_fs! {
             "root": {
-                ".ailly": {
-                    "skills": {
-                        "one": { "SKILL.md": "---\nname: one\ndescription: a\n---\nA\n" },
-                        "two": { "SKILL.md": "---\nname: two\ndescription: b\n---\nB\n" },
-                    },
+                "skills": {
+                    "one": { "SKILL.md": "---\nname: one\ndescription: a\n---\nA\n" },
+                    "two": { "SKILL.md": "---\nname: two\ndescription: b\n---\nB\n" },
                 },
                 "01.toml": "prompt = \"p\"\nskills = [\"one\", \"two\"]\n",
             },
         };
         let project_root = fs.join("root").unwrap();
-        let skills = FsSkillRepository::new(&project_root);
+        let skills = test_skills(&project_root);
 
-        let convo = Conversation::load(project_root, &skills).await.unwrap();
+        let convo = Conversation::load(&ConversationRoot::try_from(project_root).unwrap(), &skills)
+            .await
+            .unwrap();
 
         assert_eq!(convo.turn_count(), 1);
         let turn = convo.turn(0);
@@ -2879,12 +3009,15 @@ text = "hi"
             },
         };
         let project_root = fs.join("root").unwrap();
-        let skills = FsSkillRepository::new(&project_root);
+        let skills = test_skills(&project_root);
 
-        let err = match Conversation::load(project_root, &skills).await {
-            Ok(_) => panic!("expected ContentError::Skill for unknown turn-declared skill"),
-            Err(e) => e,
-        };
+        let err =
+            match Conversation::load(&ConversationRoot::try_from(project_root).unwrap(), &skills)
+                .await
+            {
+                Ok(_) => panic!("expected ContentError::Skill for unknown turn-declared skill"),
+                Err(e) => e,
+            };
 
         let msg = format!("{err:#}");
         assert!(
@@ -2921,20 +3054,20 @@ text = "hi"
     async fn turn_declared_skills_appended_after_inherited_walk_skills() {
         let fs = mem_fs! {
             "root": {
-                ".ailly": {
-                    "skills": {
-                        "alpha": { "SKILL.md": "---\nname: alpha\ndescription: a\n---\nA\n" },
-                        "beta":  { "SKILL.md": "---\nname: beta\ndescription: b\n---\nB\n" },
-                    },
+                "skills": {
+                    "alpha": { "SKILL.md": "---\nname: alpha\ndescription: a\n---\nA\n" },
+                    "beta":  { "SKILL.md": "---\nname: beta\ndescription: b\n---\nB\n" },
                 },
                 ".ailly.toml": r#"skills = ["alpha"]"#,
                 "01.toml": "prompt = \"p\"\nskills = [\"beta\"]\n",
             },
         };
         let project_root = fs.join("root").unwrap();
-        let skills = FsSkillRepository::new(&project_root);
+        let skills = test_skills(&project_root);
 
-        let convo = Conversation::load(project_root, &skills).await.unwrap();
+        let convo = Conversation::load(&ConversationRoot::try_from(project_root).unwrap(), &skills)
+            .await
+            .unwrap();
 
         let turn = convo.turn(0);
         let names: Vec<&str> = convo.skills(turn).iter().map(|s| s.name.as_str()).collect();
@@ -2942,6 +3075,106 @@ text = "hi"
             names,
             vec!["alpha", "beta"],
             "walk-inherited skills must precede turn-declared skills",
+        );
+    }
+
+    #[tokio::test]
+    async fn conversation_load_in_conversation_mode_excludes_ailly_skills_workflows() {
+        let fs = mem_fs! {
+            "root": {
+                "01.toml": r#"prompt = "top""#,
+                ".ailly": {
+                    "should_skip.toml": r#"prompt = "ailly""#,
+                },
+                "skills": {
+                    "foo": {
+                        "SKILL.md": "---\nname: foo\ndescription: a\n---\nA\n",
+                        "ignored.toml": r#"prompt = "skills""#,
+                    },
+                },
+                "workflows": {
+                    "build.toml": "name = \"build\"\nstart = \"x\"\n[[tasks]]\nname = \"x\"\ntask = { kind = \"prompt\", text = \"hi\" }\n",
+                },
+                "child": {
+                    "02.toml": r#"prompt = "child""#,
+                },
+            },
+        };
+        let project_root = fs.join("root").unwrap();
+
+        let convo = Conversation::load(
+            &ConversationRoot::try_from(project_root).unwrap(),
+            &crate::knowledge::base::EmptyKnowledgeBase,
+        )
+        .await
+        .unwrap();
+
+        let paths: Vec<String> = (0..convo.turn_count())
+            .map(|i| convo.turn(i).path().as_str().to_string())
+            .collect();
+        assert!(
+            paths.iter().any(|p| p.ends_with("/01.toml")),
+            "top-level 01.toml is enumerated, got {paths:?}"
+        );
+        assert!(
+            paths.iter().any(|p| p.ends_with("/child/02.toml")),
+            "non-excluded subdirs are still walked, got {paths:?}"
+        );
+        assert!(
+            !paths.iter().any(|p| p.contains("/.ailly/")),
+            ".ailly/ excluded from conversation walk, got {paths:?}"
+        );
+        assert!(
+            !paths.iter().any(|p| p.contains("/skills/")),
+            "skills/ excluded from conversation walk, got {paths:?}"
+        );
+        assert!(
+            !paths.iter().any(|p| p.contains("/workflows/")),
+            "workflows/ excluded from conversation walk, got {paths:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn conversation_load_in_workflow_mode_walks_only_conversation_root() {
+        let fs = mem_fs! {
+            "project": {
+                "01.toml": r#"prompt = "outside_should_not_be_seen""#,
+                "skills": {
+                    "leak": {
+                        "SKILL.md": "---\nname: leak\ndescription: l\n---\nL\n",
+                    },
+                },
+                ".ailly": {
+                    "build": {
+                        "01.toml": r#"prompt = "task one""#,
+                    },
+                    "02.toml": r#"prompt = "another""#,
+                },
+            },
+        };
+        let ailly_dir = fs.join("project/.ailly").unwrap();
+
+        let convo = Conversation::load(
+            &ConversationRoot::try_from(ailly_dir).unwrap(),
+            &crate::knowledge::base::EmptyKnowledgeBase,
+        )
+        .await
+        .unwrap();
+
+        let paths: Vec<String> = (0..convo.turn_count())
+            .map(|i| convo.turn(i).path().as_str().to_string())
+            .collect();
+        assert!(
+            paths.iter().any(|p| p.ends_with("/.ailly/02.toml")),
+            "top-of-conversation-root turn enumerated, got {paths:?}"
+        );
+        assert!(
+            paths.iter().any(|p| p.ends_with("/.ailly/build/01.toml")),
+            "subdirs inside the conversation root are walked, got {paths:?}"
+        );
+        assert!(
+            !paths.iter().any(|p| p.contains("/project/01.toml")),
+            "project-tree turn outside .ailly is not visited, got {paths:?}"
         );
     }
 }

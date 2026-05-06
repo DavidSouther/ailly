@@ -12,8 +12,10 @@ pub struct FsList {
 impl FsList {
     pub const NAME: &'static str = "fs.list";
 
-    pub fn new(root: VfsPath) -> Self {
-        Self { root }
+    pub fn new(project: &crate::project::ProjectRoot) -> Self {
+        Self {
+            root: project.as_path().clone(),
+        }
     }
 }
 
@@ -181,7 +183,7 @@ mod tests {
             }
         };
         let root = fs.join("root").unwrap();
-        let tool = FsList::new(root);
+        let tool = FsList::new(&crate::project::ProjectRoot::try_from(root).unwrap());
 
         let raw = tool.call(args("src", None)).await.unwrap();
         let value: serde_json::Value = serde_json::from_str(&raw).unwrap();
@@ -207,7 +209,7 @@ mod tests {
             }
         };
         let root = fs.join("root").unwrap();
-        let tool = FsList::new(root);
+        let tool = FsList::new(&crate::project::ProjectRoot::try_from(root).unwrap());
 
         let raw = tool.call(args("src", Some("**/*.rs"))).await.unwrap();
         let value: serde_json::Value = serde_json::from_str(&raw).unwrap();
@@ -237,7 +239,7 @@ mod tests {
             }
         };
         let root = fs.join("root").unwrap();
-        let tool = FsList::new(root);
+        let tool = FsList::new(&crate::project::ProjectRoot::try_from(root).unwrap());
 
         let raw = tool.call(args("src", Some("*.rs"))).await.unwrap();
         let value: serde_json::Value = serde_json::from_str(&raw).unwrap();
@@ -256,7 +258,7 @@ mod tests {
     async fn outside_root_is_rejected() {
         let fs = mem_fs! { "root": { "src": { "lib.rs": "//\n" } } };
         let root = fs.join("root").unwrap();
-        let tool = FsList::new(root);
+        let tool = FsList::new(&crate::project::ProjectRoot::try_from(root).unwrap());
 
         let err = tool.call(args("../oops", None)).await.unwrap_err();
         assert!(matches!(
@@ -269,7 +271,7 @@ mod tests {
     async fn not_a_directory_when_path_is_a_file() {
         let fs = mem_fs! { "root": { "src": { "lib.rs": "//\n" } } };
         let root = fs.join("root").unwrap();
-        let tool = FsList::new(root);
+        let tool = FsList::new(&crate::project::ProjectRoot::try_from(root).unwrap());
 
         let err = tool.call(args("src/lib.rs", None)).await.unwrap_err();
         assert!(matches!(err, FsListError::NotADirectory { .. }));
@@ -279,7 +281,7 @@ mod tests {
     async fn invalid_glob_surfaces() {
         let fs = mem_fs! { "root": { "src": { "lib.rs": "//\n" } } };
         let root = fs.join("root").unwrap();
-        let tool = FsList::new(root);
+        let tool = FsList::new(&crate::project::ProjectRoot::try_from(root).unwrap());
 
         let err = tool.call(args("src", Some("[broken"))).await.unwrap_err();
         assert!(matches!(err, FsListError::InvalidGlob { .. }));

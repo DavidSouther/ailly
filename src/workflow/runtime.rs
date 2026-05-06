@@ -65,7 +65,9 @@ pub enum WorkflowStopReason {
 pub struct Runtime {
     workflow: Workflow,
     state: WorkflowState,
-    conversation_root: VfsPath,
+    conversation_root: crate::project::ConversationRoot,
+    #[allow(dead_code)]
+    knowledge: Arc<dyn crate::knowledge::base::KnowledgeBase>,
     engine: Arc<dyn Engine>,
     tool_registry: Arc<dyn ToolRegistry>,
     settings: Settings,
@@ -76,7 +78,10 @@ impl std::fmt::Debug for Runtime {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Runtime")
             .field("workflow", &self.workflow.name)
-            .field("conversation_root", &self.conversation_root.as_str())
+            .field(
+                "conversation_root",
+                &self.conversation_root.as_path().as_str(),
+            )
             .finish_non_exhaustive()
     }
 }
@@ -85,12 +90,15 @@ impl Runtime {
     /// Build a Runtime ready to drive `workflow` against `engine`.
     ///
     /// `state` is either freshly initialized with `[workflow.start]` or
-    /// read from `workflow.state.toml` at `conversation_root`. The runtime
-    /// persists `state` after each task.
+    /// read from `workflow.state.toml` at `conversation`. The runtime
+    /// persists `state` after each task. `knowledge` carries the
+    /// `KnowledgeBase` that produced `workflow` and is reserved for
+    /// follow-on slices that resolve skills mid-workflow.
     pub fn new(
         workflow: Workflow,
         state: WorkflowState,
-        conversation_root: VfsPath,
+        conversation: crate::project::ConversationRoot,
+        knowledge: Arc<dyn crate::knowledge::base::KnowledgeBase>,
         engine: Arc<dyn Engine>,
         tool_registry: Arc<dyn ToolRegistry>,
         settings: Settings,
@@ -99,12 +107,17 @@ impl Runtime {
         Ok(Self {
             workflow,
             state,
-            conversation_root,
+            conversation_root: conversation,
+            knowledge,
             engine,
             tool_registry,
             settings,
             cancel: CancellationToken::new(),
         })
+    }
+
+    pub fn conversation_root(&self) -> &crate::project::ConversationRoot {
+        &self.conversation_root
     }
 
     pub fn cancel_token(&self) -> CancellationToken {
@@ -117,11 +130,13 @@ impl Runtime {
                 workflow,
                 mut state,
                 conversation_root,
+                knowledge: _knowledge,
                 engine,
                 tool_registry,
                 settings,
                 cancel,
             } = self;
+            let conversation_root = conversation_root.as_path().clone();
 
             loop {
                 if cancel.is_cancelled() {
@@ -764,6 +779,13 @@ fn find_next_n(root: &VfsPath) -> Result<u32, ContentError> {
 mod tests {
     use super::*;
     use crate::engine::{EmptyRegistry, Noop};
+    use crate::knowledge::base::KnowledgeBase;
+    use crate::knowledge::base::EmptyKnowledgeBase;
+    use crate::project::ConversationRoot;
+
+    fn empty_knowledge() -> Arc<dyn KnowledgeBase> {
+        Arc::new(EmptyKnowledgeBase)
+    }
 
     fn empty_registry() -> Arc<dyn ToolRegistry> {
         Arc::new(EmptyRegistry)
@@ -805,7 +827,8 @@ mod tests {
         let runtime = Runtime::new(
             workflow,
             state,
-            root.clone(),
+            ConversationRoot::try_from(root.clone()).unwrap(),
+            empty_knowledge(),
             Arc::new(Noop::default()),
             empty_registry(),
             Settings::default(),
@@ -874,7 +897,8 @@ mod tests {
         let runtime = Runtime::new(
             workflow,
             state,
-            root.clone(),
+            ConversationRoot::try_from(root.clone()).unwrap(),
+            empty_knowledge(),
             Arc::new(Noop::default()),
             empty_registry(),
             Settings::default(),
@@ -935,7 +959,8 @@ mod tests {
         let runtime = Runtime::new(
             workflow,
             state,
-            root.clone(),
+            ConversationRoot::try_from(root.clone()).unwrap(),
+            empty_knowledge(),
             Arc::new(Noop::default()),
             empty_registry(),
             Settings::default(),
@@ -982,7 +1007,8 @@ mod tests {
         let runtime = Runtime::new(
             workflow,
             state,
-            root.clone(),
+            ConversationRoot::try_from(root.clone()).unwrap(),
+            empty_knowledge(),
             Arc::new(noop_with("approved")),
             empty_registry(),
             Settings::default(),
@@ -1069,7 +1095,8 @@ mod tests {
         let runtime = Runtime::new(
             workflow,
             state,
-            root.clone(),
+            ConversationRoot::try_from(root.clone()).unwrap(),
+            empty_knowledge(),
             Arc::new(noop_with("rejected")),
             empty_registry(),
             Settings::default(),
@@ -1130,7 +1157,8 @@ mod tests {
         let err = Runtime::new(
             workflow,
             state,
-            root,
+            ConversationRoot::try_from(root).unwrap(),
+            empty_knowledge(),
             Arc::new(Noop::default()),
             empty_registry(),
             Settings::default(),
@@ -1202,7 +1230,8 @@ mod tests {
         let runtime = Runtime::new(
             workflow.clone(),
             state,
-            root.clone(),
+            ConversationRoot::try_from(root.clone()).unwrap(),
+            empty_knowledge(),
             Arc::new(Noop::default()),
             empty_registry(),
             Settings::default(),
@@ -1247,7 +1276,8 @@ mod tests {
         let runtime2 = Runtime::new(
             workflow2,
             state2,
-            root2,
+            ConversationRoot::try_from(root2).unwrap(),
+            empty_knowledge(),
             Arc::new(Noop::default()),
             empty_registry(),
             Settings::default(),
@@ -1276,7 +1306,8 @@ mod tests {
         let err = Runtime::new(
             workflow.clone(),
             bad_inputs,
-            root.clone(),
+            ConversationRoot::try_from(root.clone()).unwrap(),
+            empty_knowledge(),
             Arc::new(Noop::default()),
             empty_registry(),
             Settings::default(),
@@ -1290,7 +1321,8 @@ mod tests {
         let err2 = Runtime::new(
             workflow,
             empty,
-            root,
+            ConversationRoot::try_from(root).unwrap(),
+            empty_knowledge(),
             Arc::new(Noop::default()),
             empty_registry(),
             Settings::default(),
@@ -1340,7 +1372,8 @@ mod tests {
         let runtime = Runtime::new(
             workflow,
             state,
-            root.clone(),
+            ConversationRoot::try_from(root.clone()).unwrap(),
+            empty_knowledge(),
             Arc::new(Noop::default()),
             empty_registry(),
             Settings::default(),
@@ -1406,9 +1439,14 @@ mod tests {
 
     fn registry_with_fs_absent(root: &VfsPath) -> Arc<dyn ToolRegistry> {
         use crate::engine::HashMapRegistry;
-        use crate::tools::FsAbsent;
+        use crate::knowledge::tools::FsAbsent;
         let mut registry = HashMapRegistry::default();
-        registry.insert(FsAbsent::NAME, Arc::new(FsAbsent::new(root.clone())));
+        registry.insert(
+            FsAbsent::NAME,
+            Arc::new(FsAbsent::new(
+                &ConversationRoot::try_from(root.clone()).unwrap(),
+            )),
+        );
         Arc::new(registry)
     }
 
@@ -1437,7 +1475,8 @@ mod tests {
         let runtime = Runtime::new(
             workflow,
             state,
-            root.clone(),
+            ConversationRoot::try_from(root.clone()).unwrap(),
+            empty_knowledge(),
             Arc::new(Noop::default()),
             registry_with_fs_absent(&root),
             Settings::default(),
@@ -1492,7 +1531,8 @@ mod tests {
         let runtime = Runtime::new(
             workflow,
             state,
-            root.clone(),
+            ConversationRoot::try_from(root.clone()).unwrap(),
+            empty_knowledge(),
             Arc::new(Noop::default()),
             registry_with_fs_absent(&root),
             Settings::default(),
@@ -1537,7 +1577,8 @@ mod tests {
         let runtime = Runtime::new(
             workflow,
             state,
-            root.clone(),
+            ConversationRoot::try_from(root.clone()).unwrap(),
+            empty_knowledge(),
             Arc::new(Noop::default()),
             empty_registry(),
             Settings::default(),
@@ -1586,7 +1627,8 @@ mod tests {
         let runtime = Runtime::new(
             workflow,
             state,
-            root.clone(),
+            ConversationRoot::try_from(root.clone()).unwrap(),
+            empty_knowledge(),
             Arc::new(Noop::default()),
             registry_with_fs_absent(&root),
             Settings::default(),
@@ -1663,7 +1705,8 @@ mod tests {
         let runtime = Runtime::new(
             workflow,
             state,
-            root.clone(),
+            ConversationRoot::try_from(root.clone()).unwrap(),
+            empty_knowledge(),
             Arc::new(Noop::default()),
             registry_with_fs_absent(&root),
             Settings::default(),
@@ -1714,7 +1757,8 @@ mod tests {
         let runtime = Runtime::new(
             workflow,
             state,
-            root.clone(),
+            ConversationRoot::try_from(root.clone()).unwrap(),
+            empty_knowledge(),
             Arc::new(noop_with("DIFFERENT_RESPONSE")),
             empty_registry(),
             Settings::default(),
@@ -1756,7 +1800,8 @@ mod tests {
         let runtime = Runtime::new(
             workflow,
             state,
-            root.clone(),
+            ConversationRoot::try_from(root.clone()).unwrap(),
+            empty_knowledge(),
             Arc::new(Noop::default()),
             empty_registry(),
             Settings::default(),
@@ -1804,7 +1849,8 @@ mod tests {
         let runtime = Runtime::new(
             workflow,
             state,
-            root.clone(),
+            ConversationRoot::try_from(root.clone()).unwrap(),
+            empty_knowledge(),
             Arc::new(Noop::default()),
             empty_registry(),
             Settings::default(),
@@ -1839,7 +1885,7 @@ mod tests {
     #[tokio::test]
     async fn workflow_pauses_and_resumes_across_design_feature_test_and_plan() {
         use crate::engine::{HashMapRegistry, ToolRegistry};
-        use crate::tools::FsAbsent;
+        use crate::knowledge::tools::FsAbsent;
 
         let fs = mem_fs! {
             "root": {
@@ -1901,7 +1947,12 @@ mod tests {
         };
 
         let mut registry = HashMapRegistry::default();
-        registry.insert("fs.absent", Arc::new(FsAbsent::new(root.clone())));
+        registry.insert(
+            "fs.absent",
+            Arc::new(FsAbsent::new(
+                &ConversationRoot::try_from(root.clone()).unwrap(),
+            )),
+        );
         let registry: Arc<dyn ToolRegistry> = Arc::new(registry);
 
         async fn run_once(
@@ -1913,7 +1964,8 @@ mod tests {
             let runtime = Runtime::new(
                 workflow.clone(),
                 state,
-                root.clone(),
+                ConversationRoot::try_from(root.clone()).unwrap(),
+                empty_knowledge(),
                 Arc::new(Noop::default()),
                 registry,
                 Settings::default(),
@@ -2071,5 +2123,69 @@ mod tests {
                 "history must record {stage}; got {stages_in_history:?}"
             );
         }
+    }
+
+    #[tokio::test]
+    async fn runtime_writes_workflow_state_under_conversation_root() {
+        let fs = mem_fs! { "root": {} };
+        let root = fs.join("root").unwrap();
+        let workflow = Workflow {
+            name: "lone".to_string(),
+            start: "only".to_string(),
+            inputs: BTreeMap::new(),
+            tasks: vec![task("only", "Do it.", &[])],
+        };
+        let state = WorkflowState::initial(&workflow);
+
+        let runtime = Runtime::new(
+            workflow,
+            state,
+            ConversationRoot::try_from(root.clone()).unwrap(),
+            empty_knowledge(),
+            Arc::new(Noop::default()),
+            empty_registry(),
+            Settings::default(),
+        )
+        .unwrap();
+        let _events: Vec<WorkflowEvent> = runtime.run().collect().await;
+
+        let state_path = root.join("workflow.state.toml").unwrap();
+        assert!(
+            state_path.exists().unwrap(),
+            "workflow.state.toml is written under the conversation root"
+        );
+    }
+
+    #[tokio::test]
+    async fn runtime_workflow_definition_loads_from_knowledge_base() {
+        use crate::knowledge::base::{FsKnowledgeBase, KnowledgeBase, WorkflowName};
+        use crate::project::KnowledgeRoot;
+
+        let fs = mem_fs! {
+            "project": {
+                "workflows": {
+                    "build.toml": "name = \"build\"\nstart = \"compile\"\n[[tasks]]\nname = \"compile\"\ntask = { kind = \"prompt\", text = \"build it\" }\n",
+                },
+            },
+        };
+        let project = KnowledgeRoot::try_from(fs.join("project").unwrap()).unwrap();
+        let kb = FsKnowledgeBase::new(vec![project]);
+
+        let workflow = kb.workflow(&WorkflowName::new("build")).unwrap();
+        assert_eq!(workflow.name, "build");
+        assert_eq!(workflow.start, "compile");
+
+        let state = WorkflowState::initial(&workflow);
+        let runtime = Runtime::new(
+            workflow,
+            state,
+            ConversationRoot::try_from(fs.join("project").unwrap()).unwrap(),
+            Arc::new(kb),
+            Arc::new(Noop::default()),
+            empty_registry(),
+            Settings::default(),
+        )
+        .expect("runtime accepts knowledge-base-loaded workflow");
+        let _events: Vec<WorkflowEvent> = runtime.run().collect().await;
     }
 }

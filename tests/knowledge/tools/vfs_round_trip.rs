@@ -40,7 +40,7 @@ use rig::tool::ToolDyn;
 
 use ailly::engine::{HashMapRegistry, ToolRegistry};
 use ailly::mem_fs;
-use ailly::tools::{FsEdit, FsGrep, FsList, FsRead};
+use ailly::knowledge::tools::{FsEdit, FsGrep, FsList, FsRead};
 
 #[tokio::test]
 async fn vfs_tools_round_trip_through_registry() {
@@ -61,19 +61,27 @@ async fn vfs_tools_round_trip_through_registry() {
     let mut registry = HashMapRegistry::default();
     registry.insert(
         FsList::NAME,
-        Arc::new(FsList::new(root.clone())) as Arc<dyn ToolDyn>,
+        Arc::new(FsList::new(
+            &ailly::project::ProjectRoot::try_from(root.clone()).unwrap(),
+        )) as Arc<dyn ToolDyn>,
     );
     registry.insert(
         FsRead::NAME,
-        Arc::new(FsRead::new(root.clone())) as Arc<dyn ToolDyn>,
+        Arc::new(FsRead::new(
+            &ailly::project::ProjectRoot::try_from(root.clone()).unwrap(),
+        )) as Arc<dyn ToolDyn>,
     );
     registry.insert(
         FsGrep::NAME,
-        Arc::new(FsGrep::new(root.clone())) as Arc<dyn ToolDyn>,
+        Arc::new(FsGrep::new(
+            &ailly::project::ProjectRoot::try_from(root.clone()).unwrap(),
+        )) as Arc<dyn ToolDyn>,
     );
     registry.insert(
         FsEdit::NAME,
-        Arc::new(FsEdit::new(root.clone())) as Arc<dyn ToolDyn>,
+        Arc::new(FsEdit::new(
+            &ailly::project::ProjectRoot::try_from(root.clone()).unwrap(),
+        )) as Arc<dyn ToolDyn>,
     );
     let registry: Arc<dyn ToolRegistry> = Arc::new(registry);
 

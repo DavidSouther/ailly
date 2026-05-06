@@ -31,9 +31,10 @@ use ailly::content::Conversation;
 use ailly::engine::{
     Generator, HashMapRegistry, Noop, Settings, StopReason, ToolRegistry, TurnEvent,
 };
-use ailly::knowledge::skills::NullSkillRepository;
-use ailly::permissions::{AllowAllBackend, PermissionBackend, PermissionGated};
-use ailly::tools::web::{
+use ailly::knowledge::base::EmptyKnowledgeBase;
+use ailly::knowledge::permissions::{AllowAllBackend, PermissionBackend, PermissionGated};
+use ailly::project::ConversationRoot;
+use ailly::knowledge::tools::web::{
     MapSearchBackend, SearchBackend, SearchResult, WebFetch, WebFetchClassifier, WebSearch,
     WebSearchClassifier,
 };
@@ -144,9 +145,12 @@ async fn web_search_and_web_fetch_round_trip_through_gated_registry_and_files() 
     )
     .expect("write 02.toml");
 
-    let conversation = Conversation::load(root.clone(), &NullSkillRepository)
-        .await
-        .expect("load two-turn conversation");
+    let conversation = Conversation::load(
+        &ConversationRoot::try_from(root.clone()).unwrap(),
+        &EmptyKnowledgeBase,
+    )
+    .await
+    .expect("load two-turn conversation");
 
     let engine = Arc::new(Noop::default());
     let generator =

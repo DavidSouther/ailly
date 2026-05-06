@@ -3,7 +3,7 @@
 # (docs/developer/2026-05-03-B-knowledge-skills/).
 #
 # User story: an operator declares `skills = ["echo"]` in a `.ailly.toml`
-# and drops a `SKILL.md` at `<root>/.ailly/skills/echo/SKILL.md`. When
+# and drops a `SKILL.md` at `<root>/skills/echo/SKILL.md`. When
 # they run ailly, the skill body reaches the engine alongside the
 # inherited system text, and the noop engine echoes it back into the
 # recorded response. The headline acceptance criterion of the slice's
@@ -59,4 +59,4 @@ if [ "$status" -eq 0 ]; then
     exit 1
 fi
 assert_grep_q 'does-not-exist' err
-assert_grep_q '.ailly/skills' err
+assert_grep_q 'skills' err

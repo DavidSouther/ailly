@@ -6,7 +6,7 @@ use rig::completion::ToolDefinition;
 use rig::tool::{Tool, ToolDyn};
 use serde_json::Value;
 
-use crate::permissions::{Classification, Classifier, PermissionBackend, PermissionGated};
+use crate::knowledge::permissions::{Classification, Classifier, PermissionBackend, PermissionGated};
 
 #[derive(Debug, Clone)]
 pub struct Bash {
@@ -703,7 +703,7 @@ mod tests {
     use std::time::Duration;
 
     use crate::engine::{HashMapRegistry, ToolRegistry};
-    use crate::permissions::{BasePolicy, ClassRouterBackend, Classifier, PermissionBackend};
+    use crate::knowledge::permissions::{BasePolicy, ClassRouterBackend, Classifier, PermissionBackend};
 
     fn args(command: &str) -> String {
         serde_json::to_string(&serde_json::json!({ "command": command }))

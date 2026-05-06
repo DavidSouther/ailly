@@ -31,10 +31,10 @@ use rig::tool::{Tool, ToolDyn};
 use vfs::{MemoryFS, VfsPath};
 
 use ailly::engine::{HashMapRegistry, ToolRegistry};
-use ailly::permissions::{
+use ailly::knowledge::permissions::{
     BasePolicy, ClassRouterBackend, Classification, ConstClassifier, PermissionGated,
 };
-use ailly::tools::FsAbsent;
+use ailly::knowledge::tools::FsAbsent;
 
 fn fs_absent_args() -> String {
     serde_json::to_string(&serde_json::json!({
@@ -104,7 +104,9 @@ impl Tool for CountingTool {
 #[tokio::test]
 async fn permission_gate_round_trips_through_registry_and_intercepts_deny() {
     let root = root_with_cleared_design();
-    let inner: Arc<dyn ToolDyn> = Arc::new(FsAbsent::new(root.clone()));
+    let inner: Arc<dyn ToolDyn> = Arc::new(FsAbsent::new(
+        &ailly::project::ConversationRoot::try_from(root.clone()).unwrap(),
+    ));
 
     let baseline = inner
         .call(fs_absent_args())

@@ -6,6 +6,7 @@ use vfs::VfsPath;
 
 use super::range::{LineRange, LineRangeError};
 use super::root::{ResolveError, resolve_under_root};
+use crate::project::ProjectRoot;
 
 pub struct FsEdit {
     root: VfsPath,
@@ -14,8 +15,27 @@ pub struct FsEdit {
 impl FsEdit {
     pub const NAME: &'static str = "fs.edit";
 
-    pub fn new(root: VfsPath) -> Self {
-        Self { root }
+    /// Construct an `FsEdit` over a project root.
+    ///
+    /// The constructor accepts only `&ProjectRoot`. Handing it a
+    /// `&ConversationRoot` or `&KnowledgeRoot` is a type error caught at
+    /// compile time:
+    ///
+    /// ```compile_fail
+    /// use ailly::project::{ConversationRoot, ProjectRoot};
+    /// use ailly::knowledge::tools::FsEdit;
+    /// use vfs::{MemoryFS, VfsPath};
+    ///
+    /// let fs: VfsPath = VfsPath::new(MemoryFS::new());
+    /// fs.join("conv").unwrap().create_dir().unwrap();
+    /// let conv = ConversationRoot::try_from(fs.join("conv").unwrap()).unwrap();
+    /// // The next line must not compile.
+    /// let _ = FsEdit::new(&conv);
+    /// ```
+    pub fn new(project: &ProjectRoot) -> Self {
+        Self {
+            root: project.as_path().clone(),
+        }
     }
 }
 
@@ -202,7 +222,7 @@ mod tests {
     async fn rewrites_a_middle_line_and_preserves_trailing_newline() {
         let fs = mem_fs! { "root": { "a.txt": "one\ntwo\nthree\n" } };
         let root = fs.join("root").unwrap();
-        let tool = FsEdit::new(root.clone());
+        let tool = FsEdit::new(&crate::project::ProjectRoot::try_from(root.clone()).unwrap());
 
         let confirmation = tool.call(args("a.txt", (2, 2), "TWO")).await.unwrap();
         assert!(confirmation.contains("a.txt"));
@@ -215,7 +235,7 @@ mod tests {
     async fn rewrites_first_line() {
         let fs = mem_fs! { "root": { "a.txt": "one\ntwo\nthree\n" } };
         let root = fs.join("root").unwrap();
-        let tool = FsEdit::new(root.clone());
+        let tool = FsEdit::new(&crate::project::ProjectRoot::try_from(root.clone()).unwrap());
 
         tool.call(args("a.txt", (1, 1), "ONE")).await.unwrap();
         assert_eq!(read(&root, "a.txt"), "ONE\ntwo\nthree\n");
@@ -225,7 +245,7 @@ mod tests {
     async fn rewrites_last_line_without_changing_trailing_newline() {
         let fs = mem_fs! { "root": { "a.txt": "one\ntwo\nthree\n" } };
         let root = fs.join("root").unwrap();
-        let tool = FsEdit::new(root.clone());
+        let tool = FsEdit::new(&crate::project::ProjectRoot::try_from(root.clone()).unwrap());
 
         tool.call(args("a.txt", (3, 3), "THREE")).await.unwrap();
         assert_eq!(read(&root, "a.txt"), "one\ntwo\nTHREE\n");
@@ -235,7 +255,7 @@ mod tests {
     async fn no_trailing_newline_is_preserved_after_edit() {
         let fs = mem_fs! { "root": { "a.txt": "one\ntwo\nthree" } };
         let root = fs.join("root").unwrap();
-        let tool = FsEdit::new(root.clone());
+        let tool = FsEdit::new(&crate::project::ProjectRoot::try_from(root.clone()).unwrap());
 
         tool.call(args("a.txt", (2, 2), "TWO")).await.unwrap();
         assert_eq!(read(&root, "a.txt"), "one\nTWO\nthree");
@@ -245,7 +265,7 @@ mod tests {
     async fn multi_line_replacement_writes_two_lines() {
         let fs = mem_fs! { "root": { "a.txt": "one\ntwo\nthree\n" } };
         let root = fs.join("root").unwrap();
-        let tool = FsEdit::new(root.clone());
+        let tool = FsEdit::new(&crate::project::ProjectRoot::try_from(root.clone()).unwrap());
 
         let confirmation = tool.call(args("a.txt", (2, 2), "a\nb")).await.unwrap();
         assert!(confirmation.contains("2 lines"));
@@ -256,7 +276,7 @@ mod tests {
     async fn empty_replacement_deletes_the_range() {
         let fs = mem_fs! { "root": { "a.txt": "one\ntwo\nthree\n" } };
         let root = fs.join("root").unwrap();
-        let tool = FsEdit::new(root.clone());
+        let tool = FsEdit::new(&crate::project::ProjectRoot::try_from(root.clone()).unwrap());
 
         let confirmation = tool.call(args("a.txt", (2, 2), "")).await.unwrap();
         assert!(confirmation.contains("0 lines"));
@@ -267,7 +287,7 @@ mod tests {
     async fn out_of_range_when_end_exceeds_total_lines() {
         let fs = mem_fs! { "root": { "a.txt": "one\ntwo\n" } };
         let root = fs.join("root").unwrap();
-        let tool = FsEdit::new(root.clone());
+        let tool = FsEdit::new(&crate::project::ProjectRoot::try_from(root.clone()).unwrap());
 
         let err = tool.call(args("a.txt", (1, 10), "x")).await.unwrap_err();
         assert!(matches!(err, FsEditError::OutOfRange { .. }));
@@ -277,7 +297,7 @@ mod tests {
     async fn not_a_file_when_path_is_a_directory() {
         let fs = mem_fs! { "root": { "sub": { "a.txt": "x\n" } } };
         let root = fs.join("root").unwrap();
-        let tool = FsEdit::new(root.clone());
+        let tool = FsEdit::new(&crate::project::ProjectRoot::try_from(root.clone()).unwrap());
 
         let err = tool.call(args("sub", (1, 1), "x")).await.unwrap_err();
         assert!(matches!(err, FsEditError::NotAFile { .. }));
@@ -287,7 +307,7 @@ mod tests {
     async fn creates_a_missing_file_with_replacement_as_body() {
         let fs = mem_fs! { "root": {} };
         let root = fs.join("root").unwrap();
-        let tool = FsEdit::new(root.clone());
+        let tool = FsEdit::new(&crate::project::ProjectRoot::try_from(root.clone()).unwrap());
 
         let confirmation = tool
             .call(args("new.txt", (1, 1), "hello\nworld\n"))
@@ -306,7 +326,7 @@ mod tests {
     async fn creating_ignores_the_supplied_range() {
         let fs = mem_fs! { "root": {} };
         let root = fs.join("root").unwrap();
-        let tool = FsEdit::new(root.clone());
+        let tool = FsEdit::new(&crate::project::ProjectRoot::try_from(root.clone()).unwrap());
 
         let confirmation = tool.call(args("new.txt", (5, 10), "body")).await.unwrap();
 
@@ -318,7 +338,7 @@ mod tests {
     async fn empty_replacement_creates_an_empty_file() {
         let fs = mem_fs! { "root": {} };
         let root = fs.join("root").unwrap();
-        let tool = FsEdit::new(root.clone());
+        let tool = FsEdit::new(&crate::project::ProjectRoot::try_from(root.clone()).unwrap());
 
         let confirmation = tool.call(args("blank.txt", (1, 1), "")).await.unwrap();
 
@@ -331,7 +351,7 @@ mod tests {
     async fn creating_does_not_make_parent_directories() {
         let fs = mem_fs! { "root": {} };
         let root = fs.join("root").unwrap();
-        let tool = FsEdit::new(root.clone());
+        let tool = FsEdit::new(&crate::project::ProjectRoot::try_from(root.clone()).unwrap());
 
         let err = tool
             .call(args("missing/dir/new.txt", (1, 1), "body"))
@@ -348,7 +368,7 @@ mod tests {
     async fn creating_a_path_outside_root_is_rejected() {
         let fs = mem_fs! { "root": {} };
         let root = fs.join("root").unwrap();
-        let tool = FsEdit::new(root.clone());
+        let tool = FsEdit::new(&crate::project::ProjectRoot::try_from(root.clone()).unwrap());
 
         let err = tool
             .call(args("../escape.txt", (1, 1), "body"))

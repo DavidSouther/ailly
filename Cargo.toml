@@ -61,12 +61,17 @@ path = "tests/knowledge/clarify_tool_round_trip.rs"
 
 [[test]]
 name = "permissions_gate_round_trip"
-path = "tests/permissions/gate_round_trip.rs"
+path = "tests/knowledge/permissions/gate_round_trip.rs"
 
 [[test]]
 name = "tools_vfs_round_trip"
-path = "tests/tools/vfs_round_trip.rs"
+path = "tests/knowledge/tools/vfs_round_trip.rs"
+
 [[test]]
 name = "tools_web_round_trip"
-path = "tests/tools/web_round_trip.rs"
+path = "tests/knowledge/tools/web_round_trip.rs"
 required-features = ["web"]
+
+[[test]]
+name = "roots_full_round_trip"
+path = "tests/project/full_round_trip.rs"

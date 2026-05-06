@@ -208,8 +208,9 @@ mod tests {
     use super::*;
     use crate::content::Conversation;
     use crate::engine::Noop;
-    use crate::knowledge::skills::FsSkillRepository;
+    use crate::knowledge::base::EmptyKnowledgeBase;
     use crate::mem_fs;
+    use crate::project::ConversationRoot;
 
     #[tokio::test]
     async fn single_turn_emits_started_deltas_finished() {
@@ -220,8 +221,8 @@ mod tests {
             },
         };
         let convo = Conversation::load(
-            fs.join("root").unwrap(),
-            &FsSkillRepository::new(&fs.join("root").unwrap()),
+            &ConversationRoot::try_from(fs.join("root").unwrap()).unwrap(),
+            &EmptyKnowledgeBase,
         )
         .await
         .unwrap();
@@ -300,9 +301,12 @@ mod tests {
             },
         };
         let dir = fs.join("root").unwrap();
-        let convo = Conversation::load(dir.clone(), &FsSkillRepository::new(&dir))
-            .await
-            .unwrap();
+        let convo = Conversation::load(
+            &ConversationRoot::try_from(dir.clone()).unwrap(),
+            &EmptyKnowledgeBase,
+        )
+        .await
+        .unwrap();
         let generator = Generator::new(convo, Arc::new(MetadataEngine), Settings::default());
 
         let _events: Vec<TurnEvent> = generator.run().collect().await;
@@ -337,8 +341,8 @@ mod tests {
             },
         };
         let convo = Conversation::load(
-            fs.join("root").unwrap(),
-            &FsSkillRepository::new(&fs.join("root").unwrap()),
+            &ConversationRoot::try_from(fs.join("root").unwrap()).unwrap(),
+            &EmptyKnowledgeBase,
         )
         .await
         .unwrap();

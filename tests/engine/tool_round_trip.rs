@@ -23,8 +23,9 @@ use ailly::content::Conversation;
 use ailly::engine::{
     Generator, HashMapRegistry, Noop, Settings, StopReason, ToolRegistry, TurnEvent,
 };
-use ailly::knowledge::skills::NullSkillRepository;
+use ailly::knowledge::base::EmptyKnowledgeBase;
 use ailly::mem_fs;
+use ailly::project::ConversationRoot;
 
 use rig::completion::request::ToolDefinition;
 use rig::tool::{Tool, ToolDyn};
@@ -71,9 +72,12 @@ async fn engine_surfaces_one_tool_round_trip_through_generator_and_file() {
             "01.toml": "prompt = 'USE echo WITH {\"text\":\"ok\"}'\ntools = [\"echo\"]\n",
         },
     };
-    let conversation = Conversation::load(fs.join("root").unwrap(), &NullSkillRepository)
-        .await
-        .expect("load conversation");
+    let conversation = Conversation::load(
+        &ConversationRoot::try_from(fs.join("root").unwrap()).unwrap(),
+        &EmptyKnowledgeBase,
+    )
+    .await
+    .expect("load conversation");
 
     let engine = Arc::new(Noop::default());
     let echo: Arc<dyn ToolDyn> = Arc::new(EchoTool);

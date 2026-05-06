@@ -146,7 +146,7 @@ mod tests {
 
     use rig::tool::ToolDyn;
 
-    use crate::permissions::{AllowAllBackend, DenyAllBackend, PermissionBackend, PermissionGated};
+    use crate::knowledge::permissions::{AllowAllBackend, DenyAllBackend, PermissionBackend, PermissionGated};
 
     use super::super::classifier::WebFetchClassifier;
 

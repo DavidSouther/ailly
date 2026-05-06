@@ -27,7 +27,7 @@ use rig::wasm_compat::WasmBoxedFuture;
 use crate::content::PreambleBlock;
 
 /// Re-box a shared `Arc<dyn ToolDyn>` as the `Box<dyn ToolDyn>` shape that
-/// `AgentBuilder::tools` requires, while leaving the caller's `Arc` intact.
+/// `AgentBuilder::knowledge::tools` requires, while leaving the caller's `Arc` intact.
 /// `Box<dyn ToolDyn>` is not `Clone`, but every method on the trait can be
 /// forwarded to the inner `Arc`.
 struct DynToolHandle(Arc<dyn ToolDyn>);

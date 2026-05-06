@@ -15,6 +15,12 @@ pub struct Cli {
     #[arg(short = 'r', long)]
     pub root: Option<PathBuf>,
 
+    /// Additional knowledge root directories. Repeatable. Each `--knowledge`
+    /// path is appended to the project root in argument order; same-named
+    /// skills/workflows are resolved first-wins, project before extras.
+    #[arg(long = "knowledge", value_name = "PATH")]
+    pub knowledge: Vec<PathBuf>,
+
     /// Generate a final, single piece of content and print the response to standard out.
     #[arg(short = 'p', long, env = "AILLY_PROMPT")]
     pub prompt: Option<String>,
@@ -64,6 +70,36 @@ impl Cli {
         self.root
             .clone()
             .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")))
+    }
+
+    /// Build a [`Project`] from the resolved project root and any
+    /// `--knowledge` paths. The project root becomes the first knowledge
+    /// root; additional `--knowledge` entries follow in argument order.
+    /// Conversation mode is assumed; workflow-mode callers override
+    /// `conversations` themselves.
+    pub fn project(&self) -> anyhow::Result<crate::project::Project> {
+        use crate::project::{ConversationRoot, KnowledgeRoot, Project, ProjectRoot};
+        use vfs::{PhysicalFS, VfsPath};
+        let raw_root = self.root();
+        if !raw_root.exists() {
+            return Err(anyhow!("root path does not exist: {}", raw_root.display()));
+        }
+        let project_path = VfsPath::new(PhysicalFS::new(&raw_root));
+        let project_root = ProjectRoot::try_from(project_path)?;
+        let conversations = ConversationRoot::from(project_root.clone());
+        let mut knowledge: Vec<KnowledgeRoot> = vec![KnowledgeRoot::from(project_root.clone())];
+        for raw in &self.knowledge {
+            if !raw.exists() {
+                return Err(anyhow!("knowledge path does not exist: {}", raw.display()));
+            }
+            let path = VfsPath::new(PhysicalFS::new(raw));
+            knowledge.push(KnowledgeRoot::try_from(path)?);
+        }
+        Ok(Project {
+            root: project_root,
+            conversations,
+            knowledge,
+        })
     }
 }
 
@@ -129,5 +165,21 @@ mod tests {
     fn parse_workflow_arg_rejects_empty() {
         let err = parse_workflow_arg("").unwrap_err();
         assert!(err.to_string().contains("non-empty"));
+    }
+
+    #[test]
+    fn clap_collects_repeated_knowledge_flags_in_argument_order() {
+        let cli = Cli::try_parse_from([
+            "ailly",
+            "--knowledge",
+            "/tmp/a",
+            "--knowledge",
+            "/tmp/b",
+            "--knowledge",
+            "/tmp/c",
+        ])
+        .expect("parses");
+        let paths: Vec<&str> = cli.knowledge.iter().map(|p| p.to_str().unwrap()).collect();
+        assert_eq!(paths, ["/tmp/a", "/tmp/b", "/tmp/c"]);
     }
 }
