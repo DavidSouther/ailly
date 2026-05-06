@@ -234,6 +234,12 @@ impl HashMapRegistry {
     pub fn insert(&mut self, name: impl Into<String>, tool: Arc<dyn rig::tool::ToolDyn>) {
         self.tools.insert(name.into(), tool);
     }
+
+    /// Names of every registered tool, in undefined order. Callers that need
+    /// a stable order sort the returned vector themselves.
+    pub fn names(&self) -> Vec<&str> {
+        self.tools.keys().map(String::as_str).collect()
+    }
 }
 
 impl ToolRegistry for HashMapRegistry {
@@ -245,6 +251,51 @@ impl ToolRegistry for HashMapRegistry {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    use rig::completion::ToolDefinition;
+    use rig::tool::Tool;
+
+    struct FakeTool {
+        name: &'static str,
+    }
+
+    #[derive(Debug, serde::Deserialize)]
+    struct FakeArgs {}
+
+    #[derive(Debug, thiserror::Error)]
+    #[error("fake error")]
+    struct FakeError;
+
+    impl Tool for FakeTool {
+        const NAME: &'static str = "fake";
+        type Error = FakeError;
+        type Args = FakeArgs;
+        type Output = String;
+
+        async fn definition(&self, _prompt: String) -> ToolDefinition {
+            ToolDefinition {
+                name: self.name.to_string(),
+                description: format!("fake tool {}", self.name),
+                parameters: serde_json::json!({"type": "object"}),
+            }
+        }
+
+        async fn call(&self, _args: Self::Args) -> Result<Self::Output, Self::Error> {
+            Ok(String::new())
+        }
+    }
+
+    #[test]
+    fn hash_map_registry_names_returns_inserted_keys() {
+        let mut registry = HashMapRegistry::default();
+        registry.insert("alpha", Arc::new(FakeTool { name: "alpha" }));
+        registry.insert("beta", Arc::new(FakeTool { name: "beta" }));
+
+        let mut names: Vec<&str> = registry.names();
+        names.sort();
+
+        assert_eq!(names, vec!["alpha", "beta"]);
+    }
 
     #[test]
     fn stop_reason_display_uses_snake_case() {

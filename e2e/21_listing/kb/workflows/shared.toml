@@ -1,0 +1,7 @@
+name = "shared"
+description = "Knowledge-base workflow shared across projects."
+start = "only"
+
+[[tasks]]
+name = "only"
+task = { kind = "prompt", text = "Shared task." }

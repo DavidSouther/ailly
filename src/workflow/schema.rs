@@ -43,6 +43,9 @@ pub struct InputSpec {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct Workflow {
     pub name: String,
+    /// Optional human-readable description rendered by `--list-workflows`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
     pub start: String,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub inputs: BTreeMap<String, InputSpec>,
@@ -182,6 +185,53 @@ needle = "*Draft"
             }
             other => panic!("expected ToolCall, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn workflow_omits_description_when_none_in_serialized_form() {
+        let workflow = Workflow {
+            name: "bare".to_string(),
+            description: None,
+            start: "go".to_string(),
+            inputs: BTreeMap::new(),
+            tasks: vec![Task {
+                name: "go".to_string(),
+                skills: Vec::new(),
+                task: TaskAction::Prompt {
+                    text: "Run.".to_string(),
+                },
+                evaluation: None,
+                next: BTreeMap::new(),
+            }],
+        };
+
+        let serialized = toml::to_string(&workflow).expect("serialize");
+
+        assert!(
+            !serialized.contains("description"),
+            "absent description must be omitted: {serialized}"
+        );
+    }
+
+    #[test]
+    fn workflow_round_trips_description_when_present() {
+        let toml_in = r#"name = "demo"
+description = "A demo workflow."
+start = "go"
+
+[[tasks]]
+name = "go"
+[tasks.task]
+kind = "prompt"
+text = "Run."
+"#;
+
+        let workflow: Workflow = toml::from_str(toml_in).expect("parse");
+        assert_eq!(workflow.description.as_deref(), Some("A demo workflow."));
+
+        let serialized = toml::to_string(&workflow).expect("serialize");
+        let reparsed: Workflow = toml::from_str(&serialized).expect("reparse");
+        assert_eq!(reparsed.description.as_deref(), Some("A demo workflow."));
     }
 
     #[test]

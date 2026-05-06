@@ -1,4 +1,6 @@
 mod args;
+pub(crate) mod knowledge_base;
+pub(crate) mod listing;
 mod logging;
 
 pub use args::{Cli, LogFormat, parse_workflow_arg};
@@ -22,7 +24,26 @@ use crate::engine::{
 };
 use crate::workflow::{Runtime, Workflow, WorkflowEvent, WorkflowState, WorkflowStopReason};
 
-use std::collections::VecDeque;
+use std::collections::{BTreeMap, VecDeque};
+
+/// Merge `--input KEY=VALUE` entries into the workflow's persisted inputs.
+///
+/// Persisted state takes precedence: an entry is inserted only when its
+/// key is not already present in `state_inputs`.
+fn merge_input_flags(
+    state_inputs: &mut BTreeMap<String, String>,
+    flags: &[String],
+) -> Result<(), RunError> {
+    for entry in flags {
+        let (key, value) = entry
+            .split_once('=')
+            .ok_or_else(|| RunError::Setup(anyhow!("--input {entry:?}: expected KEY=VALUE")))?;
+        state_inputs
+            .entry(key.to_string())
+            .or_insert_with(|| value.to_string());
+    }
+    Ok(())
+}
 
 const DEFAULT_ANTHROPIC_MODEL: &str = "claude-sonnet-4-5";
 const DEFAULT_OPENAI_MODEL: &str = "gpt-4o-mini";
@@ -30,6 +51,7 @@ const DEFAULT_GEMINI_MODEL: &str = "gemini-2.5-flash";
 #[cfg(feature = "bedrock")]
 const DEFAULT_BEDROCK_MODEL: &str = "us.anthropic.claude-sonnet-4-5-20250929-v1:0";
 
+#[derive(Debug)]
 enum RunError {
     /// The error has already been reported to stderr; the CLI just needs to
     /// exit non-zero.
@@ -77,6 +99,16 @@ async fn run_async(cli: Cli) -> Result<(), RunError> {
         return run_clean(&cli).await;
     }
 
+    if cli.list_workflows || matches!(cli.workflow.as_deref(), Some("")) {
+        return run_list_workflows(&cli, None).await;
+    }
+    if cli.list_skills {
+        return run_list_skills(&cli).await;
+    }
+    if cli.list_tools {
+        return run_list_tools(&cli).await;
+    }
+
     let engine_kind = resolve_engine_kind(cli.engine.as_deref())?;
     let model = cli.model.clone();
 
@@ -90,6 +122,14 @@ async fn run_async(cli: Cli) -> Result<(), RunError> {
     let engine: Arc<dyn Engine> = build_engine(engine_kind, model.as_deref())?;
 
     if let Some(raw) = cli.workflow.as_deref() {
+        let (name, _) = parse_workflow_arg(raw)?;
+        let project = cli.project().map_err(RunError::Setup)?;
+        let entries = project
+            .list_workflows()
+            .map_err(|e| RunError::Setup(anyhow!("failed to list workflows: {e}")))?;
+        if !entries.iter().any(|e| e.name == name) {
+            return run_list_workflows(&cli, Some(&name)).await;
+        }
         return run_workflow(&cli, engine, raw).await;
     }
 
@@ -243,6 +283,40 @@ fn build_engine(kind: EngineKind, model: Option<&str>) -> Result<Arc<dyn Engine>
     }
 }
 
+async fn run_list_workflows(cli: &Cli, unknown: Option<&str>) -> Result<(), RunError> {
+    let project = cli.project().map_err(RunError::Setup)?;
+    let entries = project
+        .list_workflows()
+        .map_err(|e| RunError::Setup(anyhow!("failed to list workflows: {e}")))?;
+    if let Some(name) = unknown {
+        let preface =
+            listing::render_unknown_workflow_preface(name, &project.workflow_search_paths());
+        eprint!("{preface}");
+    }
+    print!("{}", listing::render_workflow_listing(&entries));
+    if unknown.is_some() {
+        Err(RunError::Reported)
+    } else {
+        Ok(())
+    }
+}
+
+async fn run_list_skills(cli: &Cli) -> Result<(), RunError> {
+    let project = cli.project().map_err(RunError::Setup)?;
+    let entries = project
+        .list_skills()
+        .map_err(|e| RunError::Setup(anyhow!("failed to list skills: {e}")))?;
+    print!("{}", listing::render_skill_listing(&entries));
+    Ok(())
+}
+
+async fn run_list_tools(cli: &Cli) -> Result<(), RunError> {
+    let project = cli.project().map_err(RunError::Setup)?;
+    let entries = project.list_tools().await;
+    print!("{}", listing::render_tool_listing(&entries));
+    Ok(())
+}
+
 async fn load_conversation(cli: &Cli) -> Result<Conversation> {
     let root = cli.root();
     let mut conversation = if root.exists() {
@@ -347,8 +421,12 @@ async fn run_workflow(cli: &Cli, engine: Arc<dyn Engine>, raw: &str) -> Result<(
         state.queue.push_back(workflow.start.clone());
     }
 
-    let tool_registry: std::sync::Arc<dyn crate::engine::ToolRegistry> =
-        std::sync::Arc::new(crate::engine::EmptyRegistry);
+    merge_input_flags(&mut state.inputs, &cli.input)?;
+
+    let tool_registry: Arc<dyn crate::engine::ToolRegistry> = Arc::new(project.tool_registry());
+    log::debug!("Starting runtime");
+    log::debug!("state: {state:?}");
+    log::debug!("engine: {}", engine.name());
     let runtime = Runtime::new(
         workflow,
         state,
@@ -435,7 +513,10 @@ async fn run_workflow(cli: &Cli, engine: Arc<dyn Engine>, raw: &str) -> Result<(
                     return Err(RunError::Reported);
                 }
                 WorkflowStopReason::Paused { task, result } => {
-                    log::info!("workflow paused at {task:?} (result={result:?})");
+                    eprintln!("ailly: workflow paused at task {task:?} (result={result:?}).");
+                    eprintln!(
+                        "       Clear the `*Draft` marker in the gated artifact and re-run `ailly -w {workflow_name}` to continue."
+                    );
                     return Ok(());
                 }
             },
@@ -446,7 +527,74 @@ async fn run_workflow(cli: &Cli, engine: Arc<dyn Engine>, raw: &str) -> Result<(
 
 #[cfg(test)]
 mod tests {
-    use super::{format_engine_error, resolve_engine_kind};
+    use super::{RunError, format_engine_error, merge_input_flags, resolve_engine_kind};
+    use std::collections::BTreeMap;
+
+    #[test]
+    fn input_flag_parses_key_equals_value() {
+        let mut inputs = BTreeMap::new();
+        let flags = vec!["topic=widgets".to_string()];
+
+        merge_input_flags(&mut inputs, &flags).expect("parses KEY=VALUE");
+
+        assert_eq!(inputs.get("topic").map(String::as_str), Some("widgets"));
+    }
+
+    #[test]
+    fn input_flag_rejects_entry_without_equals() {
+        let mut inputs = BTreeMap::new();
+        let flags = vec!["bad-entry".to_string()];
+
+        let err = merge_input_flags(&mut inputs, &flags).expect_err("rejects without =");
+
+        match err {
+            RunError::Setup(error) => {
+                let msg = format!("{error:#}");
+                assert!(
+                    msg.contains("KEY=VALUE") && msg.contains("bad-entry"),
+                    "expected setup error to name the bad entry and the format; got: {msg}"
+                );
+            }
+            RunError::Reported => panic!("expected RunError::Setup, got Reported"),
+        }
+        assert!(inputs.is_empty(), "no entries should be inserted on error");
+    }
+
+    #[test]
+    fn persisted_state_takes_precedence_over_input_flag() {
+        let mut inputs = BTreeMap::new();
+        inputs.insert("topic".to_string(), "from-state".to_string());
+        let flags = vec!["topic=from-flag".to_string()];
+
+        merge_input_flags(&mut inputs, &flags).expect("merge OK");
+
+        assert_eq!(
+            inputs.get("topic").map(String::as_str),
+            Some("from-state"),
+            "persisted value must win"
+        );
+    }
+
+    #[test]
+    fn input_flag_populates_state_inputs_when_unset() {
+        let mut inputs = BTreeMap::new();
+        let flags = vec!["topic=fresh".to_string(), "owner=ailly".to_string()];
+
+        merge_input_flags(&mut inputs, &flags).expect("merge OK");
+
+        assert_eq!(inputs.get("topic").map(String::as_str), Some("fresh"));
+        assert_eq!(inputs.get("owner").map(String::as_str), Some("ailly"));
+    }
+
+    #[test]
+    fn input_flag_value_with_embedded_equals_keeps_full_remainder() {
+        let mut inputs = BTreeMap::new();
+        let flags = vec!["expr=a=b=c".to_string()];
+
+        merge_input_flags(&mut inputs, &flags).expect("merge OK");
+
+        assert_eq!(inputs.get("expr").map(String::as_str), Some("a=b=c"));
+    }
 
     #[test]
     fn extracts_anthropic_error_body() {

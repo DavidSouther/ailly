@@ -30,16 +30,37 @@ pub struct Cli {
     #[arg(long, conflicts_with = "prompt")]
     pub clean: bool,
 
-    /// Run a workflow from `workflow.toml` at the conversation root. The argument
-    /// is `WORKFLOW` to begin at the workflow's `start`, or `WORKFLOW:TASK` to
+    /// Run a workflow from `workflow.toml` at the conversation root, or list
+    /// available workflows when invoked with no value. The argument is
+    /// `WORKFLOW` to begin at the workflow's `start`, or `WORKFLOW:TASK` to
     /// override the queue and begin at `TASK` for one run.
     #[arg(
         short = 'w',
         long,
         env = "AILLY_WORKFLOW",
-        value_name = "WORKFLOW[:TASK]"
+        value_name = "WORKFLOW[:TASK]",
+        num_args = 0..=1,
+        default_missing_value = ""
     )]
     pub workflow: Option<String>,
+
+    /// List every workflow discoverable from this project's roots and exit.
+    #[arg(long, conflicts_with_all = ["prompt", "clean", "workflow"])]
+    pub list_workflows: bool,
+
+    /// List every skill discoverable from this project's roots and exit.
+    #[arg(long, conflicts_with_all = ["prompt", "clean", "workflow"])]
+    pub list_skills: bool,
+
+    /// List every tool the workflow runtime would register and exit.
+    #[arg(long, conflicts_with_all = ["prompt", "clean", "workflow"])]
+    pub list_tools: bool,
+
+    /// Provide a workflow input as `KEY=VALUE`. Repeat the flag for multiple
+    /// inputs. Persisted state from a prior run takes precedence over flag
+    /// values for the same key.
+    #[arg(long, value_name = "KEY=VALUE", action = clap::ArgAction::Append)]
+    pub input: Vec<String>,
 
     /// Engine to drive inference. `noop` is available for testing.
     #[arg(long, env = "AILLY_ENGINE")]
@@ -99,6 +120,7 @@ impl Cli {
             root: project_root,
             conversations,
             knowledge,
+            bash_cwd: raw_root,
         })
     }
 }
@@ -165,6 +187,30 @@ mod tests {
     fn parse_workflow_arg_rejects_empty() {
         let err = parse_workflow_arg("").unwrap_err();
         assert!(err.to_string().contains("non-empty"));
+    }
+
+    #[test]
+    fn clap_accepts_w_with_no_value_as_empty_string() {
+        let cli = Cli::try_parse_from(["ailly", "-w"]).expect("parses");
+        assert_eq!(cli.workflow.as_deref(), Some(""));
+    }
+
+    #[test]
+    fn clap_rejects_list_workflows_combined_with_workflow() {
+        let result = Cli::try_parse_from(["ailly", "--list-workflows", "-w", "basic"]);
+        assert!(result.is_err(), "expected conflict error: {result:?}");
+    }
+
+    #[test]
+    fn clap_rejects_list_skills_combined_with_workflow() {
+        let result = Cli::try_parse_from(["ailly", "--list-skills", "-w", "basic"]);
+        assert!(result.is_err(), "expected conflict error: {result:?}");
+    }
+
+    #[test]
+    fn clap_rejects_list_tools_combined_with_prompt() {
+        let result = Cli::try_parse_from(["ailly", "--list-tools", "--prompt", "x"]);
+        assert!(result.is_err(), "expected conflict error: {result:?}");
     }
 
     #[test]

@@ -39,8 +39,8 @@ use std::sync::Arc;
 use rig::tool::ToolDyn;
 
 use ailly::engine::{HashMapRegistry, ToolRegistry};
-use ailly::mem_fs;
 use ailly::knowledge::tools::{FsEdit, FsGrep, FsList, FsRead};
+use ailly::mem_fs;
 
 #[tokio::test]
 async fn vfs_tools_round_trip_through_registry() {

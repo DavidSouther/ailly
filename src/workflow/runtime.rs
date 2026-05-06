@@ -783,8 +783,8 @@ fn find_next_n(root: &VfsPath) -> Result<u32, ContentError> {
 mod tests {
     use super::*;
     use crate::engine::{EmptyRegistry, Noop};
-    use crate::knowledge::base::KnowledgeBase;
     use crate::knowledge::base::EmptyKnowledgeBase;
+    use crate::knowledge::base::KnowledgeBase;
     use crate::project::ConversationRoot;
 
     fn empty_knowledge() -> Arc<dyn KnowledgeBase> {
@@ -822,6 +822,7 @@ mod tests {
 
         let workflow = Workflow {
             name: "lone".to_string(),
+            description: None,
             start: "only".to_string(),
             inputs: BTreeMap::new(),
             tasks: vec![task("only", "Do it.", &[])],
@@ -889,6 +890,7 @@ mod tests {
 
         let workflow = Workflow {
             name: "basic".to_string(),
+            description: None,
             start: "first".to_string(),
             inputs: BTreeMap::new(),
             tasks: vec![
@@ -954,6 +956,7 @@ mod tests {
 
         let workflow = Workflow {
             name: "broken".to_string(),
+            description: None,
             start: "nope".to_string(),
             inputs: BTreeMap::new(),
             tasks: vec![task("only", "Do it.", &[])],
@@ -1002,6 +1005,7 @@ mod tests {
         let second = task("second", "Second task.", &[]);
         let workflow = Workflow {
             name: "evald".to_string(),
+            description: None,
             start: "first".to_string(),
             inputs: BTreeMap::new(),
             tasks: vec![first, second],
@@ -1090,6 +1094,7 @@ mod tests {
         let second = task("second", "Second task.", &[]);
         let workflow = Workflow {
             name: "evald".to_string(),
+            description: None,
             start: "first".to_string(),
             inputs: BTreeMap::new(),
             tasks: vec![first, second],
@@ -1149,6 +1154,7 @@ mod tests {
         );
         let workflow = Workflow {
             name: "broken-pattern".to_string(),
+            description: None,
             start: "first".to_string(),
             inputs,
             tasks: vec![task("first", "noop", &[])],
@@ -1214,6 +1220,7 @@ mod tests {
 
         let workflow = Workflow {
             name: "templated".to_string(),
+            description: None,
             start: "first".to_string(),
             inputs: inputs.clone(),
             tasks: vec![task(
@@ -1269,6 +1276,7 @@ mod tests {
         let root2 = fs2.join("root").unwrap();
         let workflow2 = Workflow {
             name: "typo".to_string(),
+            description: None,
             start: "first".to_string(),
             inputs: inputs.clone(),
             tasks: vec![task("first", "{{ vars.tpic }}", &[])],
@@ -1345,6 +1353,7 @@ mod tests {
 
         let workflow = Workflow {
             name: "skilled".to_string(),
+            description: None,
             start: "design".to_string(),
             inputs: BTreeMap::new(),
             tasks: vec![
@@ -1470,6 +1479,7 @@ mod tests {
         });
         let workflow = Workflow {
             name: "paused".to_string(),
+            description: None,
             start: "first".to_string(),
             inputs: BTreeMap::new(),
             tasks: vec![first, task("second", "Second.", &[])],
@@ -1526,6 +1536,7 @@ mod tests {
         });
         let workflow = Workflow {
             name: "cleared".to_string(),
+            description: None,
             start: "first".to_string(),
             inputs: BTreeMap::new(),
             tasks: vec![first, task("second", "Second.", &[])],
@@ -1572,6 +1583,7 @@ mod tests {
         });
         let workflow = Workflow {
             name: "unknown_tool".to_string(),
+            description: None,
             start: "first".to_string(),
             inputs: BTreeMap::new(),
             tasks: vec![first],
@@ -1622,6 +1634,7 @@ mod tests {
         first.next.insert("paused".to_string(), "skip".to_string());
         let workflow = Workflow {
             name: "reserved".to_string(),
+            description: None,
             start: "first".to_string(),
             inputs: BTreeMap::new(),
             tasks: vec![first, task("skip", "Should never run.", &[])],
@@ -1697,6 +1710,7 @@ mod tests {
         });
         let workflow = Workflow {
             name: "substituted".to_string(),
+            description: None,
             start: "first".to_string(),
             inputs: inputs_spec,
             tasks: vec![first],
@@ -1747,6 +1761,7 @@ mod tests {
 
         let workflow = Workflow {
             name: "resumer".to_string(),
+            description: None,
             start: "only".to_string(),
             inputs: BTreeMap::new(),
             tasks: vec![task("only", "ignored on resume", &[])],
@@ -1787,6 +1802,7 @@ mod tests {
 
         let workflow = Workflow {
             name: "evald-resume".to_string(),
+            description: None,
             start: "first".to_string(),
             inputs: BTreeMap::new(),
             tasks: vec![
@@ -1839,6 +1855,7 @@ mod tests {
 
         let workflow = Workflow {
             name: "fresh-fallthrough".to_string(),
+            description: None,
             start: "first".to_string(),
             inputs: BTreeMap::new(),
             tasks: vec![task("first", "Fresh prompt.", &[])],
@@ -1931,6 +1948,7 @@ mod tests {
 
         let workflow = Workflow {
             name: "ailly-dev-cycle".to_string(),
+            description: None,
             start: "design".to_string(),
             inputs: BTreeMap::new(),
             tasks: vec![
@@ -2135,6 +2153,7 @@ mod tests {
         let root = fs.join("root").unwrap();
         let workflow = Workflow {
             name: "lone".to_string(),
+            description: None,
             start: "only".to_string(),
             inputs: BTreeMap::new(),
             tasks: vec![task("only", "Do it.", &[])],

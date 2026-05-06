@@ -287,7 +287,7 @@ impl KnowledgeBase for FsKnowledgeBase {
                     })?;
                 out.push(WorkflowSummary {
                     name: WorkflowName::new(workflow.name),
-                    description: String::new(),
+                    description: workflow.description.unwrap_or_default(),
                     source: KnowledgeSource {
                         root: root.clone(),
                         path,
@@ -394,11 +394,11 @@ fn read_to_string(
         })
 }
 
-type SkillEntry = Result<(SkillName, VfsPath), KnowledgeError>;
+pub(crate) type SkillFsEntry = Result<(SkillName, VfsPath), KnowledgeError>;
 
-fn iter_skill_dirs(
+pub(crate) fn iter_skill_dirs(
     root: &KnowledgeRoot,
-) -> Result<Box<dyn Iterator<Item = SkillEntry>>, KnowledgeError> {
+) -> Result<Box<dyn Iterator<Item = SkillFsEntry>>, KnowledgeError> {
     let skills_dir = join_under(root.as_path(), SKILLS_DIR, KnowledgeKind::Skill, SKILLS_DIR)?;
     let exists = skills_dir.exists().map_err(|source| KnowledgeError::Read {
         kind: KnowledgeKind::Skill,
@@ -441,11 +441,11 @@ fn iter_skill_dirs(
     })))
 }
 
-type WorkflowEntry = Result<(WorkflowName, VfsPath), KnowledgeError>;
+pub(crate) type WorkflowFsEntry = Result<(WorkflowName, VfsPath), KnowledgeError>;
 
-fn iter_workflow_files(
+pub(crate) fn iter_workflow_files(
     root: &KnowledgeRoot,
-) -> Result<Box<dyn Iterator<Item = WorkflowEntry>>, KnowledgeError> {
+) -> Result<Box<dyn Iterator<Item = WorkflowFsEntry>>, KnowledgeError> {
     let workflows_dir = join_under(
         root.as_path(),
         WORKFLOWS_DIR,

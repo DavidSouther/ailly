@@ -91,6 +91,239 @@ pub struct Project {
     pub root: ProjectRoot,
     pub conversations: ConversationRoot,
     pub knowledge: Vec<KnowledgeRoot>,
+    /// Native filesystem path used as `Bash`'s working directory. Sourced
+    /// from `cli.root()` at construction time and held as a `PathBuf`
+    /// because `Bash` shells out and cannot use `VfsPath`.
+    pub bash_cwd: std::path::PathBuf,
+}
+
+impl Project {
+    /// Build the workflow listing for this project. The conversation-root
+    /// `workflow.toml` is consulted first; knowledge-root entries follow,
+    /// dedupes are first-wins by name. Sorted alphabetically by `name`.
+    /// Per-file parse failures log one warning line to stderr and the
+    /// entry is skipped.
+    pub fn list_workflows(&self) -> Result<Vec<WorkflowEntry>, ListingError> {
+        let mut entries: Vec<WorkflowEntry> = Vec::new();
+
+        let convo_path = self
+            .conversations
+            .as_path()
+            .join("workflow.toml")
+            .map_err(|source| ListingError::Vfs {
+                path: self.conversations.as_path().as_str().to_string(),
+                source,
+            })?;
+        let convo_exists = convo_path.exists().map_err(|source| ListingError::Vfs {
+            path: convo_path.as_str().to_string(),
+            source,
+        })?;
+        if convo_exists {
+            match read_workflow(&convo_path) {
+                Ok(wf) => entries.push(WorkflowEntry {
+                    name: wf.name,
+                    description: wf.description.unwrap_or_default(),
+                    source_path: "workflow.toml".to_string(),
+                }),
+                Err(err) => {
+                    eprintln!("warning: skipping {}: {err}", convo_path.as_str());
+                }
+            }
+        }
+
+        for root in &self.knowledge {
+            for entry in crate::knowledge::base::iter_workflow_files(root)? {
+                let (name, path) = entry?;
+                if entries.iter().any(|e| e.name == name.as_str()) {
+                    continue;
+                }
+                match read_workflow(&path) {
+                    Ok(wf) => entries.push(WorkflowEntry {
+                        name: wf.name,
+                        description: wf.description.unwrap_or_default(),
+                        source_path: format!("workflows/{}.toml", name.as_str()),
+                    }),
+                    Err(err) => {
+                        eprintln!("warning: skipping {}: {err}", path.as_str());
+                    }
+                }
+            }
+        }
+
+        entries.sort_by(|a, b| a.name.cmp(&b.name));
+        Ok(entries)
+    }
+
+    /// Build the skill listing for this project. Iterates `iter_skill_dirs`
+    /// across every knowledge root, dedupes first-wins by name, sorts
+    /// alphabetically. Per-skill parse failures log one warning line to
+    /// stderr and the entry is skipped.
+    pub fn list_skills(&self) -> Result<Vec<SkillEntry>, ListingError> {
+        use crate::knowledge::skills::{Skill, SkillSource};
+
+        let mut entries: Vec<SkillEntry> = Vec::new();
+        for root in &self.knowledge {
+            for entry in crate::knowledge::base::iter_skill_dirs(root)? {
+                let (name, dir) = entry?;
+                if entries.iter().any(|e| e.name == name.as_str()) {
+                    continue;
+                }
+                let skill_md = dir.join("SKILL.md").map_err(|source| ListingError::Vfs {
+                    path: dir.as_str().to_string(),
+                    source,
+                })?;
+                let exists = skill_md.exists().map_err(|source| ListingError::Vfs {
+                    path: skill_md.as_str().to_string(),
+                    source,
+                })?;
+                if !exists {
+                    continue;
+                }
+                let raw = match skill_md.read_to_string() {
+                    Ok(r) => r,
+                    Err(err) => {
+                        eprintln!("warning: skipping {}: {err}", skill_md.as_str());
+                        continue;
+                    }
+                };
+                match Skill::parse(SkillSource(skill_md.clone()), &raw, &name) {
+                    Ok(skill) => entries.push(SkillEntry {
+                        name: skill.name.as_str().to_string(),
+                        description: skill.description.as_str().to_string(),
+                        source_path: format!("skills/{}/SKILL.md", name.as_str()),
+                    }),
+                    Err(err) => {
+                        eprintln!("warning: skipping {}: {err}", skill_md.as_str());
+                    }
+                }
+            }
+        }
+        entries.sort_by(|a, b| a.name.cmp(&b.name));
+        Ok(entries)
+    }
+
+    /// Build the tool listing. Calls `tool_registry()`, sorts the names
+    /// for stable output, then awaits each `ToolDyn::definition` to
+    /// resolve the description.
+    pub async fn list_tools(&self) -> Vec<ToolEntry> {
+        use crate::engine::ToolRegistry;
+
+        let registry = self.tool_registry();
+        let mut names: Vec<String> = registry.names().into_iter().map(String::from).collect();
+        names.sort();
+
+        let mut entries = Vec::with_capacity(names.len());
+        for name in names {
+            let Some(tool) = registry.resolve(&name) else {
+                continue;
+            };
+            let def = tool.definition(String::new()).await;
+            entries.push(ToolEntry {
+                name,
+                description: def.description,
+            });
+        }
+        entries
+    }
+
+    /// Returns the source paths the workflow listing consulted, used by
+    /// the unknown-name preface. One entry for the conversation-root
+    /// `workflow.toml`, plus one entry per knowledge root's `workflows/`
+    /// directory.
+    pub fn workflow_search_paths(&self) -> Vec<String> {
+        let mut paths = Vec::with_capacity(1 + self.knowledge.len());
+        if let Ok(p) = self.conversations.as_path().join("workflow.toml") {
+            paths.push(p.as_str().to_string());
+        }
+        for root in &self.knowledge {
+            if let Ok(p) = root.as_path().join("workflows") {
+                paths.push(p.as_str().to_string());
+            }
+        }
+        paths
+    }
+
+    /// Assemble the tool registry the workflow runtime registers today.
+    /// Single source of truth for "what tools does Ailly carry?". Used
+    /// by both the runtime and the listing surface so the two cannot drift.
+    pub fn tool_registry(&self) -> crate::engine::HashMapRegistry {
+        use std::sync::Arc;
+        let mut registry = crate::engine::HashMapRegistry::default();
+        registry.insert(
+            crate::knowledge::tools::FsAbsent::NAME,
+            Arc::new(crate::knowledge::tools::FsAbsent::new(&self.conversations)),
+        );
+        registry.insert(
+            crate::knowledge::clarify::ClarifyTool::NAME,
+            Arc::new(crate::knowledge::clarify::ClarifyTool::new(Arc::new(
+                crate::ailly::knowledge_base::StdinKnowledgeBase::new(),
+            ))),
+        );
+        registry.insert(
+            crate::knowledge::tools::FsList::NAME,
+            Arc::new(crate::knowledge::tools::FsList::new(&self.root)),
+        );
+        registry.insert(
+            crate::knowledge::tools::FsEdit::NAME,
+            Arc::new(crate::knowledge::tools::FsEdit::new(&self.root)),
+        );
+        registry.insert(
+            crate::knowledge::tools::FsGrep::NAME,
+            Arc::new(crate::knowledge::tools::FsGrep::new(&self.root)),
+        );
+        registry.insert(
+            crate::knowledge::tools::Bash::NAME,
+            Arc::new(crate::knowledge::tools::Bash::new(self.bash_cwd.clone())),
+        );
+        registry
+    }
+}
+
+/// A row in the `--list-workflows` output. `source_path` is rendered
+/// either as the literal `workflow.toml` for the conversation-root entry
+/// or as `workflows/<name>.toml` for entries discovered under a knowledge
+/// root.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WorkflowEntry {
+    pub name: String,
+    pub description: String,
+    pub source_path: String,
+}
+
+/// A row in the `--list-skills` output. `source_path` is rendered as
+/// `skills/<name>/SKILL.md`, knowledge-root-relative.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SkillEntry {
+    pub name: String,
+    pub description: String,
+    pub source_path: String,
+}
+
+/// A row in the `--list-tools` output. Tools have no on-disk source.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ToolEntry {
+    pub name: String,
+    pub description: String,
+}
+
+fn read_workflow(path: &VfsPath) -> Result<crate::workflow::Workflow, anyhow::Error> {
+    let raw = path.read_to_string()?;
+    let wf: crate::workflow::Workflow = toml::from_str(&raw)?;
+    Ok(wf)
+}
+
+/// Hard failures during listing. Per-entry parse failures are not reported
+/// here; they are logged to stderr and the entry is skipped.
+#[derive(Debug, thiserror::Error)]
+pub enum ListingError {
+    #[error("knowledge base error: {0}")]
+    Knowledge(#[from] crate::knowledge::base::KnowledgeError),
+    #[error("filesystem error reading {path}: {source}")]
+    Vfs {
+        path: String,
+        #[source]
+        source: vfs::VfsError,
+    },
 }
 
 fn require_directory(path: &VfsPath) -> Result<(), RootError> {
@@ -158,6 +391,262 @@ mod tests {
     }
 
     #[test]
+    fn list_workflows_unions_knowledge_and_conversation_root_first_wins() {
+        let fs = mem_fs! {
+            "project": {
+                "AGENTS.md": "# agents\n",
+                "workflow.toml": "name = \"local\"\ndescription = \"the local one\"\nstart = \"go\"\n[[tasks]]\nname = \"go\"\ntask = { kind = \"prompt\", text = \"hi\" }\n",
+            },
+            "extra_kb": {
+                "AGENTS.md": "# extra\n",
+                "workflows": {
+                    "shared.toml": "name = \"shared\"\ndescription = \"the shared one\"\nstart = \"go\"\n[[tasks]]\nname = \"go\"\ntask = { kind = \"prompt\", text = \"hi\" }\n",
+                    "local.toml": "name = \"local\"\ndescription = \"the SECOND local one\"\nstart = \"go\"\n[[tasks]]\nname = \"go\"\ntask = { kind = \"prompt\", text = \"hi\" }\n",
+                },
+            },
+        };
+        let project_root = ProjectRoot::try_from(fs.join("project").unwrap()).unwrap();
+        let extra = KnowledgeRoot::try_from(fs.join("extra_kb").unwrap()).unwrap();
+        let project = Project {
+            root: project_root.clone(),
+            conversations: ConversationRoot::from(project_root.clone()),
+            knowledge: vec![KnowledgeRoot::from(project_root.clone()), extra],
+            bash_cwd: std::path::PathBuf::from("."),
+        };
+
+        let entries = project.list_workflows().expect("list_workflows ok");
+
+        let names: Vec<&str> = entries.iter().map(|e| e.name.as_str()).collect();
+        assert_eq!(names, vec!["local", "shared"]);
+        let local = entries.iter().find(|e| e.name == "local").unwrap();
+        assert_eq!(local.description, "the local one");
+        assert_eq!(local.source_path, "workflow.toml");
+        let shared = entries.iter().find(|e| e.name == "shared").unwrap();
+        assert_eq!(shared.description, "the shared one");
+        assert_eq!(shared.source_path, "workflows/shared.toml");
+    }
+
+    #[test]
+    fn list_skills_dedupes_first_wins_across_knowledge_roots_and_sorts_alphabetically() {
+        let fs = mem_fs! {
+            "project": {
+                "AGENTS.md": "# agents\n",
+                "skills": {
+                    "local": { "SKILL.md": "---\nname: local\ndescription: project local\n---\nbody\n" },
+                    "shared": { "SKILL.md": "---\nname: shared\ndescription: PROJECT shared\n---\nbody\n" },
+                },
+            },
+            "extra_kb": {
+                "AGENTS.md": "# kb\n",
+                "skills": {
+                    "extra": { "SKILL.md": "---\nname: extra\ndescription: kb extra\n---\nbody\n" },
+                    "shared": { "SKILL.md": "---\nname: shared\ndescription: KB shared\n---\nbody\n" },
+                },
+            },
+        };
+        let project_root = ProjectRoot::try_from(fs.join("project").unwrap()).unwrap();
+        let extra = KnowledgeRoot::try_from(fs.join("extra_kb").unwrap()).unwrap();
+        let project = Project {
+            root: project_root.clone(),
+            conversations: ConversationRoot::from(project_root.clone()),
+            knowledge: vec![KnowledgeRoot::from(project_root.clone()), extra],
+            bash_cwd: std::path::PathBuf::from("."),
+        };
+
+        let entries = project.list_skills().expect("list_skills ok");
+
+        let names: Vec<&str> = entries.iter().map(|e| e.name.as_str()).collect();
+        assert_eq!(names, vec!["extra", "local", "shared"]);
+        let shared = entries.iter().find(|e| e.name == "shared").unwrap();
+        assert_eq!(shared.description, "PROJECT shared");
+        assert_eq!(shared.source_path, "skills/shared/SKILL.md");
+    }
+
+    #[test]
+    fn list_skills_returns_entries_when_a_knowledge_root_carries_a_skill() {
+        let fs = mem_fs! {
+            "project": { "AGENTS.md": "# agents\n" },
+            "extra_kb": {
+                "skills": {
+                    "only": { "SKILL.md": "---\nname: only\ndescription: kb only\n---\nbody\n" },
+                },
+            },
+        };
+        let project_root = ProjectRoot::try_from(fs.join("project").unwrap()).unwrap();
+        let extra = KnowledgeRoot::try_from(fs.join("extra_kb").unwrap()).unwrap();
+        let project = Project {
+            root: project_root.clone(),
+            conversations: ConversationRoot::from(project_root.clone()),
+            knowledge: vec![KnowledgeRoot::from(project_root.clone()), extra],
+            bash_cwd: std::path::PathBuf::from("."),
+        };
+
+        let entries = project.list_skills().expect("list_skills ok");
+
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].name, "only");
+        assert_eq!(entries[0].description, "kb only");
+        assert_eq!(entries[0].source_path, "skills/only/SKILL.md");
+    }
+
+    #[test]
+    fn list_skills_empty_when_no_knowledge_roots_carry_skills() {
+        let fs = mem_fs! { "project": { "AGENTS.md": "# agents\n" } };
+        let project_root = ProjectRoot::try_from(fs.join("project").unwrap()).unwrap();
+        let project = Project {
+            root: project_root.clone(),
+            conversations: ConversationRoot::from(project_root.clone()),
+            knowledge: vec![KnowledgeRoot::from(project_root.clone())],
+            bash_cwd: std::path::PathBuf::from("."),
+        };
+
+        let entries = project.list_skills().expect("list_skills ok");
+
+        assert!(entries.is_empty(), "expected empty, got {entries:?}");
+    }
+
+    #[test]
+    fn list_skills_skips_broken_skill_md_with_warning() {
+        let fs = mem_fs! {
+            "project": {
+                "AGENTS.md": "# agents\n",
+                "skills": {
+                    "good": { "SKILL.md": "---\nname: good\ndescription: ok\n---\nbody\n" },
+                    "broken": { "SKILL.md": "no frontmatter at all\n" },
+                },
+            },
+        };
+        let project_root = ProjectRoot::try_from(fs.join("project").unwrap()).unwrap();
+        let project = Project {
+            root: project_root.clone(),
+            conversations: ConversationRoot::from(project_root.clone()),
+            knowledge: vec![KnowledgeRoot::from(project_root.clone())],
+            bash_cwd: std::path::PathBuf::from("."),
+        };
+
+        let entries = project.list_skills().expect("list_skills ok");
+
+        let names: Vec<&str> = entries.iter().map(|e| e.name.as_str()).collect();
+        assert_eq!(names, vec!["good"]);
+    }
+
+    #[test]
+    fn list_workflows_skips_broken_toml_with_warning() {
+        let fs = mem_fs! {
+            "project": {
+                "AGENTS.md": "# agents\n",
+                "workflows": {
+                    "good.toml": "name = \"good\"\nstart = \"go\"\n[[tasks]]\nname = \"go\"\ntask = { kind = \"prompt\", text = \"hi\" }\n",
+                    "broken.toml": "this is { not valid toml [[",
+                },
+            },
+        };
+        let project_root = ProjectRoot::try_from(fs.join("project").unwrap()).unwrap();
+        let project = Project {
+            root: project_root.clone(),
+            conversations: ConversationRoot::from(project_root.clone()),
+            knowledge: vec![KnowledgeRoot::from(project_root.clone())],
+            bash_cwd: std::path::PathBuf::from("."),
+        };
+
+        let entries = project.list_workflows().expect("list_workflows ok");
+
+        let names: Vec<&str> = entries.iter().map(|e| e.name.as_str()).collect();
+        assert_eq!(names, vec!["good"]);
+    }
+
+    #[test]
+    fn workflow_search_paths_lists_conversation_root_then_each_knowledge_root() {
+        let fs = mem_fs! {
+            "project": { "AGENTS.md": "# agents\n" },
+            "extra_kb": { "AGENTS.md": "# extra agents\n" },
+        };
+        let project_root = ProjectRoot::try_from(fs.join("project").unwrap()).unwrap();
+        let extra = KnowledgeRoot::try_from(fs.join("extra_kb").unwrap()).unwrap();
+        let project = Project {
+            root: project_root.clone(),
+            conversations: ConversationRoot::from(project_root.clone()),
+            knowledge: vec![KnowledgeRoot::from(project_root.clone()), extra],
+            bash_cwd: std::path::PathBuf::from("."),
+        };
+
+        let paths = project.workflow_search_paths();
+
+        assert_eq!(paths.len(), 3);
+        assert!(
+            paths[0].ends_with("/project/workflow.toml"),
+            "first entry should be the conversation-root workflow.toml: {paths:?}"
+        );
+        assert!(
+            paths[1].ends_with("/project/workflows"),
+            "second entry should be the project knowledge root's workflows dir: {paths:?}"
+        );
+        assert!(
+            paths[2].ends_with("/extra_kb/workflows"),
+            "third entry should be the extra knowledge root's workflows dir: {paths:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn list_tools_returns_registered_names_with_descriptions() {
+        let fs = mem_fs! { "project": { "AGENTS.md": "# agents\n" } };
+        let project_root = ProjectRoot::try_from(fs.join("project").unwrap()).unwrap();
+        let project = Project {
+            root: project_root.clone(),
+            conversations: ConversationRoot::from(project_root.clone()),
+            knowledge: vec![KnowledgeRoot::from(project_root.clone())],
+            bash_cwd: std::path::PathBuf::from("."),
+        };
+
+        let entries = project.list_tools().await;
+
+        let names: Vec<&str> = entries.iter().map(|e| e.name.as_str()).collect();
+        assert_eq!(
+            names,
+            vec![
+                "bash",
+                "fs.absent",
+                "fs.edit",
+                "fs.grep",
+                "fs.list",
+                "user.clarify",
+            ]
+        );
+        assert!(
+            entries.iter().all(|e| !e.description.is_empty()),
+            "every tool should have a non-empty description: {entries:?}"
+        );
+    }
+
+    #[test]
+    fn project_tool_registry_includes_bash_and_fs_tools() {
+        let fs = mem_fs! { "project": { "AGENTS.md": "# agents\n" } };
+        let project_root = ProjectRoot::try_from(fs.join("project").unwrap()).unwrap();
+        let project = Project {
+            root: project_root.clone(),
+            conversations: ConversationRoot::from(project_root.clone()),
+            knowledge: vec![KnowledgeRoot::from(project_root.clone())],
+            bash_cwd: std::path::PathBuf::from("."),
+        };
+
+        let registry = project.tool_registry();
+        let mut names = registry.names();
+        names.sort();
+
+        assert_eq!(
+            names,
+            vec![
+                "bash",
+                "fs.absent",
+                "fs.edit",
+                "fs.grep",
+                "fs.list",
+                "user.clarify",
+            ]
+        );
+    }
+
+    #[test]
     fn roots_first_knowledge_is_project() {
         let fs = mem_fs! {
             "project": { "AGENTS.md": "# agents\n" },
@@ -170,6 +659,7 @@ mod tests {
             root: project_root.clone(),
             conversations: ConversationRoot::from(project_root.clone()),
             knowledge: vec![KnowledgeRoot::from(project_root.clone()), extra],
+            bash_cwd: std::path::PathBuf::from("."),
         };
 
         assert_eq!(project.knowledge.len(), 2);

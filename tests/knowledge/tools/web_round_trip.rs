@@ -33,11 +33,11 @@ use ailly::engine::{
 };
 use ailly::knowledge::base::EmptyKnowledgeBase;
 use ailly::knowledge::permissions::{AllowAllBackend, PermissionBackend, PermissionGated};
-use ailly::project::ConversationRoot;
 use ailly::knowledge::tools::web::{
     MapSearchBackend, SearchBackend, SearchResult, WebFetch, WebFetchClassifier, WebSearch,
     WebSearchClassifier,
 };
+use ailly::project::ConversationRoot;
 
 use rig::message::ToolResultContent;
 use rig::tool::ToolDyn;

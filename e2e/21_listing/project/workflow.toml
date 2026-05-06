@@ -1,0 +1,7 @@
+name = "local"
+description = "Conversation-root workflow for the listing fixture."
+start = "first"
+
+[[tasks]]
+name = "first"
+task = { kind = "prompt", text = "Local first task." }

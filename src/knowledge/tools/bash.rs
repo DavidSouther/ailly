@@ -6,7 +6,9 @@ use rig::completion::ToolDefinition;
 use rig::tool::{Tool, ToolDyn};
 use serde_json::Value;
 
-use crate::knowledge::permissions::{Classification, Classifier, PermissionBackend, PermissionGated};
+use crate::knowledge::permissions::{
+    Classification, Classifier, PermissionBackend, PermissionGated,
+};
 
 #[derive(Debug, Clone)]
 pub struct Bash {
@@ -17,7 +19,14 @@ pub struct Bash {
 impl Bash {
     pub const NAME: &'static str = "bash";
 
-    pub fn new(cwd: PathBuf, timeout: Duration) -> Self {
+    pub fn new(cwd: PathBuf) -> Self {
+        Self {
+            cwd,
+            timeout: Duration::from_secs(5),
+        }
+    }
+
+    pub fn new_with_timeout(cwd: PathBuf, timeout: Duration) -> Self {
         Self { cwd, timeout }
     }
 
@@ -703,7 +712,9 @@ mod tests {
     use std::time::Duration;
 
     use crate::engine::{HashMapRegistry, ToolRegistry};
-    use crate::knowledge::permissions::{BasePolicy, ClassRouterBackend, Classifier, PermissionBackend};
+    use crate::knowledge::permissions::{
+        BasePolicy, ClassRouterBackend, Classifier, PermissionBackend,
+    };
 
     fn args(command: &str) -> String {
         serde_json::to_string(&serde_json::json!({ "command": command }))
@@ -715,7 +726,7 @@ mod tests {
     }
 
     fn bash_with(timeout: Duration) -> Bash {
-        Bash::new(cwd_for_test(), timeout)
+        Bash::new_with_timeout(cwd_for_test(), timeout)
     }
 
     fn bash_args(command: &str) -> BashArgs {
@@ -783,7 +794,7 @@ mod tests {
     #[tokio::test]
     async fn cwd_is_captured_construction_arg() {
         let captured = std::env::temp_dir();
-        let bash = Bash::new(captured.clone(), Duration::from_secs(5));
+        let bash = Bash::new_with_timeout(captured.clone(), Duration::from_secs(5));
 
         let result = run(&bash, bash_args("pwd")).await.expect("ok");
 
@@ -1051,7 +1062,8 @@ mod tests {
             on_unsafe: BasePolicy::Deny,
         });
 
-        let bash = Bash::new(cwd, Duration::from_secs(5)).register_with(classifier, backend);
+        let bash =
+            Bash::new_with_timeout(cwd, Duration::from_secs(5)).register_with(classifier, backend);
 
         let mut registry = HashMapRegistry::default();
         registry.insert(Bash::NAME, bash);
