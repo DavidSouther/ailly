@@ -605,11 +605,14 @@ fn resolve_context_seed(state: &mut WorkflowState) {
     }
 }
 
-/// Build a substitution context populated from `state.inputs` (under
-/// `vars.<name>`) and the resolved `context_seed`.
+/// Build a substitution context populated from `state.inputs` and the
+/// resolved `context_seed`. Each input is exposed under both its bare name
+/// (`{{ task }}`) and the namespaced form (`{{ vars.task }}`); the bare
+/// form is what workflow authors normally write.
 fn build_template_context(state: &WorkflowState) -> Context {
     let mut ctx = Context::new();
     for (name, value) in &state.inputs {
+        ctx.insert(name.clone(), value.clone());
         ctx.insert(format!("vars.{name}"), value.clone());
     }
     if let Some(today) = &state.context_seed.today {
@@ -1342,6 +1345,100 @@ mod tests {
         .expect_err("missing required input must reject construction");
         let msg2 = format!("{err2:#}");
         assert!(msg2.contains("topic"), "{msg2}");
+    }
+
+    #[tokio::test]
+    async fn workflow_input_resolves_bare_placeholder_matching_input_name() {
+        use crate::workflow::schema::{InputSpec, Workflow};
+        use crate::workflow::state::WorkflowState;
+
+        let fs = mem_fs! { "root": {} };
+        let root = fs.join("root").unwrap();
+
+        let mut inputs = BTreeMap::new();
+        inputs.insert(
+            "task".to_string(),
+            InputSpec {
+                description: "task description".to_string(),
+                required: false,
+                pattern: None,
+            },
+        );
+        inputs.insert(
+            "slug".to_string(),
+            InputSpec {
+                description: "session slug".to_string(),
+                required: false,
+                pattern: None,
+            },
+        );
+
+        let workflow = Workflow {
+            name: "bare".to_string(),
+            description: None,
+            start: "first".to_string(),
+            inputs,
+            tasks: vec![task(
+                "first",
+                "Pick up {{ task }} for slug {{ slug }}.",
+                &[],
+            )],
+        };
+
+        let mut state = WorkflowState::initial(&workflow);
+        state
+            .inputs
+            .insert("task".to_string(), "the next deferred item".to_string());
+        state
+            .inputs
+            .insert("slug".to_string(), "deferred-001".to_string());
+
+        let runtime = Runtime::new(
+            workflow,
+            state,
+            ConversationRoot::try_from(root.clone()).unwrap(),
+            empty_knowledge(),
+            Arc::new(Noop::default()),
+            empty_registry(),
+            Settings::default(),
+        )
+        .expect("inputs validate");
+        let events: Vec<WorkflowEvent> = runtime.run().collect().await;
+
+        if let Some(WorkflowEvent::WorkflowFinished {
+            reason: WorkflowStopReason::TaskFailed { task, error },
+        }) = events.iter().find(|e| {
+            matches!(
+                e,
+                WorkflowEvent::WorkflowFinished {
+                    reason: WorkflowStopReason::TaskFailed { .. }
+                }
+            )
+        }) {
+            panic!(
+                "task {task:?} failed unexpectedly: {error:#}; bare input names should resolve as placeholders"
+            );
+        }
+
+        let turn_name = root
+            .read_dir()
+            .unwrap()
+            .map(|e| e.filename())
+            .find(|n| n.ends_with("_first.toml"))
+            .expect("turn file written");
+        let turn_text = root.join(&turn_name).unwrap().read_to_string().unwrap();
+        assert!(
+            turn_text.contains("the next deferred item"),
+            "task input not rendered: {turn_text}"
+        );
+        assert!(
+            turn_text.contains("deferred-001"),
+            "slug input not rendered: {turn_text}"
+        );
+        assert!(
+            !turn_text.contains("{{"),
+            "unsubstituted placeholder remains: {turn_text}"
+        );
     }
 
     #[tokio::test]
@@ -2192,7 +2289,7 @@ mod tests {
             },
         };
         let project = KnowledgeRoot::try_from(fs.join("project").unwrap()).unwrap();
-        let kb = FsKnowledgeBase::new(vec![project]);
+        let kb = FsKnowledgeBase::build(vec![project]).expect("build kb");
 
         let workflow = kb.workflow(&WorkflowName::new("build")).unwrap();
         assert_eq!(workflow.name, "build");
