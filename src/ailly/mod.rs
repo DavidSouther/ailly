@@ -13,7 +13,6 @@ use std::sync::Arc;
 use anyhow::{Context, Result, anyhow};
 use clap::Parser;
 use futures::StreamExt;
-use vfs::VfsPath;
 
 use crate::content::Conversation;
 #[cfg(feature = "bedrock")]
@@ -22,7 +21,7 @@ use crate::engine::{
     Engine, Generator, Noop, Settings, StopReason, TurnEvent, anthropic_from_env, gemini_from_env,
     openai_from_env,
 };
-use crate::workflow::{Runtime, Workflow, WorkflowEvent, WorkflowState, WorkflowStopReason};
+use crate::workflow::{Runtime, WorkflowEvent, WorkflowState, WorkflowStopReason};
 
 use std::collections::{BTreeMap, VecDeque};
 
@@ -351,38 +350,6 @@ async fn run_clean(cli: &Cli) -> Result<(), RunError> {
     Ok(())
 }
 
-/// Read and parse `workflow.toml` from the conversation root, validating
-/// that its declared name matches what `-w` requested.
-fn load_workflow_definition(
-    vfs_root: &VfsPath,
-    expected_name: &str,
-    raw_arg: &str,
-) -> Result<Workflow, RunError> {
-    let workflow_path = vfs_root
-        .join("workflow.toml")
-        .with_context(|| format!("resolving workflow.toml under {}", vfs_root.as_str()))?;
-    if !workflow_path.exists().unwrap_or(false) {
-        return Err(RunError::Setup(anyhow!(
-            "no workflow.toml at conversation root {}",
-            vfs_root.as_str()
-        )));
-    }
-    let workflow_text = workflow_path
-        .read_to_string()
-        .with_context(|| format!("reading {}", workflow_path.as_str()))?;
-    let workflow: Workflow = toml::from_str(&workflow_text)
-        .with_context(|| format!("parsing {}", workflow_path.as_str()))?;
-
-    if workflow.name != expected_name {
-        return Err(RunError::Setup(anyhow!(
-            "workflow.toml declares name {:?} but `-w {raw_arg}` requested {expected_name:?}",
-            workflow.name
-        )));
-    }
-
-    Ok(workflow)
-}
-
 async fn load_from_root(cli: &Cli) -> Result<Conversation> {
     let project = cli.project()?;
     let knowledge = crate::knowledge::base::FsKnowledgeBase::build(project.knowledge.clone())?;
@@ -404,16 +371,15 @@ async fn run_workflow(cli: &Cli, engine: Arc<dyn Engine>, raw: &str) -> Result<(
     let project = cli
         .project()
         .with_context(|| format!("assembling project from {}", root.display()))?;
-    let vfs_root = project.root.as_path().clone();
-    let conversation = project.conversations.clone();
+    let conversation = crate::project::ConversationRoot::workflow_subdir(&project.root)?;
     let knowledge: std::sync::Arc<dyn crate::knowledge::base::KnowledgeBase> = std::sync::Arc::new(
         crate::knowledge::base::FsKnowledgeBase::build(project.knowledge.clone())?,
     );
 
     let workflow = knowledge.workflow(&workflow_name)?;
 
-    let mut state =
-        WorkflowState::read(&vfs_root)?.unwrap_or_else(|| WorkflowState::initial(&workflow));
+    let mut state = WorkflowState::read(conversation.as_path())?
+        .unwrap_or_else(|| WorkflowState::initial(&workflow));
 
     if let Some(task_name) = task_override {
         state.queue = VecDeque::from(vec![task_name]);

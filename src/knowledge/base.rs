@@ -24,6 +24,7 @@ const WORKFLOWS_DIR: &str = "workflows";
 const AGENTS_FILE: &str = "AGENTS.md";
 const SKILL_FILE: &str = "SKILL.md";
 const WORKFLOW_EXT: &str = ".toml";
+pub(crate) const ROOT_WORKFLOW_FILE: &str = "workflow.toml";
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct WorkflowName(String);
@@ -303,6 +304,24 @@ impl FsKnowledgeBase {
                 skills.insert(skill.name().clone(), skill);
             }
 
+            let root_wf = root.as_path().join(ROOT_WORKFLOW_FILE)?;
+            if root_wf.exists()? {
+                let raw = root_wf.read_to_string()?;
+                let workflow: Workflow =
+                    toml::from_str(&raw).map_err(|source| WorkflowParseError {
+                        name: ROOT_WORKFLOW_FILE.to_string(),
+                        source,
+                    })?;
+                let name = WorkflowName::new(&workflow.name);
+                workflows.entry(name).or_insert_with(|| LoadedWorkflow {
+                    workflow,
+                    source: KnowledgeSource {
+                        root: root.clone(),
+                        path: root_wf,
+                    },
+                });
+            }
+
             for entry in iter_workflow_files(root)? {
                 let (filename_stem, path) = entry?;
                 let raw = path.read_to_string()?;
@@ -541,6 +560,50 @@ mod tests {
             result.is_ok(),
             "lookup must use the workflow's internal `name` field, not the filename stem; got {result:?}"
         );
+    }
+
+    #[test]
+    fn fs_knowledge_base_loads_bare_workflow_toml_at_root() {
+        let fs = mem_fs! {
+            "kb": {
+                "workflow.toml": "name = \"basic\"\nstart = \"first\"\n[[tasks]]\nname = \"first\"\ntask = { kind = \"prompt\", text = \"go\" }\n",
+            },
+        };
+        let root = KnowledgeRoot::try_from(fs.join("kb").unwrap()).unwrap();
+        let kb = FsKnowledgeBase::build(vec![root]).unwrap();
+
+        let result = kb.workflow(&WorkflowName::new("basic"));
+
+        assert!(
+            result.is_ok(),
+            "bare workflow.toml at the knowledge-root must be discoverable; got {result:?}"
+        );
+    }
+
+    #[test]
+    fn fs_knowledge_base_root_workflow_loses_to_workflows_dir_when_named_same() {
+        let fs = mem_fs! {
+            "kb": {
+                "workflow.toml": "name = \"shared\"\nstart = \"go\"\n[[tasks]]\nname = \"go\"\ntask = { kind = \"prompt\", text = \"root copy\" }\n",
+                "workflows": {
+                    "shared.toml": "name = \"shared\"\nstart = \"go\"\n[[tasks]]\nname = \"go\"\ntask = { kind = \"prompt\", text = \"workflows/ copy\" }\n",
+                },
+            },
+        };
+        let root = KnowledgeRoot::try_from(fs.join("kb").unwrap()).unwrap();
+        let kb = FsKnowledgeBase::build(vec![root]).unwrap();
+
+        let shared = kb.workflow(&WorkflowName::new("shared")).unwrap();
+
+        match &shared.tasks[0].task {
+            crate::workflow::TaskAction::Prompt { text } => {
+                assert_eq!(
+                    text, "root copy",
+                    "the bare workflow.toml is loaded before workflows/, so it wins first-wins dedupe within a single root"
+                );
+            }
+            other => panic!("expected Prompt, got {other:?}"),
+        }
     }
 
     #[test]

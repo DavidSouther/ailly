@@ -11,7 +11,7 @@ const NO_DESCRIPTION: &str = "(no description)";
 /// the runner verb. Empty case prints the documented hint.
 pub fn render_workflow_listing(entries: &[WorkflowEntry]) -> String {
     if entries.is_empty() {
-        return "Available workflows: (none found)\nAdd a `workflow.toml` to the conversation root or a `workflows/<name>.toml` under a knowledge root.\n".to_string();
+        return "Available workflows: (none found)\nAdd a `workflow.toml` to the project root or a `workflows/<name>.toml` under a knowledge root.\n".to_string();
     }
     let mut out = String::from("Available workflows:\n");
     let gutter = name_gutter(entries.iter().map(|e| e.name().as_str()));
@@ -107,7 +107,7 @@ mod tests {
 
         assert_eq!(
             out,
-            "Available workflows: (none found)\nAdd a `workflow.toml` to the conversation root or a `workflows/<name>.toml` under a knowledge root.\n"
+            "Available workflows: (none found)\nAdd a `workflow.toml` to the project root or a `workflows/<name>.toml` under a knowledge root.\n"
         );
     }
 

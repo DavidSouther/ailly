@@ -7,7 +7,7 @@ cd "$(dirname "$0")"
 ensure_built
 
 cleanup() {
-    rm -f ./*_first.toml ./*_first_eval.toml ./*_second.toml workflow.state.toml out err
+    rm -rf ./.ailly out err
 }
 trap cleanup EXIT
 
@@ -22,9 +22,9 @@ export AILLY_NOOP_RESPONSE=approved
 
 # Each task in the workflow produces a turn file named NN_<task>.toml. The
 # exact NN sequence is an implementation detail; glob match the suffix.
-first_turns=( ./*_first.toml )
-first_eval_turns=( ./*_first_eval.toml )
-second_turns=( ./*_second.toml )
+first_turns=( ./.ailly/*_first.toml )
+first_eval_turns=( ./.ailly/*_first_eval.toml )
+second_turns=( ./.ailly/*_second.toml )
 
 if [ "${#first_turns[@]}" -eq 0 ]; then
     echo "FAIL: workflow did not produce any *_first.toml turn file" >&2
@@ -69,7 +69,7 @@ fi
 # The runtime persists workflow state at the conversation root after the run.
 # An empty queue plus two history entries means the pump completed cleanly,
 # proving the eval response (`approved`) routed to `second`.
-assert_file_exists workflow.state.toml
-assert_grep_q 'workflow = "basic"' workflow.state.toml
-assert_grep_q 'task = "first"' workflow.state.toml
-assert_grep_q 'task = "second"' workflow.state.toml
+assert_file_exists .ailly/workflow.state.toml
+assert_grep_q 'workflow = "basic"' .ailly/workflow.state.toml
+assert_grep_q 'task = "first"' .ailly/workflow.state.toml
+assert_grep_q 'task = "second"' .ailly/workflow.state.toml

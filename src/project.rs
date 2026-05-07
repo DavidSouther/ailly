@@ -10,6 +10,7 @@
 
 use vfs::VfsPath;
 
+use crate::content::AILLY_DIR;
 use crate::knowledge::base::WorkflowName;
 
 #[derive(Debug, thiserror::Error)]
@@ -18,6 +19,18 @@ pub enum RootError {
     NotDirectory { path: String },
     #[error("root path {path:?} could not be inspected")]
     Inspect {
+        path: String,
+        #[source]
+        source: vfs::VfsError,
+    },
+    #[error("could not create directory {path:?}")]
+    CreateDirectory {
+        path: String,
+        #[source]
+        source: vfs::VfsError,
+    },
+    #[error("could not resolve {path:?}")]
+    ResolvePath {
         path: String,
         #[source]
         source: vfs::VfsError,
@@ -79,6 +92,32 @@ impl ConversationRoot {
         self.0
             .join(name)
             .expect("turn name joins onto conversation root")
+    }
+
+    /// Resolve the conversation root for a workflow run: `<project>/.ailly`.
+    /// The directory is created when absent so the runtime can immediately
+    /// write turn files and `workflow.state.toml`. The project root is left
+    /// in place; only the conversation artifacts move under `.ailly`.
+    pub fn workflow_subdir(project: &ProjectRoot) -> Result<Self, RootError> {
+        let joined = project.as_path().join(AILLY_DIR).map_err(|source| {
+            RootError::ResolvePath {
+                path: format!("{}/{}", project.as_path().as_str(), AILLY_DIR),
+                source,
+            }
+        })?;
+        let exists = joined.exists().map_err(|source| RootError::Inspect {
+            path: joined.as_str().to_string(),
+            source,
+        })?;
+        if !exists {
+            joined
+                .create_dir()
+                .map_err(|source| RootError::CreateDirectory {
+                    path: joined.as_str().to_string(),
+                    source,
+                })?;
+        }
+        Self::try_from(joined)
     }
 }
 
@@ -151,40 +190,47 @@ pub struct Project {
 }
 
 impl Project {
-    /// Build the workflow listing for this project. The conversation-root
-    /// `workflow.toml` is consulted first; knowledge-root entries follow,
-    /// dedupes are first-wins by name. Sorted alphabetically by `name`.
+    /// Build the workflow listing for this project. Each knowledge root
+    /// contributes a bare `workflow.toml` (if present) and every entry
+    /// under `workflows/`. The first knowledge root is the project root,
+    /// so a project-root `workflow.toml` takes precedence. Same-name
+    /// entries are deduped first-wins. Sorted alphabetically by `name`.
     /// Per-file parse failures log one warning line to stderr and the
     /// entry is skipped.
     pub fn list_workflows(&self) -> Result<Vec<WorkflowEntry>, ListingError> {
         let mut entries: Vec<WorkflowEntry> = Vec::new();
 
-        let convo_path = self
-            .conversations
-            .as_path()
-            .join("workflow.toml")
-            .map_err(|source| ListingError::Vfs {
-                path: self.conversations.as_path().as_str().to_string(),
+        for root in &self.knowledge {
+            let bare_path = root
+                .as_path()
+                .join(crate::knowledge::base::ROOT_WORKFLOW_FILE)
+                .map_err(|source| ListingError::Vfs {
+                    path: root.as_path().as_str().to_string(),
+                    source,
+                })?;
+            let bare_exists = bare_path.exists().map_err(|source| ListingError::Vfs {
+                path: bare_path.as_str().to_string(),
                 source,
             })?;
-        let convo_exists = convo_path.exists().map_err(|source| ListingError::Vfs {
-            path: convo_path.as_str().to_string(),
-            source,
-        })?;
-        if convo_exists {
-            match read_workflow(&convo_path) {
-                Ok(wf) => entries.push(WorkflowEntry {
-                    name: wf.name.into(),
-                    description: wf.description.unwrap_or_default(),
-                    source_path: "workflow.toml".to_string(),
-                }),
-                Err(err) => {
-                    eprintln!("warning: skipping {}: {err}", convo_path.as_str());
+            if bare_exists {
+                match read_workflow(&bare_path) {
+                    Ok(wf) => {
+                        let name: WorkflowName = wf.name.clone().into();
+                        if !entries.iter().any(|e| e.name == name) {
+                            entries.push(WorkflowEntry {
+                                name,
+                                description: wf.description.unwrap_or_default(),
+                                source_path: crate::knowledge::base::ROOT_WORKFLOW_FILE
+                                    .to_string(),
+                            });
+                        }
+                    }
+                    Err(err) => {
+                        eprintln!("warning: skipping {}: {err}", bare_path.as_str());
+                    }
                 }
             }
-        }
 
-        for root in &self.knowledge {
             for entry in crate::knowledge::base::iter_workflow_files(root)? {
                 let (name, path) = entry?;
                 if entries.iter().any(|e| e.name == name) {
@@ -285,15 +331,17 @@ impl Project {
     }
 
     /// Returns the source paths the workflow listing consulted, used by
-    /// the unknown-name preface. One entry for the conversation-root
-    /// `workflow.toml`, plus one entry per knowledge root's `workflows/`
-    /// directory.
+    /// the unknown-name preface. For each knowledge root, lists the bare
+    /// `workflow.toml` and the `workflows/` directory in that order.
     pub fn workflow_search_paths(&self) -> Vec<String> {
-        let mut paths = Vec::with_capacity(1 + self.knowledge.len());
-        if let Ok(p) = self.conversations.as_path().join("workflow.toml") {
-            paths.push(p.as_str().to_string());
-        }
+        let mut paths = Vec::with_capacity(2 * self.knowledge.len());
         for root in &self.knowledge {
+            if let Ok(p) = root
+                .as_path()
+                .join(crate::knowledge::base::ROOT_WORKFLOW_FILE)
+            {
+                paths.push(p.as_str().to_string());
+            }
             if let Ok(p) = root.as_path().join("workflows") {
                 paths.push(p.as_str().to_string());
             }
@@ -454,6 +502,48 @@ mod tests {
         let conversation = ConversationRoot::from(project.clone());
 
         assert_eq!(conversation.as_path().as_str(), project.as_path().as_str());
+    }
+
+    #[test]
+    fn workflow_subdir_creates_dot_ailly_under_project() {
+        let fs = mem_fs! {
+            "project": {
+                "AGENTS.md": "# agents\n",
+            },
+        };
+        let project = ProjectRoot::try_from(fs.join("project").unwrap()).unwrap();
+
+        let conversation = ConversationRoot::workflow_subdir(&project).unwrap();
+
+        assert!(
+            conversation.as_path().as_str().ends_with("/.ailly"),
+            "expected leaf to be .ailly, got {:?}",
+            conversation.as_path().as_str()
+        );
+        assert!(
+            conversation.as_path().is_dir().unwrap(),
+            ".ailly subdirectory should exist after workflow_subdir"
+        );
+    }
+
+    #[test]
+    fn workflow_subdir_is_idempotent_when_dot_ailly_already_exists() {
+        let fs = mem_fs! {
+            "project": {
+                ".ailly": {
+                    "01_first.toml": "",
+                },
+            },
+        };
+        let project = ProjectRoot::try_from(fs.join("project").unwrap()).unwrap();
+
+        let conversation = ConversationRoot::workflow_subdir(&project).unwrap();
+
+        let preserved = conversation.as_path().join("01_first.toml").unwrap();
+        assert!(
+            preserved.exists().unwrap(),
+            "existing files under .ailly must be preserved across resolution"
+        );
     }
 
     #[test]
@@ -636,7 +726,7 @@ mod tests {
     }
 
     #[test]
-    fn workflow_search_paths_lists_conversation_root_then_each_knowledge_root() {
+    fn workflow_search_paths_lists_each_knowledge_root_workflow_toml_then_workflows_dir() {
         let fs = mem_fs! {
             "project": { "AGENTS.md": "# agents\n" },
             "extra_kb": { "AGENTS.md": "# extra agents\n" },
@@ -652,18 +742,22 @@ mod tests {
 
         let paths = project.workflow_search_paths();
 
-        assert_eq!(paths.len(), 3);
+        assert_eq!(paths.len(), 4);
         assert!(
             paths[0].ends_with("/project/workflow.toml"),
-            "first entry should be the conversation-root workflow.toml: {paths:?}"
+            "first entry should be the project knowledge root's workflow.toml: {paths:?}"
         );
         assert!(
             paths[1].ends_with("/project/workflows"),
             "second entry should be the project knowledge root's workflows dir: {paths:?}"
         );
         assert!(
-            paths[2].ends_with("/extra_kb/workflows"),
-            "third entry should be the extra knowledge root's workflows dir: {paths:?}"
+            paths[2].ends_with("/extra_kb/workflow.toml"),
+            "third entry should be the extra knowledge root's workflow.toml: {paths:?}"
+        );
+        assert!(
+            paths[3].ends_with("/extra_kb/workflows"),
+            "fourth entry should be the extra knowledge root's workflows dir: {paths:?}"
         );
     }
 
