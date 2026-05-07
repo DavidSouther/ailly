@@ -7,11 +7,20 @@ use vfs::VfsPath;
 
 use crate::content::{
     AssistantResponse, ContentError, ContentMeta, Conversation, ConversationTurn,
+    EnrichmentAgentEntry, EnrichmentFile, EnrichmentSkillEntry, EnrichmentToolsEntry,
 };
 use crate::engine::{
     Engine, EngineEvent, EngineInput, Generator, Settings, StopReason, ToolRegistry, TurnEvent,
 };
+use crate::knowledge::base::KnowledgeBase;
+use crate::knowledge::enrichment::{CompositeEnricher, SkillEnricher, knowledge_source_path};
+use crate::knowledge::skills::SkillName;
 use crate::workflow::schema::{TaskAction, Workflow, WorkflowError};
+
+/// Always-on read-only tool bundle attached to any turn that fires
+/// enrichment. Order is the literal order recorded in the
+/// `[enrichment.tools].bundle` audit field.
+const TOOL_BUNDLE: &[&str] = &["user.clarify", "fs.read", "fs.grep", "fs.list"];
 use crate::workflow::state::{HistoryEntry, WorkflowState};
 use crate::workflow::template::{self, Context, UnresolvedPlaceholder};
 
@@ -66,7 +75,6 @@ pub struct Runtime {
     workflow: Workflow,
     state: WorkflowState,
     conversation_root: crate::project::ConversationRoot,
-    #[allow(dead_code)]
     knowledge: Arc<dyn crate::knowledge::base::KnowledgeBase>,
     engine: Arc<dyn Engine>,
     tool_registry: Arc<dyn ToolRegistry>,
@@ -130,7 +138,7 @@ impl Runtime {
                 workflow,
                 mut state,
                 conversation_root,
-                knowledge: _knowledge,
+                knowledge,
                 engine,
                 tool_registry,
                 settings,
@@ -249,7 +257,7 @@ impl Runtime {
                         turn: turn_path.clone(),
                     };
 
-                    let convo = match Conversation::single_turn(turn_path.clone()).await {
+                    let mut convo = match Conversation::single_turn(turn_path.clone()).await {
                         Ok(c) => c,
                         Err(error) => {
                             requeue_and_persist(&mut state, &conversation_root, &task_name);
@@ -259,6 +267,24 @@ impl Runtime {
                             return;
                         }
                     };
+
+                    match compute_enrichment(
+                        &task.name,
+                        &task.skills,
+                        &task.tools,
+                        &rendered_prompt,
+                        &*knowledge,
+                    ) {
+                        Ok(Some(file)) => convo.set_enrichment(0, file),
+                        Ok(None) => {}
+                        Err(error) => {
+                            requeue_and_persist(&mut state, &conversation_root, &task_name);
+                            yield WorkflowEvent::WorkflowFinished {
+                                reason: task_failed(&task_name, error),
+                            };
+                            return;
+                        }
+                    }
 
                     let generator = Generator::new(convo, engine.clone(), settings.clone())
                         .with_registry(tool_registry.clone());
@@ -337,6 +363,29 @@ impl Runtime {
                     // this ordering.
                     debug_assert_eq!(convo.turn_count(), 2);
                     const EVAL_TURN_IDX: usize = 1;
+
+                    // Eval-path enrichment parity: the eval turn carries the
+                    // same enrichment audit (skills, agents, bundle) as the
+                    // producing turn used. The plan's design records this as
+                    // the fix for the runtime.rs:340 bypass.
+                    match compute_enrichment(
+                        &task.name,
+                        &task.skills,
+                        &task.tools,
+                        eval_text,
+                        &*knowledge,
+                    ) {
+                        Ok(Some(file)) => convo.set_enrichment(EVAL_TURN_IDX, file),
+                        Ok(None) => {}
+                        Err(error) => {
+                            requeue_and_persist(&mut state, &conversation_root, &task_name);
+                            yield WorkflowEvent::WorkflowFinished {
+                                reason: task_failed(&task_name, error),
+                            };
+                            return;
+                        }
+                    }
+
                     let history = EngineInput::with_history(convo.history_for(convo.turn(EVAL_TURN_IDX)));
 
                     let mut events = match engine.stream(history, &settings, &[], eval_path.as_str()) {
@@ -726,6 +775,79 @@ async fn find_resumable_turn(
     Some((path, recorded.stop_reason.clone()))
 }
 
+/// Compute the audit-only enrichment record for a turn, or `None` when
+/// the turn declares no skills and no tools.
+///
+/// `task_label` is used only to populate
+/// [`WorkflowError::EnrichmentFailed.task`].
+fn compute_enrichment(
+    task_label: &str,
+    declared_skills: &[String],
+    declared_tools: &[String],
+    prompt: &str,
+    kb: &dyn KnowledgeBase,
+) -> Result<Option<EnrichmentFile>, WorkflowError> {
+    if declared_skills.is_empty() && declared_tools.is_empty() {
+        return Ok(None);
+    }
+
+    let mut parsed: Vec<SkillName> = Vec::with_capacity(declared_skills.len());
+    for raw in declared_skills {
+        let name =
+            SkillName::try_from(raw.as_str()).map_err(|err| WorkflowError::EnrichmentFailed {
+                task: task_label.to_string(),
+                reason: err.to_string(),
+            })?;
+        parsed.push(name);
+    }
+
+    let enriched = CompositeEnricher::new()
+        .enrich(&parsed, prompt, kb)
+        .map_err(|err| WorkflowError::EnrichmentFailed {
+            task: task_label.to_string(),
+            reason: err.to_string(),
+        })?;
+
+    let agents_docs = kb.agents().map_err(|err| WorkflowError::EnrichmentFailed {
+        task: task_label.to_string(),
+        reason: err.to_string(),
+    })?;
+
+    let agents = agents_docs
+        .iter()
+        .map(|doc| {
+            let root_display = doc.source.root.display_path();
+            let root_path = std::path::PathBuf::from(root_display);
+            let canonical_root = std::fs::canonicalize(&root_path).unwrap_or(root_path);
+            EnrichmentAgentEntry {
+                source: knowledge_source_path(&doc.source),
+                root: canonical_root,
+            }
+        })
+        .collect();
+
+    let skills = enriched
+        .iter()
+        .map(|es| EnrichmentSkillEntry {
+            name: es.name.as_str().to_string(),
+            origin: es.origin.as_str().to_string(),
+            score: es.score,
+            source: es.source.clone(),
+        })
+        .collect();
+
+    let tools = EnrichmentToolsEntry {
+        bundle: TOOL_BUNDLE.iter().map(|s| s.to_string()).collect(),
+        declared: declared_tools.to_vec(),
+    };
+
+    Ok(Some(EnrichmentFile {
+        agents,
+        skills,
+        tools,
+    }))
+}
+
 async fn synthesize_turn_file(
     root: &VfsPath,
     suffix: &str,
@@ -802,6 +924,33 @@ mod tests {
     fn empty_registry() -> Arc<dyn ToolRegistry> {
         Arc::new(EmptyRegistry)
     }
+
+    #[test]
+    fn compute_enrichment_returns_none_when_task_has_no_skills_and_no_tools() {
+        let kb = EmptyKnowledgeBase;
+        let result = compute_enrichment("bare", &[], &[], "prompt", &kb).unwrap();
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn compute_enrichment_emits_bundle_when_only_tools_declared() {
+        let kb = EmptyKnowledgeBase;
+        let result = compute_enrichment("tool-only", &[], &["my.tool".to_string()], "prompt", &kb)
+            .unwrap()
+            .expect("enrichment fires when only tools declared");
+
+        assert_eq!(
+            result.tools.bundle,
+            vec![
+                "user.clarify".to_string(),
+                "fs.read".to_string(),
+                "fs.grep".to_string(),
+                "fs.list".to_string(),
+            ]
+        );
+        assert_eq!(result.tools.declared, vec!["my.tool".to_string()]);
+        assert!(result.skills.is_empty());
+    }
     use crate::mem_fs;
     use crate::workflow::schema::{Task, TaskAction, Workflow};
     use crate::workflow::state::WorkflowState;
@@ -815,6 +964,7 @@ mod tests {
         Task {
             name: name.to_string(),
             skills: Vec::new(),
+            tools: Vec::new(),
             task: TaskAction::Prompt {
                 text: prompt.to_string(),
             },
@@ -1465,6 +1615,7 @@ mod tests {
                         "developer:design".to_string(),
                         "developer:thinking".to_string(),
                     ],
+                    tools: Vec::new(),
                     task: TaskAction::Prompt {
                         text: "Produce design.md.".to_string(),
                     },
@@ -1474,6 +1625,7 @@ mod tests {
                 Task {
                     name: "bare".to_string(),
                     skills: vec![],
+                    tools: Vec::new(),
                     task: TaskAction::Prompt {
                         text: "Run.".to_string(),
                     },
@@ -2037,6 +2189,7 @@ mod tests {
             Task {
                 name: name.to_string(),
                 skills: vec![skill.to_string()],
+                tools: Vec::new(),
                 task: TaskAction::Prompt {
                     text: format!("Produce {artifact}."),
                 },

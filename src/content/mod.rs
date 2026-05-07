@@ -255,6 +255,48 @@ impl ContentMeta {
     }
 }
 
+/// Audit record persisted under `[enrichment]` on a
+/// [`ConversationTurnFile`]. Author-declared `skills` and `tools` remain
+/// authoritative on read; this record exists to reconstruct provenance.
+#[derive(Debug, Default, Clone, PartialEq, Serialize, Deserialize)]
+pub struct EnrichmentFile {
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub agents: Vec<EnrichmentAgentEntry>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub skills: Vec<EnrichmentSkillEntry>,
+    #[serde(default, skip_serializing_if = "EnrichmentToolsEntry::is_empty")]
+    pub tools: EnrichmentToolsEntry,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct EnrichmentAgentEntry {
+    pub source: std::path::PathBuf,
+    pub root: std::path::PathBuf,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct EnrichmentSkillEntry {
+    pub name: String,
+    pub origin: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub score: Option<f32>,
+    pub source: std::path::PathBuf,
+}
+
+#[derive(Debug, Default, Clone, PartialEq, Serialize, Deserialize)]
+pub struct EnrichmentToolsEntry {
+    #[serde(default)]
+    pub bundle: Vec<String>,
+    #[serde(default)]
+    pub declared: Vec<String>,
+}
+
+impl EnrichmentToolsEntry {
+    fn is_empty(&self) -> bool {
+        self.bundle.is_empty() && self.declared.is_empty()
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct ConversationTurn {
     /// Where the conversation was stored on disk
@@ -291,6 +333,10 @@ pub struct ConversationTurn {
     /// Authored fields remain the source of truth on reload; this field
     /// is for inspection only.
     envelope: Option<SentEnvelope>,
+    /// Audit-only enrichment record persisted under `[enrichment]` on the
+    /// turn file. Computed by the workflow runtime and round-tripped on
+    /// `write`/`load`; not used to drive the engine.
+    enrichment: Option<EnrichmentFile>,
 }
 
 impl ConversationTurn {
@@ -362,6 +408,7 @@ impl ConversationTurn {
             declared_parent_tools,
             declared_skills,
             envelope,
+            enrichment: file.enrichment,
         })
     }
 
@@ -390,6 +437,7 @@ impl ConversationTurn {
             declared_parent_tools: None,
             declared_skills,
             envelope: None,
+            enrichment: None,
         }
     }
 
@@ -404,6 +452,18 @@ impl ConversationTurn {
     /// without a recorded envelope.
     pub fn envelope(&self) -> Option<&SentEnvelope> {
         self.envelope.as_ref()
+    }
+    /// Audit-only enrichment record persisted under `[enrichment]` on the
+    /// turn file. Computed by the workflow runtime; never re-fed to the
+    /// engine.
+    pub fn enrichment(&self) -> Option<&EnrichmentFile> {
+        self.enrichment.as_ref()
+    }
+
+    /// Set the audit-only enrichment record. Called by the workflow
+    /// runtime before [`Self::write`] persists the turn.
+    pub fn set_enrichment(&mut self, enrichment: EnrichmentFile) {
+        self.enrichment = Some(enrichment);
     }
 
     /// The last recorded assistant response on this turn, or `None` when no
@@ -465,6 +525,7 @@ impl ConversationTurn {
             tools: self.declared_tools.clone(),
             parent_tools: self.declared_parent_tools,
             skills: self.declared_skills.clone(),
+            enrichment: self.enrichment.clone(),
             response,
             envelope: self.envelope.as_ref().map(EnvelopeFile::from),
         };
@@ -617,6 +678,15 @@ impl Conversation {
         Ok(())
     }
 
+    /// Attach the audit-only enrichment record to the turn at `idx`.
+    ///
+    /// Called by the workflow runtime before [`Generator::run`] writes the
+    /// turn back to disk so the persisted file carries the `[enrichment]`
+    /// table alongside the engine response.
+    pub fn set_enrichment(&mut self, idx: usize, enrichment: EnrichmentFile) {
+        self.turns[idx].1.set_enrichment(enrichment);
+    }
+
     /// Push an assistant `response` onto the turn at `idx`.
     ///
     /// Used by `Generator` to record an engine's `Final` text and metadata
@@ -734,6 +804,7 @@ impl Conversation {
             declared_parent_tools: None,
             declared_skills: Vec::new(),
             envelope: None,
+            enrichment: None,
         };
         self.turns.push((path, turn));
         Ok(())
@@ -1011,6 +1082,10 @@ struct ConversationTurnFile {
     parent_tools: Option<ToolsParent>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     skills: Vec<String>,
+    /// Audit-only enrichment record. Computed by the workflow runtime
+    /// and persisted for provenance; never re-fed to the engine.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    enrichment: Option<EnrichmentFile>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     response: Vec<MessageFile>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -2228,6 +2303,7 @@ text = "hi"
             tools: Vec::new(),
             parent_tools: None,
             skills: Vec::new(),
+            enrichment: None,
             response: vec![MessageFile::Assistant {
                 text: "hi".to_string(),
                 model: None,
@@ -2251,6 +2327,7 @@ text = "hi"
             tools: Vec::new(),
             parent_tools: None,
             skills: Vec::new(),
+            enrichment: None,
             response: Vec::new(),
             envelope: None,
         };
@@ -2267,6 +2344,7 @@ text = "hi"
             parent_tools: None,
             skills: Vec::new(),
             envelope: None,
+            enrichment: None,
             response: vec![MessageFile::Assistant {
                 text: "a".to_string(),
                 model: Some("test-model".to_string()),
@@ -2466,6 +2544,7 @@ text = "hi"
             declared_parent_tools: None,
             declared_skills: Vec::new(),
             envelope: None,
+            enrichment: None,
         };
 
         let err = turn.write().await.unwrap_err();
@@ -2862,6 +2941,184 @@ text = "hi"
             written_first, written_second,
             "load-write cycle must be byte-stable across declared_skills"
         );
+    }
+
+    #[tokio::test]
+    async fn write_then_load_round_trips_enrichment_with_namespace_origins() {
+        let fs = mem_fs! { "root": { "01.toml": r#"prompt = "x""# } };
+        let path = fs.join("root/01.toml").unwrap();
+
+        let mut turn = ConversationTurn::new(
+            path.clone(),
+            ContentMeta::default(),
+            Vec::new(),
+            vec!["dev:design".to_string()],
+            "x".to_string(),
+        );
+        turn.set_enrichment(EnrichmentFile {
+            agents: vec![EnrichmentAgentEntry {
+                source: std::path::PathBuf::from("/proj/AGENTS.md"),
+                root: std::path::PathBuf::from("/proj"),
+            }],
+            skills: vec![
+                EnrichmentSkillEntry {
+                    name: "dev:design".to_string(),
+                    origin: "declared".to_string(),
+                    score: None,
+                    source: std::path::PathBuf::from("/proj/skills/dev/design/SKILL.md"),
+                },
+                EnrichmentSkillEntry {
+                    name: "dev:thinking".to_string(),
+                    origin: "namespace".to_string(),
+                    score: None,
+                    source: std::path::PathBuf::from("/proj/skills/dev/thinking/SKILL.md"),
+                },
+            ],
+            tools: EnrichmentToolsEntry {
+                bundle: vec![
+                    "user.clarify".to_string(),
+                    "fs.read".to_string(),
+                    "fs.grep".to_string(),
+                    "fs.list".to_string(),
+                ],
+                declared: Vec::new(),
+            },
+        });
+        turn.write().await.unwrap();
+
+        let written = path.read_to_string().unwrap();
+        assert!(written.contains("[[enrichment.agents]]"));
+        assert!(written.contains("name = \"dev:design\""));
+        assert!(written.contains("origin = \"declared\""));
+        assert!(written.contains("origin = \"namespace\""));
+        assert!(
+            written.contains("bundle = [\"user.clarify\", \"fs.read\", \"fs.grep\", \"fs.list\"]")
+        );
+        assert!(written.contains("declared = []"));
+
+        let reloaded = ConversationTurn::load(
+            path.clone(),
+            ContentMeta::default(),
+            Vec::new(),
+            0,
+            Vec::new(),
+            Vec::new(),
+        )
+        .await
+        .unwrap();
+        let enrichment = reloaded.enrichment().expect("enrichment round-trips");
+        assert_eq!(enrichment.skills.len(), 2);
+        assert_eq!(enrichment.skills[0].origin, "declared");
+        assert_eq!(enrichment.skills[1].origin, "namespace");
+        assert_eq!(enrichment.agents.len(), 1);
+        assert_eq!(enrichment.tools.bundle.len(), 4);
+    }
+
+    #[tokio::test]
+    async fn write_then_load_round_trips_enrichment_with_grep_score() {
+        let fs = mem_fs! { "root": { "01.toml": r#"prompt = "x""# } };
+        let path = fs.join("root/01.toml").unwrap();
+
+        let mut turn = ConversationTurn::new(
+            path.clone(),
+            ContentMeta::default(),
+            Vec::new(),
+            Vec::new(),
+            "x".to_string(),
+        );
+        turn.set_enrichment(EnrichmentFile {
+            agents: Vec::new(),
+            skills: vec![EnrichmentSkillEntry {
+                name: "patterns:using-patterns".to_string(),
+                origin: "grep".to_string(),
+                score: Some(0.08),
+                source: std::path::PathBuf::from("/proj/patterns/using-patterns/SKILL.md"),
+            }],
+            tools: EnrichmentToolsEntry::default(),
+        });
+        turn.write().await.unwrap();
+
+        let written = path.read_to_string().unwrap();
+        assert!(written.contains("origin = \"grep\""));
+        assert!(written.contains("score = 0.08"));
+
+        let reloaded = ConversationTurn::load(
+            path.clone(),
+            ContentMeta::default(),
+            Vec::new(),
+            0,
+            Vec::new(),
+            Vec::new(),
+        )
+        .await
+        .unwrap();
+        let enrichment = reloaded.enrichment().expect("enrichment round-trips");
+        assert_eq!(enrichment.skills.len(), 1);
+        let entry = &enrichment.skills[0];
+        assert_eq!(entry.origin, "grep");
+        let score = entry.score.expect("grep entry carries score");
+        assert!((score - 0.08).abs() < 1e-4, "score {score}");
+    }
+
+    #[tokio::test]
+    async fn write_then_load_omits_enrichment_table_when_none() {
+        let fs = mem_fs! { "root": { "01.toml": r#"prompt = "x""# } };
+        let path = fs.join("root/01.toml").unwrap();
+
+        let turn = ConversationTurn::new(
+            path.clone(),
+            ContentMeta::default(),
+            Vec::new(),
+            Vec::new(),
+            "x".to_string(),
+        );
+        turn.write().await.unwrap();
+
+        let written = path.read_to_string().unwrap();
+        assert!(
+            !written.contains("[enrichment"),
+            "absent enrichment must not emit a table: {written}"
+        );
+
+        let reloaded = ConversationTurn::load(
+            path.clone(),
+            ContentMeta::default(),
+            Vec::new(),
+            0,
+            Vec::new(),
+            Vec::new(),
+        )
+        .await
+        .unwrap();
+        assert!(reloaded.enrichment().is_none());
+    }
+
+    #[tokio::test]
+    async fn load_tolerates_unknown_envelope_table() {
+        let raw = r#"prompt = "x"
+
+[envelope]
+opaque = "ignored"
+
+[[envelope.blocks]]
+kind = "skill"
+body = "..."
+"#;
+        let fs = mem_fs! { "root": { "01.toml": "" } };
+        let path = fs.join("root/01.toml").unwrap();
+        std::io::Write::write_all(&mut path.create_file().unwrap(), raw.as_bytes()).unwrap();
+
+        let reloaded = ConversationTurn::load(
+            path.clone(),
+            ContentMeta::default(),
+            Vec::new(),
+            0,
+            Vec::new(),
+            Vec::new(),
+        )
+        .await
+        .expect("load tolerates the [envelope] table");
+        assert!(reloaded.enrichment().is_none());
     }
 
     #[tokio::test]

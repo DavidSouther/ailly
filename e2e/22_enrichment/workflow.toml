@@ -1,0 +1,13 @@
+name = "basic"
+start = "first"
+
+[[tasks]]
+name = "first"
+skills = ["dev:design"]
+task = { kind = "prompt", text = "First task with enrichment." }
+evaluation = { kind = "prompt", text = "Reply with one word: approved." }
+next = { approved = "second" }
+
+[[tasks]]
+name = "second"
+task = { kind = "prompt", text = "Second task without enrichment." }

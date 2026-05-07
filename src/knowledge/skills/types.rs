@@ -56,11 +56,12 @@ impl SkillName {
         }
         if !raw
             .chars()
-            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-' || c == ':')
         {
             return Err(SkillError::InvalidName {
                 raw: raw.to_string(),
-                reason: "must contain only lowercase ASCII letters, digits, and `-`".to_string(),
+                reason: "must contain only lowercase ASCII letters, digits, `-`, and `:`"
+                    .to_string(),
             });
         }
         Ok(Self(raw.to_string()))
@@ -68,6 +69,13 @@ impl SkillName {
 
     pub fn as_str(&self) -> &str {
         &self.0
+    }
+
+    /// The `<plugin>` prefix of a `<plugin>:<name>` skill name, or `None`
+    /// when the name has no namespace separator. `dev:design` returns
+    /// `Some("dev")`; `local` returns `None`.
+    pub fn plugin(&self) -> Option<&str> {
+        self.0.split_once(':').map(|(plugin, _)| plugin)
     }
 }
 

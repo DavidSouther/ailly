@@ -1,5 +1,13 @@
 # Tasks
 
+- Final refactoring and review of the Thinking Fast and Slow skill activation slice once the e2e feature test at `e2e/22_enrichment/enrichment.sh` passes. Run `developer:refactor` over the new `src/knowledge/enrichment/` module, the extended `src/workflow/runtime.rs` Conversation construction, and the `[enrichment]` serializer additions on `ConversationTurnFile`. Cross-check against the sibling Conversation Prelude design's `[envelope]` table to confirm both serializers tolerate each other on read.
+
+- Thinking Fast and Slow follow-on slices (build on `docs/developer/2026-05-07-A-thinking-fast-slow/design.md` Deferred decisions):
+    - Add a `ModelJudgeEnricher` implementation of `SkillEnricher` that calls `claude-haiku-4-5-20251001` with the prompt plus every available skill's name and description and returns the selected names. Swap point is the `SkillEnricher` trait so the composite remains the public surface. Land once the bundle's tool budget and observability story are settled.
+    - Make the grep-ranker stop-word list and inclusion threshold configurable. The first slice ships a fixed built-in list and a static three-token threshold; expose both via `.ailly.toml` once a real corpus motivates tuning.
+    - Add a free-form CLI surface for inspecting and overriding the computed enrichment on a non-workflow conversation. The first slice wires enrichment through `Conversation::single_turn` and workflow-synthesized turns; the inspect/override UI is deferred.
+    - Reopen consolidation of this design with the sibling `docs/developer/2026-05-07-A-conversation-prelude/design.md` into a shared interfaces document only if a third design lands on the Workflow-Conversation-Engine surface and the cross-references grow burdensome. Decided 2026-05-07 in design Deferred decisions.
+
 - Thinking-responses follow-on slices (build on `docs/developer/2026-05-06-A-thinking-responses/design.md`):
     - Capture OpenAI Responses provider message id and persist it on `MessageFile::Assistant.provider_message_id` so OpenAI Responses cache keys survive across turns. Source is `StreamingCompletionResponse::message_id`. Land when an OpenAI Responses consumer needs cache continuity.
     - Surface `EngineEvent::ToolCallDelta` for live UI consumers. Today the catch-all arm in `RigEngine::stream` absorbs `StreamedAssistantContent::ToolCallDelta`. Promote when a live UI consumer materializes.
@@ -32,7 +40,6 @@
     - Add a body-token cap or loader-time warning for Skills exceeding the agentskills.io 5000-token tier-2 recommendation.
     - Evaluate `serde_yml` vs `serde_yaml_ng` formally (maintenance health, surface area, license) and switch if warranted.
     - Add a `SkillCatalog` list/search/prefix surface on top of `SkillRepository` once a consumer (CLI listing, completion-by-name UI, model-driven activation) exists.
-    - Add thinking fast and slow Skill activation: use a fast model or heuristic to decide when to add skills into a conversation. Allow skills to be added at a later turn, without invalidating the inference cache.
     - (When workflows land) Allow workflows to mandate skills for their steps.
     - Add tier-1 Skill discovery summary: fold `name + description` of every Skill in the search paths into the system chain whether or not `.ailly.toml` references it.
     - Add tier-3 bundled Skill assets (`scripts/`, `references/`, `assets/`) resolution and access policy. The `SkillSource` field is preserved precisely to make this addable without changing the type.

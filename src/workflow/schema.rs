@@ -37,6 +37,8 @@ pub enum WorkflowError {
         #[source]
         source: serde_json::Error,
     },
+    #[error("task {task:?} skill enrichment failed: {reason}")]
+    EnrichmentFailed { task: String, reason: String },
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -65,6 +67,12 @@ pub struct Task {
     pub name: String,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub skills: Vec<String>,
+    /// Tools the task explicitly declares. Appended to the always-on
+    /// read-only bundle by the workflow runtime when enrichment fires.
+    /// Authored as raw strings; resolution against `ToolRegistry` happens
+    /// at run time, governed by `Settings::strict_tools`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tools: Vec<String>,
     pub task: TaskAction,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub evaluation: Option<TaskAction>,
@@ -135,6 +143,7 @@ text = "Produce design.md."
         let task = Task {
             name: "bare".to_string(),
             skills: Vec::new(),
+            tools: Vec::new(),
             task: TaskAction::Prompt {
                 text: "Run.".to_string(),
             },
@@ -205,6 +214,7 @@ needle = "*Draft"
             tasks: vec![Task {
                 name: "go".to_string(),
                 skills: Vec::new(),
+                tools: Vec::new(),
                 task: TaskAction::Prompt {
                     text: "Run.".to_string(),
                 },

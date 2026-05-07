@@ -99,12 +99,14 @@ impl ConversationRoot {
     /// write turn files and `workflow.state.toml`. The project root is left
     /// in place; only the conversation artifacts move under `.ailly`.
     pub fn workflow_subdir(project: &ProjectRoot) -> Result<Self, RootError> {
-        let joined = project.as_path().join(AILLY_DIR).map_err(|source| {
-            RootError::ResolvePath {
-                path: format!("{}/{}", project.as_path().as_str(), AILLY_DIR),
-                source,
-            }
-        })?;
+        let joined =
+            project
+                .as_path()
+                .join(AILLY_DIR)
+                .map_err(|source| RootError::ResolvePath {
+                    path: format!("{}/{}", project.as_path().as_str(), AILLY_DIR),
+                    source,
+                })?;
         let exists = joined.exists().map_err(|source| RootError::Inspect {
             path: joined.as_str().to_string(),
             source,
@@ -220,8 +222,7 @@ impl Project {
                             entries.push(WorkflowEntry {
                                 name,
                                 description: wf.description.unwrap_or_default(),
-                                source_path: crate::knowledge::base::ROOT_WORKFLOW_FILE
-                                    .to_string(),
+                                source_path: crate::knowledge::base::ROOT_WORKFLOW_FILE.to_string(),
                             });
                         }
                     }

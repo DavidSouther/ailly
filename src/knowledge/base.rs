@@ -441,11 +441,19 @@ impl KnowledgeBase for FsKnowledgeBase {
 pub(crate) type SkillDirEntries = Vec<Result<(SkillName, VfsPath), KnowledgeError>>;
 pub(crate) type WorkflowFileEntries = Vec<Result<(WorkflowName, VfsPath), KnowledgeError>>;
 
-/// Enumerate the immediate subdirectories of `<root>/skills/`, paired with
-/// their parsed [`SkillName`]. Returns an empty list when the directory is
-/// absent. Per-entry name validation surfaces as `Err` items inside the
-/// returned `Vec`; an I/O failure on the directory itself is the outer
-/// `Err`.
+/// Enumerate skill directories under `<root>/skills/`. Two layouts are
+/// supported:
+///
+/// - Flat: `<root>/skills/<name>/SKILL.md`. The directory name is the
+///   skill name.
+/// - Nested: `<root>/skills/<plugin>/<name>/SKILL.md`. The pair forms
+///   the skill name `<plugin>:<name>`.
+///
+/// A flat layout wins when both an immediate `SKILL.md` and nested
+/// children exist under the same plugin folder; the nested children are
+/// silently skipped. Returns an empty list when `skills/` is absent.
+/// Per-entry name validation surfaces as `Err` items in the returned
+/// `Vec`; an I/O failure on the directory itself is the outer `Err`.
 pub(crate) fn iter_skill_dirs(root: &KnowledgeRoot) -> Result<SkillDirEntries, KnowledgeError> {
     let dir = root.as_path().join(SKILLS_DIR)?;
     if !dir.exists()? {
@@ -456,10 +464,24 @@ pub(crate) fn iter_skill_dirs(root: &KnowledgeRoot) -> Result<SkillDirEntries, K
         if !entry.is_dir()? {
             continue;
         }
-        let item = SkillName::try_from(entry.filename().as_str())
-            .map(|name| (name, entry))
-            .map_err(KnowledgeError::from);
-        out.push(item);
+        let flat_skill = entry.join(SKILL_FILE)?;
+        if flat_skill.exists()? {
+            let item = SkillName::try_from(entry.filename().as_str())
+                .map(|name| (name, entry))
+                .map_err(KnowledgeError::from);
+            out.push(item);
+            continue;
+        }
+        for child in entry.read_dir()? {
+            if !child.is_dir()? {
+                continue;
+            }
+            let combined = format!("{}:{}", entry.filename(), child.filename());
+            let item = SkillName::try_from(combined.as_str())
+                .map(|name| (name, child))
+                .map_err(KnowledgeError::from);
+            out.push(item);
+        }
     }
     Ok(out)
 }
