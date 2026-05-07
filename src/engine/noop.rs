@@ -9,6 +9,7 @@ use rig::message::{
 use rig::tool::ToolDyn;
 
 use crate::content::PreambleBlock;
+use crate::engine::prelude::{PreludeExchange, SentEnvelope, tools_exchange};
 use crate::engine::{
     Engine, EngineEvent, EngineInput, EngineResponse, EngineStream, ModelId, Settings, StopReason,
 };
@@ -62,7 +63,24 @@ impl Engine for Noop {
             .as_ref()
             .and_then(|d| tools.iter().find(|t| t.name() == d.tool).cloned());
 
+        let prelude_exchanges: Vec<PreludeExchange> = (&input.preamble).into();
+        let envelope_tools = tools.clone();
+
         Ok(Box::pin(async_stream::stream! {
+            let mut tool_defs: Vec<rig::completion::request::ToolDefinition> =
+                Vec::with_capacity(envelope_tools.len());
+            for tool in &envelope_tools {
+                tool_defs.push(tool.definition(String::new()).await);
+            }
+            let mut prelude = prelude_exchanges;
+            if let Some(extra) = tools_exchange(&tool_defs) {
+                prelude.push(extra);
+            }
+            yield EngineEvent::Envelope(SentEnvelope {
+                prelude,
+                tools: tool_defs,
+            });
+
             if override_text.is_none()
                 && let Some(directive) = directive
                 && let Some(tool) = matched_tool
@@ -248,6 +266,11 @@ mod tests {
                 }
                 EngineEvent::Reasoning(_) | EngineEvent::ReasoningDelta { .. } => {
                     panic!("envelope path never emits reasoning events");
+                }
+                EngineEvent::Envelope(_) => {
+                    // The Noop adapter yields a SentEnvelope as its first
+                    // event from step 2 onward. These tests assert on text
+                    // and final shape, so the envelope is dropped here.
                 }
             }
         }
@@ -442,6 +465,7 @@ mod tests {
         let kinds: Vec<&str> = events
             .iter()
             .map(|e| match e {
+                EngineEvent::Envelope(_) => "envelope",
                 EngineEvent::Text(_) => "text",
                 EngineEvent::ToolCall(_) => "tool_call",
                 EngineEvent::ToolResult(_) => "tool_result",
@@ -466,7 +490,11 @@ mod tests {
         assert!(tc > 0, "at least one text event before tool_call");
         assert!(tc < tr, "tool_call before tool_result");
         assert!(tr < fi, "tool_result before final");
-        for k in &kinds[..tc] {
+        assert_eq!(
+            kinds[0], "envelope",
+            "first event must be the SentEnvelope record"
+        );
+        for k in &kinds[1..tc] {
             assert_eq!(*k, "text", "events before tool_call must be text");
         }
         for k in &kinds[tr + 1..fi] {
@@ -490,6 +518,87 @@ mod tests {
             panic!("tool result must be text");
         };
         assert_eq!(t.text, "ok");
+    }
+
+    #[tokio::test]
+    async fn engine_event_envelope_arrives_before_first_text() {
+        let noop = Noop {
+            chunk: DEFAULT_CHUNK_BYTES,
+            override_response: None,
+        };
+
+        let stream = noop
+            .stream(
+                EngineInput::with_history(vec![Message::user("ask")]),
+                &Settings::default(),
+                &[],
+                "alpha",
+            )
+            .unwrap();
+        let events: Vec<EngineEvent> = stream.collect().await;
+        let kinds: Vec<&str> = events
+            .iter()
+            .map(|e| match e {
+                EngineEvent::Envelope(_) => "envelope",
+                EngineEvent::Text(_) => "text",
+                EngineEvent::Final(_) => "final",
+                EngineEvent::ToolCall(_) => "tool_call",
+                EngineEvent::ToolResult(_) => "tool_result",
+                EngineEvent::Reasoning(_) => "reasoning",
+                EngineEvent::ReasoningDelta { .. } => "reasoning_delta",
+            })
+            .collect();
+        let envelope_idx = kinds
+            .iter()
+            .position(|k| *k == "envelope")
+            .expect("envelope event must be present");
+        let first_text_idx = kinds.iter().position(|k| *k == "text");
+        assert_eq!(envelope_idx, 0, "Envelope must be the very first event");
+        if let Some(t) = first_text_idx {
+            assert!(envelope_idx < t, "Envelope must precede any Text event");
+        }
+    }
+
+    #[tokio::test]
+    async fn engine_event_envelope_carries_one_exchange_per_preamble_block() {
+        use crate::content::{Preamble, PreambleBlock};
+
+        let noop = Noop {
+            chunk: DEFAULT_CHUNK_BYTES,
+            override_response: None,
+        };
+        let preamble = Preamble {
+            blocks: vec![
+                PreambleBlock::InheritedSystem {
+                    text: "I".to_string(),
+                },
+                PreambleBlock::LocalSystem {
+                    text: "L".to_string(),
+                },
+            ],
+        };
+        let input = EngineInput {
+            preamble,
+            history: vec![Message::user("ask")],
+        };
+
+        let stream = noop
+            .stream(input, &Settings::default(), &[], "label")
+            .unwrap();
+        let events: Vec<EngineEvent> = stream.collect().await;
+        let envelope = events
+            .iter()
+            .find_map(|e| match e {
+                EngineEvent::Envelope(env) => Some(env),
+                _ => None,
+            })
+            .expect("Envelope event must be present");
+        assert_eq!(
+            envelope.prelude.len(),
+            2,
+            "every PreambleBlock must produce exactly one PreludeExchange"
+        );
+        assert!(envelope.tools.is_empty(), "no tools were advertised");
     }
 
     #[tokio::test]

@@ -59,4 +59,4 @@ if [ "$status" -eq 0 ]; then
     exit 1
 fi
 assert_grep_q 'does-not-exist' err
-assert_grep_q 'skills' err
+assert_grep_q 'Skill' err

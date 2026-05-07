@@ -7,6 +7,7 @@
 
 use std::sync::Arc;
 
+use crate::engine::prelude::{PreludeExchange, SentEnvelope, tools_exchange};
 use crate::engine::{
     Engine, EngineEvent, EngineInput, EngineName, EngineResponse, EngineStream, ModelId, Settings,
     StopReason, Usage,
@@ -24,7 +25,6 @@ use rig::streaming::{StreamedAssistantContent, StreamedUserContent, StreamingCha
 use rig::tool::{ToolDyn, ToolError};
 use rig::wasm_compat::WasmBoxedFuture;
 
-use crate::content::PreambleBlock;
 
 /// Re-box a shared `Arc<dyn ToolDyn>` as the `Box<dyn ToolDyn>` shape that
 /// `AgentBuilder::knowledge::tools` requires, while leaving the caller's `Arc` intact.
@@ -54,7 +54,6 @@ const BEDROCK: &str = "bedrock";
 
 pub struct RigEngine<M> {
     model: M,
-    preamble: Option<String>,
     engine_name: &'static str,
     model_id: String,
 }
@@ -63,15 +62,9 @@ impl<M> RigEngine<M> {
     pub fn new(model: M, engine_name: &'static str, model_id: impl Into<String>) -> Self {
         Self {
             model,
-            preamble: None,
             engine_name,
             model_id: model_id.into(),
         }
-    }
-
-    pub fn with_preamble(mut self, s: impl Into<String>) -> Self {
-        self.preamble = Some(s.into());
-        self
     }
 }
 
@@ -99,25 +92,41 @@ where
         let prior: Vec<Message> = history[..history.len() - 1].to_vec();
 
         let model = self.model.clone();
-        let constructor_preamble = self.preamble.clone();
-        let preamble = merge_preamble(constructor_preamble, &input_preamble);
+        let prelude_exchanges: Vec<PreludeExchange> = (&input_preamble).into();
         let engine_name = EngineName(self.name().to_string());
         let model_id = ModelId(self.model_id.clone());
         let max_tool_turns = settings.max_tool_turns;
+        let arc_tools: Vec<Arc<dyn ToolDyn>> = tools.to_vec();
         let dyn_tools: Vec<Box<dyn ToolDyn>> = tools
             .iter()
             .map(|t| Box::new(DynToolHandle(t.clone())) as Box<dyn ToolDyn>)
             .collect();
 
         Ok(Box::pin(async_stream::stream! {
-            let mut builder = AgentBuilder::new(model);
-            if let Some(p) = preamble.as_deref() {
-                builder = builder.preamble(p);
+            let mut tool_defs: Vec<ToolDefinition> = Vec::with_capacity(arc_tools.len());
+            for tool in &arc_tools {
+                tool_defs.push(tool.definition(String::new()).await);
             }
-            let agent = builder.tools(dyn_tools).build();
+            let mut prelude = prelude_exchanges;
+            if let Some(extra) = tools_exchange(&tool_defs) {
+                prelude.push(extra);
+            }
+            let mut new_prior: Vec<Message> = Vec::with_capacity(prelude.len() * 2 + prior.len());
+            for exchange in &prelude {
+                new_prior.push(exchange.user.clone());
+                new_prior.push(exchange.assistant.clone());
+            }
+            new_prior.extend(prior);
+
+            yield EngineEvent::Envelope(SentEnvelope {
+                prelude,
+                tools: tool_defs,
+            });
+
+            let agent = AgentBuilder::new(model).tools(dyn_tools).build();
 
             let mut stream = agent
-                .stream_chat(last_user_text, prior)
+                .stream_chat(last_user_text, new_prior)
                 .multi_turn(max_tool_turns)
                 .await;
 
@@ -180,37 +189,6 @@ where
                 usage,
             });
         }))
-    }
-}
-
-/// Flatten an `EngineInput` preamble into a single string, joined onto any
-/// constructor-supplied preamble. Inherited and local system blocks render
-/// as their text; skill blocks render as `## <name>\n\n<body>`.
-fn merge_preamble(constructor: Option<String>, input: &crate::content::Preamble) -> Option<String> {
-    let mut parts: Vec<String> = Vec::new();
-    if let Some(c) = constructor.filter(|s| !s.is_empty()) {
-        parts.push(c);
-    }
-    for block in &input.blocks {
-        match block {
-            PreambleBlock::InheritedSystem { text } | PreambleBlock::LocalSystem { text } => {
-                if !text.is_empty() {
-                    parts.push(text.clone());
-                }
-            }
-            PreambleBlock::Skill(skill) => {
-                parts.push(format!(
-                    "## {name}\n\n{body}",
-                    name = skill.name().as_str(),
-                    body = skill.body().as_str()
-                ));
-            }
-        }
-    }
-    if parts.is_empty() {
-        None
-    } else {
-        Some(parts.join("\n\n"))
     }
 }
 
@@ -409,14 +387,22 @@ mod tests {
         /// `RawStreamingChoice` items on every `stream()` call. Use to
         /// script one-shot scenarios; reach for `ScriptedToolModel`
         /// instead when the script must vary per call.
+        ///
+        /// `captured_request` records the `CompletionRequest` the agent
+        /// submitted on the most recent `stream()` call, so tests can
+        /// assert on the preamble and chat history rig actually saw.
         #[derive(Clone)]
         struct ScriptedFake {
             items: Vec<RawStreamingChoice<FakeStreamingResponse>>,
+            captured_request: Arc<std::sync::Mutex<Option<CompletionRequest>>>,
         }
 
         impl ScriptedFake {
             fn new(items: Vec<RawStreamingChoice<FakeStreamingResponse>>) -> Self {
-                Self { items }
+                Self {
+                    items,
+                    captured_request: Arc::new(std::sync::Mutex::new(None)),
+                }
             }
         }
 
@@ -438,9 +424,10 @@ mod tests {
 
             async fn stream(
                 &self,
-                _request: CompletionRequest,
+                request: CompletionRequest,
             ) -> Result<StreamingCompletionResponse<Self::StreamingResponse>, CompletionError>
             {
+                *self.captured_request.lock().unwrap() = Some(request);
                 let items = self.items.clone();
                 let inner = Box::pin(async_stream::stream! {
                     for item in items {
@@ -487,6 +474,167 @@ mod tests {
             assert_eq!(usage.input_tokens, 7);
             assert_eq!(usage.output_tokens, 3);
             assert!(matches!(final_response.stop_reason, StopReason::EndTurn));
+        }
+
+        fn user_text(message: &Message) -> String {
+            match message {
+                Message::User { content } => match content.first() {
+                    rig::message::UserContent::Text(t) => t.text.clone(),
+                    other => panic!("expected user text, got {other:?}"),
+                },
+                other => panic!("expected User message, got {other:?}"),
+            }
+        }
+
+        fn assistant_text(message: &Message) -> String {
+            match message {
+                Message::Assistant { content, .. } => match content.first() {
+                    rig::message::AssistantContent::Text(t) => t.text.clone(),
+                    other => panic!("expected assistant text, got {other:?}"),
+                },
+                other => panic!("expected Assistant message, got {other:?}"),
+            }
+        }
+
+        #[tokio::test]
+        async fn rig_engine_stream_prepends_prelude_messages_to_history() {
+            use crate::content::{Preamble, PreambleBlock};
+
+            let fake = ScriptedFake::new(vec![
+                RawStreamingChoice::Message("ok".to_string()),
+                RawStreamingChoice::FinalResponse(FakeStreamingResponse),
+            ]);
+            let captured = fake.captured_request.clone();
+            let engine = RigEngine::new(fake, "fake", "fake-model-id");
+
+            let preamble = Preamble {
+                blocks: vec![
+                    PreambleBlock::InheritedSystem {
+                        text: "I-TEXT".to_string(),
+                    },
+                    PreambleBlock::LocalSystem {
+                        text: "L-TEXT".to_string(),
+                    },
+                ],
+            };
+            let history = vec![Message::user("ask")];
+
+            let stream = engine
+                .stream(
+                    EngineInput { preamble, history },
+                    &Settings::default(),
+                    &[],
+                    "label",
+                )
+                .expect("stream() should succeed");
+            let _events: Vec<EngineEvent> = stream.collect().await;
+
+            let request = captured
+                .lock()
+                .unwrap()
+                .clone()
+                .expect("rig must have submitted a CompletionRequest");
+            let chat: Vec<Message> = request.chat_history.into_iter().collect();
+            assert!(
+                chat.len() >= 5,
+                "chat history must contain prelude (4 messages) plus the user prompt; got {}",
+                chat.len()
+            );
+            assert_eq!(user_text(&chat[0]), "I-TEXT");
+            assert_eq!(
+                assistant_text(&chat[1]),
+                "Understood. I will follow the inherited instructions."
+            );
+            assert_eq!(user_text(&chat[2]), "L-TEXT");
+            assert_eq!(
+                assistant_text(&chat[3]),
+                "Understood. I will follow the local instructions."
+            );
+            assert_eq!(user_text(chat.last().unwrap()), "ask");
+        }
+
+        #[tokio::test]
+        async fn rig_engine_no_longer_calls_agent_builder_preamble() {
+            use crate::content::{Preamble, PreambleBlock};
+
+            let fake = ScriptedFake::new(vec![
+                RawStreamingChoice::Message("ok".to_string()),
+                RawStreamingChoice::FinalResponse(FakeStreamingResponse),
+            ]);
+            let captured = fake.captured_request.clone();
+            let engine = RigEngine::new(fake, "fake", "fake-model-id");
+
+            let preamble = Preamble {
+                blocks: vec![PreambleBlock::InheritedSystem {
+                    text: "SHOULD-NOT-LEAK".to_string(),
+                }],
+            };
+            let stream = engine
+                .stream(
+                    EngineInput {
+                        preamble,
+                        history: vec![Message::user("ask")],
+                    },
+                    &Settings::default(),
+                    &[],
+                    "label",
+                )
+                .expect("stream() should succeed");
+            let _events: Vec<EngineEvent> = stream.collect().await;
+
+            let request = captured
+                .lock()
+                .unwrap()
+                .clone()
+                .expect("rig must have submitted a CompletionRequest");
+            assert!(
+                request.preamble.is_none() || request.preamble.as_deref() == Some(""),
+                "AgentBuilder::preamble must not be called; CompletionRequest::preamble was {:?}",
+                request.preamble
+            );
+        }
+
+        /// Compile-time companion to the doc-comment guarantee that the
+        /// helper that previously concatenated the preamble into a single
+        /// string has been removed. Scans the engine source tree for the
+        /// symbol; zero hits means the rewrite is complete. The file
+        /// containing this test is skipped because the function name
+        /// itself contains the symbol.
+        #[test]
+        fn merge_preamble_is_removed() {
+            use std::path::Path;
+            fn collect_rs(dir: &Path, out: &mut Vec<std::path::PathBuf>) {
+                for entry in std::fs::read_dir(dir).unwrap() {
+                    let entry = entry.unwrap();
+                    let path = entry.path();
+                    if path.is_dir() {
+                        collect_rs(&path, out);
+                    } else if path.extension().and_then(|s| s.to_str()) == Some("rs") {
+                        out.push(path);
+                    }
+                }
+            }
+            let mut files = Vec::new();
+            collect_rs(Path::new("src"), &mut files);
+            let forbidden = format!("{}{}", "merge_", "preamble");
+            let self_path = Path::new("src/engine/rig_engine.rs");
+            let mut scanned = 0usize;
+            for path in &files {
+                if path == self_path {
+                    continue;
+                }
+                let body = std::fs::read_to_string(path).unwrap();
+                assert!(
+                    !body.contains(forbidden.as_str()),
+                    "{}: must not reference the removed preamble-merge helper",
+                    path.display()
+                );
+                scanned += 1;
+            }
+            assert!(
+                scanned > 0,
+                "scan must inspect at least one source file beyond the test's own"
+            );
         }
 
         #[derive(Debug, thiserror::Error)]
@@ -601,7 +749,8 @@ mod tests {
                     EngineEvent::ToolCall(_) => Some("call"),
                     EngineEvent::ToolResult(_) => Some("result"),
                     EngineEvent::Final(_) => Some("final"),
-                    EngineEvent::Text(_)
+                    EngineEvent::Envelope(_)
+                    | EngineEvent::Text(_)
                     | EngineEvent::Reasoning(_)
                     | EngineEvent::ReasoningDelta { .. } => None,
                 })
@@ -653,6 +802,7 @@ mod tests {
             let kinds: Vec<&'static str> = events
                 .iter()
                 .map(|e| match e {
+                    EngineEvent::Envelope(_) => "envelope",
                     EngineEvent::Text(_) => "text",
                     EngineEvent::ToolCall(_) => "tool_call",
                     EngineEvent::ToolResult(_) => "tool_result",
@@ -663,8 +813,8 @@ mod tests {
                 .collect();
             assert_eq!(
                 kinds,
-                vec!["reasoning", "text", "final"],
-                "rig adapter must forward Reasoning before Text and end with Final; got {events:?}"
+                vec!["envelope", "reasoning", "text", "final"],
+                "rig adapter must yield Envelope first, then forward Reasoning before Text, then Final; got {events:?}"
             );
 
             let reasoning = events

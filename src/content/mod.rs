@@ -10,8 +10,8 @@ use rig::{
 /// Re-exported so consumers of `Conversation` and `TurnMessage` can construct
 /// and pattern-match reasoning without depending on `rig::message` directly.
 /// Keeps the layering rule "engine knows rig, content does not reach across
-/// to engine" honest: content does not import from `crate::engine`, but it
-/// does carry rig vocabulary verbatim.
+/// to engine" honest for rig vocabulary. The envelope record is the one
+/// engine type the content layer carries verbatim; see `record_envelope`.
 pub use rig::message::{Reasoning, ReasoningContent};
 use serde::{Deserialize, Serialize};
 use vfs::{MemoryFS, VfsPath};
@@ -19,6 +19,7 @@ use vfs::{MemoryFS, VfsPath};
 mod gitignore_fs;
 mod gitignore_fs_constants;
 
+use crate::engine::prelude::{PreludeExchange, PreludeSource, SentEnvelope};
 use crate::knowledge::base::{KnowledgeBase, KnowledgeError, KnowledgeKind};
 use crate::knowledge::skills::{Skill, SkillName};
 use crate::project::ConversationRoot;
@@ -284,6 +285,12 @@ pub struct ConversationTurn {
     /// Per-turn `skills` literal, exactly as authored on disk. Captured so
     /// `write` can reproduce the source file byte-stably.
     declared_skills: Vec<String>,
+    /// Audit record of what the engine adapter sent to the provider, set
+    /// by the generator after the engine yields its `Envelope` event.
+    /// Reload populates this from the on-disk `[envelope]` table.
+    /// Authored fields remain the source of truth on reload; this field
+    /// is for inspection only.
+    envelope: Option<SentEnvelope>,
 }
 
 impl ConversationTurn {
@@ -340,6 +347,8 @@ impl ConversationTurn {
             meta.step = file.step;
         }
 
+        let envelope = file.envelope.as_ref().map(SentEnvelope::from);
+
         Ok(Self {
             path,
             meta,
@@ -352,6 +361,7 @@ impl ConversationTurn {
             declared_tools,
             declared_parent_tools,
             declared_skills,
+            envelope,
         })
     }
 
@@ -379,12 +389,21 @@ impl ConversationTurn {
             declared_tools: vec![],
             declared_parent_tools: None,
             declared_skills,
+            envelope: None,
         }
     }
 
     /// Per-turn `skills` literal as authored on disk, in declared order.
     pub fn declared_skills(&self) -> &[String] {
         &self.declared_skills
+    }
+
+    /// Audit record set by the generator after the engine yielded its
+    /// `Envelope` event, or repopulated by reload from the on-disk
+    /// `[envelope]` table. Returns `None` when the turn was written
+    /// without a recorded envelope.
+    pub fn envelope(&self) -> Option<&SentEnvelope> {
+        self.envelope.as_ref()
     }
 
     /// The last recorded assistant response on this turn, or `None` when no
@@ -447,6 +466,7 @@ impl ConversationTurn {
             parent_tools: self.declared_parent_tools,
             skills: self.declared_skills.clone(),
             response,
+            envelope: self.envelope.as_ref().map(EnvelopeFile::from),
         };
         let text = toml::to_string(&file).map_err(|source| ContentError::SerializeToml {
             path: self.path.as_str().to_string(),
@@ -609,6 +629,21 @@ impl Conversation {
             .push(TurnMessage::Assistant(response));
     }
 
+    /// Record the engine's `SentEnvelope` audit trail on the turn at
+    /// `idx` so a subsequent `write` persists an `[envelope]` table.
+    /// Mirrors `record_response`. Re-running a turn rewrites the
+    /// envelope. Reload repopulates a typed `SentEnvelope` for
+    /// inspection, but `messages_for` and `preamble_for` continue to
+    /// derive engine input from authored fields, never from this
+    /// audit record.
+    pub fn record_envelope(&mut self, idx: usize, envelope: SentEnvelope) {
+        if envelope.prelude.is_empty() && envelope.tools.is_empty() {
+            self.turns[idx].1.envelope = None;
+        } else {
+            self.turns[idx].1.envelope = Some(envelope);
+        }
+    }
+
     /// Append a tool call onto the turn at `idx` so subsequent `history_for`
     /// calls and the on-disk file observe it in stream order alongside the
     /// surrounding assistant text and the matching `ToolResult`.
@@ -698,6 +733,7 @@ impl Conversation {
             declared_tools: Vec::new(),
             declared_parent_tools: None,
             declared_skills: Vec::new(),
+            envelope: None,
         };
         self.turns.push((path, turn));
         Ok(())
@@ -977,6 +1013,129 @@ struct ConversationTurnFile {
     skills: Vec<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     response: Vec<MessageFile>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    envelope: Option<EnvelopeFile>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct EnvelopeFile {
+    /// Prelude exchanges in walk-then-declaration order. Each entry
+    /// records the user-side rendering, the synthesized assistant ack,
+    /// and the typed source tag that distinguishes inherited system,
+    /// local system, skill bodies, and the synthetic tools exchange.
+    prelude: Vec<EnvelopeExchangeFile>,
+    /// Tool definitions advertised on the wire. Mirrors the rig
+    /// `ToolDefinition` fields verbatim. Empty when no tools were
+    /// advertised.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    tools: Vec<EnvelopeToolFile>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct EnvelopeExchangeFile {
+    /// `"inherited_system" | "local_system" | "tools" | "skill:<name>"`.
+    source: String,
+    user: String,
+    assistant: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct EnvelopeToolFile {
+    name: String,
+    description: String,
+    /// Verbatim `ToolDefinition.parameters` (a JSON Schema object).
+    parameters: serde_json::Value,
+}
+
+fn message_user_text(message: &Message) -> String {
+    match message {
+        Message::User { content } => match content.first() {
+            UserContent::Text(t) => t.text.clone(),
+            _ => String::new(),
+        },
+        _ => String::new(),
+    }
+}
+
+fn message_assistant_text(message: &Message) -> String {
+    match message {
+        Message::Assistant { content, .. } => match content.first() {
+            AssistantContent::Text(t) => t.text.clone(),
+            _ => String::new(),
+        },
+        _ => String::new(),
+    }
+}
+
+fn prelude_source_to_string(source: &PreludeSource) -> String {
+    match source {
+        PreludeSource::InheritedSystem => "inherited_system".to_string(),
+        PreludeSource::LocalSystem => "local_system".to_string(),
+        PreludeSource::Tools => "tools".to_string(),
+        PreludeSource::Skill { name } => format!("skill:{name}"),
+    }
+}
+
+fn prelude_source_from_string(raw: &str) -> PreludeSource {
+    match raw {
+        "inherited_system" => PreludeSource::InheritedSystem,
+        "local_system" => PreludeSource::LocalSystem,
+        "tools" => PreludeSource::Tools,
+        other => match other.strip_prefix("skill:") {
+            Some(name) => PreludeSource::Skill {
+                name: name.to_string(),
+            },
+            None => PreludeSource::InheritedSystem,
+        },
+    }
+}
+
+impl From<&SentEnvelope> for EnvelopeFile {
+    fn from(envelope: &SentEnvelope) -> Self {
+        let prelude = envelope
+            .prelude
+            .iter()
+            .map(|exchange| EnvelopeExchangeFile {
+                source: prelude_source_to_string(&exchange.source),
+                user: message_user_text(&exchange.user),
+                assistant: message_assistant_text(&exchange.assistant),
+            })
+            .collect();
+        let tools = envelope
+            .tools
+            .iter()
+            .map(|t| EnvelopeToolFile {
+                name: t.name.clone(),
+                description: t.description.clone(),
+                parameters: t.parameters.clone(),
+            })
+            .collect();
+        EnvelopeFile { prelude, tools }
+    }
+}
+
+impl From<&EnvelopeFile> for SentEnvelope {
+    fn from(file: &EnvelopeFile) -> Self {
+        let prelude = file
+            .prelude
+            .iter()
+            .map(|exchange| PreludeExchange {
+                source: prelude_source_from_string(&exchange.source),
+                user: Message::user(exchange.user.clone()),
+                assistant: Message::assistant(exchange.assistant.clone()),
+            })
+            .collect();
+        let tools = file
+            .tools
+            .iter()
+            .map(|t| rig::completion::request::ToolDefinition {
+                name: t.name.clone(),
+                description: t.description.clone(),
+                parameters: t.parameters.clone(),
+            })
+            .collect();
+        SentEnvelope { prelude, tools }
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -2076,6 +2235,7 @@ text = "hi"
                 stop_reason: None,
                 usage: None,
             }],
+            envelope: None,
         };
         let toml_text = toml::to_string(&file).unwrap();
         let parsed: ConversationTurnFile = toml::from_str(&toml_text).unwrap();
@@ -2092,6 +2252,7 @@ text = "hi"
             parent_tools: None,
             skills: Vec::new(),
             response: Vec::new(),
+            envelope: None,
         };
         let toml_text = toml::to_string(&file).unwrap();
         assert!(!toml_text.contains("response"));
@@ -2105,6 +2266,7 @@ text = "hi"
             tools: Vec::new(),
             parent_tools: None,
             skills: Vec::new(),
+            envelope: None,
             response: vec![MessageFile::Assistant {
                 text: "a".to_string(),
                 model: Some("test-model".to_string()),
@@ -2303,6 +2465,7 @@ text = "hi"
             declared_tools: Vec::new(),
             declared_parent_tools: None,
             declared_skills: Vec::new(),
+            envelope: None,
         };
 
         let err = turn.write().await.unwrap_err();
@@ -3460,5 +3623,106 @@ text = "hi"
             !paths.iter().any(|p| p.contains("/project/01.toml")),
             "project-tree turn outside .ailly is not visited, got {paths:?}"
         );
+    }
+
+    #[tokio::test]
+    async fn record_envelope_round_trips_through_message_file() {
+        use crate::engine::prelude::{PreludeExchange, PreludeSource, SentEnvelope};
+
+        let fs = mem_fs! {
+            "root": {
+                "01.toml": r#"prompt = "ask""#,
+            },
+        };
+        let dir = fs.join("root").unwrap();
+        let mut convo = Conversation::load(
+            &ConversationRoot::try_from(dir.clone()).unwrap(),
+            &test_skills(&fs),
+        )
+        .await
+        .unwrap();
+
+        let envelope = SentEnvelope {
+            prelude: vec![
+                PreludeExchange {
+                    user: Message::user("INHERITED"),
+                    assistant: Message::assistant(
+                        "Understood. I will follow the inherited instructions.",
+                    ),
+                    source: PreludeSource::InheritedSystem,
+                },
+                PreludeExchange {
+                    user: Message::user("## echo\n\nBODY"),
+                    assistant: Message::assistant(
+                        "Understood. I will apply the echo skill when relevant.",
+                    ),
+                    source: PreludeSource::Skill {
+                        name: "echo".to_string(),
+                    },
+                },
+            ],
+            tools: vec![rig::completion::request::ToolDefinition {
+                name: "wrench".to_string(),
+                description: "wrenches".to_string(),
+                parameters: serde_json::json!({"type": "object"}),
+            }],
+        };
+        convo.record_envelope(0, envelope);
+        convo.write().await.unwrap();
+
+        let reloaded =
+            Conversation::load(&ConversationRoot::try_from(dir).unwrap(), &test_skills(&fs))
+                .await
+                .unwrap();
+        let recovered = reloaded
+            .turn(0)
+            .envelope()
+            .expect("reload must repopulate the typed SentEnvelope");
+        assert_eq!(recovered.prelude.len(), 2);
+        assert!(matches!(
+            recovered.prelude[0].source,
+            PreludeSource::InheritedSystem
+        ));
+        match &recovered.prelude[1].source {
+            PreludeSource::Skill { name } => assert_eq!(name, "echo"),
+            other => panic!("expected Skill source, got {other:?}"),
+        }
+        assert_eq!(recovered.tools.len(), 1);
+        assert_eq!(recovered.tools[0].name, "wrench");
+    }
+
+    #[test]
+    fn envelope_field_omitted_when_no_prelude_and_no_tools() {
+        let file = ConversationTurnFile {
+            step: None,
+            prompt: "hi".to_string(),
+            tools: Vec::new(),
+            parent_tools: None,
+            skills: Vec::new(),
+            response: Vec::new(),
+            envelope: None,
+        };
+        let toml_text = toml::to_string(&file).unwrap();
+        assert!(
+            !toml_text.contains("envelope"),
+            "no [envelope] table should appear when both prelude and tools are empty; got: {toml_text}"
+        );
+    }
+
+    #[test]
+    fn envelope_serializer_ignores_unknown_enrichment_field() {
+        let toml_text = r#"
+prompt = "hi"
+
+[enrichment]
+why = "the sibling thinking-fast-slow design owns this table"
+
+[[enrichment.skills]]
+name = "irrelevant"
+        "#;
+        let parsed: ConversationTurnFile = toml::from_str(toml_text)
+            .expect("unknown [enrichment] table must be silently ignored on read");
+        assert_eq!(parsed.prompt, "hi");
+        assert!(parsed.envelope.is_none());
     }
 }

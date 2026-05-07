@@ -1,0 +1,3 @@
+# Intentionally empty: no system text, no skills, no tools.
+# Exercises the negative envelope case: skip_serializing_if drops the
+# [envelope] table when there is nothing to record.

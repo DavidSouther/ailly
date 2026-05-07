@@ -1,0 +1,87 @@
+prompt = "No prelude. No envelope."
+
+[[response]]
+role = "assistant"
+text = """
+noop response for /empty/02_no_envelope.toml:
+[preamble 0] inherited: You are running the envelope integration test.
+[preamble 1] skill echo: SKILL_BODY_MARKER_ECHO_42
+[history follows]
+[message 0] user: Trigger the envelope record.
+[message 1] assistant: noop response for /01_envelope.toml:
+[preamble 0] skill echo: SKILL_BODY_MARKER_ECHO_42
+[preamble 1] local: You are running the envelope integration test.
+[history follows]
+[message 0] user: Trigger the envelope record.
+[response] Trigger the envelope record.
+[message 2] user: No prelude. No envelope.
+[response] No prelude. No envelope."""
+model = "noop"
+engine = "noop"
+stop_reason = "end_turn"
+
+[[response]]
+role = "assistant"
+text = """
+noop response for /empty/02_no_envelope.toml:
+[history follows]
+[message 0] user: No prelude. No envelope.
+[response] No prelude. No envelope."""
+model = "noop"
+engine = "noop"
+stop_reason = "end_turn"
+
+[[response]]
+role = "assistant"
+text = """
+noop response for /02_no_envelope.toml:
+[history follows]
+[message 0] user: No prelude. No envelope.
+[response] No prelude. No envelope."""
+model = "noop"
+engine = "noop"
+stop_reason = "end_turn"
+
+[[response]]
+role = "assistant"
+text = """
+noop response for /02_no_envelope.toml:
+[history follows]
+[message 0] user: No prelude. No envelope.
+[response] No prelude. No envelope."""
+model = "noop"
+engine = "noop"
+stop_reason = "end_turn"
+
+[[response]]
+role = "assistant"
+text = """
+noop response for /02_no_envelope.toml:
+[history follows]
+[message 0] user: No prelude. No envelope.
+[response] No prelude. No envelope."""
+model = "noop"
+engine = "noop"
+stop_reason = "end_turn"
+
+[[response]]
+role = "assistant"
+text = """
+noop response for /02_no_envelope.toml:
+[history follows]
+[message 0] user: No prelude. No envelope.
+[response] No prelude. No envelope."""
+model = "noop"
+engine = "noop"
+stop_reason = "end_turn"
+
+[[response]]
+role = "assistant"
+text = """
+noop response for /02_no_envelope.toml:
+[history follows]
+[message 0] user: No prelude. No envelope.
+[response] No prelude. No envelope."""
+model = "noop"
+engine = "noop"
+stop_reason = "end_turn"

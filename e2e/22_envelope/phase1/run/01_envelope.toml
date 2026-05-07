@@ -1,0 +1,121 @@
+prompt = "Trigger the envelope record."
+
+[[response]]
+role = "assistant"
+text = """
+noop response for /run/01_envelope.toml:
+[preamble 0] inherited: Inherited project guidance for the envelope test.
+[preamble 1] skill echo: SKILL_BODY_MARKER_ECHO_42
+[preamble 2] local: Local guidance for the run subdirectory.
+[history follows]
+[message 0] user: No prelude. No envelope.
+[message 1] assistant: noop response for /empty/02_no_envelope.toml:
+[preamble 0] inherited: You are running the envelope integration test.
+[preamble 1] skill echo: SKILL_BODY_MARKER_ECHO_42
+[history follows]
+[message 0] user: Trigger the envelope record.
+[message 1] assistant: noop response for /01_envelope.toml:
+[preamble 0] skill echo: SKILL_BODY_MARKER_ECHO_42
+[preamble 1] local: You are running the envelope integration test.
+[history follows]
+[message 0] user: Trigger the envelope record.
+[response] Trigger the envelope record.
+[message 2] user: No prelude. No envelope.
+[response] No prelude. No envelope.
+[message 2] assistant: noop response for /empty/02_no_envelope.toml:
+[history follows]
+[message 0] user: No prelude. No envelope.
+[response] No prelude. No envelope.
+[message 3] user: Trigger the envelope record.
+[response] Trigger the envelope record."""
+model = "noop"
+engine = "noop"
+stop_reason = "end_turn"
+
+[[response]]
+role = "assistant"
+text = """
+noop response for /run/01_envelope.toml:
+[preamble 0] inherited: Inherited project guidance for the envelope test.
+[preamble 1] skill echo: SKILL_BODY_MARKER_ECHO_42
+[preamble 2] local: Local guidance for the run subdirectory.
+[history follows]
+[message 0] user: Trigger the envelope record.
+[response] Trigger the envelope record."""
+model = "noop"
+engine = "noop"
+stop_reason = "end_turn"
+
+[[response]]
+role = "assistant"
+text = """
+noop response for /run/01_envelope.toml:
+[preamble 0] inherited: Inherited project guidance for the envelope test.
+[preamble 1] skill echo: SKILL_BODY_MARKER_ECHO_42
+[preamble 2] local: Local guidance for the run subdirectory.
+[history follows]
+[message 0] user: Trigger the envelope record.
+[response] Trigger the envelope record."""
+model = "noop"
+engine = "noop"
+stop_reason = "end_turn"
+
+[[response]]
+role = "assistant"
+text = """
+noop response for /run/01_envelope.toml:
+[preamble 0] inherited: Inherited project guidance for the envelope test.
+[preamble 1] skill echo: SKILL_BODY_MARKER_ECHO_42
+[preamble 2] local: Local guidance for the run subdirectory.
+[history follows]
+[message 0] user: Trigger the envelope record.
+[response] Trigger the envelope record."""
+model = "noop"
+engine = "noop"
+stop_reason = "end_turn"
+
+[[response]]
+role = "assistant"
+text = """
+noop response for /run/01_envelope.toml:
+[preamble 0] inherited: Inherited project guidance for the envelope test.
+[preamble 1] skill echo: SKILL_BODY_MARKER_ECHO_42
+[preamble 2] local: Local guidance for the run subdirectory.
+[history follows]
+[message 0] user: Trigger the envelope record.
+[response] Trigger the envelope record."""
+model = "noop"
+engine = "noop"
+stop_reason = "end_turn"
+
+[[response]]
+role = "assistant"
+text = """
+noop response for /run/01_envelope.toml:
+[preamble 0] inherited: Inherited project guidance for the envelope test.
+[preamble 1] skill echo: SKILL_BODY_MARKER_ECHO_42
+[preamble 2] local: Local guidance for the run subdirectory.
+[history follows]
+[message 0] user: Trigger the envelope record.
+[response] Trigger the envelope record."""
+model = "noop"
+engine = "noop"
+stop_reason = "end_turn"
+
+[[envelope.prelude]]
+source = "inherited_system"
+user = "Inherited project guidance for the envelope test."
+assistant = "Understood. I will follow the inherited instructions."
+
+[[envelope.prelude]]
+source = "skill:echo"
+user = """
+## echo
+
+SKILL_BODY_MARKER_ECHO_42"""
+assistant = "Understood. I will apply the echo skill when relevant."
+
+[[envelope.prelude]]
+source = "local_system"
+user = "Local guidance for the run subdirectory."
+assistant = "Understood. I will follow the local instructions."

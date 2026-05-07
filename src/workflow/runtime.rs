@@ -385,6 +385,11 @@ impl Runtime {
                                 // Workflow evaluator turns ignore reasoning events;
                                 // the generator path is the recorder for thinking.
                             }
+                            EngineEvent::Envelope(_) => {
+                                // Evaluator turns are persisted as a single
+                                // response; envelope audit is owned by the
+                                // generator path.
+                            }
                             EngineEvent::Final(mut r) => {
                                 r.engine_name = engine.name().into();
                                 let response: AssistantResponse = (&r).into();

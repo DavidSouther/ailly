@@ -265,6 +265,9 @@ impl Generator {
                         EngineEvent::ReasoningDelta { id, text } => {
                             reasoning.record_delta(id, text);
                         }
+                        EngineEvent::Envelope(envelope) => {
+                            self.conversation.record_envelope(idx, envelope);
+                        }
                         EngineEvent::Final(mut r) => {
                             r.engine_name = self.engine.name().into();
                             r.text = if !text_buffer.is_empty() {

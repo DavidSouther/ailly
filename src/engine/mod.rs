@@ -11,6 +11,7 @@ use crate::content::Preamble;
 
 pub mod generator;
 pub mod noop;
+pub mod prelude;
 pub mod rig_engine;
 
 pub use generator::{Generator, SkipReason, TurnEvent};
@@ -20,6 +21,7 @@ pub use rig_engine::bedrock_from_env;
 pub use rig_engine::{RigEngine, anthropic_from_env, gemini_from_env, openai_from_env};
 
 use crate::content::{AssistantResponse, ResponseUsage};
+use crate::engine::prelude::SentEnvelope;
 
 pub const DEFAULT_REQUEST_LIMIT: usize = 5;
 pub const DEFAULT_MAX_TOOL_TURNS: usize = 5;
@@ -171,6 +173,13 @@ impl From<&EngineResponse> for AssistantResponse {
 #[non_exhaustive]
 #[derive(Debug, Clone)]
 pub enum EngineEvent {
+    /// Yielded by every `Engine::stream` impl exactly once, before any
+    /// `Text` or `ToolCall` event. Carries the complete record of what
+    /// the adapter sent to the provider. Generators record this on the
+    /// turn before the final write. Reload repopulates a typed
+    /// `SentEnvelope` on the turn for inspection. Reload never feeds the
+    /// envelope back into the engine's input.
+    Envelope(SentEnvelope),
     Text(String),
     ToolCall(rig::message::ToolCall),
     ToolResult(rig::message::ToolResult),
