@@ -4,5 +4,5 @@ pub mod state;
 pub mod template;
 
 pub use runtime::{Runtime, WorkflowEvent, WorkflowStopReason};
-pub use schema::{Task, TaskAction, Workflow, WorkflowError};
+pub use schema::{Task, TaskAction, Workflow, WorkflowError, WorkflowParseError};
 pub use state::{HistoryEntry, WorkflowState, WorkflowStateError};

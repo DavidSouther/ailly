@@ -1,13 +1,43 @@
 use std::fmt;
 
-use vfs::VfsPath;
-
-use crate::knowledge::skills::errors::SkillError;
+use crate::knowledge::base::KnowledgeSource;
 
 const SKILL_NAME_MAX: usize = 64;
 const SKILL_DESCRIPTION_MAX: usize = 1024;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, thiserror::Error)]
+pub enum SkillError {
+    #[error("invalid skill name {raw:?}: {reason}")]
+    InvalidName { raw: String, reason: String },
+
+    #[error("skill requested as {expected} but declares itself as {found:?}")]
+    NameMismatch { expected: SkillName, found: String },
+
+    #[error("skill `{name}` SKILL.md is missing required frontmatter field `{field}`")]
+    FrontmatterMissing {
+        name: SkillName,
+        field: &'static str,
+    },
+
+    #[error("skill `{name}` SKILL.md frontmatter field `{field}` is invalid: {reason}")]
+    FrontmatterInvalid {
+        name: SkillName,
+        field: &'static str,
+        reason: String,
+    },
+
+    #[error("skill `{name}` SKILL.md failed to parse YAML frontmatter")]
+    FrontmatterParse {
+        name: SkillName,
+        #[source]
+        source: serde_yml::Error,
+    },
+
+    #[error("invalid skill description: {reason}")]
+    InvalidDescription { reason: String },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct SkillName(String);
 
 impl SkillName {
@@ -80,20 +110,29 @@ impl SkillBody {
 }
 
 #[derive(Debug, Clone)]
-pub struct SkillSource(pub VfsPath);
-
-impl SkillSource {
-    pub fn as_path(&self) -> &VfsPath {
-        &self.0
-    }
+pub struct Skill {
+    name: SkillName,
+    description: SkillDescription,
+    body: SkillBody,
+    source: KnowledgeSource,
 }
 
-#[derive(Debug, Clone)]
-pub struct Skill {
-    pub name: SkillName,
-    pub description: SkillDescription,
-    pub body: SkillBody,
-    pub source: SkillSource,
+impl Skill {
+    pub fn name(&self) -> &SkillName {
+        &self.name
+    }
+
+    pub fn description(&self) -> &SkillDescription {
+        &self.description
+    }
+
+    pub fn body(&self) -> &SkillBody {
+        &self.body
+    }
+
+    pub fn source(&self) -> &KnowledgeSource {
+        &self.source
+    }
 }
 
 #[derive(serde::Deserialize)]
@@ -109,7 +148,7 @@ impl Skill {
     /// followed by YAML, followed by a closing `---`. The body is
     /// everything after the closing fence with leading newlines trimmed.
     pub fn parse(
-        source: SkillSource,
+        source: KnowledgeSource,
         raw: &str,
         expected_name: &SkillName,
     ) -> Result<Skill, SkillError> {
@@ -215,11 +254,14 @@ fn find_closing_fence(after_open: &str) -> Option<usize> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::mem_fs;
+    use crate::{mem_fs, project::KnowledgeRoot};
 
-    fn dummy_source() -> SkillSource {
+    fn dummy_source() -> KnowledgeSource {
         let fs = mem_fs! { "x": { "SKILL.md": "" } };
-        SkillSource(fs.join("x/SKILL.md").unwrap())
+        KnowledgeSource {
+            root: KnowledgeRoot::try_from(fs.clone()).expect("knowledge root"),
+            path: fs.join("x/SKILL.md").unwrap(),
+        }
     }
 
     #[test]

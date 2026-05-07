@@ -10,6 +10,8 @@
 
 use vfs::VfsPath;
 
+use crate::knowledge::base::WorkflowName;
+
 #[derive(Debug, thiserror::Error)]
 pub enum RootError {
     #[error("root path {path:?} is not a directory")]
@@ -23,16 +25,36 @@ pub enum RootError {
 }
 
 #[derive(Debug, Clone)]
-pub struct ProjectRoot(VfsPath);
+pub struct ProjectRoot {
+    path: VfsPath,
+    display: String,
+}
 
 impl ProjectRoot {
     pub fn try_from(path: VfsPath) -> Result<Self, RootError> {
         require_directory(&path)?;
-        Ok(Self(path))
+        let display = path.as_str().to_string();
+        Ok(Self { path, display })
+    }
+
+    /// Construct a [`ProjectRoot`] backed by [`vfs::PhysicalFS`] rooted at
+    /// `raw`. The native filesystem path is captured separately for display.
+    pub fn from_physical(raw: &std::path::Path) -> Result<Self, RootError> {
+        use vfs::{PhysicalFS, VfsPath};
+        let vfs_path = VfsPath::new(PhysicalFS::new(raw));
+        require_directory(&vfs_path)?;
+        Ok(Self {
+            path: vfs_path,
+            display: raw.display().to_string(),
+        })
     }
 
     pub fn as_path(&self) -> &VfsPath {
-        &self.0
+        &self.path
+    }
+
+    pub fn display_path(&self) -> &str {
+        &self.display
     }
 }
 
@@ -62,27 +84,58 @@ impl ConversationRoot {
 
 impl From<ProjectRoot> for ConversationRoot {
     fn from(project: ProjectRoot) -> Self {
-        Self(project.0)
+        Self(project.path)
     }
 }
 
 #[derive(Debug, Clone)]
-pub struct KnowledgeRoot(VfsPath);
+pub struct KnowledgeRoot {
+    path: VfsPath,
+    display: String,
+}
 
 impl KnowledgeRoot {
     pub fn try_from(path: VfsPath) -> Result<Self, RootError> {
         require_directory(&path)?;
-        Ok(Self(path))
+        let display = path.as_str().to_string();
+        Ok(Self { path, display })
+    }
+
+    /// Construct a [`KnowledgeRoot`] backed by [`vfs::PhysicalFS`] rooted
+    /// at `raw`. The native filesystem path is captured separately for
+    /// display so error messages and listings see a meaningful path even
+    /// though `VfsPath::as_str()` of a `PhysicalFS` root is empty.
+    pub fn from_physical(raw: &std::path::Path) -> Result<Self, RootError> {
+        use vfs::{PhysicalFS, VfsPath};
+        let vfs_path = VfsPath::new(PhysicalFS::new(raw));
+        require_directory(&vfs_path)?;
+        Ok(Self {
+            path: vfs_path,
+            display: raw.display().to_string(),
+        })
     }
 
     pub fn as_path(&self) -> &VfsPath {
-        &self.0
+        &self.path
+    }
+
+    pub fn display_path(&self) -> &str {
+        &self.display
+    }
+}
+
+impl std::fmt::Display for KnowledgeRoot {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.display)
     }
 }
 
 impl From<ProjectRoot> for KnowledgeRoot {
     fn from(project: ProjectRoot) -> Self {
-        Self(project.0)
+        Self {
+            path: project.path,
+            display: project.display,
+        }
     }
 }
 
@@ -121,7 +174,7 @@ impl Project {
         if convo_exists {
             match read_workflow(&convo_path) {
                 Ok(wf) => entries.push(WorkflowEntry {
-                    name: wf.name,
+                    name: wf.name.into(),
                     description: wf.description.unwrap_or_default(),
                     source_path: "workflow.toml".to_string(),
                 }),
@@ -134,12 +187,12 @@ impl Project {
         for root in &self.knowledge {
             for entry in crate::knowledge::base::iter_workflow_files(root)? {
                 let (name, path) = entry?;
-                if entries.iter().any(|e| e.name == name.as_str()) {
+                if entries.iter().any(|e| e.name == name) {
                     continue;
                 }
                 match read_workflow(&path) {
                     Ok(wf) => entries.push(WorkflowEntry {
-                        name: wf.name,
+                        name: wf.name.into(),
                         description: wf.description.unwrap_or_default(),
                         source_path: format!("workflows/{}.toml", name.as_str()),
                     }),
@@ -150,7 +203,7 @@ impl Project {
             }
         }
 
-        entries.sort_by(|a, b| a.name.cmp(&b.name));
+        entries.sort_by(|a, b| a.name().as_str().cmp(&b.name().as_str()));
         Ok(entries)
     }
 
@@ -159,7 +212,8 @@ impl Project {
     /// alphabetically. Per-skill parse failures log one warning line to
     /// stderr and the entry is skipped.
     pub fn list_skills(&self) -> Result<Vec<SkillEntry>, ListingError> {
-        use crate::knowledge::skills::{Skill, SkillSource};
+        use crate::knowledge::base::KnowledgeSource;
+        use crate::knowledge::skills::Skill;
 
         let mut entries: Vec<SkillEntry> = Vec::new();
         for root in &self.knowledge {
@@ -186,10 +240,14 @@ impl Project {
                         continue;
                     }
                 };
-                match Skill::parse(SkillSource(skill_md.clone()), &raw, &name) {
+                let source = KnowledgeSource {
+                    root: root.clone(),
+                    path: skill_md.clone(),
+                };
+                match Skill::parse(source, &raw, &name) {
                     Ok(skill) => entries.push(SkillEntry {
-                        name: skill.name.as_str().to_string(),
-                        description: skill.description.as_str().to_string(),
+                        name: skill.name().as_str().to_string(),
+                        description: skill.description().as_str().to_string(),
                         source_path: format!("skills/{}/SKILL.md", name.as_str()),
                     }),
                     Err(err) => {
@@ -285,9 +343,31 @@ impl Project {
 /// root.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WorkflowEntry {
-    pub name: String,
-    pub description: String,
-    pub source_path: String,
+    name: WorkflowName,
+    description: String,
+    source_path: String,
+}
+
+impl WorkflowEntry {
+    pub fn new(name: impl Into<WorkflowName>, description: String, source_path: String) -> Self {
+        WorkflowEntry {
+            name: name.into(),
+            description,
+            source_path,
+        }
+    }
+
+    pub fn name(&self) -> &WorkflowName {
+        &self.name
+    }
+
+    pub fn description(&self) -> &str {
+        self.description.as_str()
+    }
+
+    pub fn source_path(&self) -> &str {
+        self.source_path.as_str()
+    }
 }
 
 /// A row in the `--list-skills` output. `source_path` is rendered as
@@ -418,10 +498,10 @@ mod tests {
 
         let names: Vec<&str> = entries.iter().map(|e| e.name.as_str()).collect();
         assert_eq!(names, vec!["local", "shared"]);
-        let local = entries.iter().find(|e| e.name == "local").unwrap();
+        let local = entries.iter().find(|e| e.name == "local".into()).unwrap();
         assert_eq!(local.description, "the local one");
         assert_eq!(local.source_path, "workflow.toml");
-        let shared = entries.iter().find(|e| e.name == "shared").unwrap();
+        let shared = entries.iter().find(|e| e.name == "shared".into()).unwrap();
         assert_eq!(shared.description, "the shared one");
         assert_eq!(shared.source_path, "workflows/shared.toml");
     }

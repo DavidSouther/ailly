@@ -201,8 +201,8 @@ fn merge_preamble(constructor: Option<String>, input: &crate::content::Preamble)
             PreambleBlock::Skill(skill) => {
                 parts.push(format!(
                     "## {name}\n\n{body}",
-                    name = skill.name.as_str(),
-                    body = skill.body.as_str()
+                    name = skill.name().as_str(),
+                    body = skill.body().as_str()
                 ));
             }
         }

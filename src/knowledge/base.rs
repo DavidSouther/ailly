@@ -6,23 +6,26 @@
 //! - `<root>/skills/<name>/SKILL.md` — one skill per directory.
 //! - `<root>/workflows/<name>.toml` — one workflow definition per file.
 //!
-//! Lookup methods are first-wins across the [`FsKnowledgeBase`] root list.
-//! Listing methods union across roots and dedupe by name with the first
-//! occurrence winning.
+//! `FsKnowledgeBase::build` walks every root once, parses every entry, and
+//! stores the results in containers. Lookup methods are then plain
+//! `HashMap`/`Vec` access. Same-named skills and workflows are deduped
+//! first-wins, project root before extras.
+
+use std::collections::HashMap;
 
 use vfs::VfsPath;
 
-use crate::knowledge::skills::{Skill, SkillError, SkillName, SkillSource};
+use crate::knowledge::skills::{Skill, SkillError, SkillName};
 use crate::project::KnowledgeRoot;
-use crate::workflow::Workflow;
+use crate::workflow::{Workflow, WorkflowParseError};
 
 const SKILLS_DIR: &str = "skills";
 const WORKFLOWS_DIR: &str = "workflows";
 const AGENTS_FILE: &str = "AGENTS.md";
 const SKILL_FILE: &str = "SKILL.md";
-const WORKFLOW_EXT: &str = "toml";
+const WORKFLOW_EXT: &str = ".toml";
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct WorkflowName(String);
 
 impl WorkflowName {
@@ -35,6 +38,21 @@ impl WorkflowName {
     }
 }
 
+impl std::fmt::Display for WorkflowName {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl<I> From<I> for WorkflowName
+where
+    I: Into<String>,
+{
+    fn from(value: I) -> Self {
+        WorkflowName::new(value)
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct KnowledgeSource {
     pub root: KnowledgeRoot,
@@ -43,9 +61,33 @@ pub struct KnowledgeSource {
 
 #[derive(Debug, Clone)]
 pub struct SkillSummary {
-    pub name: SkillName,
-    pub description: String,
-    pub source: KnowledgeSource,
+    name: SkillName,
+    description: String,
+    source: KnowledgeSource,
+}
+
+impl SkillSummary {
+    pub fn name(&self) -> &SkillName {
+        &self.name
+    }
+
+    pub fn description(&self) -> &str {
+        &self.description
+    }
+
+    pub fn source(&self) -> &KnowledgeSource {
+        &self.source
+    }
+}
+
+impl From<&Skill> for SkillSummary {
+    fn from(value: &Skill) -> Self {
+        SkillSummary {
+            name: value.name().clone(),
+            description: value.description().as_str().to_string(),
+            source: value.source().clone(),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -55,8 +97,19 @@ pub struct WorkflowSummary {
     pub source: KnowledgeSource,
 }
 
+impl From<&LoadedWorkflow> for WorkflowSummary {
+    fn from(value: &LoadedWorkflow) -> Self {
+        WorkflowSummary {
+            name: WorkflowName::new(&value.workflow.name),
+            description: value.workflow.description.clone().unwrap_or_default(),
+            source: value.source.clone(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum KnowledgeKind {
+    Any,
     Skill,
     Workflow,
     Agents,
@@ -78,40 +131,87 @@ pub struct AgentsDoc {
 
 #[derive(Debug, thiserror::Error)]
 pub enum KnowledgeError {
-    #[error("{kind:?} {name:?} not found in any of {search_paths:?}")]
-    Missing {
-        kind: KnowledgeKind,
-        name: String,
-        search_paths: Vec<String>,
-    },
-    #[error("{kind:?} {name:?} could not be read at {path:?}")]
-    Read {
-        kind: KnowledgeKind,
-        name: String,
-        path: String,
-        #[source]
-        source: vfs::VfsError,
-    },
-    #[error("{kind:?} {name:?} at {path:?} failed to parse")]
-    Parse {
-        kind: KnowledgeKind,
-        name: String,
-        path: String,
-        #[source]
-        source: anyhow::Error,
-    },
-    #[error("{kind:?} requested as {requested:?} but declares itself as {declared:?}")]
-    NameMismatch {
-        kind: KnowledgeKind,
-        requested: String,
-        declared: String,
-    },
     #[error("invalid {kind:?} name {raw:?}: {reason}")]
     InvalidName {
         kind: KnowledgeKind,
         raw: String,
         reason: String,
     },
+
+    #[error("{kind:?} {name:?} not found in any of {search_paths:?}")]
+    Missing {
+        kind: KnowledgeKind,
+        name: String,
+        search_paths: Vec<String>,
+    },
+
+    #[error("could not read knowledge file at {path:?}")]
+    Read {
+        path: String,
+        #[source]
+        source: vfs::VfsError,
+    },
+
+    #[error("{kind:?} requested as {requested:?} but the file declares {declared:?}")]
+    NameMismatch {
+        kind: KnowledgeKind,
+        requested: String,
+        declared: String,
+    },
+
+    #[error("failed to parse {kind:?}: {source}")]
+    Parse {
+        kind: KnowledgeKind,
+        #[source]
+        source: ParseSource,
+    },
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum ParseSource {
+    #[error(transparent)]
+    Skill(#[from] SkillError),
+    #[error(transparent)]
+    Workflow(#[from] WorkflowParseError),
+}
+
+impl From<vfs::VfsError> for KnowledgeError {
+    fn from(value: vfs::VfsError) -> Self {
+        KnowledgeError::Read {
+            path: value.path().to_string(),
+            source: value,
+        }
+    }
+}
+
+impl From<SkillError> for KnowledgeError {
+    fn from(value: SkillError) -> Self {
+        match value {
+            SkillError::InvalidName { raw, reason } => KnowledgeError::InvalidName {
+                kind: KnowledgeKind::Skill,
+                raw,
+                reason,
+            },
+            SkillError::NameMismatch { expected, found } => KnowledgeError::NameMismatch {
+                kind: KnowledgeKind::Skill,
+                requested: expected.as_str().to_string(),
+                declared: found,
+            },
+            other => KnowledgeError::Parse {
+                kind: KnowledgeKind::Skill,
+                source: ParseSource::Skill(other),
+            },
+        }
+    }
+}
+
+impl From<WorkflowParseError> for KnowledgeError {
+    fn from(value: WorkflowParseError) -> Self {
+        KnowledgeError::Parse {
+            kind: KnowledgeKind::Workflow,
+            source: ParseSource::Workflow(value),
+        }
+    }
 }
 
 pub trait KnowledgeBase: Send + Sync {
@@ -160,339 +260,210 @@ impl KnowledgeBase for EmptyKnowledgeBase {
     }
 }
 
-/// Filesystem-backed [`KnowledgeBase`].
+#[derive(Debug, Clone)]
+pub(crate) struct LoadedWorkflow {
+    pub workflow: Workflow,
+    pub source: KnowledgeSource,
+}
+
+/// Filesystem-backed [`KnowledgeBase`]. Eagerly loads every skill,
+/// workflow, and `AGENTS.md` from each root at construction time.
 pub struct FsKnowledgeBase {
     roots: Vec<KnowledgeRoot>,
+    skills: HashMap<SkillName, Skill>,
+    workflows: HashMap<WorkflowName, LoadedWorkflow>,
+    agents: Vec<AgentsDoc>,
 }
 
 impl FsKnowledgeBase {
-    pub fn new(roots: Vec<KnowledgeRoot>) -> Self {
-        Self { roots }
+    pub fn build(roots: Vec<KnowledgeRoot>) -> Result<Self, KnowledgeError> {
+        let mut skills: HashMap<SkillName, Skill> = HashMap::new();
+        let mut workflows: HashMap<WorkflowName, LoadedWorkflow> = HashMap::new();
+        let mut agents: Vec<AgentsDoc> = Vec::new();
+
+        for root in &roots {
+            for entry in iter_skill_dirs(root)? {
+                let (name, dir) = entry?;
+                if skills.contains_key(&name) {
+                    continue;
+                }
+                let skill_md = dir.join(SKILL_FILE)?;
+                if !skill_md.exists()? {
+                    continue;
+                }
+                let raw = skill_md.read_to_string()?;
+                let skill = Skill::parse(
+                    KnowledgeSource {
+                        root: root.clone(),
+                        path: skill_md,
+                    },
+                    &raw,
+                    &name,
+                )?;
+                skills.insert(skill.name().clone(), skill);
+            }
+
+            for entry in iter_workflow_files(root)? {
+                let (filename_stem, path) = entry?;
+                let raw = path.read_to_string()?;
+                let workflow: Workflow =
+                    toml::from_str(&raw).map_err(|source| WorkflowParseError {
+                        name: filename_stem.as_str().to_string(),
+                        source,
+                    })?;
+                let name = WorkflowName::new(&workflow.name);
+                if workflows.contains_key(&name) {
+                    continue;
+                }
+                workflows.insert(
+                    name,
+                    LoadedWorkflow {
+                        workflow,
+                        source: KnowledgeSource {
+                            root: root.clone(),
+                            path,
+                        },
+                    },
+                );
+            }
+
+            let agents_path = root.as_path().join(AGENTS_FILE)?;
+            if agents_path.exists()? {
+                let body = agents_path.read_to_string()?;
+                agents.push(AgentsDoc {
+                    source: KnowledgeSource {
+                        root: root.clone(),
+                        path: agents_path,
+                    },
+                    body,
+                });
+            }
+        }
+
+        Ok(Self {
+            roots,
+            skills,
+            workflows,
+            agents,
+        })
+    }
+
+    fn search_paths(&self) -> Vec<String> {
+        self.roots
+            .iter()
+            .map(|r| r.display_path().to_string())
+            .collect()
     }
 }
 
 impl KnowledgeBase for FsKnowledgeBase {
     fn skill(&self, name: &SkillName) -> Result<Skill, KnowledgeError> {
-        let mut search_paths = Vec::with_capacity(self.roots.len());
-        for root in &self.roots {
-            let skill_md = skill_md_path(root, name)?;
-            search_paths.push(skill_md.as_str().to_string());
-            if !exists(&skill_md, KnowledgeKind::Skill, name.as_str())? {
-                continue;
-            }
-            let raw = read_to_string(&skill_md, KnowledgeKind::Skill, name.as_str())?;
-            return Skill::parse(SkillSource(skill_md.clone()), &raw, name)
-                .map_err(|err| skill_error_to_knowledge(err, name, &skill_md));
-        }
-        Err(KnowledgeError::Missing {
-            kind: KnowledgeKind::Skill,
-            name: name.as_str().to_string(),
-            search_paths,
-        })
+        self.skills
+            .get(name)
+            .cloned()
+            .ok_or_else(|| KnowledgeError::Missing {
+                kind: KnowledgeKind::Skill,
+                name: name.as_str().to_string(),
+                search_paths: self.search_paths(),
+            })
     }
 
     fn workflow(&self, name: &WorkflowName) -> Result<Workflow, KnowledgeError> {
-        let mut search_paths = Vec::with_capacity(self.roots.len());
-        for root in &self.roots {
-            let workflow_path = workflow_toml_path(root, name)?;
-            search_paths.push(workflow_path.as_str().to_string());
-            if !exists(&workflow_path, KnowledgeKind::Workflow, name.as_str())? {
-                continue;
-            }
-            let raw = read_to_string(&workflow_path, KnowledgeKind::Workflow, name.as_str())?;
-            let workflow: Workflow = toml::from_str(&raw).map_err(|err| KnowledgeError::Parse {
+        self.workflows
+            .get(name)
+            .map(|loaded| loaded.workflow.clone())
+            .ok_or_else(|| KnowledgeError::Missing {
                 kind: KnowledgeKind::Workflow,
                 name: name.as_str().to_string(),
-                path: workflow_path.as_str().to_string(),
-                source: anyhow::Error::new(err),
-            })?;
-            if workflow.name != name.as_str() {
-                return Err(KnowledgeError::NameMismatch {
-                    kind: KnowledgeKind::Workflow,
-                    requested: name.as_str().to_string(),
-                    declared: workflow.name,
-                });
-            }
-            return Ok(workflow);
-        }
-        Err(KnowledgeError::Missing {
-            kind: KnowledgeKind::Workflow,
-            name: name.as_str().to_string(),
-            search_paths,
-        })
+                search_paths: self.search_paths(),
+            })
     }
 
     fn agents(&self) -> Result<Vec<AgentsDoc>, KnowledgeError> {
-        let mut docs = Vec::new();
-        for root in &self.roots {
-            let agents_path = agents_md_path(root)?;
-            if !exists(&agents_path, KnowledgeKind::Agents, AGENTS_FILE)? {
-                continue;
-            }
-            let body = read_to_string(&agents_path, KnowledgeKind::Agents, AGENTS_FILE)?;
-            docs.push(AgentsDoc {
-                source: KnowledgeSource {
-                    root: root.clone(),
-                    path: agents_path,
-                },
-                body,
-            });
-        }
-        Ok(docs)
+        Ok(self.agents.clone())
     }
 
     fn list_skills(&self) -> Result<Vec<SkillSummary>, KnowledgeError> {
-        let mut out: Vec<SkillSummary> = Vec::new();
-        for root in &self.roots {
-            for entry in iter_skill_dirs(root)? {
-                let (name, dir) = entry?;
-                if out.iter().any(|s| s.name == name) {
-                    continue;
-                }
-                let skill_md = join_under(&dir, SKILL_FILE, KnowledgeKind::Skill, name.as_str())?;
-                if !exists(&skill_md, KnowledgeKind::Skill, name.as_str())? {
-                    continue;
-                }
-                let raw = read_to_string(&skill_md, KnowledgeKind::Skill, name.as_str())?;
-                let skill = Skill::parse(SkillSource(skill_md.clone()), &raw, &name)
-                    .map_err(|err| skill_error_to_knowledge(err, &name, &skill_md))?;
-                out.push(SkillSummary {
-                    name: skill.name,
-                    description: skill.description.as_str().to_string(),
-                    source: KnowledgeSource {
-                        root: root.clone(),
-                        path: skill_md,
-                    },
-                });
-            }
-        }
-        Ok(out)
+        Ok(self.skills.values().map(SkillSummary::from).collect())
     }
 
     fn list_workflows(&self) -> Result<Vec<WorkflowSummary>, KnowledgeError> {
-        let mut out: Vec<WorkflowSummary> = Vec::new();
-        for root in &self.roots {
-            for entry in iter_workflow_files(root)? {
-                let (name, path) = entry?;
-                if out.iter().any(|w| w.name == name) {
-                    continue;
-                }
-                let raw = read_to_string(&path, KnowledgeKind::Workflow, name.as_str())?;
-                let workflow: Workflow =
-                    toml::from_str(&raw).map_err(|err| KnowledgeError::Parse {
-                        kind: KnowledgeKind::Workflow,
-                        name: name.as_str().to_string(),
-                        path: path.as_str().to_string(),
-                        source: anyhow::Error::new(err),
-                    })?;
-                out.push(WorkflowSummary {
-                    name: WorkflowName::new(workflow.name),
-                    description: workflow.description.unwrap_or_default(),
-                    source: KnowledgeSource {
-                        root: root.clone(),
-                        path,
-                    },
-                });
-            }
-        }
-        Ok(out)
+        Ok(self.workflows.values().map(WorkflowSummary::from).collect())
     }
 
     fn search(&self, query: &str) -> Result<Vec<KnowledgeHit>, KnowledgeError> {
-        let mut hits = Vec::new();
-        for root in &self.roots {
-            let mut names: Vec<(KnowledgeKind, String, VfsPath)> = Vec::new();
-            for entry in iter_skill_dirs(root)? {
-                let (name, dir) = entry?;
-                names.push((KnowledgeKind::Skill, name.as_str().to_string(), dir));
-            }
-            for entry in iter_workflow_files(root)? {
-                let (name, path) = entry?;
-                names.push((KnowledgeKind::Workflow, name.as_str().to_string(), path));
-            }
-            names.sort_by(|a, b| a.1.cmp(&b.1));
-            for (kind, name, path) in names {
-                if name.contains(query) {
-                    hits.push(KnowledgeHit {
-                        kind,
-                        name,
-                        score: 1.0,
-                        source: KnowledgeSource {
-                            root: root.clone(),
-                            path,
-                        },
-                    });
-                }
+        let mut hits: Vec<KnowledgeHit> = Vec::new();
+        for skill in self.skills.values() {
+            let name = skill.name().as_str();
+            if name.contains(query) {
+                hits.push(KnowledgeHit {
+                    kind: KnowledgeKind::Skill,
+                    name: name.to_string(),
+                    score: 1.0,
+                    source: skill.source().clone(),
+                });
             }
         }
+        for (wf_name, loaded) in &self.workflows {
+            if wf_name.as_str().contains(query) {
+                hits.push(KnowledgeHit {
+                    kind: KnowledgeKind::Workflow,
+                    name: wf_name.as_str().to_string(),
+                    score: 1.0,
+                    source: loaded.source.clone(),
+                });
+            }
+        }
+        hits.sort_by(|a, b| a.name.cmp(&b.name));
         Ok(hits)
     }
 }
 
-fn join_under(
-    parent: &VfsPath,
-    segment: &str,
-    kind: KnowledgeKind,
-    name: &str,
-) -> Result<VfsPath, KnowledgeError> {
-    parent.join(segment).map_err(|source| KnowledgeError::Read {
-        kind,
-        name: name.to_string(),
-        path: parent.as_str().to_string(),
-        source,
-    })
-}
+pub(crate) type SkillDirEntries = Vec<Result<(SkillName, VfsPath), KnowledgeError>>;
+pub(crate) type WorkflowFileEntries = Vec<Result<(WorkflowName, VfsPath), KnowledgeError>>;
 
-fn skill_md_path(root: &KnowledgeRoot, name: &SkillName) -> Result<VfsPath, KnowledgeError> {
-    let kind = KnowledgeKind::Skill;
-    let n = name.as_str();
-    let skills = join_under(root.as_path(), SKILLS_DIR, kind, n)?;
-    let dir = join_under(&skills, n, kind, n)?;
-    join_under(&dir, SKILL_FILE, kind, n)
-}
-
-fn workflow_toml_path(
-    root: &KnowledgeRoot,
-    name: &WorkflowName,
-) -> Result<VfsPath, KnowledgeError> {
-    let kind = KnowledgeKind::Workflow;
-    let n = name.as_str();
-    let workflows = join_under(root.as_path(), WORKFLOWS_DIR, kind, n)?;
-    let file = format!("{n}.{WORKFLOW_EXT}");
-    join_under(&workflows, &file, kind, n)
-}
-
-fn agents_md_path(root: &KnowledgeRoot) -> Result<VfsPath, KnowledgeError> {
-    join_under(
-        root.as_path(),
-        AGENTS_FILE,
-        KnowledgeKind::Agents,
-        AGENTS_FILE,
-    )
-}
-
-fn exists(path: &VfsPath, kind: KnowledgeKind, name: &str) -> Result<bool, KnowledgeError> {
-    path.exists().map_err(|source| KnowledgeError::Read {
-        kind,
-        name: name.to_string(),
-        path: path.as_str().to_string(),
-        source,
-    })
-}
-
-fn read_to_string(
-    path: &VfsPath,
-    kind: KnowledgeKind,
-    name: &str,
-) -> Result<String, KnowledgeError> {
-    path.read_to_string()
-        .map_err(|source| KnowledgeError::Read {
-            kind,
-            name: name.to_string(),
-            path: path.as_str().to_string(),
-            source,
-        })
-}
-
-pub(crate) type SkillFsEntry = Result<(SkillName, VfsPath), KnowledgeError>;
-
-pub(crate) fn iter_skill_dirs(
-    root: &KnowledgeRoot,
-) -> Result<Box<dyn Iterator<Item = SkillFsEntry>>, KnowledgeError> {
-    let skills_dir = join_under(root.as_path(), SKILLS_DIR, KnowledgeKind::Skill, SKILLS_DIR)?;
-    let exists = skills_dir.exists().map_err(|source| KnowledgeError::Read {
-        kind: KnowledgeKind::Skill,
-        name: SKILLS_DIR.to_string(),
-        path: skills_dir.as_str().to_string(),
-        source,
-    })?;
-    if !exists {
-        return Ok(Box::new(std::iter::empty()));
+/// Enumerate the immediate subdirectories of `<root>/skills/`, paired with
+/// their parsed [`SkillName`]. Returns an empty list when the directory is
+/// absent. Per-entry name validation surfaces as `Err` items inside the
+/// returned `Vec`; an I/O failure on the directory itself is the outer
+/// `Err`.
+pub(crate) fn iter_skill_dirs(root: &KnowledgeRoot) -> Result<SkillDirEntries, KnowledgeError> {
+    let dir = root.as_path().join(SKILLS_DIR)?;
+    if !dir.exists()? {
+        return Ok(Vec::new());
     }
-    let entries = skills_dir
-        .read_dir()
-        .map_err(|source| KnowledgeError::Read {
-            kind: KnowledgeKind::Skill,
-            name: SKILLS_DIR.to_string(),
-            path: skills_dir.as_str().to_string(),
-            source,
-        })?;
-    Ok(Box::new(entries.filter_map(|entry| {
-        let is_dir = match entry.is_dir() {
-            Ok(b) => b,
-            Err(source) => {
-                return Some(Err(KnowledgeError::Read {
-                    kind: KnowledgeKind::Skill,
-                    name: entry.filename(),
-                    path: entry.as_str().to_string(),
-                    source,
-                }));
-            }
-        };
-        if !is_dir {
-            return None;
+    let mut out = Vec::new();
+    for entry in dir.read_dir()? {
+        if !entry.is_dir()? {
+            continue;
         }
-        let raw = entry.filename();
-        let name = match SkillName::try_from(&raw) {
-            Ok(n) => n,
-            Err(_) => return None,
-        };
-        Some(Ok((name, entry)))
-    })))
+        let item = SkillName::try_from(entry.filename().as_str())
+            .map(|name| (name, entry))
+            .map_err(KnowledgeError::from);
+        out.push(item);
+    }
+    Ok(out)
 }
 
-pub(crate) type WorkflowFsEntry = Result<(WorkflowName, VfsPath), KnowledgeError>;
-
+/// Enumerate the `*.toml` files under `<root>/workflows/`, paired with
+/// their stem as a [`WorkflowName`]. Returns an empty list when the
+/// directory is absent.
 pub(crate) fn iter_workflow_files(
     root: &KnowledgeRoot,
-) -> Result<Box<dyn Iterator<Item = WorkflowFsEntry>>, KnowledgeError> {
-    let workflows_dir = join_under(
-        root.as_path(),
-        WORKFLOWS_DIR,
-        KnowledgeKind::Workflow,
-        WORKFLOWS_DIR,
-    )?;
-    let exists = workflows_dir
-        .exists()
-        .map_err(|source| KnowledgeError::Read {
-            kind: KnowledgeKind::Workflow,
-            name: WORKFLOWS_DIR.to_string(),
-            path: workflows_dir.as_str().to_string(),
-            source,
-        })?;
-    if !exists {
-        return Ok(Box::new(std::iter::empty()));
+) -> Result<WorkflowFileEntries, KnowledgeError> {
+    let dir = root.as_path().join(WORKFLOWS_DIR)?;
+    if !dir.exists()? {
+        return Ok(Vec::new());
     }
-    let entries = workflows_dir
-        .read_dir()
-        .map_err(|source| KnowledgeError::Read {
-            kind: KnowledgeKind::Workflow,
-            name: WORKFLOWS_DIR.to_string(),
-            path: workflows_dir.as_str().to_string(),
-            source,
-        })?;
-    let suffix = format!(".{WORKFLOW_EXT}");
-    Ok(Box::new(entries.filter_map(move |entry| {
+    let mut out = Vec::new();
+    for entry in dir.read_dir()? {
         let filename = entry.filename();
-        let stem = filename.strip_suffix(&suffix)?;
-        Some(Ok((WorkflowName::new(stem), entry)))
-    })))
-}
-
-fn skill_error_to_knowledge(err: SkillError, name: &SkillName, path: &VfsPath) -> KnowledgeError {
-    match err {
-        SkillError::NameMismatch { found, .. } => KnowledgeError::NameMismatch {
-            kind: KnowledgeKind::Skill,
-            requested: name.as_str().to_string(),
-            declared: found,
-        },
-        other => KnowledgeError::Parse {
-            kind: KnowledgeKind::Skill,
-            name: name.as_str().to_string(),
-            path: path.as_str().to_string(),
-            source: anyhow::Error::new(other),
-        },
+        let Some(stem) = filename.strip_suffix(WORKFLOW_EXT) else {
+            continue;
+        };
+        out.push(Ok((WorkflowName::new(stem), entry)));
     }
+    Ok(out)
 }
 
 #[cfg(test)]
@@ -541,17 +512,41 @@ mod tests {
     #[test]
     fn fs_knowledge_base_skill_first_wins() {
         let (project, extra) = project_and_extra();
-        let kb = FsKnowledgeBase::new(vec![project, extra]);
+        let kb = FsKnowledgeBase::build(vec![project, extra]).unwrap();
 
         let shared = kb.skill(&SkillName::try_from("shared").unwrap()).unwrap();
 
-        assert_eq!(shared.body.as_str(), "PROJECT-SHARED BODY");
+        assert_eq!(shared.body().as_str(), "PROJECT-SHARED BODY");
+    }
+
+    /// A workflow file's lookup key is the `name` field declared inside
+    /// the TOML, not the filename stem. The DDD `developer` plugin ships
+    /// `workflows/workflow.toml` with `name = "ailly"`; `-w ailly` must
+    /// resolve it.
+    #[test]
+    fn fs_knowledge_base_keys_workflow_by_internal_name_not_filename() {
+        let fs = mem_fs! {
+            "kb": {
+                "workflows": {
+                    "workflow.toml": "name = \"ailly\"\nstart = \"go\"\n[[tasks]]\nname = \"go\"\ntask = { kind = \"prompt\", text = \"hi\" }\n",
+                },
+            },
+        };
+        let root = KnowledgeRoot::try_from(fs.join("kb").unwrap()).unwrap();
+        let kb = FsKnowledgeBase::build(vec![root]).unwrap();
+
+        let result = kb.workflow(&WorkflowName::new("ailly"));
+
+        assert!(
+            result.is_ok(),
+            "lookup must use the workflow's internal `name` field, not the filename stem; got {result:?}"
+        );
     }
 
     #[test]
     fn fs_knowledge_base_workflow_first_wins() {
         let (project, extra) = project_and_extra();
-        let kb = FsKnowledgeBase::new(vec![project, extra]);
+        let kb = FsKnowledgeBase::build(vec![project, extra]).unwrap();
 
         let shared = kb.workflow(&WorkflowName::new("shared")).unwrap();
 
@@ -570,24 +565,24 @@ mod tests {
     fn fs_knowledge_base_list_skills_dedupes_by_name_first_wins() {
         let (project, extra) = project_and_extra();
         let project_path = project.as_path().as_str().to_string();
-        let kb = FsKnowledgeBase::new(vec![project, extra]);
+        let kb = FsKnowledgeBase::build(vec![project, extra]).unwrap();
 
         let mut summaries = kb.list_skills().unwrap();
-        summaries.sort_by(|a, b| a.name.as_str().cmp(b.name.as_str()));
+        summaries.sort_by(|a, b| a.name().as_str().cmp(b.name().as_str()));
 
-        let names: Vec<&str> = summaries.iter().map(|s| s.name.as_str()).collect();
+        let names: Vec<&str> = summaries.iter().map(|s| s.name().as_str()).collect();
         assert_eq!(names, ["extra", "local", "shared"]);
         let shared = summaries
             .iter()
-            .find(|s| s.name.as_str() == "shared")
+            .find(|s| s.name().as_str() == "shared")
             .unwrap();
-        assert_eq!(shared.source.root.as_path().as_str(), project_path);
+        assert_eq!(shared.source().root.as_path().as_str(), project_path);
     }
 
     #[test]
     fn fs_knowledge_base_search_returns_hits_from_all_roots() {
         let (project, extra) = project_and_extra();
-        let kb = FsKnowledgeBase::new(vec![project, extra]);
+        let kb = FsKnowledgeBase::build(vec![project, extra]).unwrap();
 
         let hits = kb.search("shared").unwrap();
 
@@ -620,7 +615,7 @@ mod tests {
     #[test]
     fn fs_knowledge_base_agents_orders_by_root_iteration() {
         let (project, extra) = project_and_extra();
-        let kb = FsKnowledgeBase::new(vec![project, extra]);
+        let kb = FsKnowledgeBase::build(vec![project, extra]).unwrap();
 
         let agents = kb.agents().unwrap();
 
@@ -634,7 +629,7 @@ mod tests {
         let (project, extra) = project_and_extra();
         let project_path = project.as_path().as_str().to_string();
         let extra_path = extra.as_path().as_str().to_string();
-        let kb = FsKnowledgeBase::new(vec![project, extra]);
+        let kb = FsKnowledgeBase::build(vec![project, extra]).unwrap();
 
         let err = kb.skill(&SkillName::try_from("nope").unwrap()).unwrap_err();
 
@@ -654,6 +649,37 @@ mod tests {
                 assert!(
                     search_paths[1].starts_with(&extra_path),
                     "expected second search path under {extra_path:?}, got {search_paths:?}"
+                );
+            }
+            other => panic!("expected Missing, got {other:?}"),
+        }
+    }
+
+    /// `PhysicalFS`-backed roots have an empty `as_str()` because the
+    /// path-within-filesystem is the root itself. The `Missing` error
+    /// must surface the native filesystem path the user typed, not the
+    /// empty in-vfs path.
+    #[test]
+    fn fs_knowledge_base_missing_includes_native_path_for_physical_fs_roots() {
+        let raw = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        let root = KnowledgeRoot::from_physical(raw).unwrap();
+        let kb = FsKnowledgeBase::build(vec![root]).unwrap();
+
+        let err = kb
+            .workflow(&WorkflowName::new("definitely-missing"))
+            .unwrap_err();
+
+        match err {
+            KnowledgeError::Missing { search_paths, .. } => {
+                assert!(
+                    search_paths.iter().all(|p| !p.is_empty()),
+                    "search_paths must not contain empty strings, got: {search_paths:?}"
+                );
+                assert!(
+                    search_paths
+                        .iter()
+                        .any(|p| p.contains(raw.to_str().unwrap())),
+                    "search_paths should include the native filesystem path {raw:?}, got: {search_paths:?}"
                 );
             }
             other => panic!("expected Missing, got {other:?}"),

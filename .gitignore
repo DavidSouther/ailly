@@ -3,3 +3,4 @@ Cargo.lock
 devcontainer-lock.json
 .env
 typescript
+.ailly

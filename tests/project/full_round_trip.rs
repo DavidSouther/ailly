@@ -108,16 +108,17 @@ async fn project_with_two_knowledge_roots_threads_through_conversation_load() {
         "first knowledge root is the project root"
     );
 
-    let kb: Arc<dyn KnowledgeBase> = Arc::new(FsKnowledgeBase::new(project.knowledge.clone()));
+    let kb: Arc<dyn KnowledgeBase> =
+        Arc::new(FsKnowledgeBase::build(project.knowledge.clone()).expect("build kb"));
 
     // 2. Skill lookup is first-wins across roots: project copy of `shared` wins.
     let shared = kb
         .skill(&SkillName::try_from("shared").expect("valid skill name"))
         .expect("shared skill resolves from FsKnowledgeBase");
     assert!(
-        shared.body.as_str().contains("PROJECT-SHARED BODY"),
+        shared.body().as_str().contains("PROJECT-SHARED BODY"),
         "first-wins: project root's `shared` body is returned, got: {:?}",
-        shared.body.as_str()
+        shared.body().as_str()
     );
 
     // 3. Extra-root entries remain discoverable when no project copy exists.
@@ -125,15 +126,15 @@ async fn project_with_two_knowledge_roots_threads_through_conversation_load() {
         .skill(&SkillName::try_from("extra").expect("valid skill name"))
         .expect("extra skill resolves from FsKnowledgeBase");
     assert!(
-        extra.body.as_str().contains("EXTRA BODY"),
+        extra.body().as_str().contains("EXTRA BODY"),
         "extra root supplies the `extra` body, got: {:?}",
-        extra.body.as_str()
+        extra.body().as_str()
     );
 
     // 4. list_skills dedupes by name; the surviving source is first-wins.
     let mut summaries = kb.list_skills().expect("list_skills succeeds");
-    summaries.sort_by(|a, b| a.name.as_str().cmp(b.name.as_str()));
-    let names: Vec<&str> = summaries.iter().map(|s| s.name.as_str()).collect();
+    summaries.sort_by(|a, b| a.name().as_str().cmp(b.name().as_str()));
+    let names: Vec<&str> = summaries.iter().map(|s| s.name().as_str()).collect();
     assert_eq!(
         names,
         ["extra", "local", "shared"],
@@ -141,10 +142,10 @@ async fn project_with_two_knowledge_roots_threads_through_conversation_load() {
     );
     let shared_summary = summaries
         .iter()
-        .find(|s| s.name.as_str() == "shared")
+        .find(|s| s.name().as_str() == "shared")
         .expect("shared summary present in list_skills output");
     assert_eq!(
-        shared_summary.source.root.as_path().as_str(),
+        shared_summary.source().root.as_path().as_str(),
         project.root.as_path().as_str(),
         "surviving `shared` summary is sourced from the project root"
     );

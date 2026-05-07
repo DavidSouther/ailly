@@ -1379,7 +1379,7 @@ mod tests {
 
     fn test_skills(fs: &VfsPath) -> FsKnowledgeBase {
         let root = KnowledgeRoot::try_from(fs.clone()).expect("knowledge root from test fs");
-        FsKnowledgeBase::new(vec![root])
+        FsKnowledgeBase::build(vec![root]).expect("build knowledge base")
     }
 
     #[tokio::test]
@@ -3090,8 +3090,8 @@ text = "hi"
         }
         match &preamble.blocks[1] {
             PreambleBlock::Skill(skill) => {
-                assert_eq!(skill.name.as_str(), "foo");
-                assert_eq!(skill.body.as_str(), "FOO BODY");
+                assert_eq!(skill.name().as_str(), "foo");
+                assert_eq!(skill.body().as_str(), "FOO BODY");
             }
             other => panic!("block 1 should be Skill, got {other:?}"),
         }
@@ -3189,7 +3189,11 @@ text = "hi"
 
         assert_eq!(convo.turn_count(), 1);
         let turn = convo.turn(0);
-        let names: Vec<&str> = convo.skills(turn).iter().map(|s| s.name.as_str()).collect();
+        let names: Vec<&str> = convo
+            .skills(turn)
+            .iter()
+            .map(|s| s.name().as_str())
+            .collect();
         assert_eq!(names, vec!["alpha", "beta", "gamma", "delta"]);
     }
 
@@ -3269,7 +3273,11 @@ text = "hi"
 
         assert_eq!(convo.turn_count(), 1);
         let turn = convo.turn(0);
-        let names: Vec<&str> = convo.skills(turn).iter().map(|s| s.name.as_str()).collect();
+        let names: Vec<&str> = convo
+            .skills(turn)
+            .iter()
+            .map(|s| s.name().as_str())
+            .collect();
         assert_eq!(names, vec!["one", "two"]);
     }
 
@@ -3342,7 +3350,11 @@ text = "hi"
             .unwrap();
 
         let turn = convo.turn(0);
-        let names: Vec<&str> = convo.skills(turn).iter().map(|s| s.name.as_str()).collect();
+        let names: Vec<&str> = convo
+            .skills(turn)
+            .iter()
+            .map(|s| s.name().as_str())
+            .collect();
         assert_eq!(
             names,
             vec!["alpha", "beta"],

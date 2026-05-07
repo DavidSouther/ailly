@@ -3,6 +3,8 @@ use std::path::PathBuf;
 use anyhow::{Result, anyhow};
 use clap::{Parser, ValueEnum};
 
+use crate::knowledge::base::WorkflowName;
+
 #[derive(Parser, Debug)]
 #[command(
     name = "ailly",
@@ -100,21 +102,18 @@ impl Cli {
     /// `conversations` themselves.
     pub fn project(&self) -> anyhow::Result<crate::project::Project> {
         use crate::project::{ConversationRoot, KnowledgeRoot, Project, ProjectRoot};
-        use vfs::{PhysicalFS, VfsPath};
         let raw_root = self.root();
         if !raw_root.exists() {
             return Err(anyhow!("root path does not exist: {}", raw_root.display()));
         }
-        let project_path = VfsPath::new(PhysicalFS::new(&raw_root));
-        let project_root = ProjectRoot::try_from(project_path)?;
+        let project_root = ProjectRoot::from_physical(&raw_root)?;
         let conversations = ConversationRoot::from(project_root.clone());
         let mut knowledge: Vec<KnowledgeRoot> = vec![KnowledgeRoot::from(project_root.clone())];
         for raw in &self.knowledge {
             if !raw.exists() {
                 return Err(anyhow!("knowledge path does not exist: {}", raw.display()));
             }
-            let path = VfsPath::new(PhysicalFS::new(raw));
-            knowledge.push(KnowledgeRoot::try_from(path)?);
+            knowledge.push(KnowledgeRoot::from_physical(raw)?);
         }
         Ok(Project {
             root: project_root,
@@ -135,18 +134,18 @@ pub enum LogFormat {
 ///
 /// `"basic"` becomes `("basic", None)`. `"basic:second"` becomes
 /// `("basic", Some("second"))`. An empty string is rejected.
-pub fn parse_workflow_arg(raw: &str) -> Result<(String, Option<String>)> {
+pub fn parse_workflow_arg(raw: &str) -> Result<(WorkflowName, Option<String>)> {
     if raw.is_empty() {
         return Err(anyhow!("--workflow requires a non-empty value"));
     }
     match raw.split_once(':') {
         Some((wf, task)) if !wf.is_empty() && !task.is_empty() => {
-            Ok((wf.to_string(), Some(task.to_string())))
+            Ok((wf.into(), Some(task.to_string())))
         }
         Some(_) => Err(anyhow!(
             "--workflow {raw:?}: expected `WORKFLOW` or `WORKFLOW:TASK` with both parts non-empty"
         )),
-        None => Ok((raw.to_string(), None)),
+        None => Ok((raw.into(), None)),
     }
 }
 
@@ -175,11 +174,11 @@ mod tests {
     #[test]
     fn parse_workflow_arg_splits_on_single_colon() {
         let (wf, task) = parse_workflow_arg("basic").unwrap();
-        assert_eq!(wf, "basic");
+        assert_eq!(wf, WorkflowName::new("basic"));
         assert!(task.is_none());
 
         let (wf, task) = parse_workflow_arg("basic:second").unwrap();
-        assert_eq!(wf, "basic");
+        assert_eq!(wf, WorkflowName::new("basic"));
         assert_eq!(task.as_deref(), Some("second"));
     }
 

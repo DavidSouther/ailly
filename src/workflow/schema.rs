@@ -3,6 +3,14 @@ use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, thiserror::Error)]
+#[error("workflow {name:?} failed to parse: {source}")]
+pub struct WorkflowParseError {
+    pub name: String,
+    #[source]
+    pub source: toml::de::Error,
+}
+
+#[derive(Debug, thiserror::Error)]
 pub enum WorkflowError {
     #[error("workflow {workflow:?} has no task named {name:?}")]
     UnknownTask { workflow: String, name: String },

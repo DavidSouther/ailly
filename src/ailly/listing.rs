@@ -14,10 +14,10 @@ pub fn render_workflow_listing(entries: &[WorkflowEntry]) -> String {
         return "Available workflows: (none found)\nAdd a `workflow.toml` to the conversation root or a `workflows/<name>.toml` under a knowledge root.\n".to_string();
     }
     let mut out = String::from("Available workflows:\n");
-    let gutter = name_gutter(entries.iter().map(|e| e.name.as_str()));
+    let gutter = name_gutter(entries.iter().map(|e| e.name().as_str()));
     for entry in entries {
-        push_row(&mut out, &entry.name, &entry.description, gutter);
-        out.push_str(&format!("    {}\n", entry.source_path));
+        push_row(&mut out, entry.name().as_str(), entry.description(), gutter);
+        out.push_str(&format!("    {}\n", entry.source_path()));
     }
     out.push_str("Run a workflow with `ailly -w <NAME>`.\n");
     out
@@ -81,16 +81,16 @@ mod tests {
     #[test]
     fn render_workflow_listing_matches_two_column_fixture() {
         let entries = vec![
-            WorkflowEntry {
-                name: "build".to_string(),
-                description: "build the project".to_string(),
-                source_path: "workflow.toml".to_string(),
-            },
-            WorkflowEntry {
-                name: "deploy".to_string(),
-                description: "deploy to prod".to_string(),
-                source_path: "workflows/deploy.toml".to_string(),
-            },
+            WorkflowEntry::new(
+                "build",
+                "build the project".to_string(),
+                "workflow.toml".to_string(),
+            ),
+            WorkflowEntry::new(
+                "deploy".to_string(),
+                "deploy to prod".to_string(),
+                "workflows/deploy.toml".to_string(),
+            ),
         ];
 
         let out = render_workflow_listing(&entries);

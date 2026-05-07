@@ -127,8 +127,8 @@ async fn run_async(cli: Cli) -> Result<(), RunError> {
         let entries = project
             .list_workflows()
             .map_err(|e| RunError::Setup(anyhow!("failed to list workflows: {e}")))?;
-        if !entries.iter().any(|e| e.name == name) {
-            return run_list_workflows(&cli, Some(&name)).await;
+        if !entries.iter().any(|e| e.name() == &name) {
+            return run_list_workflows(&cli, Some(name.as_str())).await;
         }
         return run_workflow(&cli, engine, raw).await;
     }
@@ -385,7 +385,7 @@ fn load_workflow_definition(
 
 async fn load_from_root(cli: &Cli) -> Result<Conversation> {
     let project = cli.project()?;
-    let knowledge = crate::knowledge::base::FsKnowledgeBase::new(project.knowledge.clone());
+    let knowledge = crate::knowledge::base::FsKnowledgeBase::build(project.knowledge.clone())?;
     Conversation::load(&project.conversations, &knowledge)
         .await
         .with_context(|| format!("loading conversation at {}", cli.root().display()))
@@ -407,10 +407,10 @@ async fn run_workflow(cli: &Cli, engine: Arc<dyn Engine>, raw: &str) -> Result<(
     let vfs_root = project.root.as_path().clone();
     let conversation = project.conversations.clone();
     let knowledge: std::sync::Arc<dyn crate::knowledge::base::KnowledgeBase> = std::sync::Arc::new(
-        crate::knowledge::base::FsKnowledgeBase::new(project.knowledge.clone()),
+        crate::knowledge::base::FsKnowledgeBase::build(project.knowledge.clone())?,
     );
 
-    let workflow = load_workflow_definition(&vfs_root, &workflow_name, raw)?;
+    let workflow = knowledge.workflow(&workflow_name)?;
 
     let mut state =
         WorkflowState::read(&vfs_root)?.unwrap_or_else(|| WorkflowState::initial(&workflow));

@@ -23,6 +23,8 @@
 
 use std::sync::Arc;
 
+use ailly::knowledge::base::EmptyKnowledgeBase;
+use ailly::project::ConversationRoot;
 use async_stream::stream;
 use futures::StreamExt;
 use rig::message::{AssistantContent, Message, Reasoning, ReasoningContent, UserContent};
@@ -33,7 +35,6 @@ use ailly::engine::{
     Engine, EngineEvent, EngineInput, EngineName, EngineResponse, EngineStream, Generator, ModelId,
     Settings, StopReason, TurnEvent,
 };
-use ailly::knowledge::skills::FsSkillRepository;
 use ailly::mem_fs;
 
 /// Test engine that scripts a reasoning-bearing first turn and a trivial
@@ -111,10 +112,13 @@ async fn engine_records_reasoning_to_disk_and_replays_in_next_turn_history() {
         },
     };
     let root = fs.join("root").unwrap();
-    let skills = FsSkillRepository::new(&root);
-    let conversation = Conversation::load(root.clone(), &skills)
-        .await
-        .expect("load conversation");
+    let knowledge_base = EmptyKnowledgeBase {};
+    let conversation = Conversation::load(
+        &ConversationRoot::try_from(root.clone()).expect("conversation root"),
+        &knowledge_base,
+    )
+    .await
+    .expect("load conversation");
 
     let engine = Arc::new(ThinkingEngine);
     let generator = Generator::new(conversation, engine, Settings::default());
@@ -197,10 +201,13 @@ async fn engine_records_reasoning_to_disk_and_replays_in_next_turn_history() {
     // turn 02's history surfaces the reasoning blocks inside the
     // predecessor's assistant Message content, in insertion order, with
     // signatures and opaque payloads intact.
-    let skills = FsSkillRepository::new(&root);
-    let reloaded = Conversation::load(root, &skills)
-        .await
-        .expect("reload conversation after first run");
+    let knowlege = EmptyKnowledgeBase {};
+    let reloaded = Conversation::load(
+        &ConversationRoot::try_from(root).expect("conversation root"),
+        &knowlege,
+    )
+    .await
+    .expect("reload conversation after first run");
 
     let history = reloaded.history_for(reloaded.turn(1));
 

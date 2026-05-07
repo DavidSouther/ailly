@@ -156,8 +156,8 @@ fn build_envelope(request_label: &str, input: &EngineInput) -> String {
                 writeln!(
                     out,
                     "[preamble {i}] skill {name}: {body}",
-                    name = skill.name.as_str(),
-                    body = skill.body.as_str()
+                    name = skill.name().as_str(),
+                    body = skill.body().as_str()
                 )
                 .unwrap();
             }
