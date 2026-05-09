@@ -106,20 +106,19 @@ impl Cli {
         if !raw_root.exists() {
             return Err(anyhow!("root path does not exist: {}", raw_root.display()));
         }
-        let project_root = ProjectRoot::from_physical(&raw_root)?;
+        let project_root: ProjectRoot = raw_root.try_into()?;
         let conversations = ConversationRoot::from(project_root.clone());
         let mut knowledge: Vec<KnowledgeRoot> = vec![KnowledgeRoot::from(project_root.clone())];
         for raw in &self.knowledge {
             if !raw.exists() {
                 return Err(anyhow!("knowledge path does not exist: {}", raw.display()));
             }
-            knowledge.push(KnowledgeRoot::from_physical(raw)?);
+            knowledge.push(raw.clone().try_into()?);
         }
         Ok(Project {
             root: project_root,
             conversations,
             knowledge,
-            bash_cwd: raw_root,
         })
     }
 }

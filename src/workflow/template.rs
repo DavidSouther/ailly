@@ -32,8 +32,8 @@ pub fn substitute(text: &str, ctx: &Context) -> Result<String, UnresolvedPlaceho
     let mut out = String::with_capacity(text.len());
     let bytes = text.as_bytes();
     let mut i = 0;
-    while i < bytes.len() {
-        if i + 1 < bytes.len() && bytes[i] == b'{' && bytes[i + 1] == b'{' {
+    while i + 1 < bytes.len() {
+        if bytes[i] == b'{' && bytes[i + 1] == b'{' {
             if let Some(end_rel) = text[i + 2..].find("}}") {
                 let inner = &text[i + 2..i + 2 + end_rel];
                 let key = inner.trim();
@@ -45,7 +45,7 @@ pub fn substitute(text: &str, ctx: &Context) -> Result<String, UnresolvedPlaceho
                         });
                     }
                 }
-                i += 2 + end_rel + 2;
+                i += end_rel + 4;
                 continue;
             }
         }

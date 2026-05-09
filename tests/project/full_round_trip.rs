@@ -94,7 +94,6 @@ async fn project_with_two_knowledge_roots_threads_through_conversation_load() {
         root: project_root.clone(),
         conversations: ConversationRoot::from(project_root.clone()),
         knowledge: vec![KnowledgeRoot::from(project_root.clone()), extra_root],
-        bash_cwd: std::path::PathBuf::from("."),
     };
 
     assert_eq!(

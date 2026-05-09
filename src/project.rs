@@ -8,7 +8,9 @@
 //! and knowledge roots may also be derived from a [`ProjectRoot`] via [`From`]
 //! when the caller wants the project root to play that role.
 
-use vfs::VfsPath;
+use std::path::PathBuf;
+
+use vfs::{PhysicalFS, VfsPath};
 
 use crate::content::AILLY_DIR;
 use crate::knowledge::base::WorkflowName;
@@ -37,37 +39,50 @@ pub enum RootError {
     },
 }
 
+/// A Named NewType for the root of a project.
+///
+/// File System access works relative to a project root, which also serves as
+/// a knowledge root, and is often the parent of a ConversationRoot.
 #[derive(Debug, Clone)]
 pub struct ProjectRoot {
     path: VfsPath,
-    display: String,
 }
 
 impl ProjectRoot {
-    pub fn try_from(path: VfsPath) -> Result<Self, RootError> {
-        require_directory(&path)?;
-        let display = path.as_str().to_string();
-        Ok(Self { path, display })
-    }
-
-    /// Construct a [`ProjectRoot`] backed by [`vfs::PhysicalFS`] rooted at
-    /// `raw`. The native filesystem path is captured separately for display.
-    pub fn from_physical(raw: &std::path::Path) -> Result<Self, RootError> {
-        use vfs::{PhysicalFS, VfsPath};
-        let vfs_path = VfsPath::new(PhysicalFS::new(raw));
-        require_directory(&vfs_path)?;
-        Ok(Self {
-            path: vfs_path,
-            display: raw.display().to_string(),
-        })
-    }
-
     pub fn as_path(&self) -> &VfsPath {
         &self.path
     }
+}
 
-    pub fn display_path(&self) -> &str {
-        &self.display
+impl TryFrom<VfsPath> for ProjectRoot {
+    type Error = RootError;
+
+    fn try_from(path: VfsPath) -> Result<Self, Self::Error> {
+        require_directory(&path)?;
+        Ok(Self { path })
+    }
+}
+
+impl TryFrom<std::path::PathBuf> for ProjectRoot {
+    type Error = RootError;
+
+    fn try_from(value: std::path::PathBuf) -> Result<Self, Self::Error> {
+        let vfs_path = VfsPath::new(PhysicalFS::new(value));
+        ProjectRoot::try_from(vfs_path)
+    }
+}
+
+impl TryFrom<&std::path::Path> for ProjectRoot {
+    type Error = RootError;
+
+    fn try_from(value: &std::path::Path) -> Result<Self, Self::Error> {
+        ProjectRoot::try_from(value.to_path_buf())
+    }
+}
+
+impl From<ProjectRoot> for std::path::PathBuf {
+    fn from(value: ProjectRoot) -> Self {
+        PathBuf::from(value.as_path().as_str())
     }
 }
 
@@ -75,11 +90,6 @@ impl ProjectRoot {
 pub struct ConversationRoot(VfsPath);
 
 impl ConversationRoot {
-    pub fn try_from(path: VfsPath) -> Result<Self, RootError> {
-        require_directory(&path)?;
-        Ok(Self(path))
-    }
-
     pub fn as_path(&self) -> &VfsPath {
         &self.0
     }
@@ -123,12 +133,28 @@ impl ConversationRoot {
     }
 }
 
+impl TryFrom<VfsPath> for ConversationRoot {
+    type Error = RootError;
+
+    fn try_from(path: VfsPath) -> Result<Self, Self::Error> {
+        require_directory(&path)?;
+        Ok(Self(path))
+    }
+}
+
 impl From<ProjectRoot> for ConversationRoot {
     fn from(project: ProjectRoot) -> Self {
         Self(project.path)
     }
 }
 
+/// A knowledge root the loader searches for skills, agents, and workflows.
+///
+/// Carries both the canonical [`VfsPath`] used for IO and a `display` string
+/// captured from the source the caller converted from. The display string is
+/// what user-facing diagnostics render: a [`PhysicalFS`]-backed `VfsPath`
+/// returns an empty `as_str()` because the path-within-filesystem is the root
+/// itself, so error messages would otherwise show nothing.
 #[derive(Debug, Clone)]
 pub struct KnowledgeRoot {
     path: VfsPath,
@@ -136,32 +162,40 @@ pub struct KnowledgeRoot {
 }
 
 impl KnowledgeRoot {
-    pub fn try_from(path: VfsPath) -> Result<Self, RootError> {
+    pub fn as_path(&self) -> &VfsPath {
+        &self.path
+    }
+    pub fn display_path(&self) -> &String {
+        &self.display
+    }
+}
+
+impl TryFrom<VfsPath> for KnowledgeRoot {
+    type Error = RootError;
+
+    fn try_from(path: VfsPath) -> Result<Self, Self::Error> {
         require_directory(&path)?;
         let display = path.as_str().to_string();
         Ok(Self { path, display })
     }
+}
 
-    /// Construct a [`KnowledgeRoot`] backed by [`vfs::PhysicalFS`] rooted
-    /// at `raw`. The native filesystem path is captured separately for
-    /// display so error messages and listings see a meaningful path even
-    /// though `VfsPath::as_str()` of a `PhysicalFS` root is empty.
-    pub fn from_physical(raw: &std::path::Path) -> Result<Self, RootError> {
-        use vfs::{PhysicalFS, VfsPath};
-        let vfs_path = VfsPath::new(PhysicalFS::new(raw));
-        require_directory(&vfs_path)?;
-        Ok(Self {
-            path: vfs_path,
-            display: raw.display().to_string(),
-        })
+impl TryFrom<std::path::PathBuf> for KnowledgeRoot {
+    type Error = RootError;
+
+    fn try_from(value: std::path::PathBuf) -> Result<Self, Self::Error> {
+        let display = value.display().to_string();
+        let path = VfsPath::new(PhysicalFS::new(value));
+        require_directory(&path)?;
+        Ok(Self { path, display })
     }
+}
 
-    pub fn as_path(&self) -> &VfsPath {
-        &self.path
-    }
+impl TryFrom<&std::path::Path> for KnowledgeRoot {
+    type Error = RootError;
 
-    pub fn display_path(&self) -> &str {
-        &self.display
+    fn try_from(value: &std::path::Path) -> Result<Self, Self::Error> {
+        KnowledgeRoot::try_from(value.to_path_buf())
     }
 }
 
@@ -173,9 +207,10 @@ impl std::fmt::Display for KnowledgeRoot {
 
 impl From<ProjectRoot> for KnowledgeRoot {
     fn from(project: ProjectRoot) -> Self {
+        let display = project.path.as_str().to_string();
         Self {
             path: project.path,
-            display: project.display,
+            display,
         }
     }
 }
@@ -185,13 +220,13 @@ pub struct Project {
     pub root: ProjectRoot,
     pub conversations: ConversationRoot,
     pub knowledge: Vec<KnowledgeRoot>,
-    /// Native filesystem path used as `Bash`'s working directory. Sourced
-    /// from `cli.root()` at construction time and held as a `PathBuf`
-    /// because `Bash` shells out and cannot use `VfsPath`.
-    pub bash_cwd: std::path::PathBuf,
 }
 
 impl Project {
+    pub fn bash_cwd(&self) -> PathBuf {
+        self.root.clone().into()
+    }
+
     /// Build the workflow listing for this project. Each knowledge root
     /// contributes a bare `workflow.toml` (if present) and every entry
     /// under `workflows/`. The first knowledge root is the project root,
@@ -380,7 +415,7 @@ impl Project {
         );
         registry.insert(
             crate::knowledge::tools::Bash::NAME,
-            Arc::new(crate::knowledge::tools::Bash::new(self.bash_cwd.clone())),
+            Arc::new(crate::knowledge::tools::Bash::new(self.bash_cwd())),
         );
         registry
     }
@@ -582,7 +617,6 @@ mod tests {
             root: project_root.clone(),
             conversations: ConversationRoot::from(project_root.clone()),
             knowledge: vec![KnowledgeRoot::from(project_root.clone()), extra],
-            bash_cwd: std::path::PathBuf::from("."),
         };
 
         let entries = project.list_workflows().expect("list_workflows ok");
@@ -621,7 +655,6 @@ mod tests {
             root: project_root.clone(),
             conversations: ConversationRoot::from(project_root.clone()),
             knowledge: vec![KnowledgeRoot::from(project_root.clone()), extra],
-            bash_cwd: std::path::PathBuf::from("."),
         };
 
         let entries = project.list_skills().expect("list_skills ok");
@@ -649,7 +682,6 @@ mod tests {
             root: project_root.clone(),
             conversations: ConversationRoot::from(project_root.clone()),
             knowledge: vec![KnowledgeRoot::from(project_root.clone()), extra],
-            bash_cwd: std::path::PathBuf::from("."),
         };
 
         let entries = project.list_skills().expect("list_skills ok");
@@ -668,7 +700,6 @@ mod tests {
             root: project_root.clone(),
             conversations: ConversationRoot::from(project_root.clone()),
             knowledge: vec![KnowledgeRoot::from(project_root.clone())],
-            bash_cwd: std::path::PathBuf::from("."),
         };
 
         let entries = project.list_skills().expect("list_skills ok");
@@ -692,7 +723,6 @@ mod tests {
             root: project_root.clone(),
             conversations: ConversationRoot::from(project_root.clone()),
             knowledge: vec![KnowledgeRoot::from(project_root.clone())],
-            bash_cwd: std::path::PathBuf::from("."),
         };
 
         let entries = project.list_skills().expect("list_skills ok");
@@ -717,7 +747,6 @@ mod tests {
             root: project_root.clone(),
             conversations: ConversationRoot::from(project_root.clone()),
             knowledge: vec![KnowledgeRoot::from(project_root.clone())],
-            bash_cwd: std::path::PathBuf::from("."),
         };
 
         let entries = project.list_workflows().expect("list_workflows ok");
@@ -738,7 +767,6 @@ mod tests {
             root: project_root.clone(),
             conversations: ConversationRoot::from(project_root.clone()),
             knowledge: vec![KnowledgeRoot::from(project_root.clone()), extra],
-            bash_cwd: std::path::PathBuf::from("."),
         };
 
         let paths = project.workflow_search_paths();
@@ -770,7 +798,6 @@ mod tests {
             root: project_root.clone(),
             conversations: ConversationRoot::from(project_root.clone()),
             knowledge: vec![KnowledgeRoot::from(project_root.clone())],
-            bash_cwd: std::path::PathBuf::from("."),
         };
 
         let entries = project.list_tools().await;
@@ -801,7 +828,6 @@ mod tests {
             root: project_root.clone(),
             conversations: ConversationRoot::from(project_root.clone()),
             knowledge: vec![KnowledgeRoot::from(project_root.clone())],
-            bash_cwd: std::path::PathBuf::from("."),
         };
 
         let registry = project.tool_registry();
@@ -834,7 +860,6 @@ mod tests {
             root: project_root.clone(),
             conversations: ConversationRoot::from(project_root.clone()),
             knowledge: vec![KnowledgeRoot::from(project_root.clone()), extra],
-            bash_cwd: std::path::PathBuf::from("."),
         };
 
         assert_eq!(project.knowledge.len(), 2);

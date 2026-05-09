@@ -368,10 +368,7 @@ impl FsKnowledgeBase {
     }
 
     fn search_paths(&self) -> Vec<String> {
-        self.roots
-            .iter()
-            .map(|r| r.display_path().to_string())
-            .collect()
+        self.roots.iter().map(|r| r.to_string()).collect()
     }
 }
 
@@ -747,7 +744,7 @@ mod tests {
     #[test]
     fn fs_knowledge_base_missing_includes_native_path_for_physical_fs_roots() {
         let raw = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
-        let root = KnowledgeRoot::from_physical(raw).unwrap();
+        let root = KnowledgeRoot::try_from(raw).unwrap();
         let kb = FsKnowledgeBase::build(vec![root]).unwrap();
 
         let err = kb
