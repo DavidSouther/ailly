@@ -25,7 +25,6 @@ use rig::streaming::{StreamedAssistantContent, StreamedUserContent, StreamingCha
 use rig::tool::{ToolDyn, ToolError};
 use rig::wasm_compat::WasmBoxedFuture;
 
-
 /// Re-box a shared `Arc<dyn ToolDyn>` as the `Box<dyn ToolDyn>` shape that
 /// `AgentBuilder::knowledge::tools` requires, while leaving the caller's `Arc` intact.
 /// `Box<dyn ToolDyn>` is not `Clone`, but every method on the trait can be
@@ -56,6 +55,15 @@ pub struct RigEngine<M> {
     model: M,
     engine_name: &'static str,
     model_id: String,
+}
+
+impl<M> std::fmt::Debug for RigEngine<M> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("RigEngine")
+            .field("engine_name", &self.engine_name)
+            .field("model_id", &self.model_id)
+            .finish()
+    }
 }
 
 impl<M> RigEngine<M> {
@@ -102,28 +110,31 @@ where
             .map(|t| Box::new(DynToolHandle(t.clone())) as Box<dyn ToolDyn>)
             .collect();
 
+        let builder = AgentBuilder::new(model);
+        let mut prelude = prelude_exchanges;
+        let mut new_prior: Vec<Message> = Vec::with_capacity(prelude.len() * 2 + prior.len());
+        for exchange in &prelude {
+            new_prior.push(exchange.user.clone());
+            new_prior.push(exchange.assistant.clone());
+        }
+        new_prior.extend(prior);
+
         Ok(Box::pin(async_stream::stream! {
             let mut tool_defs: Vec<ToolDefinition> = Vec::with_capacity(arc_tools.len());
             for tool in &arc_tools {
                 tool_defs.push(tool.definition(String::new()).await);
             }
-            let mut prelude = prelude_exchanges;
+
             if let Some(extra) = tools_exchange(&tool_defs) {
                 prelude.push(extra);
             }
-            let mut new_prior: Vec<Message> = Vec::with_capacity(prelude.len() * 2 + prior.len());
-            for exchange in &prelude {
-                new_prior.push(exchange.user.clone());
-                new_prior.push(exchange.assistant.clone());
-            }
-            new_prior.extend(prior);
 
             yield EngineEvent::Envelope(SentEnvelope {
                 prelude,
                 tools: tool_defs,
             });
 
-            let agent = AgentBuilder::new(model).tools(dyn_tools).build();
+            let agent = builder.tools(dyn_tools).build();
 
             let mut stream = agent
                 .stream_chat(last_user_text, new_prior)

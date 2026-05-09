@@ -233,11 +233,13 @@ impl Runtime {
                         }
                     };
 
+                    let registry_tools = tool_registry.names();
                     turn_path = match synthesize_turn_file(
                         &conversation_root,
                         &task.name,
                         &task.name,
                         &task.skills,
+                        &registry_tools,
                         &rendered_prompt,
                     )
                     .await
@@ -267,6 +269,11 @@ impl Runtime {
                             return;
                         }
                     };
+                    if let Err(error) = convo.resolve_declared_skills(knowledge.as_ref()) {
+                        log::warn!(
+                            "task {task_name:?}: skill resolution failed, continuing without those skills: {error:#}"
+                        );
+                    }
 
                     match compute_enrichment(
                         &task.name,
@@ -323,6 +330,7 @@ impl Runtime {
                         &conversation_root,
                         &eval_label,
                         &eval_label,
+                        &[],
                         &[],
                         eval_text,
                     )
@@ -853,6 +861,7 @@ async fn synthesize_turn_file(
     suffix: &str,
     step: &str,
     skills: &[String],
+    tools: &[String],
     prompt: &str,
 ) -> Result<VfsPath, ContentError> {
     let next_n = find_next_n(root)?;
@@ -871,6 +880,7 @@ async fn synthesize_turn_file(
         meta,
         Vec::new(),
         skills.to_vec(),
+        tools.to_vec(),
         prompt.to_string(),
     );
     turn.write().await?;
@@ -1728,7 +1738,7 @@ mod tests {
 
         let mut first = task("first", "First task.", &[("cleared", "second")]);
         first.evaluation = Some(TaskAction::ToolCall {
-            tool: "fs.absent".to_string(),
+            tool: "fs-absent".to_string(),
             args: fs_absent_args("design.md", "*Draft"),
         });
         let workflow = Workflow {
@@ -1785,7 +1795,7 @@ mod tests {
 
         let mut first = task("first", "First.", &[("cleared", "second")]);
         first.evaluation = Some(TaskAction::ToolCall {
-            tool: "fs.absent".to_string(),
+            tool: "fs-absent".to_string(),
             args: fs_absent_args("design.md", "*Draft"),
         });
         let workflow = Workflow {
@@ -1882,7 +1892,7 @@ mod tests {
 
         let mut first = task("first", "First.", &[]);
         first.evaluation = Some(TaskAction::ToolCall {
-            tool: "fs.absent".to_string(),
+            tool: "fs-absent".to_string(),
             args: fs_absent_args("design.md", "*Draft"),
         });
         first.next.insert("paused".to_string(), "skip".to_string());
@@ -1959,7 +1969,7 @@ mod tests {
 
         let mut first = task("first", "First.", &[]);
         first.evaluation = Some(TaskAction::ToolCall {
-            tool: "fs.absent".to_string(),
+            tool: "fs-absent".to_string(),
             args: toml::Value::Table(args_table),
         });
         let workflow = Workflow {
@@ -2194,7 +2204,7 @@ mod tests {
                     text: format!("Produce {artifact}."),
                 },
                 evaluation: Some(TaskAction::ToolCall {
-                    tool: "fs.absent".to_string(),
+                    tool: "fs-absent".to_string(),
                     args: fs_absent_args(artifact),
                 }),
                 next: next_map,
@@ -2225,7 +2235,7 @@ mod tests {
 
         let mut registry = HashMapRegistry::default();
         registry.insert(
-            "fs.absent",
+            "fs-absent",
             Arc::new(FsAbsent::new(
                 &ConversationRoot::try_from(root.clone()).unwrap(),
             )),

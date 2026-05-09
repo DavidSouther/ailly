@@ -5,18 +5,18 @@ start = "design"
 name = "design"
 skills = ["developer:design"]
 task = { kind = "prompt", text = "Produce design.md." }
-evaluation = { kind = "tool_call", tool = "fs.absent", args = { path = "design.md", needle = "*Draft" } }
+evaluation = { kind = "tool_call", tool = "fs-absent", args = { path = "design.md", needle = "*Draft" } }
 next = { cleared = "feature_test" }
 
 [[tasks]]
 name = "feature_test"
 skills = ["developer:feature-test"]
 task = { kind = "prompt", text = "Produce feature-test.md." }
-evaluation = { kind = "tool_call", tool = "fs.absent", args = { path = "feature-test.md", needle = "*Draft" } }
+evaluation = { kind = "tool_call", tool = "fs-absent", args = { path = "feature-test.md", needle = "*Draft" } }
 next = { cleared = "plan" }
 
 [[tasks]]
 name = "plan"
 skills = ["developer:plan"]
 task = { kind = "prompt", text = "Produce plan.md." }
-evaluation = { kind = "tool_call", tool = "fs.absent", args = { path = "plan.md", needle = "*Draft" } }
+evaluation = { kind = "tool_call", tool = "fs-absent", args = { path = "plan.md", needle = "*Draft" } }

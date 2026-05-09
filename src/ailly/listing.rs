@@ -168,7 +168,7 @@ mod tests {
                 description: "run a bash command".to_string(),
             },
             ToolEntry {
-                name: "fs.read".to_string(),
+                name: "fs-read".to_string(),
                 description: "read a file".to_string(),
             },
         ];
@@ -177,7 +177,7 @@ mod tests {
 
         assert_eq!(
             out,
-            "Registered tools:\n  bash     run a bash command\n  fs.read  read a file\n"
+            "Registered tools:\n  bash     run a bash command\n  fs-read  read a file\n"
         );
     }
 }

@@ -13,7 +13,7 @@ pub struct FsEdit {
 }
 
 impl FsEdit {
-    pub const NAME: &'static str = "fs.edit";
+    pub const NAME: &'static str = "fs-edit";
 
     /// Construct an `FsEdit` over a project root.
     ///
@@ -77,7 +77,7 @@ pub enum FsEditError {
 }
 
 impl Tool for FsEdit {
-    const NAME: &'static str = "fs.edit";
+    const NAME: &'static str = "fs-edit";
 
     type Error = FsEditError;
     type Args = FsEditArgs;

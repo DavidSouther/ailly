@@ -89,11 +89,11 @@ fi
 "$AILLY_BIN" --root "$PROJECT" --knowledge "$KB" --list-tools > out 2> err
 assert_grep_q '^Registered tools:' out
 assert_grep_q 'bash' out
-assert_grep_q 'fs.absent' out
-assert_grep_q 'fs.edit' out
-assert_grep_q 'fs.grep' out
-assert_grep_q 'fs.list' out
-assert_grep_q 'user.clarify' out
+assert_grep_q 'fs-absent' out
+assert_grep_q 'fs-edit' out
+assert_grep_q 'fs-grep' out
+assert_grep_q 'fs-list' out
+assert_grep_q 'user-clarify' out
 
 # Phase 4: bare `-w` (no value) renders the same workflow listing and
 # exits 0.

@@ -10,7 +10,7 @@ pub struct FsList {
 }
 
 impl FsList {
-    pub const NAME: &'static str = "fs.list";
+    pub const NAME: &'static str = "fs-list";
 
     pub fn new(project: &crate::project::ProjectRoot) -> Self {
         Self {
@@ -64,7 +64,7 @@ struct ListEntry {
 }
 
 impl Tool for FsList {
-    const NAME: &'static str = "fs.list";
+    const NAME: &'static str = "fs-list";
 
     type Error = FsListError;
     type Args = FsListArgs;

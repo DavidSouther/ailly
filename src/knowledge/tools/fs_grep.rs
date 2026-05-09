@@ -10,7 +10,7 @@ pub struct FsGrep {
 }
 
 impl FsGrep {
-    pub const NAME: &'static str = "fs.grep";
+    pub const NAME: &'static str = "fs-grep";
 
     pub fn new(project: &crate::project::ProjectRoot) -> Self {
         Self {
@@ -89,7 +89,7 @@ struct GrepEnvelope {
 }
 
 impl Tool for FsGrep {
-    const NAME: &'static str = "fs.grep";
+    const NAME: &'static str = "fs-grep";
 
     type Error = FsGrepError;
     type Args = FsGrepArgs;

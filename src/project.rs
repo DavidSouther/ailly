@@ -780,11 +780,11 @@ mod tests {
             names,
             vec![
                 "bash",
-                "fs.absent",
-                "fs.edit",
-                "fs.grep",
-                "fs.list",
-                "user.clarify",
+                "fs-absent",
+                "fs-edit",
+                "fs-grep",
+                "fs-list",
+                "user-clarify",
             ]
         );
         assert!(
@@ -812,11 +812,11 @@ mod tests {
             names,
             vec![
                 "bash",
-                "fs.absent",
-                "fs.edit",
-                "fs.grep",
-                "fs.list",
-                "user.clarify",
+                "fs-absent",
+                "fs-edit",
+                "fs-grep",
+                "fs-list",
+                "user-clarify",
             ]
         );
     }

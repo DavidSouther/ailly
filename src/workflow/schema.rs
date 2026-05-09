@@ -168,7 +168,7 @@ text = "Produce design.md."
 
 [evaluation]
 kind = "tool_call"
-tool = "fs.absent"
+tool = "fs-absent"
 
 [evaluation.args]
 path = "design.md"
@@ -177,7 +177,7 @@ needle = "*Draft"
         let task: Task = toml::from_str(toml_in).expect("parse");
         match task.evaluation.as_ref().expect("evaluation present") {
             TaskAction::ToolCall { tool, args } => {
-                assert_eq!(tool, "fs.absent");
+                assert_eq!(tool, "fs-absent");
                 let table = args.as_table().expect("args is a table");
                 assert_eq!(
                     table.get("path").and_then(|v| v.as_str()),
@@ -192,7 +192,7 @@ needle = "*Draft"
         let reparsed: Task = toml::from_str(&serialized).expect("reparse");
         match reparsed.evaluation.as_ref().expect("evaluation present") {
             TaskAction::ToolCall { tool, args } => {
-                assert_eq!(tool, "fs.absent");
+                assert_eq!(tool, "fs-absent");
                 let table = args.as_table().expect("args is a table");
                 assert_eq!(
                     table.get("path").and_then(|v| v.as_str()),

@@ -6,7 +6,7 @@
 //! pair it with a `ConstClassifier(Read)` and a `ClassRouterBackend` whose
 //! initial routing allows `Read`-classified calls. They erase the gated tool
 //! to `Arc<dyn ToolDyn>`, register it in `HashMapRegistry` under the same
-//! `"fs.absent"` name, resolve it back through `ToolRegistry::resolve`, and
+//! `"fs-absent"` name, resolve it back through `ToolRegistry::resolve`, and
 //! call it via `ToolDyn::call` against a virtual filesystem prepared so the
 //! bare `FsAbsent` would return `"cleared"`. The harness expects the gated
 //! result to equal the unwrapped `FsAbsent` result byte-for-byte, and the
@@ -41,7 +41,7 @@ fn fs_absent_args() -> String {
         "path": "design.md",
         "needle": "*Draft",
     }))
-    .expect("serialize fs.absent args")
+    .expect("serialize fs-absent args")
 }
 
 fn root_with_cleared_design() -> VfsPath {
@@ -131,7 +131,7 @@ async fn permission_gate_round_trips_through_registry_and_intercepts_deny() {
     ));
 
     let deny_gate: Arc<dyn ToolDyn> = Arc::new(PermissionGated::new(
-        "fs.absent.denied",
+        "fs-absent.denied",
         Arc::clone(&inner),
         Arc::new(ConstClassifier(Classification::Read)),
         Arc::new(ClassRouterBackend {
@@ -144,7 +144,7 @@ async fn permission_gate_round_trips_through_registry_and_intercepts_deny() {
     let (counting_tool, counting_calls) = CountingTool::new();
     let counting_inner: Arc<dyn ToolDyn> = Arc::new(counting_tool);
     let counting_gate: Arc<dyn ToolDyn> = Arc::new(PermissionGated::new(
-        "fs.absent.counted",
+        "fs-absent.counted",
         counting_inner,
         Arc::new(ConstClassifier(Classification::Read)),
         Arc::new(ClassRouterBackend {
@@ -156,8 +156,8 @@ async fn permission_gate_round_trips_through_registry_and_intercepts_deny() {
 
     let mut registry = HashMapRegistry::default();
     registry.insert(FsAbsent::NAME, allow_gate);
-    registry.insert("fs.absent.denied", deny_gate);
-    registry.insert("fs.absent.counted", counting_gate);
+    registry.insert("fs-absent.denied", deny_gate);
+    registry.insert("fs-absent.counted", counting_gate);
     let registry: Arc<dyn ToolRegistry> = Arc::new(registry);
 
     let resolved_allow = registry
@@ -187,7 +187,7 @@ async fn permission_gate_round_trips_through_registry_and_intercepts_deny() {
     );
 
     let resolved_deny = registry
-        .resolve("fs.absent.denied")
+        .resolve("fs-absent.denied")
         .expect("registry resolves the deny-gated tool by name");
     let deny_result = resolved_deny
         .call(fs_absent_args())
@@ -203,7 +203,7 @@ async fn permission_gate_round_trips_through_registry_and_intercepts_deny() {
     );
 
     let resolved_counted = registry
-        .resolve("fs.absent.counted")
+        .resolve("fs-absent.counted")
         .expect("registry resolves the counted-gated tool by name");
     let counted_result = resolved_counted
         .call(fs_absent_args())

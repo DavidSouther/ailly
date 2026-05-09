@@ -9,7 +9,7 @@ pub struct FsAbsent {
 }
 
 impl FsAbsent {
-    pub const NAME: &'static str = "fs.absent";
+    pub const NAME: &'static str = "fs-absent";
 
     pub fn new(conversation: &crate::project::ConversationRoot) -> Self {
         Self {
@@ -45,7 +45,7 @@ pub enum FsAbsentError {
 }
 
 impl Tool for FsAbsent {
-    const NAME: &'static str = "fs.absent";
+    const NAME: &'static str = "fs-absent";
 
     type Error = FsAbsentError;
     type Args = FsAbsentArgs;

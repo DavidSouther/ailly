@@ -422,8 +422,10 @@ impl ConversationTurn {
         meta: ContentMeta,
         system: Vec<Message>,
         declared_skills: Vec<String>,
+        declared_tools: Vec<String>,
         prompt: String,
     ) -> Self {
+        let tool_names = declared_tools.clone();
         Self {
             path,
             meta,
@@ -432,8 +434,8 @@ impl ConversationTurn {
             response: Vec::new(),
             local_system_count: 0,
             skills: vec![],
-            tool_names: vec![],
-            declared_tools: vec![],
+            tool_names,
+            declared_tools,
             declared_parent_tools: None,
             declared_skills,
             envelope: None,
@@ -829,6 +831,32 @@ impl Conversation {
         &turn.skills
     }
 
+    /// Resolve each turn's `declared_skills` against `knowledge` and append
+    /// the resolved `Skill` values onto its `skills` chain.
+    ///
+    /// `Conversation::single_turn` and `Conversation::from_paths` load turn
+    /// files without consulting any knowledge base, so their resolved
+    /// `skills` start empty even when the on-disk file declares skills.
+    /// Callers (notably the workflow runtime, which synthesizes a turn from
+    /// a `Task.skills` list and then loads it) invoke this method to attach
+    /// the skill bodies that should reach the engine preamble.
+    ///
+    /// Each declared name is resolved by `KnowledgeBase::skill`. The first
+    /// missing or invalid name aborts with a `ContentError::Knowledge`.
+    pub fn resolve_declared_skills(
+        &mut self,
+        knowledge: &dyn KnowledgeBase,
+    ) -> Result<(), ContentError> {
+        for (path, turn) in &mut self.turns {
+            let origin = path.as_str().to_string();
+            for raw in turn.declared_skills.clone() {
+                let skill = resolve_declared_skill(&raw, &origin, knowledge)?;
+                turn.skills.push(skill);
+            }
+        }
+        Ok(())
+    }
+
     /// Assemble the preamble for `turn`.
     ///
     /// Block order matches the design contract: every ancestor system
@@ -997,7 +1025,11 @@ fn resolve_declared_skill(
     origin: &str,
     knowledge: &dyn KnowledgeBase,
 ) -> Result<Skill, ContentError> {
-    let parsed = SkillName::try_from(raw).map_err(|err| ContentError::Knowledge {
+    // Accept the `<scope>:<name>` form used in workflow.toml and
+    // `.ailly.toml` files. The scope is currently advisory; the name after
+    // the final `:` is what the knowledge base is queried with.
+    let bare = raw.rsplit_once(':').map(|(_, n)| n).unwrap_or(raw);
+    let parsed = SkillName::try_from(bare).map_err(|err| ContentError::Knowledge {
         kind: KnowledgeKind::Skill,
         name: raw.to_string(),
         origin: origin.to_string(),
@@ -1011,7 +1043,7 @@ fn resolve_declared_skill(
         .skill(&parsed)
         .map_err(|source| ContentError::Knowledge {
             kind: KnowledgeKind::Skill,
-            name: parsed.as_str().to_string(),
+            name: raw.to_string(),
             origin: origin.to_string(),
             source,
         })
@@ -2901,6 +2933,7 @@ text = "hi"
                 "developer:design".to_string(),
                 "developer:thinking".to_string(),
             ],
+            Vec::new(),
             "x".to_string(),
         );
         turn.write().await.unwrap();
@@ -2953,6 +2986,7 @@ text = "hi"
             ContentMeta::default(),
             Vec::new(),
             vec!["dev:design".to_string()],
+            vec![],
             "x".to_string(),
         );
         turn.set_enrichment(EnrichmentFile {
@@ -3024,6 +3058,7 @@ text = "hi"
             ContentMeta::default(),
             Vec::new(),
             Vec::new(),
+            vec![],
             "x".to_string(),
         );
         turn.set_enrichment(EnrichmentFile {
@@ -3070,6 +3105,7 @@ text = "hi"
             ContentMeta::default(),
             Vec::new(),
             Vec::new(),
+            vec![],
             "x".to_string(),
         );
         turn.write().await.unwrap();
@@ -3131,6 +3167,7 @@ body = "..."
             ContentMeta::default(),
             Vec::new(),
             Vec::new(),
+            Vec::new(),
             "x".to_string(),
         );
         turn.write().await.unwrap();
@@ -3149,7 +3186,14 @@ body = "..."
 
         let meta = ContentMeta::with_step("design");
         let turn =
-            ConversationTurn::new(path.clone(), meta, Vec::new(), Vec::new(), "x".to_string());
+            ConversationTurn::new(
+                path.clone(),
+                meta,
+                Vec::new(),
+                Vec::new(),
+                Vec::new(),
+                "x".to_string(),
+            );
         turn.write().await.unwrap();
 
         let written = path.read_to_string().unwrap();
@@ -3751,6 +3795,55 @@ body = "..."
     }
 
     #[tokio::test]
+    async fn resolve_declared_skills_attaches_skill_bodies_to_single_turn() {
+        let fs = mem_fs! {
+            "root": {
+                "skills": {
+                    "alpha": { "SKILL.md": "---\nname: alpha\ndescription: a\n---\nA\n" },
+                },
+                "01.toml": "prompt = \"p\"\nskills = [\"alpha\"]\n",
+            },
+        };
+        let project_root = fs.join("root").unwrap();
+        let knowledge = test_skills(&project_root);
+        let path = fs.join("root/01.toml").unwrap();
+
+        let mut convo = Conversation::single_turn(path).await.unwrap();
+        convo
+            .resolve_declared_skills(&knowledge)
+            .expect("resolve declared skills");
+
+        let turn = convo.turn(0);
+        let names: Vec<&str> = convo
+            .skills(turn)
+            .iter()
+            .map(|s| s.name().as_str())
+            .collect();
+        assert_eq!(names, vec!["alpha"]);
+    }
+
+    #[tokio::test]
+    async fn resolve_declared_skills_unknown_name_returns_knowledge_error() {
+        let fs = mem_fs! {
+            "root": {
+                "skills": {},
+                "01.toml": "prompt = \"p\"\nskills = [\"missing\"]\n",
+            },
+        };
+        let project_root = fs.join("root").unwrap();
+        let knowledge = test_skills(&project_root);
+        let path = fs.join("root/01.toml").unwrap();
+
+        let mut convo = Conversation::single_turn(path).await.unwrap();
+        let err = convo
+            .resolve_declared_skills(&knowledge)
+            .expect_err("missing skill must surface as ContentError::Knowledge");
+
+        let msg = format!("{err:#}");
+        assert!(msg.contains("missing"), "error must name the skill: {msg}");
+    }
+
+    #[tokio::test]
     async fn turn_declared_skills_appended_after_inherited_walk_skills() {
         let fs = mem_fs! {
             "root": {
@@ -3958,6 +4051,7 @@ body = "..."
             skills: Vec::new(),
             response: Vec::new(),
             envelope: None,
+            enrichment: None,
         };
         let toml_text = toml::to_string(&file).unwrap();
         assert!(

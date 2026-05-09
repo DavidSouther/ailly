@@ -1,20 +1,20 @@
-//! Feature test for the `user.clarify` tool surface slice.
+//! Feature test for the `user-clarify` tool surface slice.
 //!
 //! User story (narrative):
 //!
 //! A workflow harness author constructs a `MapKnowledgeBase` populated with a
 //! known question and recorded answer, wraps it in a `ClarifyTool`, erases the
 //! tool to `Arc<dyn ToolDyn>`, and inserts it into a `HashMapRegistry` under
-//! the constant tool name `ClarifyTool::NAME` (`"user.clarify"`). A workflow
-//! turn whose user prompt encodes `USE user.clarify WITH {"question":"<known>"}`
+//! the constant tool name `ClarifyTool::NAME` (`"user-clarify"`). A workflow
+//! turn whose user prompt encodes `USE user-clarify WITH {"question":"<known>"}`
 //! is then driven through a `Generator` over a one-turn `Conversation`. The
 //! `Noop` engine recognizes the `USE` directive, asks the registry for
-//! `user.clarify`, dispatches the JSON args through `ToolDyn::call`, and
+//! `user-clarify`, dispatches the JSON args through `ToolDyn::call`, and
 //! emits the round-trip as `TurnEvent::ToolCall` followed by
 //! `TurnEvent::ToolResult` between the two `Delta` runs. The harness author
 //! expects the `ToolResult` payload to carry the recorded answer string
 //! verbatim and the per-turn TOML file to record both `tool_call` and
-//! `tool_result` entries naming `user.clarify` with a paired call id, so the
+//! `tool_result` entries naming `user-clarify` with a paired call id, so the
 //! next turn's history shows the model the answer it requested.
 
 use std::sync::Arc;
@@ -39,7 +39,7 @@ async fn clarify_tool_returns_recorded_answer_through_generator_and_file() {
 
     let fs = mem_fs! {
         "root": {
-            "01.toml": "prompt = 'USE user.clarify WITH {\"question\":\"What database backs the inbox queue?\"}'\ntools = [\"user.clarify\"]\n",
+            "01.toml": "prompt = 'USE user-clarify WITH {\"question\":\"What database backs the inbox queue?\"}'\ntools = [\"user-clarify\"]\n",
         },
     };
     let conversation = Conversation::load(
@@ -91,7 +91,7 @@ async fn clarify_tool_returns_recorded_answer_through_generator_and_file() {
     assert_eq!(
         call.function.name,
         ClarifyTool::NAME,
-        "engine dispatches against the user.clarify tool name"
+        "engine dispatches against the user-clarify tool name"
     );
 
     let TurnEvent::ToolResult { result, .. } = &events[tool_result_idx] else {
@@ -135,7 +135,7 @@ async fn clarify_tool_returns_recorded_answer_through_generator_and_file() {
     );
     assert!(
         written.contains(&format!(r#"name = "{}""#, ClarifyTool::NAME)),
-        "tool_call entry should record the user.clarify tool name; got: {written}"
+        "tool_call entry should record the user-clarify tool name; got: {written}"
     );
     assert!(
         written.contains(answer),

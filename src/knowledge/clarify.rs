@@ -92,7 +92,7 @@ pub struct ClarifyTool {
 }
 
 impl ClarifyTool {
-    pub const NAME: &'static str = "user.clarify";
+    pub const NAME: &'static str = "user-clarify";
 
     pub fn new(kb: Arc<dyn KnowledgeBase>) -> Self {
         Self { kb }
@@ -100,7 +100,7 @@ impl ClarifyTool {
 }
 
 impl Tool for ClarifyTool {
-    const NAME: &'static str = "user.clarify";
+    const NAME: &'static str = "user-clarify";
 
     type Error = ClarifyError;
     type Args = ClarifyArgs;
@@ -250,7 +250,7 @@ mod tests {
 
     #[test]
     fn clarify_tool_name_is_user_clarify() {
-        assert_eq!(ClarifyTool::NAME, "user.clarify");
-        assert_eq!(<ClarifyTool as Tool>::NAME, "user.clarify");
+        assert_eq!(ClarifyTool::NAME, "user-clarify");
+        assert_eq!(<ClarifyTool as Tool>::NAME, "user-clarify");
     }
 }

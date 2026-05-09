@@ -10,7 +10,7 @@ pub struct FsRead {
 }
 
 impl FsRead {
-    pub const NAME: &'static str = "fs.read";
+    pub const NAME: &'static str = "fs-read";
 
     pub fn new(project: &crate::project::ProjectRoot) -> Self {
         Self {
@@ -51,7 +51,7 @@ pub enum FsReadError {
 }
 
 impl Tool for FsRead {
-    const NAME: &'static str = "fs.read";
+    const NAME: &'static str = "fs-read";
 
     type Error = FsReadError;
     type Args = FsReadArgs;

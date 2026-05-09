@@ -24,7 +24,7 @@ use crate::content::{AssistantResponse, ResponseUsage};
 use crate::engine::prelude::SentEnvelope;
 
 pub const DEFAULT_REQUEST_LIMIT: usize = 5;
-pub const DEFAULT_MAX_TOOL_TURNS: usize = 5;
+pub const DEFAULT_MAX_TOOL_TURNS: usize = 50;
 
 #[derive(Debug, Clone)]
 pub struct ModelId(String);
@@ -220,6 +220,14 @@ pub trait Engine: Send + Sync {
 /// Resolves a tool name declared on disk to a concrete `ToolDyn` implementation.
 pub trait ToolRegistry: Send + Sync {
     fn resolve(&self, name: &str) -> Option<Arc<dyn rig::tool::ToolDyn>>;
+
+    /// Names of every registered tool, in undefined order. Default returns
+    /// an empty list. Implementations that own a real listing (e.g.
+    /// `HashMapRegistry`) override this so callers can enumerate the
+    /// registry through the trait object.
+    fn names(&self) -> Vec<String> {
+        Vec::new()
+    }
 }
 
 /// Registry that knows about no tools. Used as the default when the CLI does
@@ -254,6 +262,10 @@ impl HashMapRegistry {
 impl ToolRegistry for HashMapRegistry {
     fn resolve(&self, name: &str) -> Option<Arc<dyn rig::tool::ToolDyn>> {
         self.tools.get(name).cloned()
+    }
+
+    fn names(&self) -> Vec<String> {
+        self.tools.keys().cloned().collect()
     }
 }
 
