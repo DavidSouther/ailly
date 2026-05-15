@@ -1,6 +1,11 @@
-target
-Cargo.lock
-devcontainer-lock.json
-.env
-typescript
-.ailly
+*
+
+!.gitignore
+
+!e2e
+!src
+!tests
+!.env.local
+!*.md
+!LICENSE
+!Cargo.toml
