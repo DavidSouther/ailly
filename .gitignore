@@ -1,0 +1,14 @@
+*
+
+!*.md
+!.claude/settings.json
+!.github/**
+!.gitignore
+!.rustfmt.toml
+!Cargo.lock
+!Cargo.toml
+!clippy.toml
+!mise.toml
+!rust-toolchain.toml
+!src/**
+!tests/**
