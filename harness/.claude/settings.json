@@ -1,0 +1,45 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "mise run format 2>/dev/null || true",
+            "statusMessage": "Formatting..."
+          },
+          {
+            "type": "command",
+            "command": "mise run test 2>&1 || true",
+            "statusMessage": "Running tests..."
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "mise run check 2>&1 || true",
+            "if": "Bash(mise run test*)",
+            "statusMessage": "Checking..."
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "mise run lint 2>&1 || true",
+            "statusMessage": "Linting..."
+          }
+        ]
+      }
+    ]
+  }
+}
