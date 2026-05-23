@@ -8,7 +8,11 @@
 !Cargo.lock
 !Cargo.toml
 !clippy.toml
+!e2e
+!e2e/**
 !mise.toml
 !rust-toolchain.toml
+!src
 !src/**
+!tests
 !tests/**
