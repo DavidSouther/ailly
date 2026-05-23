@@ -1,5 +1,7 @@
 //! Core library for Ailly.
 
+pub mod content;
+
 /// A greeting message produced by Ailly.
 pub struct Greeting {
     /// The text content of the greeting.

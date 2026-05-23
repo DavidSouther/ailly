@@ -5,6 +5,9 @@ edition = "2024"
 rust-version = "1.95"
 
 [dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_yaml_ng = "0.10"
+thiserror = "2"
 
 [lints.clippy]
 pedantic = { level = "warn", priority = -1 }
