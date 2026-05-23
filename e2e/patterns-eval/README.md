@@ -2,7 +2,7 @@
 
 This project shows how to use Ailly to create a test suite for skills, and run the full evaluation.
 
-Regression check for the `patterns:*` plugin from [davidsouther/domain-driven-design](https://github.com/davidsouther/domain-driven-design). The full plugin ships seventeen pattern skills; this eval runs a deliberately minimal cross-section that exercises the two failure modes that matter when any `SKILL.md` is edited:
+Regression check for the `patterns:*` plugin from [davidsouther/domain-driven-design](https://github.com/davidsouther/domain-driven-design). The full plugin ships seventeen pattern skills; this eval runs a minimal cross-section that exercises the two failure modes that matter when any `SKILL.md` is edited:
 
 - **Discovery.** Given a code base, does the model pick the right skill from its `description:` frontmatter alone?
 - **Invocation.** Once the skill is loaded, does the model produce code that structurally exhibits the pattern?
@@ -21,12 +21,14 @@ Three skills cover the two hard discovery cases (a paired skill set whose trigge
 
 ```
 e2e/patterns-eval/
+├── AGENTS.md                                      # Named explicitly in both assemblies' prefix
 ├── context/
 │   └── system/
 │       └── 00-load-patterns-plugin.md             # /plugin install ./domain-driven-design
+│                                                  # Sibling 00-load-<variant>.md files (e.g. 00-load-v1.md, 00-load-v2.md) hold pinned plugin revisions for the version sweep below.
 ├── assemblies/
-│   ├── discovery.yaml
-│   └── invocation.yaml
+│   ├── discovery.yaml                             # prefix + conversation skeleton + matrix over discovery cases
+│   └── invocation.yaml                            # same shape; matrix over invocation cases
 ├── prompts/
 │   ├── discovery/
 │   │   ├── newtype-mixed-ids.md                   # "We keep passing UserId where OrderId is expected."
@@ -39,62 +41,82 @@ e2e/patterns-eval/
 │       ├── newtype-wrap-user-id.md                # Construction task: wrap a string UserId.
 │       ├── configuring-service-pipeline.md        # Stand up the five-layer registry in main.
 │       └── emitting-order-placed.md               # Emit order.placed with semantic-convention keys.
-├── scripts/
-│   ├── check_newtype.py                           # Inner primitive is private; constructor is the only entry; no `as` casts at call sites.
-│   ├── check_configuring_logging.py               # Single `init`; Registry → Format → Filter → Enrich → Export; resource attributes; shutdown flush.
-│   └── check_emitting_logs.py                     # Structured fields only; `EventName` set on business events; OpenTelemetry semantic-convention keys.
+├── runs/                                          # One conversation .yaml per matrix binding, per assembly
+│   ├── 2026-05-23T10-00-discovery/
+│   │   ├── newtype-mixed-ids.yaml
+│   │   ├── newtype-vs-evs-order-line.yaml
+│   │   └── ...                                    # six files total, one per discovery case
+│   └── 2026-05-23T10-05-invocation/
+│       ├── newtype-wrap-user-id.yaml
+│       ├── configuring-service-pipeline.yaml
+│       └── emitting-order-placed.yaml
 └── evals/
-    ├── discovery.yaml
-    └── invocation.yaml
+    ├── discovery.yaml                             # case `name` matches conversation filename
+    ├── invocation.yaml
+    ├── scripts/                                   # used by `program`/`script` assertions only
+    │   ├── check_newtype.py                       # Inner primitive is private; constructor is the only entry; no `as` casts at call sites.
+    │   ├── check_configuring_logging.py           # Single `init`; Registry → Format → Filter → Enrich → Export; resource attributes; shutdown flush.
+    │   └── check_emitting_logs.py                 # Structured fields only; `EventName` set on business events; OpenTelemetry semantic-convention keys.
+    └── reports/
 ```
 
-Both assemblies share the same system context (the patterns plugin) and differ only in the user-prompt source. The same evals format runs against either; `text_contains` against the chosen skill name carries discovery, scripts plus an LLM-as-judge carry invocation.
+Both assemblies share the same prefix (the patterns plugin) and differ only in which prompt subdirectory the matrix walks. The same evals format runs against either; `text_contains` against the chosen skill name carries discovery, scripts plus an LLM-as-judge carry invocation.
 
 `assemblies/discovery.yaml`:
 
 ```yaml
-agent_md: ./AGENT.md
-system:
-  - context/system/00-load-patterns-plugin.md
-user_prompt: prompts/discovery/{case}.md
+name: discovery
 model: claude-sonnet-4-6
-cache_breakpoints: [after_system]
+
+matrix:
+  case:
+    - newtype-mixed-ids
+    - newtype-vs-evs-order-line
+    - configuring-first-log-line
+    - emitting-order-placed
+    - paired-add-propagator
+    - paired-log-handler-success
+
+prefix:
+  - { kind: file,   path: ./AGENTS.md,                                cache: true }
+  - { kind: system, path: context/system/00-load-patterns-plugin.md,  cache: true }
+
+conversation:
+  - { role: user, path: "prompts/discovery/{{ case }}.md" }
+  - { role: assistant }
 ```
+
+`assemblies/invocation.yaml` is identical in shape, with `matrix.case` enumerating the three invocation prompts and the user path templated to `prompts/invocation/{{ case }}.md`.
 
 ## Discovery (skill selection from description)
 
-Each case names a coding situation and asserts on which skill the model loads. The paired cases under `emitting-logs` and `configuring-logging` are where this suite earns its keep. Both descriptions mention "logging"; the trigger lives in *once at process start* versus *every time code emits a log record*. An edit that blurs that distinction lights up the paired cases without breaking either single-skill case.
+Each case names a coding situation and asserts on which skill the model loads. The paired cases under `emitting-logs` and `configuring-logging` carry the discovery axis. Both descriptions mention "logging"; the trigger lives in *once at process start* versus *every time code emits a log record*. An edit that blurs that distinction lights up the paired cases without breaking either single-skill case.
 
-`evals/discovery.yaml`:
+`evals/discovery.yaml`. The case `name` matches the conversation filename produced by `matrix.case`.
 
 ```yaml
 cases:
-  - name: newtype-for-mixed-ids
-    input: prompts/discovery/newtype-mixed-ids.md
+  - name: newtype-mixed-ids
     assertions:
       - { type: text_contains, value: "patterns:newtype" }
       - { type: text_not_contains, value: "patterns:entities-value-objects-services" }
 
-  - name: order-line-is-not-newtype
-    input: prompts/discovery/newtype-vs-evs-order-line.md
+  - name: newtype-vs-evs-order-line
     assertions:
       - { type: text_not_contains, value: "patterns:newtype" }
       - { type: text_contains, value: "patterns:entities-value-objects-services" }
 
-  - name: configuring-for-bootstrap
-    input: prompts/discovery/configuring-first-log-line.md
+  - name: configuring-first-log-line
     assertions:
       - { type: text_contains, value: "patterns:configuring-logging" }
       - { type: text_not_contains, value: "patterns:emitting-logs" }
 
-  - name: emitting-for-call-site
-    input: prompts/discovery/emitting-order-placed.md
+  - name: emitting-order-placed
     assertions:
       - { type: text_contains, value: "patterns:emitting-logs" }
       - { type: text_not_contains, value: "patterns:configuring-logging" }
 
-  - name: propagator-is-configuration
-    input: prompts/discovery/paired-add-propagator.md
+  - name: paired-add-propagator
     assertions:
       - { type: text_contains, value: "patterns:configuring-logging" }
       - { type: text_not_contains, value: "patterns:emitting-logs" }
@@ -104,8 +126,7 @@ cases:
           propagator is installed once at process bootstrap. It does not
           recommend patterns:emitting-logs.
 
-  - name: handler-success-is-emission
-    input: prompts/discovery/paired-log-handler-success.md
+  - name: paired-log-handler-success
     assertions:
       - { type: text_contains, value: "patterns:emitting-logs" }
       - { type: text_not_contains, value: "patterns:configuring-logging" }
@@ -124,10 +145,9 @@ Each case loads exactly one skill plus a construction task. The Python script ch
 
 ```yaml
 cases:
-  - name: newtype-wraps-user-id
-    input: prompts/invocation/newtype-wrap-user-id.md
+  - name: newtype-wrap-user-id
     assertions:
-      - { type: script, runtime: Python, script: { path: scripts/check_newtype.py } }
+      - { type: script, runtime: Python, script: { path: evals/scripts/check_newtype.py } }
       - type: judge
         prompt: |
           The code introduces a UserId type that wraps a string, exposes
@@ -136,10 +156,9 @@ cases:
           casts at call sites; validation lives once in the constructor.
       - { type: tokens, metric: total, op: "<", value: 6000 }
 
-  - name: configuring-five-layer-service
-    input: prompts/invocation/configuring-service-pipeline.md
+  - name: configuring-service-pipeline
     assertions:
-      - { type: script, runtime: Python, script: { path: scripts/check_configuring_logging.py } }
+      - { type: script, runtime: Python, script: { path: evals/scripts/check_configuring_logging.py } }
       - type: judge
         prompt: |
           The bootstrap installs a single subscriber registry in main with
@@ -149,10 +168,9 @@ cases:
           called from library code.
       - { type: tokens, metric: total, op: "<", value: 8000 }
 
-  - name: emitting-order-placed-with-event-name
-    input: prompts/invocation/emitting-order-placed.md
+  - name: emitting-order-placed
     assertions:
-      - { type: script, runtime: Python, script: { path: scripts/check_emitting_logs.py } }
+      - { type: script, runtime: Python, script: { path: evals/scripts/check_emitting_logs.py } }
       - type: judge
         prompt: |
           The call site emits a structured log record with `EventName` set
@@ -166,22 +184,26 @@ cases:
 ## Workflow
 
 ```sh
-# Run both suites
-ailly -p e2e/patterns-eval eval --suite all
+# Run a single assembly end to end
+ailly -p e2e/patterns-eval assemble discovery                        # → runs/<ts>-discovery/*.yaml
+ailly -p e2e/patterns-eval run runs/<ts>-discovery/                  # fill assistant turns
+ailly -p e2e/patterns-eval eval discovery --over runs/<ts>-discovery/
 
-# Run a single suite
-ailly -p e2e/patterns-eval eval --suite discovery
-ailly -p e2e/patterns-eval eval --suite invocation
+# Same for the other assembly
+ailly -p e2e/patterns-eval assemble invocation
+ailly -p e2e/patterns-eval run runs/<ts>-invocation/
+ailly -p e2e/patterns-eval eval invocation --over runs/<ts>-invocation/
 
 # Sweep two plugin versions over the same prompts
 for v in v1 v2; do
   cp context/system/00-load-$v.md context/system/00-load-patterns-plugin.md
-  ailly -p e2e/patterns-eval assemble --all
-  ailly -p e2e/patterns-eval run --suite invocation
+  ailly -p e2e/patterns-eval assemble invocation
+  ailly -p e2e/patterns-eval run runs/<ts>/
+  mv runs/<ts> runs/$v
 done
-ailly diff runs/v1-* runs/v2-*
+ailly diff runs/v1 runs/v2
 ```
 
-A regression in this minimal cross-section reads as a 3 × 2 matrix: skill × {discovery, invocation}. The paired-skill cases inside discovery catch the failure mode that single-skill cases would miss: when a `description:` edit pulls two paired skills' triggers toward each other, both per-skill cases still pass and only the cross case shows the blur. The report format matches the insurance-claim handler's regression output, so one CI step reads both. Add `ailly -p e2e/patterns-eval eval --suite all` alongside the existing `ailly -p e2e/insurance-claim eval --suite regression` pipeline step.
+A regression in this minimal cross-section reads as a 3 × 2 matrix: skill × {discovery, invocation}. The paired-skill cases inside discovery catch the failure mode that single-skill cases would miss: when a `description:` edit pulls two paired skills' triggers toward each other, both per-skill cases still pass and only the cross case shows the blur. The report format matches the insurance-claim handler's regression output, so one CI step reads both.
 
-Extending coverage to the remaining fourteen patterns reuses the two-axis template above; the test surface grows by one prompt per skill per axis and one Python checker per invocation case.
+Extending coverage to the remaining fourteen patterns reuses the two-axis template above; the test surface grows by one prompt per skill per axis, one entry per skill in the matrix, and one Python checker per invocation case.
