@@ -2,11 +2,9 @@
 
 Capability is driven by verification, not complexity.
 
-Ailly is a Context Window Swiss Army Knife. Ailly stores all prompts and sessions in version controlled local folder. This allows editing and reviewing entire LLM sessions offline, outside of any specific user interface or application. Context windows can be built exactly as desired, not relying on user agents' proprietary and unknown algorithms.
+Ailly is a Context Window Swiss Army Knife. Ailly stores all prompts and sessions in a version-controlled local folder. Entire LLM sessions can be edited and reviewed offline, outside any specific user interface or application. Context windows are built exactly as written, not chosen by a proprietary agent loop. Because every prompt and every fragment of context lives in a file, teams run LLM experiments without an SDK and without bespoke driver code.
 
-Ailly provides fine-grained control over context window without needing an SDK or programming. By keeping all prompting and context in files that are easily written and reviewed, teams don't need to provide their own code to run LLM experiments. With standard conventions and formats, common experimental patterns can be quickly templated, run, and evaluated.
-
-Ailly makes it simple to prepare AI experimental setups, especially ones that allow A/B testing skill and context window contributions. Teams can prepare session templates, then instantiate prompt instances, run them in parallel, and perform automated evals with a single command. Continuous Integration can perform automated and regression testing when prompts in agented applications are updated.
+Ailly makes it simple to prepare AI experimental setups, especially ones that A/B test skill and context window contributions. Teams prepare session templates, instantiate prompt instances, run them in parallel, and perform automated evaluations with a single command. Continuous Integration performs automated regression testing when prompts in agented applications are updated.
 
 ## Modules
 
@@ -28,23 +26,32 @@ Organizes an entire project into its context/, prompts/, assemblies/, runs/, and
 
 ### CLI
 
-```bash
-ailly run conversation.yaml # Run a single conversation through LLM
-ailly assemble assembly.yaml > conversation.yaml # Prepare a conversation from an assembly.
-ailly eval --suite regression.yaml conversation.yaml # Run an evaluation suite on a finished conversation.
+Ailly's CLI provides three commands: `assemble` to prepare a Conversation file from an Assembly; `run` to run a Conversation through an LLM inference provider; and `eval` to perform automated evaluations on those runs.
 
-# And various aggregate forms in a project with `-p`
+```bash
+ailly assemble <name>                       # Expand matrix; write N skeleton conversations to runs/<id>/
+ailly run <conversation.yaml | run-dir>     # Fill blank assistant turns by calling the model
+ailly eval <suite> --over <run-dir>         # Score conversations against assertions
+
+# Project form: `-p <project-dir>` resolves assemblies/<name>.yaml and evals/<name>.yaml by convention.
+ailly -p e2e/insurance-claim assemble claim-handler
+ailly -p e2e/insurance-claim run runs/2026-05-23T14-32-claim-handler/
+ailly -p e2e/insurance-claim eval regression --over runs/2026-05-23T14-32-claim-handler/
 ```
 
-### Integrations
+`assemble` expands the assembly's `matrix:` into one conversation file per binding, with user turns filled and assistant turns blank. `run` walks each conversation and asks the model to fill any blank assistant turn. The conversation file is the run artifact; there is no parallel `window.txt`, `response.json`, or `meta.yaml`. Trace lives inline per message, per the conversation schema.
+
+> `diff` comes from source control or native diff tools.
+
+### Integrations & Examples
 
 The [`e2e/`](e2e/) folder contains sample projects, and scripts to run said projects in a CI environment to ensure Ailly is always succeeding at its critical user journeys. Each subfolder is one end-to-end test, with its own README holding the project layout, assembly and eval files, and workflow.
 
 #### [Classification](e2e/insurance-claim/README.md)
 
-A worked example of a single-prompt application: an insurance claim handler that classifies claims as auto-approve, human-review, or reject. The context window is composed from system fragments, JSON Schema tool definitions, few-shot exemplars, and a retrieved knowledge corpus; the assembly is run against a user prompt, captured into a timestamped replayable run directory, and judged by a regression suite that asserts across three failure modes: behavioural (which tool was called), textual (what the response said), and efficiency (token budget per cache breakpoint).
+A worked example of a single-prompt application: an insurance claim handler that classifies claims as auto-approve, human-review, or reject. The assembly's prefix composes system fragments, JSON Schema tool definitions, few-shot exemplars, and a retrieved knowledge corpus. The matrix sweeps four edge-case prompts, and each binding is written to one conversation file. Evaluations are judged by a regression suite that asserts across three failure modes: behavioural (which tool was called), textual (what the response said), and efficiency (token budget per cache breakpoint).
 
-The project doubles as a fixture for the four claims Ailly makes about itself: context windows built exactly as written rather than chosen by a proprietary agent loop, plain files in version control rather than an SDK, byte-replayable runs, and one-command A/B sweeps that report tool-call, text, and budget deltas between assembly variants. The CI step reads its regression report alongside the patterns-eval suite from a shared report format.
+The project doubles as a fixture for the four claims Ailly makes about itself: context windows built exactly as written rather than chosen by a proprietary agent loop, plain files in version control rather than an SDK, conversation-as-run-artifact replay, and one-command A/B sweeps that report tool-call, text, and budget deltas between assembly variants. The CI step reads its regression report alongside the patterns-eval suite from a shared report format.
 
 #### [Patterns skill eval](e2e/patterns-eval/README.md)
 
@@ -54,52 +61,8 @@ The report is a matrix of skill by axis by pass rate, so a regression after an e
 
 #### [DELEGATE-52](e2e/delegate-52/README.md)
 
-A scaled-down reproduction of the delegated-workflow protocol from Laban, Schnabel, and Neville (_LLMs Corrupt Your Documents When You Delegate_, [arXiv:2604.15597v1](https://arxiv.org/abs/2604.15597), Microsoft Research, April 2026), packaged as an Ailly content folder. The original paper measures silent document corruption across 52 professional domains and 19 LLMs; this e2e runs the same protocol at fixture scale (four representative domains, a six-turn workflow, three provider families) and feeds the artifacts into the paper's per-domain scorers ported from [microsoft/DELEGATE52](https://github.com/microsoft/DELEGATE52).
+A scaled-down reproduction of the delegated-workflow protocol from Laban, Schnabel, and Neville (_LLMs Corrupt Your Documents When You Delegate_, [arXiv:2604.15597v1](https://arxiv.org/abs/2604.15597), Microsoft Research, April 2026), packaged as an Ailly content folder. See the e2e README for the fixture-scale matrix (four domains, six turns, three provider families), the scorers ported from [microsoft/DELEGATE52](https://github.com/microsoft/DELEGATE52), and the three streamlining wins it demonstrates over hand-written driver code.
 
-The integration also demonstrates three streamlining wins Ailly provides over hand-written driver code: multi-provider parity from a single source of truth (one assembly recipe, three providers swept via the `providers:` matrix), a filesystem-as-history audit trail (every turn's window, response, post-edit document, and diff land on disk in plaintext), and declarative composition of seed plus distractor context (sweeping the distractor count along the paper's documented degradation axis is one variable change, not a code edit).
+## Schemas
 
-## YAML Schemas
-
-### `conversation`
-
-meta: {model: model_id, debug}
-session: Message[]
-Message: SystemMessage|UserMessage|AssistantMessage etc from https://platform.claude.com/docs/en/api/messages, https://docs.rig.rs/docs/concepts/completion plus tracing spans & OTEL gen_ai.
-
-### `assembly`
-
-name
-messages: Message[]
-variables: Map<string, string>
-tools: ToolList[]
-out dir
-
-### `evaluation`
-
-name
-assertions: Assertion
-
-```
-Assertion:
-| { type: "judge"; prompt: string } // Sends the final response plus the prompt and asks whether the judge prompt accepts the result.
-| { type: "tool"; tool_call } // Freeform tool call from existing tools, taking the final response as the input to the tool call.
-| { type: "script"; runtime: Node|Python; script: {contents: string}|{path: string}} // Process execution returning 0 for success, taking the final response on stdin and writing any reasoning to stdout.
-/ { type: "program"; script: string }  // Path to a validator that is executable. Takes the yaml as stdin and outputs on stdout. Exits 0 for success, any other number for failure. Script is shell interpreted, while `script` is a Node or Python literal.
-// ─── Tool-call assertions
-| { type: "must_call_tool"; tool: string; with_args?: Record<string, unknown> }
-| { type: "must_not_call_tool"; tool: string}
-| { type: "tool_call_count"; tool?: string; op: Op; value: number }
-| { type: "tool_call_order"; sequence: string[] }
-// ─── Text assertions
-| { type: "text_contains"; value: string;case_sensitive?: boolean }
-| { type: "text_not_contains"; value: string; case_sensitive?: boolean }
-| { type: "text_matches";pattern: string; flags?: string }
-| { type: "text_equals"; value: string }
-| { type: "text_semantic_match"; value: string;threshold?: number }
-// ─── Structural assertions
-| { type:"json_path"; path: string; op: Op; value: unknown }
-| { type: "response_field"; path: string; exists: boolean }
-// ─── Performance assertions
-| { type: "tokens"; metric: "total" | "input" |"output"; op: Op; value: number }
-| { type: "latency_ms"; op: Op; value: number }
-```
+Schemas for three serialization formats are detailed in DESIGN.md. The formats are Assemblies, which describe how to create conversations from content libraries; Conversations, which describe the shape of a conversation both before and after running through inference (and including trace and metadata details); and Evaluations, which describe how to rate and review completed conversations.
