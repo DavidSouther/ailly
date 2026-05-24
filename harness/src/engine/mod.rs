@@ -5,3 +5,4 @@
     reason = "engine::engine houses the port; future siblings (rig, native) live alongside"
 )]
 pub mod engine;
+pub mod rig_engine;

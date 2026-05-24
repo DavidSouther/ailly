@@ -9,13 +9,27 @@ async-trait = "0.1"
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
 clap = { version = "4", features = ["derive"] }
 glob = "0.3"
+rig = { version = "0.37", package = "rig-core" }
 serde = { version = "1", features = ["derive"] }
+serde_json = "1"
 serde_yaml_ng = "0.10"
 thiserror = "2"
+tracing = "0.1"
+uuid = { version = "1", features = ["v7"] }
+
+[dependencies.rig-bedrock]
+version = "0.4"
+optional = true
 
 [dev-dependencies]
+dotenvy = "0.15"
+http = "1"
 tempfile = "3"
 tokio = { version = "1", features = ["rt", "macros"] }
+url = "2"
+
+[features]
+bedrock = ["dep:rig-bedrock"]
 
 [lints.clippy]
 pedantic = { level = "warn", priority = -1 }
