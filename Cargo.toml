@@ -5,6 +5,7 @@ edition = "2024"
 rust-version = "1.95"
 
 [dependencies]
+async-trait = "0.1"
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
 clap = { version = "4", features = ["derive"] }
 glob = "0.3"
@@ -14,6 +15,7 @@ thiserror = "2"
 
 [dev-dependencies]
 tempfile = "3"
+tokio = { version = "1", features = ["rt", "macros"] }
 
 [lints.clippy]
 pedantic = { level = "warn", priority = -1 }
