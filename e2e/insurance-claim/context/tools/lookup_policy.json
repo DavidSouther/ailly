@@ -1,0 +1,11 @@
+{
+  "name": "lookup_policy",
+  "description": "Look up coverage and limits for a policy number.",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "policy_number": { "type": "string" }
+    },
+    "required": ["policy_number"]
+  }
+}
