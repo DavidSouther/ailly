@@ -36,10 +36,46 @@ pub struct CompletionResponse {
 }
 
 /// Structural failure modes for any `EngineProvider`.
+///
+/// Closed set: downstream call sites (run handler, eval judge) `match`
+/// exhaustively. Adding a variant is a deliberate contract change; no
+/// `#[non_exhaustive]` marker.
 #[derive(Debug, thiserror::Error)]
 pub enum EngineError {
+    /// Scripted `NoopEngine` ran out of entries.
     #[error("noop engine has no script entry for call #{call_index}")]
     NoopExhausted { call_index: usize },
+    /// 401/403 from the provider, or any other authentication failure
+    /// (missing key, malformed key). The secret value itself never appears
+    /// here.
+    #[error("engine authentication failed: {message}")]
+    Auth {
+        message: std::borrow::Cow<'static, str>,
+    },
+    /// 429 from the provider. `retry_after` mirrors the `Retry-After` header
+    /// when present; absent when the provider did not advise a wait.
+    #[error("engine rate limited (retry_after: {retry_after:?})")]
+    RateLimited {
+        retry_after: Option<std::time::Duration>,
+    },
+    /// Transport-level timeout. Distinct from `RateLimited` so callers can
+    /// retry with backoff vs. surface a saturation alert.
+    #[error("engine call timed out")]
+    Timeout,
+    /// 404, or a provider error envelope that names the model as unknown.
+    /// Carries the `ModelId` actually requested so the message is actionable.
+    #[error("engine model not found: {model}")]
+    ModelNotFound {
+        model: crate::content::conversation::ModelId,
+    },
+    /// Response did not parse against the provider's documented envelope.
+    /// Covers Rig `JsonError(_)`, schema drift, and assertion violations
+    /// when lowering Rig's typed response into Ailly's `Content`.
+    #[error("engine returned a malformed response: {message}")]
+    MalformedResponse { message: String },
+    /// Residual for genuinely opaque transport failures. `Provider` stays as
+    /// the last-resort variant so the closed set still covers everything Rig
+    /// can emit; the typed variants peel cases off the front.
     #[error("engine call failed: {message}")]
     Provider { message: String },
 }
@@ -230,11 +266,25 @@ mod tests {
         // Assert
         match err_first {
             EngineError::NoopExhausted { call_index } => assert_eq!(call_index, 1),
-            EngineError::Provider { .. } => panic!("expected NoopExhausted, got Provider"),
+            EngineError::Auth { .. }
+            | EngineError::RateLimited { .. }
+            | EngineError::Timeout
+            | EngineError::ModelNotFound { .. }
+            | EngineError::MalformedResponse { .. }
+            | EngineError::Provider { .. } => {
+                panic!("expected NoopExhausted, got non-noop variant")
+            }
         }
         match err_second {
             EngineError::NoopExhausted { call_index } => assert_eq!(call_index, 1),
-            EngineError::Provider { .. } => panic!("expected NoopExhausted, got Provider"),
+            EngineError::Auth { .. }
+            | EngineError::RateLimited { .. }
+            | EngineError::Timeout
+            | EngineError::ModelNotFound { .. }
+            | EngineError::MalformedResponse { .. }
+            | EngineError::Provider { .. } => {
+                panic!("expected NoopExhausted, got non-noop variant")
+            }
         }
     }
 
