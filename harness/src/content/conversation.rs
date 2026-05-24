@@ -360,6 +360,15 @@ pub enum ConversationError {
     IndexOutOfRange { index: usize, len: usize },
 }
 
+/// Failure modes for `Conversation::run`.
+#[derive(Debug, thiserror::Error)]
+pub enum RunError {
+    #[error("engine completion failed: {0}")]
+    Engine(#[from] crate::engine::engine::EngineError),
+    #[error("conversation aggregate rejected fill: {0}")]
+    Conversation(#[from] ConversationError),
+}
+
 impl Conversation {
     /// Parse a multi-document YAML conversation file.
     ///
@@ -449,6 +458,28 @@ impl Conversation {
     pub fn messages_up_to(&self, index: usize) -> &[Message] {
         let bounded = index.min(self.session.len());
         &self.session[..bounded]
+    }
+
+    /// Fill every blank assistant slot in call order by delegating each
+    /// completion to `engine`.
+    ///
+    /// # Errors
+    /// Returns [`RunError::Engine`] when the engine cannot serve a slot, or
+    /// [`RunError::Conversation`] if a fill is rejected by the aggregate.
+    pub async fn run(
+        &mut self,
+        engine: &dyn crate::engine::engine::EngineProvider,
+    ) -> Result<(), RunError> {
+        while let Some(index) = self.next_blank_assistant() {
+            let request = crate::engine::engine::CompletionRequest {
+                model: self.meta.model.clone(),
+                messages: self.messages_up_to(index),
+                debug: self.meta.debug,
+            };
+            let response = engine.complete(request).await?;
+            self.fill_blank_assistant(index, response.content, response.trace)?;
+        }
+        Ok(())
     }
 }
 

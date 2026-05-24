@@ -1,0 +1,282 @@
+//! `EngineProvider` trait and the deterministic `NoopEngine` adapter.
+
+use std::collections::VecDeque;
+use std::sync::Mutex;
+use std::sync::atomic::AtomicUsize;
+use std::sync::atomic::Ordering;
+
+use crate::content::conversation::Content;
+use crate::content::conversation::Message;
+use crate::content::conversation::ModelId;
+use crate::content::conversation::SpanId;
+use crate::content::conversation::TokenCounts;
+use crate::content::conversation::Trace;
+
+/// Identity literal stamped on every `NoopEngine` response: appears in
+/// `Trace.model` and as the prefix of every generated `SpanId`.
+const NOOP_MODEL: &str = "noop";
+
+/// A request to produce the next assistant turn given prior messages.
+///
+/// Borrowed: the caller lends the messages slice for one engine call; the
+/// engine must not retain it.
+#[derive(Debug)]
+pub struct CompletionRequest<'a> {
+    pub model: ModelId,
+    pub messages: &'a [Message],
+    pub debug: bool,
+}
+
+/// Output of a single engine call: the content body that fills the blank
+/// assistant slot, and the inline trace that documents how it was produced.
+#[derive(Debug)]
+pub struct CompletionResponse {
+    pub content: Content,
+    pub trace: Trace,
+}
+
+/// Structural failure modes for any `EngineProvider`.
+#[derive(Debug, thiserror::Error)]
+pub enum EngineError {
+    #[error("noop engine has no script entry for call #{call_index}")]
+    NoopExhausted { call_index: usize },
+    #[error("engine call failed: {message}")]
+    Provider { message: String },
+}
+
+/// Produce the next assistant turn for a partially-filled conversation.
+#[async_trait::async_trait]
+pub trait EngineProvider: Send + Sync {
+    /// Produce the next assistant turn given prior messages.
+    ///
+    /// # Errors
+    /// Returns [`EngineError`] when the request cannot be served.
+    async fn complete(
+        &self,
+        request: CompletionRequest<'_>,
+    ) -> Result<CompletionResponse, EngineError>;
+}
+
+/// Distinguishes scripts whose `Trace` is owned by the caller from scripts
+/// that the engine fills with its default trace at completion time.
+enum ScriptEntry {
+    /// Caller-supplied response; the full `Trace` is preserved verbatim.
+    Fixed(CompletionResponse),
+    /// `from_replies` body; the engine builds a fresh default trace with a
+    /// `noop-{call_index}` span id at completion time.
+    AutoStamp(Content),
+}
+
+/// Default `Trace` stamped on every `from_replies` completion: zero tokens,
+/// zero latency, no events, and a per-call span id.
+fn noop_trace(call_index: usize) -> Trace {
+    Trace {
+        span_id: SpanId::from(format!("{NOOP_MODEL}-{call_index}")),
+        model: ModelId::from(NOOP_MODEL),
+        tokens: TokenCounts {
+            input: 0,
+            output: 0,
+            cache_hit: None,
+            cache_write: None,
+        },
+        latency_ms: 0,
+        events: Vec::new(),
+    }
+}
+
+/// Deterministic, scriptable adapter for tests and any consumer that needs a
+/// byte-stable conversation file across repeated runs.
+///
+/// Scripts are consumed in call order regardless of input contents; the
+/// caller controls determinism through script construction, not through input
+/// matching.
+pub struct NoopEngine {
+    scripts: Mutex<VecDeque<ScriptEntry>>,
+    call_count: AtomicUsize,
+}
+
+impl NoopEngine {
+    /// Build from a fully-formed response queue. Use this when a test must
+    /// assert against `Content::Blocks` bodies, populated `Trace.events`, or
+    /// `Trace.model == request.model`. The caller-supplied `trace.span_id` is
+    /// preserved verbatim.
+    #[must_use]
+    pub fn from_scripts(scripts: Vec<CompletionResponse>) -> Self {
+        Self {
+            scripts: Mutex::new(scripts.into_iter().map(ScriptEntry::Fixed).collect()),
+            call_count: AtomicUsize::new(0),
+        }
+    }
+
+    /// Each input string becomes one served response with `Content::Text`
+    /// body and the [`noop_trace`] defaults — `ModelId::from("noop")`, zero
+    /// tokens, zero latency, no events, and a span id of the form
+    /// `noop-{call_index}` stamped at completion time so distinct calls
+    /// always yield distinct span ids.
+    ///
+    /// Total conversion. Tests that require `Trace.model == request.model`
+    /// must use [`Self::from_scripts`].
+    #[must_use]
+    pub fn from_replies<I, S>(replies: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>,
+    {
+        let scripts = replies
+            .into_iter()
+            .map(|reply| ScriptEntry::AutoStamp(Content::Text(reply.into())))
+            .collect();
+        Self {
+            scripts: Mutex::new(scripts),
+            call_count: AtomicUsize::new(0),
+        }
+    }
+}
+
+#[async_trait::async_trait]
+impl EngineProvider for NoopEngine {
+    async fn complete(
+        &self,
+        _request: CompletionRequest<'_>,
+    ) -> Result<CompletionResponse, EngineError> {
+        let index = self.call_count.load(Ordering::Relaxed);
+        let popped = {
+            let mut guard = self
+                .scripts
+                .lock()
+                .expect("NoopEngine script queue mutex poisoned");
+            guard.pop_front()
+        };
+        let entry = popped.ok_or(EngineError::NoopExhausted { call_index: index })?;
+        let response = match entry {
+            ScriptEntry::Fixed(response) => response,
+            ScriptEntry::AutoStamp(content) => CompletionResponse {
+                content,
+                trace: noop_trace(index),
+            },
+        };
+        self.call_count.fetch_add(1, Ordering::Relaxed);
+        Ok(response)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // Compile-time: `EngineProvider` is dyn-compatible.
+    const _: fn(&dyn EngineProvider) = |_| {};
+
+    // Compile-time: `NoopEngine` is `Send + Sync`.
+    const _: fn() = || {
+        fn assert_send_sync<T: Send + Sync>() {}
+        assert_send_sync::<NoopEngine>();
+    };
+
+    fn request() -> CompletionRequest<'static> {
+        CompletionRequest {
+            model: ModelId::from("claude-opus-4-7"),
+            messages: &[],
+            debug: false,
+        }
+    }
+
+    #[tokio::test]
+    async fn from_replies_serves_scripts_in_order_with_per_call_span_ids() {
+        // Arrange
+        let engine = NoopEngine::from_replies(["a", "b"]);
+
+        // Act
+        let first = engine.complete(request()).await.expect("first call serves");
+        let second = engine
+            .complete(request())
+            .await
+            .expect("second call serves");
+
+        // Assert
+        match first.content {
+            Content::Text(ref text) => assert_eq!(text, "a"),
+            Content::Blocks(_) => panic!("from_replies must produce Content::Text"),
+        }
+        match second.content {
+            Content::Text(ref text) => assert_eq!(text, "b"),
+            Content::Blocks(_) => panic!("from_replies must produce Content::Text"),
+        }
+        assert_eq!(first.trace.span_id, SpanId::from("noop-0"));
+        assert_eq!(second.trace.span_id, SpanId::from("noop-1"));
+        assert_eq!(first.trace.model, ModelId::from("noop"));
+        assert_eq!(first.trace.tokens.input, 0);
+        assert_eq!(first.trace.tokens.output, 0);
+        assert_eq!(first.trace.latency_ms, 0);
+        assert!(first.trace.events.is_empty());
+    }
+
+    #[tokio::test]
+    async fn exhausted_script_returns_call_index_without_advancing_counter() {
+        // Arrange
+        let engine = NoopEngine::from_replies(["only"]);
+        let _ = engine.complete(request()).await.expect("first call serves");
+
+        // Act
+        let err_first = engine
+            .complete(request())
+            .await
+            .expect_err("queue empty on second call");
+        let err_second = engine
+            .complete(request())
+            .await
+            .expect_err("queue still empty on third call");
+
+        // Assert
+        match err_first {
+            EngineError::NoopExhausted { call_index } => assert_eq!(call_index, 1),
+            EngineError::Provider { .. } => panic!("expected NoopExhausted, got Provider"),
+        }
+        match err_second {
+            EngineError::NoopExhausted { call_index } => assert_eq!(call_index, 1),
+            EngineError::Provider { .. } => panic!("expected NoopExhausted, got Provider"),
+        }
+    }
+
+    #[tokio::test]
+    async fn from_scripts_preserves_caller_supplied_blocks_and_trace_fields() {
+        // Arrange
+        let span = SpanId::from("caller-span-xyz");
+        let model = ModelId::from("claude-sonnet-4-6");
+        let blocks = Content::Blocks(Vec::new());
+        let trace = Trace {
+            span_id: span.clone(),
+            model: model.clone(),
+            tokens: TokenCounts {
+                input: 17,
+                output: 42,
+                cache_hit: Some(3),
+                cache_write: None,
+            },
+            latency_ms: 1234,
+            events: vec![crate::content::conversation::TraceEvent {
+                name: String::from("gen_ai.completion"),
+                attributes: std::collections::BTreeMap::new(),
+            }],
+        };
+        let engine = NoopEngine::from_scripts(vec![CompletionResponse {
+            content: blocks,
+            trace,
+        }]);
+
+        // Act
+        let response = engine
+            .complete(request())
+            .await
+            .expect("scripted call serves");
+
+        // Assert
+        assert!(matches!(response.content, Content::Blocks(_)));
+        assert_eq!(response.trace.span_id, span);
+        assert_eq!(response.trace.model, model);
+        assert_eq!(response.trace.tokens.output, 42);
+        assert_eq!(response.trace.tokens.cache_hit, Some(3));
+        assert_eq!(response.trace.latency_ms, 1234);
+        assert_eq!(response.trace.events.len(), 1);
+    }
+}
