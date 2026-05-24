@@ -3,6 +3,8 @@ use std::process::ExitCode;
 
 use ailly_two::cli::assemble::AssembleArgs;
 use ailly_two::cli::assemble::run as assemble_run;
+use ailly_two::cli::run::RunArgs;
+use ailly_two::cli::run::run as run_cmd;
 use clap::Parser;
 use clap::Subcommand;
 
@@ -24,6 +26,11 @@ enum Command {
         /// Assembly name (resolves to `<project>/assemblies/<name>.yaml`).
         name: String,
     },
+    /// Fill blank assistant turns by calling the model.
+    Run {
+        /// Conversation file or run directory.
+        target: PathBuf,
+    },
 }
 
 #[expect(clippy::print_stdout, reason = "binary entry point")]
@@ -40,6 +47,22 @@ fn main() -> ExitCode {
                     println!("{}", run_dir.display());
                     ExitCode::SUCCESS
                 }
+                Err(err) => {
+                    eprintln!("{err}");
+                    ExitCode::FAILURE
+                }
+            }
+        }
+        Command::Run { target } => {
+            let rt = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .expect("build tokio runtime");
+            match rt.block_on(run_cmd(RunArgs {
+                project: cli.project,
+                target,
+            })) {
+                Ok(_outcome) => ExitCode::SUCCESS,
                 Err(err) => {
                     eprintln!("{err}");
                     ExitCode::FAILURE
