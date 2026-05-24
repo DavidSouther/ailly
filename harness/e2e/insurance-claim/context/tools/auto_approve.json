@@ -1,0 +1,12 @@
+{
+  "name": "auto_approve",
+  "description": "Finalize an auto-approve decision for a claim.",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "claim_id": { "type": "string" },
+      "rationale": { "type": "string" }
+    },
+    "required": ["claim_id", "rationale"]
+  }
+}

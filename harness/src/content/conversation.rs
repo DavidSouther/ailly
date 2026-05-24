@@ -5,9 +5,13 @@
 
 use std::collections::BTreeMap;
 use std::fmt;
+use std::marker::PhantomData;
 
 use serde::Deserialize;
+use serde::Deserializer;
 use serde::Serialize;
+use serde::Serializer;
+use serde::de::Error as DeError;
 
 /// Matrix binding values that produced a conversation. Keys are axis names;
 /// values are opaque YAML so map-shaped axes (provider, model) round-trip
@@ -91,19 +95,153 @@ pub enum Role {
     Tool,
 }
 
-/// One YAML document after the meta header.
+mod sealed {
+    pub trait Sealed {}
+}
+
+/// Phase marker for [`Message<P>`]. Sealed so consumers outside this crate
+/// cannot invent new phases. Each phase chooses the type of [`Message::body`].
+pub trait MessagePhase: sealed::Sealed {
+    /// What [`Message::body`] carries at this phase.
+    type Body;
+}
+
+/// Templated turn — the shape stored inside an `Assembly`. `User` carries a
+/// path to a prompt file (templated against the binding at render time);
+/// `Assistant` is blank by construction. No `Content` enum at this phase; the
+/// turn has not yet read any file from disk.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Template;
+impl sealed::Sealed for Template {}
+impl MessagePhase for Template {
+    type Body = TurnBody;
+}
+
+/// Rendered message — the shape written to a conversation file on disk and
+/// consumed by `ailly run`. Existing `Message` callers see this as the default.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Rendered;
+impl sealed::Sealed for Rendered {}
+impl MessagePhase for Rendered {
+    type Body = Option<Content>;
+}
+
+/// One turn slot in an assembly's conversation template.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum TurnBody {
+    /// User turn: path to a prompt file, may contain `{{ var }}` placeholders.
+    UserPath { path: String },
+    /// Assistant turn: blank, to be filled by `ailly run`.
+    AssistantBlank,
+}
+
+/// One YAML document after the meta header, parameterized by lifecycle phase.
 ///
-/// A `Message { role: Role::Assistant, content: None, .. }` is the only shape
-/// that represents a blank assistant slot left by `ailly assemble`.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Message {
+/// A `Message::<Rendered> { role: Role::Assistant, body: None, .. }` is the
+/// only shape that represents a blank assistant slot left by `ailly assemble`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Message<P: MessagePhase = Rendered> {
     pub role: Role,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub content: Option<Content>,
-    #[serde(default, skip_serializing_if = "is_false")]
+    pub body: P::Body,
     pub cache: bool,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub trace: Option<Trace>,
+    pub _phase: PhantomData<P>,
+}
+
+/// Wire-format repr for `Message<Rendered>`: matches the historical
+/// `{ role, content, cache, trace }` shape.
+#[derive(Serialize, Deserialize)]
+struct MessageRenderedRepr {
+    role: Role,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    content: Option<Content>,
+    #[serde(default, skip_serializing_if = "is_false")]
+    cache: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    trace: Option<Trace>,
+}
+
+impl Serialize for Message<Rendered> {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        MessageRenderedRepr {
+            role: self.role,
+            content: self.body.clone(),
+            cache: self.cache,
+            trace: self.trace.clone(),
+        }
+        .serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for Message<Rendered> {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let repr = MessageRenderedRepr::deserialize(deserializer)?;
+        Ok(Self {
+            role: repr.role,
+            body: repr.content,
+            cache: repr.cache,
+            trace: repr.trace,
+            _phase: PhantomData,
+        })
+    }
+}
+
+/// Wire-format repr for `Message<Template>`: `{ role, path?, cache }`. The
+/// custom impls enforce role-aware presence/absence of `path`.
+#[derive(Serialize, Deserialize)]
+struct MessageTemplateRepr {
+    role: Role,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    path: Option<String>,
+    #[serde(default, skip_serializing_if = "is_false")]
+    cache: bool,
+}
+
+impl Serialize for Message<Template> {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let path = match &self.body {
+            TurnBody::UserPath { path } => Some(path.clone()),
+            TurnBody::AssistantBlank => None,
+        };
+        MessageTemplateRepr {
+            role: self.role,
+            path,
+            cache: self.cache,
+        }
+        .serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for Message<Template> {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let repr = MessageTemplateRepr::deserialize(deserializer)?;
+        let body = match (repr.role, repr.path) {
+            (Role::User, Some(path)) => TurnBody::UserPath { path },
+            (Role::User, None) => {
+                return Err(D::Error::custom(
+                    "template user turn requires a `path` field",
+                ));
+            }
+            (Role::Assistant, None) => TurnBody::AssistantBlank,
+            (Role::Assistant, Some(_)) => {
+                return Err(D::Error::custom(
+                    "template assistant turn must not carry a `path` field",
+                ));
+            }
+            (other, _) => {
+                return Err(D::Error::custom(format!(
+                    "template turn role must be `user` or `assistant`, got `{other:?}`"
+                )));
+            }
+        };
+        Ok(Self {
+            role: repr.role,
+            body,
+            cache: repr.cache,
+            trace: None,
+            _phase: PhantomData,
+        })
+    }
 }
 
 /// `string | ContentBlock[]` from the conversation schema.
@@ -275,9 +413,9 @@ impl Conversation {
     /// Index of the first message that is a blank assistant slot, if any.
     #[must_use]
     pub fn next_blank_assistant(&self) -> Option<usize> {
-        self.session.iter().position(|message| {
-            matches!(message.role, Role::Assistant) && message.content.is_none()
-        })
+        self.session
+            .iter()
+            .position(|message| matches!(message.role, Role::Assistant) && message.body.is_none())
     }
 
     /// Fill the blank assistant slot at `index` with content and trace.
@@ -298,10 +436,10 @@ impl Conversation {
             .session
             .get_mut(index)
             .ok_or(ConversationError::IndexOutOfRange { index, len })?;
-        if !matches!(message.role, Role::Assistant) || message.content.is_some() {
+        if !matches!(message.role, Role::Assistant) || message.body.is_some() {
             return Err(ConversationError::NotBlankAssistant { index });
         }
-        message.content = Some(content);
+        message.body = Some(content);
         message.trace = Some(trace);
         Ok(())
     }
@@ -348,7 +486,7 @@ role: assistant
         assert!(conv.session[0].cache);
         assert!(matches!(conv.session[1].role, Role::User));
         assert!(matches!(conv.session[2].role, Role::Assistant));
-        assert!(conv.session[2].content.is_none());
+        assert!(conv.session[2].body.is_none());
     }
 
     #[test]
@@ -393,12 +531,13 @@ role: not-a-role
         }
     }
 
-    fn message(role: Role, content: Option<Content>) -> Message {
+    fn message(role: Role, body: Option<Content>) -> Message {
         Message {
             role,
-            content,
+            body,
             cache: false,
             trace: None,
+            _phase: PhantomData,
         }
     }
 
@@ -449,9 +588,10 @@ role: not-a-role
             session: vec![
                 Message {
                     role: Role::System,
-                    content: Some(Content::from(String::from("s"))),
+                    body: Some(Content::from(String::from("s"))),
                     cache: true,
                     trace: None,
+                    _phase: PhantomData,
                 },
                 message(Role::Assistant, None),
             ],
@@ -465,7 +605,7 @@ role: not-a-role
         let filled = &conv.session[1];
         assert!(matches!(filled.role, Role::Assistant));
         assert!(!filled.cache);
-        assert!(matches!(filled.content, Some(Content::Text(ref t)) if t == "hi"));
+        assert!(matches!(filled.body, Some(Content::Text(ref t)) if t == "hi"));
         assert!(filled.trace.is_some());
     }
 
@@ -548,6 +688,64 @@ role: not-a-role
         assert!(!emitted.contains("debug:"));
         assert!(!emitted.contains("assembly:"));
         assert!(!emitted.contains("binding:"));
+    }
+
+    #[test]
+    fn template_user_turn_parses_path() {
+        let yaml = "role: user\npath: prompts/{{ case }}.md\n";
+        let msg: Message<Template> = serde_yaml_ng::from_str(yaml).expect("user template parses");
+        assert!(matches!(msg.role, Role::User));
+        match msg.body {
+            TurnBody::UserPath { path } => assert_eq!(path, "prompts/{{ case }}.md"),
+            TurnBody::AssistantBlank => panic!("expected UserPath, got AssistantBlank"),
+        }
+    }
+
+    #[test]
+    fn template_assistant_turn_parses_blank() {
+        let yaml = "role: assistant\n";
+        let msg: Message<Template> =
+            serde_yaml_ng::from_str(yaml).expect("assistant template parses");
+        assert!(matches!(msg.role, Role::Assistant));
+        assert!(matches!(msg.body, TurnBody::AssistantBlank));
+    }
+
+    #[test]
+    fn template_user_turn_without_path_is_rejected() {
+        let yaml = "role: user\n";
+        let err: serde_yaml_ng::Error =
+            serde_yaml_ng::from_str::<Message<Template>>(yaml).expect_err("user without path");
+        assert!(
+            err.to_string().contains("user turn requires a `path`"),
+            "got {err}"
+        );
+    }
+
+    #[test]
+    fn template_assistant_turn_with_path_is_rejected() {
+        let yaml = "role: assistant\npath: prompts/x.md\n";
+        let err: serde_yaml_ng::Error =
+            serde_yaml_ng::from_str::<Message<Template>>(yaml).expect_err("assistant with path");
+        assert!(
+            err.to_string().contains("must not carry a `path`"),
+            "got {err}"
+        );
+    }
+
+    #[test]
+    fn template_round_trips_through_yaml() {
+        let original: Message<Template> = Message {
+            role: Role::User,
+            body: TurnBody::UserPath {
+                path: String::from("prompts/{{ case }}.md"),
+            },
+            cache: false,
+            trace: None,
+            _phase: PhantomData,
+        };
+        let emitted = serde_yaml_ng::to_string(&original).expect("emit");
+        let reparsed: Message<Template> = serde_yaml_ng::from_str(&emitted).expect("reparse");
+        assert_eq!(reparsed, original);
     }
 
     #[test]

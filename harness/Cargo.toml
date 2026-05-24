@@ -5,9 +5,15 @@ edition = "2024"
 rust-version = "1.95"
 
 [dependencies]
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
+clap = { version = "4", features = ["derive"] }
+glob = "0.3"
 serde = { version = "1", features = ["derive"] }
 serde_yaml_ng = "0.10"
 thiserror = "2"
+
+[dev-dependencies]
+tempfile = "3"
 
 [lints.clippy]
 pedantic = { level = "warn", priority = -1 }

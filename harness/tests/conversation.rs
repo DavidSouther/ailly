@@ -47,7 +47,7 @@ fn run_fills_blank_assistant_slot_and_round_trips() {
     assert!(matches!(conversation.session[0].role, Role::System));
     assert!(matches!(conversation.session[1].role, Role::User));
     assert!(matches!(conversation.session[2].role, Role::Assistant));
-    assert!(conversation.session[2].content.is_none());
+    assert!(conversation.session[2].body.is_none());
 
     let blank_idx = conversation
         .next_blank_assistant()
@@ -80,7 +80,7 @@ fn run_fills_blank_assistant_slot_and_round_trips() {
     assert!(conversation.next_blank_assistant().is_none());
 
     let filled = &conversation.session[blank_idx];
-    match filled.content.as_ref().expect("assistant now has content") {
+    match filled.body.as_ref().expect("assistant now has content") {
         Content::Text(text) => assert_eq!(text, "auto-approve"),
         Content::Blocks(_) => panic!("expected text content, got structured blocks"),
     }
@@ -93,12 +93,12 @@ fn run_fills_blank_assistant_slot_and_round_trips() {
 
     let system = &conversation.session[0];
     assert!(system.cache);
-    match system.content.as_ref().expect("system content preserved") {
+    match system.body.as_ref().expect("system content preserved") {
         Content::Text(text) => assert_eq!(text, "You classify insurance claims."),
         Content::Blocks(_) => panic!("system content was a string"),
     }
     let user = &conversation.session[1];
-    match user.content.as_ref().expect("user content preserved") {
+    match user.body.as_ref().expect("user content preserved") {
         Content::Blocks(blocks) => {
             assert_eq!(blocks.len(), 1);
             match &blocks[0] {
@@ -125,7 +125,7 @@ fn run_fills_blank_assistant_slot_and_round_trips() {
 
     let reparsed_assistant = &reparsed.session[blank_idx];
     match reparsed_assistant
-        .content
+        .body
         .as_ref()
         .expect("round-trip preserves filled content")
     {
@@ -152,7 +152,7 @@ fn assert_message_eq(left: &Message, right: &Message) {
         std::mem::discriminant(&right.role),
     );
     assert_eq!(left.cache, right.cache);
-    match (left.content.as_ref(), right.content.as_ref()) {
+    match (left.body.as_ref(), right.body.as_ref()) {
         (None, None) => {}
         (Some(Content::Text(a)), Some(Content::Text(b))) => assert_eq!(a, b),
         (Some(Content::Blocks(a)), Some(Content::Blocks(b))) => {
