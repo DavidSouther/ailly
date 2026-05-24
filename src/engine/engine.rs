@@ -93,6 +93,32 @@ pub trait EngineProvider: Send + Sync {
     ) -> Result<CompletionResponse, EngineError>;
 }
 
+/// Pick the engine adapter for one conversation's `meta.model`.
+///
+/// - Models whose id begins with `"claude-"` resolve via
+///   `rig_engine::anthropic_from_env(model.as_ref())`; this reuses the existing
+///   `EngineError::Auth` mapping for a missing key.
+/// - Any other id returns [`EngineError::ModelNotFound`]. The user-visible
+///   failure mode is the same as Rig's 404: this model is not serviceable.
+///
+/// Instantiated per conversation so a future heterogeneous run-dir
+/// (multiple models across bindings) needs no further refactoring.
+///
+/// # Errors
+/// [`EngineError::Auth`] when `claude-*` is requested without
+/// `ANTHROPIC_API_KEY`; [`EngineError::ModelNotFound`] for any non-`claude-*`
+/// id.
+pub fn open_engine_for_model(model: &ModelId) -> Result<Box<dyn EngineProvider>, EngineError> {
+    let id = model.as_ref();
+    if id.starts_with("claude-") {
+        let engine = crate::engine::rig_engine::anthropic_from_env(id)?;
+        return Ok(Box::new(engine));
+    }
+    Err(EngineError::ModelNotFound {
+        model: model.clone(),
+    })
+}
+
 /// Distinguishes scripts whose `Trace` is owned by the caller from scripts
 /// that the engine fills with its default trace at completion time.
 enum ScriptEntry {
@@ -328,5 +354,43 @@ mod tests {
         assert_eq!(response.trace.tokens.cache_hit, Some(3));
         assert_eq!(response.trace.latency_ms, 1234);
         assert_eq!(response.trace.events.len(), 1);
+    }
+
+    #[test]
+    fn open_engine_for_model_claude_prefix_returns_anthropic_engine_or_auth_error() {
+        // SAFETY: tests run single-threaded against env vars by convention; the
+        // factory's claude-* branch is exercised by observing Auth or success.
+        // Clear the key to force the deterministic Auth path; restore after.
+        let saved = std::env::var("ANTHROPIC_API_KEY").ok();
+        // SAFETY: setting/removing env vars; documented unsafe in 2024 edition.
+        unsafe {
+            std::env::remove_var("ANTHROPIC_API_KEY");
+        }
+
+        let result = open_engine_for_model(&ModelId::from("claude-opus-4-7"));
+
+        // SAFETY: restoring previous value.
+        unsafe {
+            match saved {
+                Some(v) => std::env::set_var("ANTHROPIC_API_KEY", v),
+                None => std::env::remove_var("ANTHROPIC_API_KEY"),
+            }
+        }
+
+        match result {
+            Err(EngineError::Auth { .. }) => {}
+            Err(other) => panic!("expected Auth, got {other:?}"),
+            Ok(_) => panic!("expected Auth with no key in environment"),
+        }
+    }
+
+    #[test]
+    fn open_engine_for_model_non_claude_model_returns_model_not_found() {
+        let requested = ModelId::from("gpt-5-turbo");
+        match open_engine_for_model(&requested) {
+            Err(EngineError::ModelNotFound { model }) => assert_eq!(model, requested),
+            Err(other) => panic!("expected ModelNotFound, got {other:?}"),
+            Ok(_) => panic!("non-claude id must not resolve to an engine"),
+        }
     }
 }

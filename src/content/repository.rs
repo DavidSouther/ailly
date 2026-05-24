@@ -15,6 +15,121 @@ use crate::content::assembly::Binding;
 use crate::content::conversation::Conversation;
 use crate::content::conversation::ConversationError;
 
+/// Lists, loads, and saves single conversation files. Independent of the
+/// per-binding [`RunRepository`], which buffers a many-file write; `ailly run`
+/// operates one file at a time, in place, so it has no `stage`/`flush`
+/// ceremony.
+pub trait ConversationRepository {
+    /// Resolve `target` to one or more conversation file paths.
+    ///
+    /// - `target.is_file()` → `[target.to_path_buf()]`.
+    /// - `target.is_dir()` → entries with extension `yaml`, sorted ascending.
+    /// - Neither → [`RepositoryError::TargetNotFound`].
+    ///
+    /// Implementations must use `fs::read_dir` rather than `glob` so that
+    /// literal `[` or `?` in user directory names are not reinterpreted as
+    /// wildcard syntax.
+    ///
+    /// # Errors
+    /// Returns [`RepositoryError::Read`] if directory iteration fails or
+    /// [`RepositoryError::TargetNotFound`] when neither branch matches.
+    fn list(&self, target: &Path) -> Result<Vec<PathBuf>, RepositoryError>;
+
+    /// Read and parse one conversation file.
+    ///
+    /// # Errors
+    /// [`RepositoryError::Read`] for I/O failures;
+    /// [`RepositoryError::ParseConversation`] when the YAML does not parse
+    /// as a [`Conversation`].
+    fn load(&self, path: &Path) -> Result<Conversation, RepositoryError>;
+
+    /// Serialize `conv` and write atomically to `path` via temp-then-rename.
+    /// Best-effort cleanup of `<path>.tmp` on serialization or rename failure.
+    /// The same-file collision case (two `ailly run` instances against one
+    /// target) is undefined behaviour and not protected against.
+    ///
+    /// # Errors
+    /// [`RepositoryError::Emit`] when serialization fails;
+    /// [`RepositoryError::Write`] when the write or rename fails.
+    fn save(&self, path: &Path, conv: &Conversation) -> Result<(), RepositoryError>;
+}
+
+/// `std::fs`-backed [`ConversationRepository`]. Unit-style: holds no state,
+/// resolves every path argument as-given without rerooting through a project
+/// directory, because `ailly run` resolves `target` against the current
+/// working directory.
+pub struct FsConversationRepository;
+
+impl ConversationRepository for FsConversationRepository {
+    fn list(&self, target: &Path) -> Result<Vec<PathBuf>, RepositoryError> {
+        if target.is_file() {
+            return Ok(vec![target.to_path_buf()]);
+        }
+        if target.is_dir() {
+            let entries = fs::read_dir(target).map_err(|source| RepositoryError::Read {
+                path: target.to_path_buf(),
+                source,
+            })?;
+            let mut paths: Vec<PathBuf> = Vec::new();
+            for entry in entries {
+                let entry = entry.map_err(|source| RepositoryError::Read {
+                    path: target.to_path_buf(),
+                    source,
+                })?;
+                let path = entry.path();
+                if path.extension().is_some_and(|ext| ext == "yaml") {
+                    paths.push(path);
+                }
+            }
+            paths.sort();
+            return Ok(paths);
+        }
+        Err(RepositoryError::TargetNotFound {
+            path: target.to_path_buf(),
+        })
+    }
+
+    fn load(&self, path: &Path) -> Result<Conversation, RepositoryError> {
+        let body = fs::read_to_string(path).map_err(|source| RepositoryError::Read {
+            path: path.to_path_buf(),
+            source,
+        })?;
+        Conversation::from_yaml_str(&body).map_err(|source| RepositoryError::ParseConversation {
+            path: path.to_path_buf(),
+            source,
+        })
+    }
+
+    fn save(&self, path: &Path, conv: &Conversation) -> Result<(), RepositoryError> {
+        let body = conv
+            .to_yaml_string()
+            .map_err(|source| RepositoryError::Emit { source })?;
+        let tmp_path = tmp_path_for(path);
+        let write_result = fs::write(&tmp_path, body).map_err(|source| RepositoryError::Write {
+            path: tmp_path.clone(),
+            source,
+        });
+        if let Err(err) = write_result {
+            let _ = fs::remove_file(&tmp_path);
+            return Err(err);
+        }
+        fs::rename(&tmp_path, path).map_err(|source| {
+            let _ = fs::remove_file(&tmp_path);
+            RepositoryError::Write {
+                path: path.to_path_buf(),
+                source,
+            }
+        })?;
+        Ok(())
+    }
+}
+
+fn tmp_path_for(path: &Path) -> PathBuf {
+    let mut os = path.as_os_str().to_owned();
+    os.push(".tmp");
+    PathBuf::from(os)
+}
+
 /// Loads parsed [`Assembly`] aggregates by name.
 pub trait AssemblyRepository {
     /// Read `<project>/assemblies/<name>.yaml` and parse it.
@@ -126,6 +241,14 @@ pub enum RepositoryError {
         #[source]
         source: ConversationError,
     },
+    #[error("parsing conversation {path:?}: {source}")]
+    ParseConversation {
+        path: PathBuf,
+        #[source]
+        source: ConversationError,
+    },
+    #[error("target {path:?} is neither a file nor a directory")]
+    TargetNotFound { path: PathBuf },
 }
 
 /// `std::fs`-backed [`AssemblyRepository`] rooted at a project directory.
@@ -513,5 +636,136 @@ conversation:
             .values
             .insert("beta".to_string(), serde_yaml_ng::Value::from("b1"));
         assert_eq!(filename_for(&binding), "a1-b1.yaml");
+    }
+
+    fn blank_assistant_conversation() -> Conversation {
+        Conversation {
+            meta: Meta {
+                model: ModelId::from("noop"),
+                debug: false,
+                assembly: None,
+                binding: BindingMap::new(),
+            },
+            session: vec![Message {
+                role: Role::Assistant,
+                body: None,
+                cache: false,
+                trace: None,
+                _phase: PhantomData,
+            }],
+        }
+    }
+
+    #[test]
+    fn fs_conversation_repository_list_returns_single_file_when_target_is_a_file() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let path = tmp.path().join("one.yaml");
+        let body = blank_assistant_conversation()
+            .to_yaml_string()
+            .expect("emit");
+        fs::write(&path, body).expect("write");
+
+        let repo = FsConversationRepository;
+        let paths = repo.list(&path).expect("list single file");
+        assert_eq!(paths, vec![path]);
+    }
+
+    #[test]
+    fn fs_conversation_repository_list_returns_yaml_entries_in_sorted_order() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let body = blank_assistant_conversation()
+            .to_yaml_string()
+            .expect("emit");
+        for name in ["c.yaml", "a.yaml", "b.yaml"] {
+            fs::write(tmp.path().join(name), &body).expect("write");
+        }
+
+        let repo = FsConversationRepository;
+        let paths = repo.list(tmp.path()).expect("list dir");
+        let names: Vec<String> = paths
+            .iter()
+            .map(|p| p.file_name().and_then(|n| n.to_str()).unwrap().to_owned())
+            .collect();
+        assert_eq!(names, vec!["a.yaml", "b.yaml", "c.yaml"]);
+    }
+
+    #[test]
+    fn fs_conversation_repository_list_filters_non_yaml_entries() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let body = blank_assistant_conversation()
+            .to_yaml_string()
+            .expect("emit");
+        fs::write(tmp.path().join("keep.yaml"), &body).expect("write yaml");
+        fs::write(tmp.path().join("skip.md"), "ignore").expect("write md");
+        fs::write(tmp.path().join("skip.json"), "{}").expect("write json");
+        fs::create_dir_all(tmp.path().join("subdir")).expect("mkdir subdir");
+
+        let repo = FsConversationRepository;
+        let paths = repo.list(tmp.path()).expect("list dir");
+        assert_eq!(paths.len(), 1);
+        assert!(paths[0].ends_with("keep.yaml"));
+    }
+
+    #[test]
+    fn fs_conversation_repository_list_returns_target_not_found_when_neither() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let missing = tmp.path().join("nope.yaml");
+
+        let repo = FsConversationRepository;
+        let err = repo.list(&missing).expect_err("missing target");
+        match err {
+            RepositoryError::TargetNotFound { path } => assert_eq!(path, missing),
+            other => panic!("expected TargetNotFound, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn fs_conversation_repository_load_round_trips_save() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let path = tmp.path().join("conv.yaml");
+        let conv = blank_assistant_conversation();
+
+        let repo = FsConversationRepository;
+        repo.save(&path, &conv).expect("save");
+        let loaded = repo.load(&path).expect("load");
+        assert_eq!(loaded.meta.model, conv.meta.model);
+        assert_eq!(loaded.session.len(), conv.session.len());
+        assert_eq!(loaded.session[0].role, Role::Assistant);
+        assert!(loaded.session[0].body.is_none());
+    }
+
+    #[test]
+    fn fs_conversation_repository_save_is_atomic_temp_then_rename() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let path = tmp.path().join("conv.yaml");
+        let conv = blank_assistant_conversation();
+
+        let repo = FsConversationRepository;
+        repo.save(&path, &conv).expect("save");
+
+        assert!(path.exists(), "target file is present");
+        let tmp_path = {
+            let mut os = path.as_os_str().to_owned();
+            os.push(".tmp");
+            PathBuf::from(os)
+        };
+        assert!(
+            !tmp_path.exists(),
+            "tmp companion file should be gone after successful rename"
+        );
+    }
+
+    #[test]
+    fn fs_conversation_repository_load_returns_parse_conversation_on_bad_yaml() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let path = tmp.path().join("broken.yaml");
+        fs::write(&path, "not a conversation").expect("write");
+
+        let repo = FsConversationRepository;
+        let err = repo.load(&path).expect_err("bad yaml");
+        match err {
+            RepositoryError::ParseConversation { path: got, .. } => assert_eq!(got, path),
+            other => panic!("expected ParseConversation, got {other:?}"),
+        }
     }
 }
