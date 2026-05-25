@@ -67,7 +67,12 @@ string_newtype!(
 );
 
 /// A parsed conversation file: a meta header plus an ordered list of messages.
-#[derive(Clone, Debug, PartialEq, Eq)]
+///
+/// The derived `Serialize` impl yields a JSON object of shape
+/// `{ meta: {...}, session: [...] }`. `JSONPath` assertions in
+/// `knowledge::assertions` walk this shape; changing it breaks every
+/// `json_path` / `response_field` assertion in flight.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct Conversation {
     pub meta: Meta,
     pub session: Vec<Message>,
@@ -698,6 +703,55 @@ role: not-a-role
         assert_eq!(
             emitted,
             "---\nmodel: claude-opus-4-7\n---\nrole: assistant\n"
+        );
+    }
+
+    /// JSON serialization yields `{ meta, session }`. This shape is the
+    /// substrate the `knowledge::assertions::json_path` and `response_field`
+    /// executors walk; changing it breaks every `JSONPath` assertion in flight.
+    #[test]
+    fn conversation_serializes_to_meta_session_json_object() {
+        let conv = Conversation {
+            meta: meta(),
+            session: vec![
+                message(Role::User, Some(Content::from(String::from("hi")))),
+                message(Role::Assistant, Some(Content::from(String::from("hello")))),
+            ],
+        };
+
+        let value: serde_json::Value =
+            serde_json::to_value(&conv).expect("conversation serializes to JSON");
+
+        let object = value
+            .as_object()
+            .expect("top-level JSON shape is an object");
+        let keys: Vec<&String> = object.keys().collect();
+        assert_eq!(
+            keys,
+            vec![&String::from("meta"), &String::from("session")],
+            "top-level keys are exactly `meta` and `session`, in order",
+        );
+
+        let meta_obj = object["meta"].as_object().expect("meta is a JSON object");
+        assert_eq!(
+            meta_obj["model"],
+            serde_json::json!("claude-opus-4-7"),
+            "meta.model is the stringified ModelId",
+        );
+
+        let session = object["session"]
+            .as_array()
+            .expect("session is a JSON array");
+        assert_eq!(session.len(), 2);
+        assert_eq!(
+            session[0]["role"],
+            serde_json::json!("user"),
+            "session[0].role is the snake_case role tag",
+        );
+        assert_eq!(
+            session[1]["content"],
+            serde_json::json!("hello"),
+            "session[1].content is the text body verbatim",
         );
     }
 
