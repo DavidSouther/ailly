@@ -182,10 +182,11 @@ fn is_false(b: &bool) -> bool {
 }
 
 impl Message<Template> {
-    /// Resolve `self` against a [`Binding`] and a [`ContextRepository`],
-    /// producing the corresponding `Message<Rendered>`. A `User` turn reads
-    /// the templated path from `ctx` and emits `Content::Text`; an
-    /// `Assistant` turn emits `body: None`.
+    /// Resolve `self` against a [`Binding`] over a [`Project`],
+    /// producing the corresponding `Message<Rendered>`. A `User` turn
+    /// resolves the templated path via [`Project::resolve`] and reads it
+    /// through [`Project::context`]; an `Assistant` turn emits
+    /// `body: None`.
     ///
     /// # Errors
     ///
@@ -195,13 +196,13 @@ impl Message<Template> {
     /// underlying file read fails.
     pub fn render(
         &self,
+        project: &crate::content::project::Project,
         binding: &Binding,
-        ctx: &dyn ContextRepository,
     ) -> Result<Message<Rendered>, RenderError> {
         let body = match &self.body {
             TurnBody::UserPath { path } => {
-                let resolved = substitute(path, binding)?;
-                let text = ctx.read_file(&resolved)?;
+                let resolved = project.resolve(path, binding)?;
+                let text = ContextRepository::read_file(&project.context(), resolved.relative())?;
                 Some(Content::Text(text))
             }
             TurnBody::AssistantBlank => None,
@@ -213,54 +214,6 @@ impl Message<Template> {
             trace: None,
             _phase: PhantomData,
         })
-    }
-}
-
-/// Replace every `{{ name }}` placeholder in `template` with the
-/// YAML-stringified value bound to `name`. Whitespace inside the braces is
-/// tolerated. No conditionals, escaping, or nesting.
-///
-/// # Errors
-///
-/// Returns [`RenderError::UnknownVar`] when `binding` does not bind a name
-/// referenced by the template, or [`RenderError::UnterminatedPlaceholder`]
-/// when an open `{{` has no matching `}}`.
-pub fn substitute(template: &str, binding: &Binding) -> Result<String, RenderError> {
-    let mut result = String::with_capacity(template.len());
-    let mut rest = template;
-    while let Some(start) = rest.find("{{") {
-        result.push_str(&rest[..start]);
-        let after_open = &rest[start + 2..];
-        let end = after_open
-            .find("}}")
-            .ok_or_else(|| RenderError::UnterminatedPlaceholder {
-                in_path: template.to_string(),
-            })?;
-        let name = after_open[..end].trim();
-        let value = binding
-            .values
-            .get(name)
-            .ok_or_else(|| RenderError::UnknownVar {
-                name: name.to_string(),
-                in_path: template.to_string(),
-            })?;
-        result.push_str(&stringify_value(value));
-        rest = &after_open[end + 2..];
-    }
-    result.push_str(rest);
-    Ok(result)
-}
-
-fn stringify_value(value: &serde_yaml_ng::Value) -> String {
-    match value {
-        serde_yaml_ng::Value::String(s) => s.clone(),
-        serde_yaml_ng::Value::Bool(b) => b.to_string(),
-        serde_yaml_ng::Value::Number(n) => n.to_string(),
-        serde_yaml_ng::Value::Null => String::new(),
-        other => {
-            let raw = serde_yaml_ng::to_string(other).unwrap_or_default();
-            raw.trim().trim_matches('"').trim_matches('\'').to_string()
-        }
     }
 }
 
@@ -438,86 +391,26 @@ conversation:
         b
     }
 
-    #[test]
-    fn substitute_replaces_a_simple_placeholder() {
-        let binding = binding_with_case("missing-fields");
-        let resolved = substitute("prompts/{{ case }}.md", &binding).expect("substitute");
-        assert_eq!(resolved, "prompts/missing-fields.md");
-    }
-
-    #[test]
-    fn substitute_tolerates_whitespace_inside_braces() {
-        let binding = binding_with_case("a");
-        let resolved = substitute("x/{{case}}.y", &binding).expect("substitute");
-        assert_eq!(resolved, "x/a.y");
-    }
-
-    #[test]
-    fn substitute_unknown_variable_returns_unknown_var() {
-        let binding = Binding::default();
-        let err = substitute("prompts/{{ missing }}.md", &binding).expect_err("missing var");
-        match err {
-            RenderError::UnknownVar { name, in_path } => {
-                assert_eq!(name, "missing");
-                assert_eq!(in_path, "prompts/{{ missing }}.md");
-            }
-            other => panic!("expected UnknownVar, got {other:?}"),
+    fn seed_prompt(project: &crate::content::project::Project, rel: &str, body: &str) {
+        use std::io::Write;
+        if let Some((parent, _)) = rel.rsplit_once('/') {
+            project
+                .root()
+                .join(parent)
+                .expect("join parent")
+                .create_dir_all()
+                .expect("mkdir parent");
         }
-    }
-
-    #[test]
-    fn substitute_unterminated_placeholder_is_caught() {
-        let binding = Binding::default();
-        let err = substitute("a/{{ case", &binding).expect_err("unterminated");
-        assert!(
-            matches!(err, RenderError::UnterminatedPlaceholder { .. }),
-            "got {err:?}"
-        );
-    }
-
-    /// Tiny test double for [`ContextRepository`]: returns `body` when
-    /// `read_file` is called with `expected_path`. Any other call panics.
-    struct StubContextRepository {
-        expected_path: String,
-        body: String,
-    }
-
-    impl ContextRepository for StubContextRepository {
-        fn read_file(&self, path: &str) -> Result<String, RepositoryError> {
-            assert_eq!(path, self.expected_path, "unexpected read_file path");
-            Ok(self.body.clone())
-        }
-
-        fn glob_concat(
-            &self,
-            _pattern: &str,
-            _limit: Option<usize>,
-        ) -> Result<crate::content::repository::GlobResult, RepositoryError> {
-            panic!("glob_concat should not be called by these tests");
-        }
-    }
-
-    /// Test double whose `read_file` panics; used to prove that
-    /// `Message<Template>::render` fails on an unknown variable before any
-    /// filesystem read is attempted.
-    struct PanicOnReadContextRepository;
-
-    impl ContextRepository for PanicOnReadContextRepository {
-        fn read_file(&self, _path: &str) -> Result<String, RepositoryError> {
-            panic!("read_file should not be called when the path has an unbound variable");
-        }
-
-        fn glob_concat(
-            &self,
-            _pattern: &str,
-            _limit: Option<usize>,
-        ) -> Result<crate::content::repository::GlobResult, RepositoryError> {
-            panic!("glob_concat should not be called by these tests");
-        }
+        let path = project.root().join(rel).expect("join rel");
+        let mut f = path.create_file().expect("create file");
+        f.write_all(body.as_bytes()).expect("write");
     }
 
     #[test]
     fn message_template_render_resolves_path_against_binding_and_reads_body() {
+        let project = crate::content::project::Project::open_memory();
+        seed_prompt(&project, "prompts/missing-fields.md", "known body");
+
         let template: Message<Template> = Message {
             role: Role::User,
             body: TurnBody::UserPath {
@@ -528,12 +421,8 @@ conversation:
             _phase: PhantomData,
         };
         let binding = binding_with_case("missing-fields");
-        let ctx = StubContextRepository {
-            expected_path: String::from("prompts/missing-fields.md"),
-            body: String::from("known body"),
-        };
 
-        let rendered: Message<Rendered> = template.render(&binding, &ctx).expect("render");
+        let rendered: Message<Rendered> = template.render(&project, &binding).expect("render");
 
         assert!(matches!(rendered.role, Role::User));
         match rendered.body {
@@ -546,6 +435,12 @@ conversation:
 
     #[test]
     fn message_template_render_returns_unknown_var_before_reading_file() {
+        // No prompt files seeded — if render attempted a read after a
+        // successful substitution, the missing file would surface as a
+        // `RenderError::Repository`. The expected behaviour is the unknown-
+        // variable error to fire first.
+        let project = crate::content::project::Project::open_memory();
+
         let template: Message<Template> = Message {
             role: Role::User,
             body: TurnBody::UserPath {
@@ -556,10 +451,9 @@ conversation:
             _phase: PhantomData,
         };
         let binding = Binding::default();
-        let ctx = PanicOnReadContextRepository;
 
         let err = template
-            .render(&binding, &ctx)
+            .render(&project, &binding)
             .expect_err("unbound variable should fail before read");
         match err {
             RenderError::UnknownVar { name, in_path } => {

@@ -12,8 +12,8 @@ use crate::content::conversation::ConversationError;
 use crate::content::conversation::Role;
 use crate::content::conversation::RunError;
 use crate::content::repository::ConversationRepository;
-use crate::content::repository::FsConversationRepository;
 use crate::content::repository::RepositoryError;
+use crate::content::repository::VfsConversationRepository;
 use crate::engine::engine::EngineError;
 use crate::engine::engine::EngineProvider;
 use crate::engine::engine::open_engine_for_model;
@@ -40,6 +40,8 @@ pub struct RunOutcome {
 /// `Cmd` suffix; `From` impls peel inner errors into the variants below.
 #[derive(Debug, thiserror::Error)]
 pub enum RunCmdError {
+    #[error("project error: {0}")]
+    Project(#[from] crate::content::project::ProjectError),
     #[error("repository error: {0}")]
     Repository(#[from] RepositoryError),
     #[error("engine error: {0}")]
@@ -48,6 +50,8 @@ pub enum RunCmdError {
     Conversation(#[from] ConversationError),
     #[error("target {path:?} is neither a file nor a directory")]
     TargetNotFound { path: PathBuf },
+    #[error("target path {path:?} is not valid UTF-8")]
+    NonUtf8Path { path: PathBuf },
 }
 
 impl From<RunError> for RunCmdError {
@@ -71,8 +75,10 @@ impl From<RunError> for RunCmdError {
 /// engine cannot serve a slot; and [`RunCmdError::Conversation`] when the
 /// aggregate rejects a fill.
 pub async fn run(args: RunArgs) -> Result<RunOutcome, RunCmdError> {
-    let repo = FsConversationRepository;
-    let paths = repo.list(&args.target)?;
+    let project = crate::content::project::Project::open(&args.project)?;
+    let repo = VfsConversationRepository;
+    let target = resolve_target(&project, &args.target)?;
+    let paths = repo.list(&target)?;
     let mut outcome = RunOutcome::default();
     for path in &paths {
         let mut conv = repo.load(path)?;
@@ -98,8 +104,10 @@ pub async fn run_with_engine(
     args: RunArgs,
     engine: Box<dyn EngineProvider>,
 ) -> Result<RunOutcome, RunCmdError> {
-    let repo = FsConversationRepository;
-    let paths = repo.list(&args.target)?;
+    let project = crate::content::project::Project::open(&args.project)?;
+    let repo = VfsConversationRepository;
+    let target = resolve_target(&project, &args.target)?;
+    let paths = repo.list(&target)?;
     let mut outcome = RunOutcome::default();
     for path in &paths {
         let mut conv = repo.load(path)?;
@@ -109,8 +117,8 @@ pub async fn run_with_engine(
 }
 
 async fn fill_and_save(
-    repo: &FsConversationRepository,
-    path: &std::path::Path,
+    repo: &VfsConversationRepository,
+    path: &vfs::VfsPath,
     conv: &mut Conversation,
     engine: &dyn EngineProvider,
     outcome: &mut RunOutcome,
@@ -123,6 +131,37 @@ async fn fill_and_save(
     outcome.conversations_processed += 1;
     outcome.blank_assistants_filled += blanks_before - blanks_after;
     Ok(())
+}
+
+/// Resolve `target` to a [`vfs::VfsPath`]. Absolute paths mount onto a
+/// host-rooted `vfs::PhysicalFS::new("/")`; relative paths join onto
+/// `project.root()` (the project's vfs mount). UTF-8 invalid bytes in
+/// the input are an explicit error at the CLI argument boundary.
+fn resolve_target(
+    project: &crate::content::project::Project,
+    target: &std::path::Path,
+) -> Result<vfs::VfsPath, RunCmdError> {
+    let target_str = target.to_str().ok_or_else(|| RunCmdError::NonUtf8Path {
+        path: target.to_path_buf(),
+    })?;
+    if target.is_absolute() {
+        let host = vfs::VfsPath::new(vfs::PhysicalFS::new("/"));
+        host.join(target_str.trim_start_matches('/'))
+            .map_err(|source| RepositoryError::Vfs {
+                path: target_str.to_string(),
+                source,
+            })
+            .map_err(RunCmdError::from)
+    } else {
+        project
+            .root()
+            .join(target_str)
+            .map_err(|source| RepositoryError::Vfs {
+                path: target_str.to_string(),
+                source,
+            })
+            .map_err(RunCmdError::from)
+    }
 }
 
 fn count_blank_assistants(conv: &Conversation) -> usize {
@@ -185,8 +224,16 @@ mod tests {
     }
 
     fn args_for(target: &Path) -> RunArgs {
+        // `cli/run` requires `project` to point at an existing directory
+        // (Project::open validates this). For tests that hand a single
+        // file as the target, point `project` at the file's parent.
+        let project = if target.is_dir() {
+            target.to_path_buf()
+        } else {
+            target.parent().expect("target has a parent").to_path_buf()
+        };
         RunArgs {
-            project: target.to_path_buf(),
+            project,
             target: target.to_path_buf(),
         }
     }
