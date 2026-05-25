@@ -1,0 +1,27 @@
+name: Content layer is tempfile-free
+
+# Lint guard: src/content/ must not reach for the tempfile crate.
+# Project::open requires a real path on disk; tests for that contract live
+# in tests/project_open.rs as integration tests. Adapter-level tests use
+# vfs::MemoryFS via Project::open_memory(). If you find yourself needing
+# tempfile under src/content/, push the test out to tests/ instead.
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    paths:
+      - 'src/content/**'
+      - '.github/workflows/content-no-tempfile.yml'
+
+jobs:
+  no-tempfile:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Reject tempfile under src/content/
+        run: |
+          if grep -rn 'tempfile' src/content/; then
+            echo "::error::src/content/ must not depend on tempfile. Move the test to tests/ or use vfs::MemoryFS via Project::open_memory()." >&2
+            exit 1
+          fi

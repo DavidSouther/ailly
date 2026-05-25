@@ -1,12 +1,10 @@
 //! Handler for `ailly assemble <name>`.
 //!
-//! See `docs/developer/2026-05-23-A-cli-assemble/plan.md` Step 3. The
-//! handler is the load → operate → save → commit shape of a Unit of Work
-//! over three repositories. Real prefix-block resolution and templated turn
-//! rendering land in Step 4.
+//! Drives the Project aggregate's `RunTx` Unit of Work: open the project,
+//! load the assembly, expand the matrix, render one conversation per
+//! binding, stage each, commit.
 
 use std::marker::PhantomData;
-use std::path::Path;
 use std::path::PathBuf;
 
 use crate::content::assembly::Assembly;
@@ -14,18 +12,17 @@ use crate::content::assembly::Binding;
 use crate::content::assembly::PrefixBlock;
 use crate::content::assembly::RenderError;
 use crate::content::assembly::prefix_cache;
-use crate::content::assembly::substitute;
 use crate::content::conversation::Content;
 use crate::content::conversation::Conversation;
 use crate::content::conversation::Message;
 use crate::content::conversation::Meta;
 use crate::content::conversation::Rendered;
 use crate::content::conversation::Role;
+use crate::content::project::Project;
+use crate::content::project::ProjectError;
 use crate::content::repository::AssemblyRepository;
 use crate::content::repository::ContextRepository;
 use crate::content::repository::RepositoryError;
-use crate::content::repository::RunRepository;
-use crate::content::repository::open_fs_repositories;
 
 /// Arguments for the assemble handler. Public field list is fixed by the
 /// feature test's struct-literal call site.
@@ -39,74 +36,55 @@ pub struct AssembleArgs {
 /// entry point reformats via `Display` for stderr.
 #[derive(Debug, thiserror::Error)]
 pub enum AssembleError {
+    #[error("project error: {0}")]
+    Project(#[from] ProjectError),
     #[error("repository error: {0}")]
     Repository(#[from] RepositoryError),
     #[error("rendering failed: {0}")]
     Render(#[from] RenderError),
 }
 
-/// Owns one of each repository, scoped to a project root. Rollback is the
-/// default: if the `UoW` is dropped without [`AssembleUnitOfWork::commit`],
-/// staged writes are discarded and no run directory is created.
-pub struct AssembleUnitOfWork {
-    pub assemblies: Box<dyn AssemblyRepository>,
-    pub context: Box<dyn ContextRepository>,
-    pub runs: Box<dyn RunRepository>,
-    committed: bool,
-}
-
-impl AssembleUnitOfWork {
-    /// Open a `UoW` backed by `std::fs` adapters rooted at the project path.
-    #[must_use]
-    pub fn open(project: &Path) -> Self {
-        let (assemblies, context, runs) = open_fs_repositories(project);
-        Self {
-            assemblies,
-            context,
-            runs,
-            committed: false,
-        }
-    }
-
-    /// Flush staged writes and return the run directory path.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`AssembleError::Repository`] when the underlying repository
-    /// flush fails.
-    pub fn commit(&mut self, assembly_name: &str) -> Result<PathBuf, AssembleError> {
-        let run_dir = self.runs.flush(assembly_name)?;
-        self.committed = true;
-        Ok(run_dir)
-    }
-}
-
-impl Drop for AssembleUnitOfWork {
-    fn drop(&mut self) {
-        if !self.committed {
-            self.runs.discard();
-        }
-    }
-}
-
 /// Drive the assemble pipeline against `args.project`.
 ///
 /// # Errors
 ///
-/// Returns [`AssembleError::Repository`] when an underlying repository call
-/// fails. Returns successfully with the run directory path otherwise.
+/// Returns [`AssembleError::Project`] when the project root cannot be
+/// opened, [`AssembleError::Repository`] when an underlying repository
+/// call fails, or [`AssembleError::Render`] when template rendering or a
+/// templated file read fails.
 #[expect(
     clippy::needless_pass_by_value,
     reason = "by-value AssembleArgs is the call shape required by the feature test"
 )]
 pub fn run(args: AssembleArgs) -> Result<PathBuf, AssembleError> {
-    let mut uow = AssembleUnitOfWork::open(&args.project);
-    let assembly = uow.assemblies.get(&args.name)?;
+    let project = Project::open(&args.project)?;
+    let run_dir = run_with_project(&project, &args.name)?;
+    // VfsPath → PathBuf at the CLI boundary. The vfs::PhysicalFS root is
+    // not exposed by VfsPath, so the as_str() form is a vfs-rooted path
+    // ("/runs/<id>"); join it onto the host project root to produce the
+    // host-facing PathBuf downstream callers and the feature test expect.
+    let vfs_str = run_dir.as_str().trim_start_matches('/');
+    Ok(args.project.join(vfs_str))
+}
+
+/// Project-typed core of the assemble pipeline. `run` wraps this with the
+/// host-path bookkeeping; tests use it directly to exercise the pipeline
+/// against an in-memory project without touching the disk.
+///
+/// # Errors
+///
+/// See [`AssembleError`].
+pub fn run_with_project(
+    project: &Project,
+    assembly_name: &str,
+) -> Result<vfs::VfsPath, AssembleError> {
+    let assembly = project.assemblies().get(assembly_name)?;
+    let mut tx = project.begin_run();
     for binding in assembly.expand_matrix() {
-        let conversation = render_conversation(&assembly, &binding, uow.context.as_ref())?;
-        uow.runs.stage(&binding, &conversation)?;
+        let conversation = render_conversation(project, &assembly, &binding)?;
+        tx.stage(&binding, &conversation)?;
     }
-    uow.commit(&assembly.name)
+    Ok(tx.commit(&assembly.name)?)
 }
 
 /// Render an [`Assembly`] against one [`Binding`] into a full
@@ -119,13 +97,13 @@ pub fn run(args: AssembleArgs) -> Result<PathBuf, AssembleError> {
 /// [`AssembleError::Render`] when a template references an unknown variable
 /// or a templated path cannot be read.
 fn render_conversation(
+    project: &Project,
     assembly: &Assembly,
     binding: &Binding,
-    ctx: &dyn ContextRepository,
 ) -> Result<Conversation, AssembleError> {
     let mut session: Vec<Message<Rendered>> = Vec::new();
     for block in &assembly.prefix {
-        let body = resolve_prefix_block(block, binding, ctx)?;
+        let body = resolve_prefix_block(project, block, binding)?;
         session.push(Message {
             role: Role::System,
             body: Some(Content::Text(body)),
@@ -135,7 +113,7 @@ fn render_conversation(
         });
     }
     for turn in &assembly.conversation {
-        session.push(turn.render(binding, ctx)?);
+        session.push(turn.render(project, binding)?);
     }
     Ok(Conversation {
         meta: Meta {
@@ -149,20 +127,21 @@ fn render_conversation(
 }
 
 fn resolve_prefix_block(
+    project: &Project,
     block: &PrefixBlock,
     binding: &Binding,
-    ctx: &dyn ContextRepository,
 ) -> Result<String, AssembleError> {
+    let context = project.context();
     match block {
         PrefixBlock::File { path, .. } => {
-            let resolved = substitute(path, binding)?;
-            Ok(ctx.read_file(&resolved)?)
+            let resolved = project.resolve(path, binding)?;
+            Ok(context.read_file(resolved.relative())?)
         }
         PrefixBlock::System { path, .. }
         | PrefixBlock::Tools { path, .. }
         | PrefixBlock::Examples { path, .. } => {
-            let resolved = substitute(path, binding)?;
-            Ok(ctx.glob_concat(&resolved, None)?.body)
+            let resolved = project.resolve(path, binding)?;
+            Ok(context.glob_concat(resolved.relative(), None)?.body)
         }
         PrefixBlock::Context {
             source,
@@ -174,8 +153,8 @@ fn resolve_prefix_block(
                 Some(g) => format!("{source}/{g}"),
                 None => source.clone(),
             };
-            let resolved = substitute(&pattern, binding)?;
-            Ok(ctx.glob_concat(&resolved, *count)?.body)
+            let resolved = project.resolve(&pattern, binding)?;
+            Ok(context.glob_concat(resolved.relative(), *count)?.body)
         }
     }
 }
@@ -215,7 +194,7 @@ model: claude-opus-4-7
         tmp
     }
 
-    fn yaml_files(dir: &Path) -> Vec<String> {
+    fn yaml_files(dir: &std::path::Path) -> Vec<String> {
         let mut names: Vec<String> = fs::read_dir(dir)
             .expect("read run dir")
             .filter_map(Result::ok)
@@ -283,26 +262,6 @@ model: claude-opus-4-7
         // Single-axis assembly has no prefix and no conversation turns, so
         // the rendered session is empty.
         assert!(conv.session.is_empty());
-    }
-
-    #[test]
-    fn dropping_uow_without_commit_leaves_runs_directory_empty() {
-        let tmp = project_with_assembly(SINGLE_AXIS_ASSEMBLY);
-        {
-            let mut uow = AssembleUnitOfWork::open(tmp.path());
-            let assembly = uow.assemblies.get("claim-handler").expect("load");
-            for binding in assembly.expand_matrix() {
-                let conv =
-                    render_conversation(&assembly, &binding, uow.context.as_ref()).expect("render");
-                uow.runs.stage(&binding, &conv).expect("stage");
-            }
-            // intentionally drop without commit
-        }
-        let runs_dir = tmp.path().join("runs");
-        assert!(
-            !runs_dir.exists() || fs::read_dir(&runs_dir).unwrap().next().is_none(),
-            "runs dir should be absent or empty after rollback"
-        );
     }
 
     #[test]
@@ -425,7 +384,6 @@ prefix:
     #[test]
     fn context_block_count_truncates_glob_after_sort() {
         use crate::content::assembly::Binding;
-        use crate::content::repository::FsContextRepository;
 
         let tmp = tempfile::tempdir().expect("tempdir");
         let ctx_dir = tmp.path().join("ctx");
@@ -437,7 +395,7 @@ prefix:
             fs::write(ctx_dir.join(name), format!("body{i}")).expect("write context file");
         }
 
-        let repo = FsContextRepository::new(tmp.path().to_path_buf());
+        let project = Project::open(tmp.path()).expect("open project");
         let block = PrefixBlock::Context {
             source: String::from("ctx"),
             glob: Some(String::from("*.md")),
@@ -445,35 +403,65 @@ prefix:
             cache: false,
         };
         let binding = Binding::default();
-        let body = resolve_prefix_block(&block, &binding, &repo).expect("resolve");
+        let body = resolve_prefix_block(&project, &block, &binding).expect("resolve");
 
         // Filename-ascending sort puts 01.md, 02.md first; bodies are body0
         // (01.md) and body1 (02.md), joined by a single newline.
         assert_eq!(body, "body0\nbody1");
     }
 
+    fn seed_memory_assembly(project: &Project, yaml: &str) {
+        use std::io::Write;
+        let assemblies = project.root().join("assemblies").expect("join assemblies");
+        assemblies.create_dir_all().expect("mkdir assemblies");
+        let mut f = assemblies
+            .join("claim-handler.yaml")
+            .expect("join name")
+            .create_file()
+            .expect("create file");
+        f.write_all(yaml.as_bytes()).expect("write");
+    }
+
+    fn vfs_yaml_files(dir: &vfs::VfsPath) -> Vec<String> {
+        let mut names: Vec<String> = dir
+            .read_dir()
+            .expect("read run dir")
+            .filter(|e| e.extension().is_some_and(|ext| ext == "yaml"))
+            .map(|e| e.filename())
+            .collect();
+        names.sort();
+        names
+    }
+
     #[test]
     fn two_runs_against_the_same_project_emit_byte_identical_conversation_files() {
-        let tmp = project_with_assembly(SINGLE_AXIS_ASSEMBLY);
+        let project = Project::open_memory();
+        seed_memory_assembly(&project, SINGLE_AXIS_ASSEMBLY);
 
-        let first = run(AssembleArgs {
-            project: tmp.path().to_path_buf(),
-            name: String::from("claim-handler"),
-        })
-        .expect("first run");
-        let second = run(AssembleArgs {
-            project: tmp.path().to_path_buf(),
-            name: String::from("claim-handler"),
-        })
-        .expect("second run");
+        let first = run_with_project(&project, "claim-handler").expect("first run");
+        let second = run_with_project(&project, "claim-handler").expect("second run");
 
-        let first_names = yaml_files(&first);
-        let second_names = yaml_files(&second);
+        assert_ne!(
+            first.as_str(),
+            second.as_str(),
+            "two successive assembles must mint distinct run directories",
+        );
+
+        let first_names = vfs_yaml_files(&first);
+        let second_names = vfs_yaml_files(&second);
         assert_eq!(first_names, second_names);
 
         for name in &first_names {
-            let a = fs::read_to_string(first.join(name)).expect("read first");
-            let b = fs::read_to_string(second.join(name)).expect("read second");
+            let a = first
+                .join(name)
+                .unwrap()
+                .read_to_string()
+                .expect("read first");
+            let b = second
+                .join(name)
+                .unwrap()
+                .read_to_string()
+                .expect("read second");
             assert_eq!(
                 a, b,
                 "conversation body for {name} should be byte-identical across runs",

@@ -12,9 +12,8 @@ use std::path::PathBuf;
 use crate::content::evaluation::EvaluationError;
 use crate::content::repository::ConversationRepository;
 use crate::content::repository::EvaluationRepository;
-use crate::content::repository::FsConversationRepository;
-use crate::content::repository::FsEvaluationRepository;
 use crate::content::repository::RepositoryError;
+use crate::content::repository::VfsConversationRepository;
 use crate::knowledge::assertions::EvaluationContext;
 use crate::knowledge::eval::EvalArgs;
 use crate::knowledge::eval::evaluate;
@@ -42,6 +41,8 @@ pub struct EvalCmdOutcome {
 
 #[derive(Debug, thiserror::Error)]
 pub enum EvalCmdError {
+    #[error("project error: {0}")]
+    Project(#[from] crate::content::project::ProjectError),
     #[error("repository error: {0}")]
     Repository(#[from] RepositoryError),
     #[error("evaluation error: {0}")]
@@ -52,6 +53,8 @@ pub enum EvalCmdError {
         #[source]
         source: io::Error,
     },
+    #[error("over path {path:?} is not valid UTF-8")]
+    NonUtf8Path { path: PathBuf },
 }
 
 /// End-to-end CLI handler. Loads the suite, loads every conversation under
@@ -62,15 +65,16 @@ pub enum EvalCmdError {
 /// See [`EvalCmdError`]. The orchestrator itself does not produce errors; per-
 /// assertion failures surface as `fail` or `malformed` verdicts in the report.
 pub async fn run(args: EvalCmdArgs) -> Result<EvalCmdOutcome, EvalCmdError> {
-    let suite_repo = FsEvaluationRepository::new(args.project.clone());
-    let suite = suite_repo.get(&args.suite)?;
+    let project = crate::content::project::Project::open(&args.project)?;
+    let suite = project.evals().get(&args.suite)?;
 
-    let conv_repo = FsConversationRepository;
-    let paths = conv_repo.list(&args.over)?;
+    let conv_repo = VfsConversationRepository;
+    let over_vfs = resolve_over(&project, &args.over)?;
+    let paths = conv_repo.list(&over_vfs)?;
     let mut conversations: Vec<(PathBuf, _)> = Vec::with_capacity(paths.len());
     for path in paths {
         let conv = conv_repo.load(&path)?;
-        conversations.push((path, conv));
+        conversations.push((PathBuf::from(path.as_str()), conv));
     }
 
     let run_id = derive_run_id(&args.over);
@@ -106,6 +110,37 @@ pub async fn run(args: EvalCmdArgs) -> Result<EvalCmdOutcome, EvalCmdError> {
         assertions_malformed: report.totals.assertions.malformed,
         report_path,
     })
+}
+
+/// Resolve `over` to a [`vfs::VfsPath`]. Absolute paths mount onto a
+/// host-rooted `vfs::PhysicalFS::new("/")`; relative paths join onto
+/// `project.root()` (the project's vfs mount). UTF-8 invalid bytes in
+/// the input are an explicit error at the CLI argument boundary.
+fn resolve_over(
+    project: &crate::content::project::Project,
+    over: &std::path::Path,
+) -> Result<vfs::VfsPath, EvalCmdError> {
+    let over_str = over.to_str().ok_or_else(|| EvalCmdError::NonUtf8Path {
+        path: over.to_path_buf(),
+    })?;
+    if over.is_absolute() {
+        let host = vfs::VfsPath::new(vfs::PhysicalFS::new("/"));
+        host.join(over_str.trim_start_matches('/'))
+            .map_err(|source| RepositoryError::Vfs {
+                path: over_str.to_string(),
+                source,
+            })
+            .map_err(EvalCmdError::from)
+    } else {
+        project
+            .root()
+            .join(over_str)
+            .map_err(|source| RepositoryError::Vfs {
+                path: over_str.to_string(),
+                source,
+            })
+            .map_err(EvalCmdError::from)
+    }
 }
 
 fn derive_run_id(over: &std::path::Path) -> String {
