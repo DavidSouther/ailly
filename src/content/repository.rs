@@ -14,6 +14,8 @@ use crate::content::assembly::AssemblyError;
 use crate::content::assembly::Binding;
 use crate::content::conversation::Conversation;
 use crate::content::conversation::ConversationError;
+use crate::content::evaluation::Evaluation;
+use crate::content::evaluation::EvaluationError;
 
 /// Lists, loads, and saves single conversation files. Independent of the
 /// per-binding [`RunRepository`], which buffers a many-file write; `ailly run`
@@ -128,6 +130,19 @@ fn tmp_path_for(path: &Path) -> PathBuf {
     let mut os = path.as_os_str().to_owned();
     os.push(".tmp");
     PathBuf::from(os)
+}
+
+/// Loads parsed [`Evaluation`] suites by name. Mirrors [`AssemblyRepository`];
+/// resolves `<project>/evals/<name>.yaml`.
+pub trait EvaluationRepository {
+    /// Read `<project>/evals/<name>.yaml` and parse it.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`RepositoryError::Read`] if the file is missing or unreadable
+    /// and [`RepositoryError::ParseEvaluation`] if the file is not a valid
+    /// suite.
+    fn get(&self, name: &str) -> Result<Evaluation, RepositoryError>;
 }
 
 /// Loads parsed [`Assembly`] aggregates by name.
@@ -247,6 +262,12 @@ pub enum RepositoryError {
         #[source]
         source: ConversationError,
     },
+    #[error("parsing evaluation {path:?}: {source}")]
+    ParseEvaluation {
+        path: PathBuf,
+        #[source]
+        source: EvaluationError,
+    },
     #[error("target {path:?} is neither a file nor a directory")]
     TargetNotFound { path: PathBuf },
 }
@@ -275,6 +296,34 @@ impl AssemblyRepository for FsAssemblyRepository {
             source,
         })?;
         Assembly::from_yaml_str(&body).map_err(|source| RepositoryError::Parse { path, source })
+    }
+}
+
+/// `std::fs`-backed [`EvaluationRepository`] rooted at a project directory.
+pub struct FsEvaluationRepository {
+    root: PathBuf,
+}
+
+impl FsEvaluationRepository {
+    #[must_use]
+    pub fn new(root: PathBuf) -> Self {
+        Self { root }
+    }
+
+    fn path_for(&self, name: &str) -> PathBuf {
+        self.root.join("evals").join(format!("{name}.yaml"))
+    }
+}
+
+impl EvaluationRepository for FsEvaluationRepository {
+    fn get(&self, name: &str) -> Result<Evaluation, RepositoryError> {
+        let path = self.path_for(name);
+        let body = fs::read_to_string(&path).map_err(|source| RepositoryError::Read {
+            path: path.clone(),
+            source,
+        })?;
+        Evaluation::from_yaml_str(&body)
+            .map_err(|source| RepositoryError::ParseEvaluation { path, source })
     }
 }
 
@@ -501,6 +550,56 @@ conversation:
         let repo = FsAssemblyRepository::new(tmp.path().to_path_buf());
         let assembly = repo.get("claim-handler").expect("loads");
         assert_eq!(assembly.name, "claim-handler");
+    }
+
+    const REGRESSION_SUITE_FIXTURE: &str = "\
+name: regression
+cases:
+  - name: missing-fields
+    assertions:
+      - { type: text_contains, value: \"policy number\" }
+";
+
+    fn write_eval_fixture(root: &Path) {
+        let evals = root.join("evals");
+        fs::create_dir_all(&evals).expect("mkdir evals");
+        fs::write(evals.join("regression.yaml"), REGRESSION_SUITE_FIXTURE).expect("write");
+    }
+
+    #[test]
+    fn fs_evaluation_repository_reads_and_parses() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        write_eval_fixture(tmp.path());
+
+        let repo = FsEvaluationRepository::new(tmp.path().to_path_buf());
+        let suite = repo.get("regression").expect("loads");
+        assert_eq!(suite.name, "regression");
+        assert_eq!(suite.cases.len(), 1);
+    }
+
+    #[test]
+    fn fs_evaluation_repository_missing_returns_read_error() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let repo = FsEvaluationRepository::new(tmp.path().to_path_buf());
+        let err = repo.get("nope").expect_err("missing");
+        assert!(matches!(err, RepositoryError::Read { .. }), "got {err:?}");
+    }
+
+    #[test]
+    fn fs_evaluation_repository_malformed_returns_parse_evaluation_error() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let evals = tmp.path().join("evals");
+        fs::create_dir_all(&evals).expect("mkdir evals");
+        fs::write(evals.join("broken.yaml"), "::: not yaml :::").expect("write");
+
+        let repo = FsEvaluationRepository::new(tmp.path().to_path_buf());
+        let err = repo.get("broken").expect_err("bad yaml");
+        match err {
+            RepositoryError::ParseEvaluation { path, .. } => {
+                assert_eq!(path, evals.join("broken.yaml"));
+            }
+            other => panic!("expected ParseEvaluation, got {other:?}"),
+        }
     }
 
     #[test]
