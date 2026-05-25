@@ -3,3 +3,4 @@
 //! (LLM I/O).
 
 pub mod assertions;
+pub mod eval;
