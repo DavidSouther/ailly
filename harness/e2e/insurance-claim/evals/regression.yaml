@@ -1,0 +1,23 @@
+name: regression
+cases:
+  - name: missing-fields
+    assertions:
+      - { type: must_call_tool, tool: lookup_policy }
+      - { type: text_contains, value: "policy number required" }
+      - { type: tool_call_count, op: "<=", value: 2 }
+      - { type: tokens, metric: total, op: "<", value: 8000 }
+
+  - name: ambiguous
+    assertions:
+      - { type: must_not_call_tool, tool: auto_approve }
+      - { type: text_matches, pattern: "clarif|specif", flags: "i" }
+      - { type: tokens, metric: output, op: "<", value: 500 }
+
+  - name: over-limit
+    assertions:
+      - { type: must_not_call_tool, tool: auto_approve }
+      - { type: tool_call_order, sequence: [lookup_policy, lookup_claim_history] }
+      - type: judge
+        prompt: |
+          The response routes the claim to human-review and cites the
+          $10,000 auto-approve ceiling from the constraints fragment.

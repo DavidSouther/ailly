@@ -84,3 +84,9 @@ if [[ ${#unfilled[@]} -gt 0 ]]; then
 fi
 
 echo "OK: ailly run filled the assistant slot in all ${#conversations[@]} conversation file(s)."
+
+# --- CUJ 3: eval ------------------------------------------------------------
+
+cargo run --quiet -- -p "${project_dir}" eval regression --over "${run_dir}"
+
+echo "OK: ailly eval regression passed for run ${run_dir##*/}."
