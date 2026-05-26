@@ -66,6 +66,7 @@ pub enum EvalCmdError {
 /// assertion failures surface as `fail` or `malformed` verdicts in the report.
 pub async fn run(args: EvalCmdArgs) -> Result<EvalCmdOutcome, EvalCmdError> {
     let project = crate::content::project::Project::open(&args.project)?;
+    crate::cli::env::load_project_env(&args.project);
     let suite = project.evals().get(&args.suite)?;
 
     let conv_repo = VfsConversationRepository;
