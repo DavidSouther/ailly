@@ -76,6 +76,7 @@ impl From<RunError> for RunCmdError {
 /// aggregate rejects a fill.
 pub async fn run(args: RunArgs) -> Result<RunOutcome, RunCmdError> {
     let project = crate::content::project::Project::open(&args.project)?;
+    crate::cli::env::load_project_env(&args.project);
     let repo = VfsConversationRepository;
     let target = resolve_target(&project, &args.target)?;
     let paths = repo.list(&target)?;
