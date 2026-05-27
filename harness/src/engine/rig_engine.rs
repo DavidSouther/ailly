@@ -450,9 +450,7 @@ pub(crate) fn engine_error_from_rig(
         CompletionError::UrlError(url_err) => EngineError::Provider {
             message: format!("rig url error: {url_err}"),
         },
-        CompletionError::RequestError(err) => EngineError::Provider {
-            message: format!("rig request error: {err}"),
-        },
+        CompletionError::RequestError(err) => classify_transport_error(err.as_ref()),
         CompletionError::ResponseError(message) | CompletionError::ProviderError(message) => {
             let lower = message.to_lowercase();
             if lower.contains("model_not_found")
@@ -502,24 +500,48 @@ fn http_error_to_engine(err: rig::http_client::Error, model: &ModelId) -> Engine
         HttpError::InvalidStatusCodeWithMessage(status, body) => EngineError::Provider {
             message: format!("provider returned {status}: {body}"),
         },
-        HttpError::Instance(inner) => classify_transport_instance(inner.as_ref(), model),
+        HttpError::Instance(inner) => classify_transport_error(inner.as_ref()),
         other => EngineError::Provider {
             message: other.to_string(),
         },
     }
 }
 
-fn classify_transport_instance(
-    err: &(dyn std::error::Error + Send + Sync + 'static),
-    _model: &ModelId,
-) -> EngineError {
-    let message = err.to_string();
-    let lower = message.to_lowercase();
-    if lower.contains("timed out") || lower.contains("timeout") {
-        EngineError::Timeout
-    } else {
-        EngineError::Provider { message }
+fn root_cause(err: &dyn std::error::Error) -> &dyn std::error::Error {
+    let mut current = err;
+    while let Some(next) = current.source() {
+        current = next;
     }
+    current
+}
+
+fn chain_contains(err: &dyn std::error::Error, needle: &str) -> bool {
+    let needle_lower = needle.to_lowercase();
+    let mut current: Option<&dyn std::error::Error> = Some(err);
+    while let Some(e) = current {
+        if e.to_string().to_lowercase().contains(&needle_lower) {
+            return true;
+        }
+        current = e.source();
+    }
+    false
+}
+
+fn classify_transport_error(err: &dyn std::error::Error) -> EngineError {
+    if chain_contains(err, "timed out")
+        || chain_contains(err, "timeout")
+        || chain_contains(err, "os error 110")
+    {
+        return EngineError::Timeout;
+    }
+    let top = err.to_string();
+    let root = root_cause(err).to_string();
+    let message = if root == top {
+        top
+    } else {
+        format!("{top}: {root}")
+    };
+    EngineError::Provider { message }
 }
 
 /// Construct a `RigEngine` backed by Rig's Anthropic completion model,
@@ -1287,5 +1309,134 @@ mod tests {
             &requested(),
         );
         assert!(matches!(err, EngineError::Provider { .. }), "got {err:?}");
+    }
+
+    // ---- feature: transport error root-cause detail --------------------
+
+    #[test]
+    fn transport_instance_with_chained_error_includes_root_cause_in_provider_message() {
+        // Arrange — outer error wraps a leaf with distinct, actionable text.
+        // The outer's Display does not contain the leaf text, so this test
+        // fails until classify_transport_instance walks the source chain.
+        #[derive(Debug)]
+        struct Leaf;
+        impl std::fmt::Display for Leaf {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                f.write_str("Connection refused")
+            }
+        }
+        impl std::error::Error for Leaf {}
+
+        #[derive(Debug)]
+        struct Outer(Leaf);
+        impl std::fmt::Display for Outer {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                f.write_str("error sending request for url (https://api.anthropic.com/v1/messages)")
+            }
+        }
+        impl std::error::Error for Outer {
+            fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+                Some(&self.0)
+            }
+        }
+
+        let http_err = rig::http_client::Error::Instance(Box::new(Outer(Leaf)));
+        let err = engine_error_from_rig(
+            rig::completion::CompletionError::HttpError(http_err),
+            &requested(),
+        );
+
+        // Assert — root-cause text surfaces in the provider message.
+        match err {
+            EngineError::Provider { message } => {
+                assert!(
+                    message.contains("Connection refused"),
+                    "provider message must contain root-cause leaf text; got {message:?}"
+                );
+            }
+            other => panic!("expected Provider, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn request_error_with_chained_error_includes_root_cause_in_provider_message() {
+        // Arrange — a DNS-style chain: outer describes the step, leaf names
+        // the OS-level failure. The outer text alone gives no actionable info.
+        #[derive(Debug)]
+        struct Leaf;
+        impl std::fmt::Display for Leaf {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                f.write_str("Name or service not known")
+            }
+        }
+        impl std::error::Error for Leaf {}
+
+        #[derive(Debug)]
+        struct Outer(Leaf);
+        impl std::fmt::Display for Outer {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                f.write_str("failed to lookup address information")
+            }
+        }
+        impl std::error::Error for Outer {
+            fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+                Some(&self.0)
+            }
+        }
+
+        let err = engine_error_from_rig(
+            rig::completion::CompletionError::RequestError(Box::new(Outer(Leaf))),
+            &requested(),
+        );
+
+        // Assert — root-cause text surfaces; "rig request error:" prefix absent.
+        match err {
+            EngineError::Provider { message } => {
+                assert!(
+                    message.contains("Name or service not known"),
+                    "provider message must contain root-cause leaf text; got {message:?}"
+                );
+                assert!(
+                    !message.contains("rig request error"),
+                    "provider message must not expose internal crate prefix; got {message:?}"
+                );
+            }
+            other => panic!("expected Provider, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn maps_transport_timeout_buried_at_leaf_to_timeout() {
+        // Arrange — outer says "tcp connect error" (no timeout keyword);
+        // the OS-level leaf carries "os error 110" (ETIMEDOUT on Linux).
+        // This test fails until the timeout check walks the full source chain.
+        #[derive(Debug)]
+        struct LeafTimeout;
+        impl std::fmt::Display for LeafTimeout {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                f.write_str("os error 110")
+            }
+        }
+        impl std::error::Error for LeafTimeout {}
+
+        #[derive(Debug)]
+        struct Outer(LeafTimeout);
+        impl std::fmt::Display for Outer {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                f.write_str("tcp connect error")
+            }
+        }
+        impl std::error::Error for Outer {
+            fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+                Some(&self.0)
+            }
+        }
+
+        let http_err = rig::http_client::Error::Instance(Box::new(Outer(LeafTimeout)));
+        let err = engine_error_from_rig(
+            rig::completion::CompletionError::HttpError(http_err),
+            &requested(),
+        );
+        assert!(matches!(err, EngineError::Timeout), "got {err:?}");
     }
 }
