@@ -7,7 +7,7 @@
 # end to end. Re-add it when retrieval lands.
 
 name: claim-handler
-model: claude-opus-4-7
+model: claude-sonnet-4-6
 
 matrix:
   case: [default, missing-fields, ambiguous, over-limit]

@@ -5,6 +5,8 @@ use ailly_two::cli::assemble::AssembleArgs;
 use ailly_two::cli::assemble::run as assemble_run;
 use ailly_two::cli::eval::EvalCmdArgs;
 use ailly_two::cli::eval::run as eval_run;
+use ailly_two::cli::report::ReportCmdArgs;
+use ailly_two::cli::report::run as report_run;
 use ailly_two::cli::run::RunArgs;
 use ailly_two::cli::run::run as run_cmd;
 use clap::Parser;
@@ -40,6 +42,16 @@ enum Command {
         /// Conversation file or run directory to evaluate.
         #[arg(long = "over")]
         over: PathBuf,
+    },
+    /// Compare two eval runs and write a benchmark-style report.
+    Report {
+        /// Suite filter. When omitted, all reports in the directory are
+        /// compared.
+        #[arg(long)]
+        suite: Option<String>,
+        /// Explicit run IDs to include (defaults to all *.json in
+        /// evals/reports/).
+        run_ids: Vec<String>,
     },
 }
 
@@ -96,6 +108,26 @@ fn main() -> ExitCode {
                     } else {
                         ExitCode::SUCCESS
                     }
+                }
+                Err(err) => {
+                    eprintln!("{err}");
+                    ExitCode::FAILURE
+                }
+            }
+        }
+        Command::Report { suite, run_ids } => {
+            let rt = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .expect("build tokio runtime");
+            match rt.block_on(report_run(ReportCmdArgs {
+                project: cli.project,
+                suite,
+                run_ids,
+            })) {
+                Ok(outcome) => {
+                    println!("{}", outcome.summary_json.display());
+                    ExitCode::SUCCESS
                 }
                 Err(err) => {
                     eprintln!("{err}");

@@ -6,7 +6,7 @@ rust-version = "1.95"
 
 [dependencies]
 async-trait = "0.1"
-chrono = { version = "0.4", default-features = false, features = ["clock"] }
+chrono = { version = "0.4", default-features = false, features = ["clock", "serde"] }
 clap = { version = "4", features = ["derive"] }
 dotenvy = "0.15"
 glob = "0.3"

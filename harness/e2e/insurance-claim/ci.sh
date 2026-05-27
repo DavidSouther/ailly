@@ -90,3 +90,21 @@ echo "OK: ailly run filled the assistant slot in all ${#conversations[@]} conver
 cargo run --quiet -- -p "${project_dir}" eval regression --over "${run_dir}"
 
 echo "OK: ailly eval regression passed for run ${run_dir##*/}."
+
+# --- CUJ 4: report ----------------------------------------------------------
+
+cargo run --quiet -- -p "${project_dir}" report
+
+summary_json="${project_dir}/evals/reports/summary.json"
+summary_md="${project_dir}/evals/reports/summary.md"
+
+if [[ ! -f "${summary_json}" ]]; then
+  echo "FAIL: ailly report did not write ${summary_json#"${repo_root}/"}" >&2
+  exit 1
+fi
+if [[ ! -f "${summary_md}" ]]; then
+  echo "FAIL: ailly report did not write ${summary_md#"${repo_root}/"}" >&2
+  exit 1
+fi
+
+echo "OK: ailly report wrote ${summary_json#"${repo_root}/"} and ${summary_md#"${repo_root}/"}"

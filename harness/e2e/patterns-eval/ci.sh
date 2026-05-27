@@ -19,6 +19,7 @@
 # resolves its own location to find the project root.
 
 set -euo pipefail
+set -x
 
 project_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd "${project_dir}/../.." && pwd)"
@@ -31,6 +32,7 @@ expected_count() {
   case "$1" in
     discovery)  echo 6 ;;
     invocation) echo 3 ;;
+    baseline) echo 3 ;;
     *) echo "FAIL: unknown suite $1" >&2; exit 1 ;;
   esac
 }
@@ -38,11 +40,13 @@ expected_count() {
 # Globals populated by assemble_suite; reused by run_suite/eval_suite.
 discovery_run_dir=""
 invocation_run_dir=""
+baseline_run_dir=""
 
 set_run_dir() {
   case "$1" in
     discovery)  discovery_run_dir="$2" ;;
     invocation) invocation_run_dir="$2" ;;
+    baseline) baseline_run_dir="$2" ;;
   esac
 }
 
@@ -50,6 +54,7 @@ get_run_dir() {
   case "$1" in
     discovery)  printf '%s\n' "${discovery_run_dir}" ;;
     invocation) printf '%s\n' "${invocation_run_dir}" ;;
+    baseline) printf '%s\n' "${baseline_run_dir}" ;;
   esac
 }
 
@@ -85,6 +90,7 @@ assemble_suite() {
 # --- CUJ 1: assemble (both suites) ------------------------------------------
 
 assemble_suite discovery
+assemble_suite baseline
 assemble_suite invocation
 
 # --- CUJ 2: run (both suites, gated on credentials) -------------------------
@@ -145,6 +151,7 @@ run_suite() {
 }
 
 run_suite discovery
+run_suite baseline 
 run_suite invocation
 
 # --- CUJ 3: eval (both suites) ----------------------------------------------
@@ -187,6 +194,7 @@ PY
 }
 
 eval_suite discovery
+eval_suite baseline
 eval_suite invocation
 
 # --- CUJ 4: report (per suite) ----------------------------------------------
@@ -211,4 +219,5 @@ report_suite() {
 }
 
 report_suite discovery
+report_suite baseline
 report_suite invocation
