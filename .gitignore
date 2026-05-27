@@ -2,6 +2,7 @@
 
 !*.md
 !.claude/settings.json
+!.github
 !.github/**
 !.gitignore
 !.rustfmt.toml
