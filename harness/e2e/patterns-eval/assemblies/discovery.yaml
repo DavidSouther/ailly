@@ -11,11 +11,9 @@ matrix:
     - paired-log-handler-success
 
 prefix:
-  - { kind: file,   path: ./AGENTS.md,                                    cache: true }
-  - { kind: system, path: context/skills/using-patterns/SKILL.md,         cache: true }
-  - { kind: system, path: context/skills/newtype/SKILL.md,                cache: true }
-  - { kind: system, path: context/skills/configuring-logging/SKILL.md,    cache: true }
-  - { kind: system, path: context/skills/emitting-logs/SKILL.md,          cache: true }
+  - { kind: file,   path: ./AGENTS.md,                            cache: true }
+  - { kind: system, path: ./context/skills/disclosure.md,         cache: true }
+  - { kind: system, path: ./context/skills/using-patterns/SKILL.md, cache: true }
 
 conversation:
   - { role: user, path: "prompts/discovery/{{ case }}.md" }

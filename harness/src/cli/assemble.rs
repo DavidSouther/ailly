@@ -42,6 +42,12 @@ pub enum AssembleError {
     Repository(#[from] RepositoryError),
     #[error("rendering failed: {0}")]
     Render(#[from] RenderError),
+    #[error("assembling '{name}': {source}")]
+    Assembling {
+        name: String,
+        #[source]
+        source: Box<AssembleError>,
+    },
 }
 
 /// Drive the assemble pipeline against `args.project`.
@@ -81,7 +87,12 @@ pub fn run_with_project(
     let assembly = project.assemblies().get(assembly_name)?;
     let mut tx = project.begin_run();
     for binding in assembly.expand_matrix() {
-        let conversation = render_conversation(project, &assembly, &binding)?;
+        let conversation = render_conversation(project, &assembly, &binding).map_err(|e| {
+            AssembleError::Assembling {
+                name: assembly_name.to_string(),
+                source: Box::new(e),
+            }
+        })?;
         tx.stage(&binding, &conversation)?;
     }
     Ok(tx.commit(&assembly.name)?)
@@ -379,6 +390,100 @@ prefix:
             Some(Content::Text(s)) => assert_eq!(s, "alpha\nbeta"),
             other => panic!("system block body should be Text, got {other:?}"),
         }
+    }
+
+    fn assemble_patterns_eval(name: &str) -> PathBuf {
+        let project = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("e2e/patterns-eval");
+        run(AssembleArgs {
+            project,
+            name: String::from(name),
+        })
+        .expect("assemble patterns-eval")
+    }
+
+    #[test]
+    fn patterns_eval_invocation_positive_arm_produces_skill_named_files() {
+        let run_dir = assemble_patterns_eval("invocation");
+        assert_eq!(
+            yaml_files(&run_dir),
+            vec![
+                "configuring-logging.yaml",
+                "emitting-logs.yaml",
+                "newtype.yaml"
+            ]
+        );
+    }
+
+    #[test]
+    fn patterns_eval_invocation_baseline_arm_produces_skill_named_files() {
+        let run_dir = assemble_patterns_eval("invocation-baseline");
+        assert_eq!(
+            yaml_files(&run_dir),
+            vec![
+                "configuring-logging.yaml",
+                "emitting-logs.yaml",
+                "newtype.yaml"
+            ]
+        );
+    }
+
+    fn system_message_count(run_dir: &PathBuf, file: &str) -> usize {
+        let body = fs::read_to_string(run_dir.join(file)).expect("read conversation");
+        let conv = Conversation::from_yaml_str(&body).expect("parses");
+        conv.session
+            .iter()
+            .filter(|m| matches!(m.role, Role::System))
+            .count()
+    }
+
+    #[test]
+    fn patterns_eval_invocation_positive_arm_loads_exactly_one_skill_per_run() {
+        let run_dir = assemble_patterns_eval("invocation");
+        assert_eq!(
+            system_message_count(&run_dir, "newtype.yaml"),
+            3,
+            "positive arm: AGENTS.md + using-patterns + one skill = 3 system messages"
+        );
+    }
+
+    #[test]
+    fn patterns_eval_invocation_baseline_arm_loads_no_skills() {
+        let run_dir = assemble_patterns_eval("invocation-baseline");
+        assert_eq!(
+            system_message_count(&run_dir, "newtype.yaml"),
+            1,
+            "baseline arm: AGENTS.md only = 1 system message"
+        );
+    }
+
+    #[test]
+    fn error_for_missing_context_includes_assembly_name_and_real_path() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let assemblies = tmp.path().join("assemblies");
+        fs::create_dir_all(&assemblies).expect("mkdir assemblies");
+        let assembly_yaml = "\
+name: test-assembly
+model: claude-opus-4-7
+prefix:
+  - { kind: system, path: context/missing-dir/*.md }
+";
+        fs::write(assemblies.join("test-assembly.yaml"), assembly_yaml).expect("write assembly");
+
+        let err = run(AssembleArgs {
+            project: tmp.path().to_path_buf(),
+            name: String::from("test-assembly"),
+        })
+        .expect_err("should fail on missing context dir");
+
+        let msg = err.to_string();
+        assert!(
+            msg.contains("test-assembly"),
+            "error should name the assembly: {msg}"
+        );
+        assert!(
+            msg.contains(tmp.path().to_str().expect("tmp path is valid utf-8")),
+            "error should show real path, not vfs-relative path: {msg}"
+        );
     }
 
     #[test]

@@ -188,3 +188,27 @@ PY
 
 eval_suite discovery
 eval_suite invocation
+
+# --- CUJ 4: report (per suite) ----------------------------------------------
+
+report_suite() {
+  local suite="$1"
+  cargo run --quiet -- -p "${project_dir}" report --suite "${suite}"
+
+  local summary_json="${project_dir}/evals/reports/summary.json"
+  local summary_md="${project_dir}/evals/reports/summary.md"
+
+  if [[ ! -f "${summary_json}" ]]; then
+    echo "FAIL: ailly report ${suite} did not write ${summary_json#"${repo_root}/"}" >&2
+    exit 1
+  fi
+  if [[ ! -f "${summary_md}" ]]; then
+    echo "FAIL: ailly report ${suite} did not write ${summary_md#"${repo_root}/"}" >&2
+    exit 1
+  fi
+
+  echo "OK: ailly report ${suite} wrote ${summary_json#"${repo_root}/"} and ${summary_md#"${repo_root}/"}"
+}
+
+report_suite discovery
+report_suite invocation
