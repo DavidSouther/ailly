@@ -46,8 +46,8 @@ done
 # single run directory from the first conversation path.
 run_dir="$(dirname "${conversations[0]}")"
 
-if [[ -z "${ANTHROPIC_API_KEY:-}" ]]; then
-  echo "SKIP: ailly run requires ANTHROPIC_API_KEY; assemble half passed."
+if [[ -z "${ANTHROPIC_API_KEY:-}" && ! -f "${project_dir}/.env" ]]; then
+  echo "SKIP: ailly run requires ANTHROPIC_API_KEY in the shell or ${project_dir#"${repo_root}/"}/.env; assemble half passed."
   exit 0
 fi
 

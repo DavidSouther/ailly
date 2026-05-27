@@ -10,6 +10,7 @@
 !clippy.toml
 !e2e
 !e2e/**
+e2e/**/.env
 !mise.toml
 !rust-toolchain.toml
 !src
