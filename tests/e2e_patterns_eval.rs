@@ -244,15 +244,9 @@ const DISCOVERY_CASES: &[(&str, &str)] = &[
 ];
 
 const INVOCATION_CASES: &[(&str, &str)] = &[
-    ("newtype-wrap-user-id", CONV_NEWTYPE_WRAP_USER_ID),
-    (
-        "configuring-service-pipeline",
-        CONV_CONFIGURING_SERVICE_PIPELINE,
-    ),
-    (
-        "emitting-order-placed",
-        CONV_EMITTING_ORDER_PLACED_INVOCATION,
-    ),
+    ("newtype", CONV_NEWTYPE_WRAP_USER_ID),
+    ("configuring-logging", CONV_CONFIGURING_SERVICE_PIPELINE),
+    ("emitting-logs", CONV_EMITTING_ORDER_PLACED_INVOCATION),
 ];
 
 #[tokio::test]

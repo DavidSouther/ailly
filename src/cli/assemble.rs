@@ -416,7 +416,7 @@ prefix:
 
     #[test]
     fn patterns_eval_invocation_baseline_arm_produces_skill_named_files() {
-        let run_dir = assemble_patterns_eval("invocation-baseline");
+        let run_dir = assemble_patterns_eval("baseline");
         assert_eq!(
             yaml_files(&run_dir),
             vec![
@@ -427,7 +427,7 @@ prefix:
         );
     }
 
-    fn system_message_count(run_dir: &PathBuf, file: &str) -> usize {
+    fn system_message_count(run_dir: &std::path::Path, file: &str) -> usize {
         let body = fs::read_to_string(run_dir.join(file)).expect("read conversation");
         let conv = Conversation::from_yaml_str(&body).expect("parses");
         conv.session
@@ -448,7 +448,7 @@ prefix:
 
     #[test]
     fn patterns_eval_invocation_baseline_arm_loads_no_skills() {
-        let run_dir = assemble_patterns_eval("invocation-baseline");
+        let run_dir = assemble_patterns_eval("baseline");
         assert_eq!(
             system_message_count(&run_dir, "newtype.yaml"),
             1,

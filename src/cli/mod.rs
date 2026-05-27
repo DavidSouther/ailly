@@ -3,4 +3,5 @@
 pub mod assemble;
 pub mod env;
 pub mod eval;
+pub mod report;
 pub mod run;

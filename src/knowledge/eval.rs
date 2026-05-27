@@ -6,6 +6,7 @@ use std::collections::BTreeMap;
 use std::path::Path;
 use std::path::PathBuf;
 
+use serde::Deserialize;
 use serde::Serialize;
 
 use crate::content::conversation::BindingMap;
@@ -18,18 +19,42 @@ use crate::knowledge::assertions::EvaluationContext;
 
 /// Full report serialized to `<project>/evals/reports/<run-id>.json`.
 /// Field names are the JSON keys; see DESIGN.md §evaluation for the contract.
-#[derive(Serialize, Debug)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct EvalReport {
     pub suite: String,
     pub run_id: String,
+    /// ISO-8601 timestamp. Old reports without this field deserialize to UNIX
+    /// epoch.
+    #[serde(default = "epoch_timestamp")]
+    pub timestamp: chrono::DateTime<chrono::Utc>,
+    /// First model identifier seen in the run's conversations.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+    /// Aggregate token and latency metrics from trace data.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub metrics: Option<RunMetrics>,
     pub totals: ReportTotals,
     pub per_class: BTreeMap<String, ClassTotals>,
     pub cases: Vec<CaseReport>,
 }
 
+fn epoch_timestamp() -> chrono::DateTime<chrono::Utc> {
+    chrono::DateTime::<chrono::Utc>::UNIX_EPOCH
+}
+
+/// Aggregate trace metrics collected during `ailly run`.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, Default)]
+pub struct RunMetrics {
+    pub total_input_tokens: u64,
+    pub total_output_tokens: u64,
+    pub total_cache_hit_tokens: u64,
+    pub total_latency_ms: u64,
+    pub conversations_with_trace: usize,
+}
+
 /// Top-level rollup. `conversations_matched` is the count of distinct
 /// conversations that appeared in any case's matches list at least once.
-#[derive(Serialize, Debug, Default)]
+#[derive(Serialize, Deserialize, Debug, Default)]
 pub struct ReportTotals {
     pub conversations_matched: usize,
     pub assertions: BucketTotals,
@@ -37,7 +62,7 @@ pub struct ReportTotals {
 
 /// Four-bucket verdict tally, exhaustive over
 /// [`crate::knowledge::assertions::AssertionOutcome`].
-#[derive(Serialize, Debug, Default, Clone, Copy)]
+#[derive(Serialize, Deserialize, Debug, Default, Clone, Copy)]
 pub struct BucketTotals {
     pub passed: usize,
     pub failed: usize,
@@ -47,7 +72,7 @@ pub struct BucketTotals {
 
 pub type ClassTotals = BucketTotals;
 
-#[derive(Serialize, Debug)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct CaseReport {
     /// Present iff the suite case carried a `name:`. `when:`-filtered and
     /// no-filter cases serialize without a `name` field.
@@ -56,7 +81,7 @@ pub struct CaseReport {
     pub matches: Vec<MatchReport>,
 }
 
-#[derive(Serialize, Debug)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct MatchReport {
     /// Filename (with extension), not the full path. The run directory is
     /// already conveyed by `EvalReport::run_id`.
@@ -64,10 +89,10 @@ pub struct MatchReport {
     pub assertions: Vec<AssertionReport>,
 }
 
-#[derive(Serialize, Debug)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct AssertionReport {
     pub class: String,
-    pub outcome: &'static str,
+    pub outcome: String,
     /// Present iff the executor returned a non-empty reason. Skipped on
     /// serialize so passing assertions stay terse.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -145,9 +170,9 @@ pub async fn evaluate(args: EvalArgs<'_>) -> EvalReport {
         if matched.is_empty() && case.name.is_some() {
             let assertion = AssertionReport {
                 class: String::from("missing_conversation"),
-                outcome: outcome_label(&AssertionOutcome::Malformed {
+                outcome: String::from(outcome_label(&AssertionOutcome::Malformed {
                     reason: String::new(),
-                }),
+                })),
                 reason: Some(format!(
                     "no conversation found for case name {:?}",
                     case.name.as_deref().unwrap_or_default()
@@ -184,7 +209,7 @@ pub async fn evaluate(args: EvalArgs<'_>) -> EvalReport {
                 fold_bucket(per_class.entry(String::from(class)).or_default(), &outcome);
                 assertion_reports.push(AssertionReport {
                     class: String::from(class),
-                    outcome: outcome_label(&outcome),
+                    outcome: String::from(outcome_label(&outcome)),
                     reason: reason_for(&outcome),
                 });
             }
@@ -205,6 +230,9 @@ pub async fn evaluate(args: EvalArgs<'_>) -> EvalReport {
     EvalReport {
         suite: String::from(args.suite_name),
         run_id: String::from(args.run_id),
+        timestamp: epoch_timestamp(),
+        model: None,
+        metrics: None,
         totals,
         per_class,
         cases,
