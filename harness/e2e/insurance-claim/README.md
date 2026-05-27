@@ -175,3 +175,29 @@ ailly -p e2e/patterns-eval eval invocation --over runs/<ts>-invocation/
 ```
 
 The CI threshold is "no regressions against the previous green run". The run that establishes a new baseline is the one with the deliberate change, called out in the PR.
+
+## Current limitations
+
+The project demonstrates the assemble -> run -> eval pipeline end to
+end, with three intentionally deferred capabilities that affect what
+the regression suite can prove today. Each item is tracked separately
+in [docs/developer/TASKS.md](../../docs/developer/TASKS.md):
+
+- **Tool definitions are rendered into a system message rather than
+  registered as tools on the engine request.** The `kind: tools`
+  prefix block produces a system turn whose body is the concatenated
+  JSON of `context/tools/*.json`; the rig adapter sends `tools:
+  Vec::new()` unconditionally. Consequence: in a live run, the model
+  cannot emit `ToolUse` blocks, so `must_call_tool` and
+  `tool_call_order` assertions fail and `must_not_call_tool` passes
+  vacuously. Tracked under "engine deferred decisions" (tool-definition
+  wiring on requests) in TASKS.md.
+- **The `judge` assertion is deferred.** `Assertion::Judge` returns
+  `AssertionOutcome::Deferred` in [src/knowledge/assertions.rs](../../src/knowledge/assertions.rs);
+  the eval report records the case as `deferred`, which does not fail
+  the CLI exit code. Tracked under the `eval-judge` entry in TASKS.md.
+- **`kind: retrieval` is omitted from the assembly.** The README
+  documents a fifth prefix block over `context/knowledge/docs/`. The
+  assembly intentionally drops it because `kind: retrieval` is
+  rejected at parse time today. Tracked under
+  `knowledge: prefix-retrieval` in TASKS.md.
