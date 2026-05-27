@@ -34,6 +34,9 @@ use crate::content::repository::VfsEvaluationRepository;
 #[derive(Debug)]
 pub struct Project {
     root: vfs::VfsPath,
+    /// Physical filesystem root for error messages. `Some` only when opened
+    /// via [`Project::open`]; `None` for in-memory and arbitrary-VFS roots.
+    host_root: Option<PathBuf>,
 }
 
 /// A relative path that has been substituted against a [`Binding`] and
@@ -88,7 +91,7 @@ pub struct Context<'a>(pub(crate) &'a Project);
 
 impl ContextRepository for Context<'_> {
     fn read_file(&self, path: &str) -> Result<String, RepositoryError> {
-        VfsContextRepository::new(self.0.root.clone()).read_file(path)
+        self.repo().read_file(path)
     }
 
     fn glob_concat(
@@ -96,7 +99,16 @@ impl ContextRepository for Context<'_> {
         pattern: &str,
         limit: Option<usize>,
     ) -> Result<GlobResult, RepositoryError> {
-        VfsContextRepository::new(self.0.root.clone()).glob_concat(pattern, limit)
+        self.repo().glob_concat(pattern, limit)
+    }
+}
+
+impl Context<'_> {
+    fn repo(&self) -> VfsContextRepository {
+        match self.0.host_root() {
+            Some(hr) => VfsContextRepository::with_host_root(self.0.root.clone(), hr.to_path_buf()),
+            None => VfsContextRepository::new(self.0.root.clone()),
+        }
     }
 }
 
@@ -197,9 +209,10 @@ impl Project {
         if !canonical.is_dir() {
             return Err(ProjectError::NotADirectory { path: canonical });
         }
-        let fs = vfs::PhysicalFS::new(canonical);
+        let fs = vfs::PhysicalFS::new(canonical.clone());
         Ok(Self {
             root: vfs::VfsPath::new(fs),
+            host_root: Some(canonical),
         })
     }
 
@@ -209,6 +222,7 @@ impl Project {
     pub fn open_memory() -> Self {
         Self {
             root: vfs::VfsPath::new(vfs::MemoryFS::new()),
+            host_root: None,
         }
     }
 
@@ -217,7 +231,10 @@ impl Project {
     /// rooted `PhysicalFS::new("/")` for absolute `--over` targets.
     #[must_use]
     pub fn from_root(root: vfs::VfsPath) -> Self {
-        Self { root }
+        Self {
+            root,
+            host_root: None,
+        }
     }
 
     /// Borrow the project root. Diagnostic use only; callers cannot
@@ -226,6 +243,14 @@ impl Project {
     #[must_use]
     pub fn root(&self) -> &vfs::VfsPath {
         &self.root
+    }
+
+    /// Physical filesystem root, set only for projects opened via
+    /// [`Project::open`]. Used to produce globally-rooted paths in error
+    /// messages so they are clickable in editors and terminals.
+    #[must_use]
+    pub fn host_root(&self) -> Option<&std::path::Path> {
+        self.host_root.as_deref()
     }
 
     /// Substitute `{{ var }}` placeholders against `binding` and produce a

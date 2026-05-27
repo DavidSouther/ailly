@@ -347,12 +347,26 @@ impl EvaluationRepository for VfsEvaluationRepository {
 /// `vfs`-backed [`ContextRepository`] rooted at a project directory.
 pub struct VfsContextRepository {
     root: vfs::VfsPath,
+    /// Physical filesystem root for constructing clickable error paths.
+    /// `None` for in-memory or abstract VFS roots.
+    host_root: Option<PathBuf>,
 }
 
 impl VfsContextRepository {
     #[must_use]
     pub fn new(root: vfs::VfsPath) -> Self {
-        Self { root }
+        Self {
+            root,
+            host_root: None,
+        }
+    }
+
+    #[must_use]
+    pub fn with_host_root(root: vfs::VfsPath, host_root: PathBuf) -> Self {
+        Self {
+            root,
+            host_root: Some(host_root),
+        }
     }
 
     fn resolve(&self, path: &str) -> Result<vfs::VfsPath, RepositoryError> {
@@ -360,6 +374,18 @@ impl VfsContextRepository {
             path: path.to_string(),
             source,
         })
+    }
+
+    /// Return a display-friendly path for `vfs_path`. When a physical root is
+    /// known, strips the leading `/` from the VFS-relative path and joins it
+    /// onto the host root to produce a globally-rooted, clickable path.
+    fn display_path(&self, vfs_path: &vfs::VfsPath) -> String {
+        if let Some(ref hr) = self.host_root {
+            let rel = vfs_path.as_str().trim_start_matches('/');
+            hr.join(rel).to_string_lossy().into_owned()
+        } else {
+            vfs_path.as_str().to_string()
+        }
     }
 }
 
@@ -369,7 +395,7 @@ impl ContextRepository for VfsContextRepository {
         resolved
             .read_to_string()
             .map_err(|source| RepositoryError::Vfs {
-                path: resolved.as_str().to_string(),
+                path: self.display_path(&resolved),
                 source,
             })
     }
@@ -407,7 +433,7 @@ impl ContextRepository for VfsContextRepository {
         let entries = parent_vfs
             .read_dir()
             .map_err(|source| RepositoryError::Vfs {
-                path: parent_vfs.as_str().to_string(),
+                path: self.display_path(&parent_vfs),
                 source,
             })?;
         let mut matched: Vec<vfs::VfsPath> = entries
@@ -426,7 +452,7 @@ impl ContextRepository for VfsContextRepository {
             let body = entry
                 .read_to_string()
                 .map_err(|source| RepositoryError::Vfs {
-                    path: entry.as_str().to_string(),
+                    path: self.display_path(entry),
                     source,
                 })?;
             bodies.push(body);

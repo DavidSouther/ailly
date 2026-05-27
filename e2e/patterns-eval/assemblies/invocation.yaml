@@ -2,18 +2,18 @@ name: invocation
 model: claude-sonnet-4-6
 
 matrix:
-  case:
-    - newtype-wrap-user-id
-    - configuring-service-pipeline
-    - emitting-order-placed
+  skill:
+    - newtype
+    - configuring-logging
+    - emitting-logs
 
 prefix:
-  - { kind: file,   path: ./AGENTS.md,                                    cache: true }
-  - { kind: system, path: context/skills/using-patterns/SKILL.md,         cache: true }
-  - { kind: system, path: context/skills/newtype/SKILL.md,                cache: true }
-  - { kind: system, path: context/skills/configuring-logging/SKILL.md,    cache: true }
-  - { kind: system, path: context/skills/emitting-logs/SKILL.md,          cache: true }
+  - { kind: file,   path: ./AGENTS.md,                                cache: true }
+  - { kind: system, path: ./context/skills/using-patterns/SKILL.md,   cache: true }
+  - kind: system
+    path: "context/skills/{{ skill }}/SKILL.md"
+    cache: true
 
 conversation:
-  - { role: user, path: "prompts/invocation/{{ case }}.md" }
+  - { role: user, path: "prompts/invocation/{{ skill }}.md" }
   - { role: assistant }

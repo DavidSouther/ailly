@@ -41,21 +41,26 @@ e2e/patterns-eval/
 │   │   ├── paired-add-propagator.md               # "Where do I install the W3C propagator?"
 │   │   └── paired-log-handler-success.md          # "How do I record a successful create_order?"
 │   └── invocation/
-│       ├── newtype-wrap-user-id.md                # Construction task: wrap a string UserId.
-│       ├── configuring-service-pipeline.md        # Stand up the five-layer registry in main.
-│       └── emitting-order-placed.md               # Emit order.placed with semantic-convention keys.
+│       ├── newtype.md                             # Construction task: wrap a string UserId.
+│       ├── configuring-logging.md                 # Stand up the five-layer registry in main.
+│       └── emitting-logs.md                       # Emit order.placed with semantic-convention keys.
 ├── runs/                                          # One conversation .yaml per matrix binding, per assembly
 │   ├── 2026-05-23T10-00-discovery/
 │   │   ├── newtype-mixed-ids.yaml
 │   │   ├── newtype-vs-evs-order-line.yaml
 │   │   └── ...                                    # six files total, one per discovery case
-│   └── 2026-05-23T10-05-invocation/
-│       ├── newtype-wrap-user-id.yaml
-│       ├── configuring-service-pipeline.yaml
-│       └── emitting-order-placed.yaml
+│   ├── 2026-05-23T10-05-invocation/
+│   │   ├── newtype.yaml
+│   │   ├── configuring-logging.yaml
+│   │   └── emitting-logs.yaml
+│   └── 2026-05-23T10-06-invocation-baseline/     # same cases, no skills loaded
+│       ├── newtype.yaml
+│       ├── configuring-logging.yaml
+│       └── emitting-logs.yaml
 └── evals/
     ├── discovery.yaml                             # case `name` matches conversation filename
-    ├── invocation.yaml
+    ├── invocation.yaml                            # positive arm: skill loaded
+    ├── invocation-baseline.yaml                   # negative arm: no skill loaded (falsification)
     ├── scripts/                                   # used by `program`/`script` assertions only
     │   ├── check_newtype.py                       # Inner primitive is private; constructor is the only entry; no `as` casts at call sites.
     │   ├── check_configuring_logging.py           # Single `init`; Registry → Format → Filter → Enrich → Export; resource attributes; shutdown flush.
@@ -63,7 +68,7 @@ e2e/patterns-eval/
     └── reports/
 ```
 
-Both assemblies share the same prefix (the patterns plugin) and differ only in which prompt subdirectory the matrix walks. The same evals format runs against either; `text_contains` against the chosen skill name carries discovery, scripts plus an LLM-as-judge carry invocation.
+The discovery assembly uses a single `case` axis and a fixed prefix (routing table only, no individual skill files). The invocation assemblies use a single `skill` axis and differ only in whether the relevant skill is included in the prefix. The same eval assertions run against both arms; a skill is confirmed useful when the positive arm passes assertions that the baseline arm fails.
 
 `assemblies/discovery.yaml`:
 
@@ -81,18 +86,58 @@ matrix:
     - paired-log-handler-success
 
 prefix:
-  - { kind: file,   path: ./AGENTS.md,                                    cache: true }
-  - { kind: system, path: context/skills/using-patterns/SKILL.md,         cache: true }
-  - { kind: system, path: context/skills/newtype/SKILL.md,                cache: true }
-  - { kind: system, path: context/skills/configuring-logging/SKILL.md,    cache: true }
-  - { kind: system, path: context/skills/emitting-logs/SKILL.md,          cache: true }
+  - { kind: file,   path: ./AGENTS.md,                                cache: true }
+  - { kind: system, path: context/skills/disclosure.md,               cache: true }
+  - { kind: system, path: context/skills/using-patterns/SKILL.md,     cache: true }
 
 conversation:
   - { role: user, path: "prompts/discovery/{{ case }}.md" }
   - { role: assistant }
 ```
 
-`assemblies/invocation.yaml` is identical in shape, with `matrix.case` enumerating the three invocation prompts and the user path templated to `prompts/invocation/{{ case }}.md`.
+`assemblies/invocation.yaml` (positive arm — one skill per run):
+
+```yaml
+name: invocation
+model: claude-sonnet-4-6
+
+matrix:
+  skill:
+    - newtype
+    - configuring-logging
+    - emitting-logs
+
+prefix:
+  - { kind: file,   path: ./AGENTS.md,                                cache: true }
+  - { kind: system, path: context/skills/using-patterns/SKILL.md,     cache: true }
+  - kind: system
+    path: "context/skills/{{ skill }}/SKILL.md"
+    cache: true
+
+conversation:
+  - { role: user, path: "prompts/invocation/{{ skill }}.md" }
+  - { role: assistant }
+```
+
+`assemblies/invocation-baseline.yaml` (negative arm — no skill loaded):
+
+```yaml
+name: invocation-baseline
+model: claude-sonnet-4-6
+
+matrix:
+  skill:
+    - newtype
+    - configuring-logging
+    - emitting-logs
+
+prefix:
+  - { kind: file, path: ./AGENTS.md, cache: true }
+
+conversation:
+  - { role: user, path: "prompts/invocation/{{ skill }}.md" }
+  - { role: assistant }
+```
 
 The four SKILL.md files are vended into the project at `context/skills/<name>/SKILL.md`. Each file is a verbatim copy of the upstream `patterns:*` skill from [davidsouther/domain-driven-design](https://github.com/davidsouther/domain-driven-design), including frontmatter. Vending the skills directly removes the implicit dependency on a Claude Code plugin-install step and lets the eval pin the exact skill text being scored against. `using-patterns` is listed first so the model has the routing table before any individual skill body; the three pattern skills follow in alphabetical order. To pin a different revision for a sweep, copy a sibling SKILL.md into `context/skills/<name>-<variant>/SKILL.md` and adjust the assembly prefix to point at the variant.
 
@@ -147,15 +192,19 @@ cases:
 
 ## Invocation (skill used correctly in pattern)
 
-Each case loads exactly one skill plus a construction task. The Python script checks structural conformance, the judge confirms the result is recognisable as the named pattern, and the token budget confirms the skill did not pad the output. The scripts encode the structural rules from each `SKILL.md`'s "Common Mistakes" section; if those rules are reworded out of the prompt, the script is what notices.
+Each invocation prompt targets one specific skill. The falsification test runs two arms against the same prompts: `invocation` loads the relevant skill; `invocation-baseline` loads no skill at all. A skill is confirmed useful when the `invocation` arm passes assertions that the `invocation-baseline` arm fails. Both arms use the same eval assertions.
 
-`evals/invocation.yaml`:
+Run names match the `skill` matrix axis: `newtype.yaml`, `configuring-logging.yaml`, `emitting-logs.yaml`.
+
+The Python script checks structural conformance, the judge confirms the result is recognisable as the named pattern, and the token budget confirms the skill did not pad the output. The scripts encode the structural rules from each `SKILL.md`'s "Common Mistakes" section; if those rules are reworded out of the prompt, the script is what notices.
+
+`evals/invocation.yaml` (also `evals/invocation-baseline.yaml`, identical assertions):
 
 ```yaml
 cases:
-  - name: newtype-wrap-user-id
+  - name: newtype
     assertions:
-      - { type: script, runtime: Python, script: { path: evals/scripts/check_newtype.py } }
+      - { type: script, runtime: python, script: { path: evals/scripts/check_newtype.py } }
       - type: judge
         prompt: |
           The code introduces a UserId type that wraps a string, exposes
@@ -164,9 +213,9 @@ cases:
           casts at call sites; validation lives once in the constructor.
       - { type: tokens, metric: total, op: "<", value: 6000 }
 
-  - name: configuring-service-pipeline
+  - name: configuring-logging
     assertions:
-      - { type: script, runtime: Python, script: { path: evals/scripts/check_configuring_logging.py } }
+      - { type: script, runtime: python, script: { path: evals/scripts/check_configuring_logging.py } }
       - type: judge
         prompt: |
           The bootstrap installs a single subscriber registry in main with
@@ -176,9 +225,9 @@ cases:
           called from library code.
       - { type: tokens, metric: total, op: "<", value: 8000 }
 
-  - name: emitting-order-placed
+  - name: emitting-logs
     assertions:
-      - { type: script, runtime: Python, script: { path: evals/scripts/check_emitting_logs.py } }
+      - { type: script, runtime: python, script: { path: evals/scripts/check_emitting_logs.py } }
       - type: judge
         prompt: |
           The call site emits a structured log record with `EventName` set
@@ -192,19 +241,22 @@ cases:
 ## Workflow
 
 ```sh
-# Run a single assembly end to end
-ailly -p e2e/patterns-eval assemble discovery                        # → runs/<ts>-discovery/*.yaml
-ailly -p e2e/patterns-eval run runs/<ts>-discovery/                  # fill assistant turns
+# Discovery
+ailly -p e2e/patterns-eval assemble discovery                            # → runs/<ts>-discovery/*.yaml
+ailly -p e2e/patterns-eval run runs/<ts>-discovery/                      # fill assistant turns
 ailly -p e2e/patterns-eval eval discovery --over runs/<ts>-discovery/
 
-# Same for the other assembly
-ailly -p e2e/patterns-eval assemble invocation
+# Invocation falsification: run positive and baseline arms, then compare
+ailly -p e2e/patterns-eval assemble invocation                           # → runs/<ts>-invocation/*.yaml
 ailly -p e2e/patterns-eval run runs/<ts>-invocation/
 ailly -p e2e/patterns-eval eval invocation --over runs/<ts>-invocation/
 
-# Sweep two skill revisions over the same prompts. Drop pinned
-# SKILL.md copies at context/skills/<name>-<variant>/SKILL.md, swap
-# the prefix path in the assembly to point at the variant, then run.
+ailly -p e2e/patterns-eval assemble invocation-baseline                  # → runs/<ts>-invocation-baseline/*.yaml
+ailly -p e2e/patterns-eval run runs/<ts>-invocation-baseline/
+ailly -p e2e/patterns-eval eval invocation-baseline --over runs/<ts>-invocation-baseline/
+
+# Sweep two skill revisions. Copy the SKILL.md to context/skills/<name>-<variant>/SKILL.md,
+# update the assembly prefix path, assemble + run, then restore.
 for v in v1 v2; do
   sed -i.bak "s|context/skills/newtype/SKILL.md|context/skills/newtype-$v/SKILL.md|" \
     assemblies/invocation.yaml
@@ -216,6 +268,6 @@ done
 ailly diff runs/v1 runs/v2
 ```
 
-A regression in this minimal cross-section reads as a 3 × 2 matrix: skill × {discovery, invocation}. The paired-skill cases inside discovery catch the failure mode that single-skill cases would miss: when a `description:` edit pulls two paired skills' triggers toward each other, both per-skill cases still pass and only the cross case shows the blur. The report format matches the insurance-claim handler's regression output, so one CI step reads both.
+A regression in this minimal cross-section reads as a 3 × 3 matrix: skill × {discovery, invocation-with, invocation-baseline}. The paired-skill cases inside discovery catch the failure mode that single-skill cases would miss: when a `description:` edit pulls two paired skills' triggers toward each other, both per-skill cases still pass and only the cross case shows the blur. The falsification pair (invocation vs invocation-baseline) catches the failure mode where a skill edit removes the structural guidance that the Python checker enforces — the baseline arm will start passing assertions it previously failed, which is the signal that the skill is no longer contributing.
 
-Extending coverage to the remaining fourteen patterns reuses the two-axis template above; the test surface grows by one prompt per skill per axis, one entry per skill in the matrix, and one Python checker per invocation case.
+The report format matches the insurance-claim handler's regression output, so one CI step reads both. Extending coverage to the remaining fourteen patterns reuses the two-assembly template above; the test surface grows by one prompt per skill per axis, one entry per skill in the matrix, and one Python checker per invocation case.

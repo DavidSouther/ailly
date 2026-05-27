@@ -1,0 +1,15 @@
+name: invocation-baseline
+model: claude-sonnet-4-6
+
+matrix:
+  skill:
+    - newtype
+    - configuring-logging
+    - emitting-logs
+
+prefix:
+  - { kind: file, path: ./AGENTS.md, cache: true }
+
+conversation:
+  - { role: user, path: "prompts/invocation/{{ skill }}.md" }
+  - { role: assistant }
