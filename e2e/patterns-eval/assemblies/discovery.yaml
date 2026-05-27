@@ -1,0 +1,22 @@
+name: discovery
+model: claude-sonnet-4-6
+
+matrix:
+  case:
+    - newtype-mixed-ids
+    - newtype-vs-evs-order-line
+    - configuring-first-log-line
+    - emitting-order-placed
+    - paired-add-propagator
+    - paired-log-handler-success
+
+prefix:
+  - { kind: file,   path: ./AGENTS.md,                                    cache: true }
+  - { kind: system, path: context/skills/using-patterns/SKILL.md,         cache: true }
+  - { kind: system, path: context/skills/newtype/SKILL.md,                cache: true }
+  - { kind: system, path: context/skills/configuring-logging/SKILL.md,    cache: true }
+  - { kind: system, path: context/skills/emitting-logs/SKILL.md,          cache: true }
+
+conversation:
+  - { role: user, path: "prompts/discovery/{{ case }}.md" }
+  - { role: assistant }

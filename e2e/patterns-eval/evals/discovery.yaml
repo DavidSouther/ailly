@@ -1,0 +1,41 @@
+name: discovery
+cases:
+  - name: newtype-mixed-ids
+    assertions:
+      - { type: text_contains, value: "patterns:newtype" }
+      - { type: text_not_contains, value: "patterns:entities-value-objects-services" }
+
+  - name: newtype-vs-evs-order-line
+    assertions:
+      - { type: text_not_contains, value: "patterns:newtype" }
+      - { type: text_contains, value: "patterns:entities-value-objects-services" }
+
+  - name: configuring-first-log-line
+    assertions:
+      - { type: text_contains, value: "patterns:configuring-logging" }
+      - { type: text_not_contains, value: "patterns:emitting-logs" }
+
+  - name: emitting-order-placed
+    assertions:
+      - { type: text_contains, value: "patterns:emitting-logs" }
+      - { type: text_not_contains, value: "patterns:configuring-logging" }
+
+  - name: paired-add-propagator
+    assertions:
+      - { type: text_contains, value: "patterns:configuring-logging" }
+      - { type: text_not_contains, value: "patterns:emitting-logs" }
+      - type: judge
+        prompt: |
+          The answer selects patterns:configuring-logging because the W3C
+          propagator is installed once at process bootstrap. It does not
+          recommend patterns:emitting-logs.
+
+  - name: paired-log-handler-success
+    assertions:
+      - { type: text_contains, value: "patterns:emitting-logs" }
+      - { type: text_not_contains, value: "patterns:configuring-logging" }
+      - type: judge
+        prompt: |
+          The answer selects patterns:emitting-logs because the success
+          occurs inside an already-bootstrapped handler. It does not
+          recommend re-running patterns:configuring-logging.

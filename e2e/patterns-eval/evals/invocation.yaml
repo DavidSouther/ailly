@@ -1,0 +1,36 @@
+name: invocation
+cases:
+  - name: newtype-wrap-user-id
+    assertions:
+      - { type: script, runtime: python, script: { path: evals/scripts/check_newtype.py } }
+      - type: judge
+        prompt: |
+          The code introduces a UserId type that wraps a string, exposes
+          construction as the only sanctioned entry point, and makes a plain
+          string unassignable where UserId is required. There are no `as`
+          casts at call sites; validation lives once in the constructor.
+      - { type: tokens, metric: total, op: "<", value: 6000 }
+
+  - name: configuring-service-pipeline
+    assertions:
+      - { type: script, runtime: python, script: { path: evals/scripts/check_configuring_logging.py } }
+      - type: judge
+        prompt: |
+          The bootstrap installs a single subscriber registry in main with
+          Format, Filter, Enrich, and Export layers, attaches `service.*`
+          resource attributes, installs the W3C `traceparent` propagator,
+          and registers a shutdown flush with a hard timeout. No `init` is
+          called from library code.
+      - { type: tokens, metric: total, op: "<", value: 8000 }
+
+  - name: emitting-order-placed
+    assertions:
+      - { type: script, runtime: python, script: { path: evals/scripts/check_emitting_logs.py } }
+      - type: judge
+        prompt: |
+          The call site emits a structured log record with `EventName` set
+          to `order.placed` and attaches fields under OpenTelemetry
+          semantic-convention keys (`http.response.status_code`, `order.id`,
+          `user.id`). The message body is a stable string; no values are
+          interpolated into it.
+      - { type: tokens, metric: total, op: "<", value: 6000 }
