@@ -23,9 +23,12 @@ Three skills cover the two hard discovery cases (a paired skill set whose trigge
 e2e/patterns-eval/
 ├── AGENTS.md                                      # Named explicitly in both assemblies' prefix
 ├── context/
-│   └── system/
-│       └── 00-load-patterns-plugin.md             # /plugin install ./domain-driven-design
-│                                                  # Sibling 00-load-<variant>.md files (e.g. 00-load-v1.md, 00-load-v2.md) hold pinned plugin revisions for the version sweep below.
+│   └── skills/                                    # Patterns skills vended directly into this project, one SKILL.md per directory, matching the upstream Claude Code skill layout.
+│       ├── using-patterns/SKILL.md                # Bootstrap routing table; lists every patterns:* skill the model may name in discovery.
+│       ├── newtype/SKILL.md                       # The newtype skill, frontmatter and body verbatim from the upstream patterns plugin.
+│       ├── configuring-logging/SKILL.md           # Bootstrap-cadence half of the paired logging set.
+│       └── emitting-logs/SKILL.md                 # Per-call-site half of the paired logging set.
+│                                                  # Sibling SKILL.md revisions can be added (e.g. newtype-v1/SKILL.md, newtype-v2/SKILL.md) for the version sweep below by pointing the assembly prefix at the pinned directory.
 ├── assemblies/
 │   ├── discovery.yaml                             # prefix + conversation skeleton + matrix over discovery cases
 │   └── invocation.yaml                            # same shape; matrix over invocation cases
@@ -78,8 +81,11 @@ matrix:
     - paired-log-handler-success
 
 prefix:
-  - { kind: file,   path: ./AGENTS.md,                                cache: true }
-  - { kind: system, path: context/system/00-load-patterns-plugin.md,  cache: true }
+  - { kind: file,   path: ./AGENTS.md,                                    cache: true }
+  - { kind: system, path: context/skills/using-patterns/SKILL.md,         cache: true }
+  - { kind: system, path: context/skills/newtype/SKILL.md,                cache: true }
+  - { kind: system, path: context/skills/configuring-logging/SKILL.md,    cache: true }
+  - { kind: system, path: context/skills/emitting-logs/SKILL.md,          cache: true }
 
 conversation:
   - { role: user, path: "prompts/discovery/{{ case }}.md" }
@@ -87,6 +93,8 @@ conversation:
 ```
 
 `assemblies/invocation.yaml` is identical in shape, with `matrix.case` enumerating the three invocation prompts and the user path templated to `prompts/invocation/{{ case }}.md`.
+
+The four SKILL.md files are vended into the project at `context/skills/<name>/SKILL.md`. Each file is a verbatim copy of the upstream `patterns:*` skill from [davidsouther/domain-driven-design](https://github.com/davidsouther/domain-driven-design), including frontmatter. Vending the skills directly removes the implicit dependency on a Claude Code plugin-install step and lets the eval pin the exact skill text being scored against. `using-patterns` is listed first so the model has the routing table before any individual skill body; the three pattern skills follow in alphabetical order. To pin a different revision for a sweep, copy a sibling SKILL.md into `context/skills/<name>-<variant>/SKILL.md` and adjust the assembly prefix to point at the variant.
 
 ## Discovery (skill selection from description)
 
@@ -194,12 +202,16 @@ ailly -p e2e/patterns-eval assemble invocation
 ailly -p e2e/patterns-eval run runs/<ts>-invocation/
 ailly -p e2e/patterns-eval eval invocation --over runs/<ts>-invocation/
 
-# Sweep two plugin versions over the same prompts
+# Sweep two skill revisions over the same prompts. Drop pinned
+# SKILL.md copies at context/skills/<name>-<variant>/SKILL.md, swap
+# the prefix path in the assembly to point at the variant, then run.
 for v in v1 v2; do
-  cp context/system/00-load-$v.md context/system/00-load-patterns-plugin.md
+  sed -i.bak "s|context/skills/newtype/SKILL.md|context/skills/newtype-$v/SKILL.md|" \
+    assemblies/invocation.yaml
   ailly -p e2e/patterns-eval assemble invocation
   ailly -p e2e/patterns-eval run runs/<ts>/
   mv runs/<ts> runs/$v
+  mv assemblies/invocation.yaml.bak assemblies/invocation.yaml
 done
 ailly diff runs/v1 runs/v2
 ```
