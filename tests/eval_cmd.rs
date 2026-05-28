@@ -58,6 +58,7 @@ trace:
   tokens:
     input: 1200
     output: 300
+    cache_hit: 200
     total: 1500
 ";
 
@@ -239,4 +240,18 @@ async fn eval_writes_report_and_reports_failure_counts_across_match_modes() {
         assert_eq!(a[0]["class"], "response_field");
         assert_eq!(a[0]["outcome"], "pass");
     }
+
+    // Trace rollup: every conversation in the run directory carries a trace
+    // block, so the report's top-level `model` and `metrics` fields are
+    // populated from the full run, not just the suite-matched subset. Sums
+    // are over every Message.trace across every conversation loaded from
+    // run-dir (missing-fields: 1200/300/450, over-limit: 1100/280/380,
+    // default: 900/200/220).
+    assert_eq!(report["model"], "noop");
+    let metrics = &report["metrics"];
+    assert_eq!(metrics["total_input_tokens"], 3200);
+    assert_eq!(metrics["total_output_tokens"], 780);
+    assert_eq!(metrics["total_cache_hit_tokens"], 200);
+    assert_eq!(metrics["total_latency_ms"], 1050);
+    assert_eq!(metrics["conversations_with_trace"], 3);
 }

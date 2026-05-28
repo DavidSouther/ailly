@@ -227,16 +227,52 @@ pub async fn evaluate(args: EvalArgs<'_>) -> EvalReport {
 
     totals.conversations_matched = match_count;
 
+    let (model, metrics) = collect_run_metrics(args.conversations);
+
     EvalReport {
         suite: String::from(args.suite_name),
         run_id: String::from(args.run_id),
         timestamp: epoch_timestamp(),
-        model: None,
-        metrics: None,
+        model,
+        metrics,
         totals,
         per_class,
         cases,
     }
+}
+
+/// Walk every conversation in the run and roll up trace metrics across all
+/// messages. `model` is taken from the first conversation's `meta.model` so
+/// the report identifies what produced the run; `metrics` is `Some` iff at
+/// least one message carried a trace, mirroring the
+/// `skip_serializing_if = "Option::is_none"` policy on the field.
+fn collect_run_metrics(
+    conversations: &[(PathBuf, Conversation)],
+) -> (Option<String>, Option<RunMetrics>) {
+    let model = conversations
+        .first()
+        .map(|(_, conv)| conv.meta.model.as_ref().to_owned());
+
+    let mut metrics = RunMetrics::default();
+    for (_, conv) in conversations {
+        let mut conv_has_trace = false;
+        for msg in &conv.session {
+            let Some(trace) = msg.trace.as_ref() else {
+                continue;
+            };
+            metrics.total_input_tokens += trace.tokens.input;
+            metrics.total_output_tokens += trace.tokens.output;
+            metrics.total_cache_hit_tokens += trace.tokens.cache_hit.unwrap_or(0);
+            metrics.total_latency_ms += trace.latency_ms;
+            conv_has_trace = true;
+        }
+        if conv_has_trace {
+            metrics.conversations_with_trace += 1;
+        }
+    }
+
+    let metrics = (metrics.conversations_with_trace > 0).then_some(metrics);
+    (model, metrics)
 }
 
 fn matches_for<'a>(
@@ -743,6 +779,24 @@ mod tests {
                     .deferred,
                 1
             );
+        }
+
+        #[test]
+        fn collect_run_metrics_returns_none_metrics_when_no_message_carries_trace() {
+            let conversations = vec![
+                (PathBuf::from("a.yaml"), conv(&[], "hello")),
+                (PathBuf::from("b.yaml"), conv(&[], "world")),
+            ];
+            let (model, metrics) = collect_run_metrics(&conversations);
+            assert_eq!(model.as_deref(), Some("noop"));
+            assert!(metrics.is_none());
+        }
+
+        #[test]
+        fn collect_run_metrics_returns_none_for_empty_run() {
+            let (model, metrics) = collect_run_metrics(&[]);
+            assert!(model.is_none());
+            assert!(metrics.is_none());
         }
     }
 }
