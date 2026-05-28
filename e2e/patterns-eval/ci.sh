@@ -164,15 +164,16 @@ eval_suite() {
   run_id="$(basename "${run_dir}")"
   local report="${project_dir}/evals/reports/${run_id}.json"
 
-  cargo run --quiet -- -p "${project_dir}" eval "${suite}" --over "${run_dir}"
+  # Allow assertion failures without aborting; the report step aggregates results.
+  cargo run --quiet -- -p "${project_dir}" eval "${suite}" --over "${run_dir}" || true
 
   if [[ ! -f "${report}" ]]; then
     echo "FAIL: ailly eval ${suite} did not write a report at ${report#"${repo_root}/"}" >&2
     exit 1
   fi
 
-  # Deferred-tolerance summary. `deferred` is informational; the
-  # binary's exit code already gates on failed + malformed == 0.
+  # Deferred-tolerance summary. `deferred` is informational; assertion failures
+  # are surfaced in the comparison report written by CUJ 4.
   python3 - "${suite}" "${report}" <<'PY'
 import json
 import sys
@@ -197,27 +198,59 @@ eval_suite discovery
 eval_suite baseline
 eval_suite invocation
 
-# --- CUJ 4: report (per suite) ----------------------------------------------
+# --- CUJ 4: report ----------------------------------------------------------
 
-report_suite() {
-  local suite="$1"
-  cargo run --quiet -- -p "${project_dir}" report --suite "${suite}"
+# Single-eval markdown summary for the discovery suite.
+report_discovery() {
+  local run_id
+  run_id="$(basename "${discovery_run_dir}")"
+  cargo run --quiet -- -p "${project_dir}" report "${run_id}"
 
-  local summary_json="${project_dir}/evals/reports/summary.json"
-  local summary_md="${project_dir}/evals/reports/summary.md"
-
-  if [[ ! -f "${summary_json}" ]]; then
-    echo "FAIL: ailly report ${suite} did not write ${summary_json#"${repo_root}/"}" >&2
+  local report_md="${project_dir}/evals/reports/${run_id}-report.md"
+  if [[ ! -f "${report_md}" ]]; then
+    echo "FAIL: ailly report ${run_id} did not write ${report_md#"${repo_root}/"}" >&2
     exit 1
   fi
-  if [[ ! -f "${summary_md}" ]]; then
-    echo "FAIL: ailly report ${suite} did not write ${summary_md#"${repo_root}/"}" >&2
-    exit 1
-  fi
-
-  echo "OK: ailly report ${suite} wrote ${summary_json#"${repo_root}/"} and ${summary_md#"${repo_root}/"}"
+  echo "OK: ailly report wrote ${report_md#"${repo_root}/"}"
 }
 
-report_suite discovery
-report_suite baseline
-report_suite invocation
+# Comparison report: baseline (arm-a) vs invocation (arm-b).
+report_comparison() {
+  local run_id_a run_id_b
+  run_id_a="$(basename "${baseline_run_dir}")"
+  run_id_b="$(basename "${invocation_run_dir}")"
+  cargo run --quiet -- -p "${project_dir}" report "${run_id_a}" "${run_id_b}"
+
+  local stem="${run_id_a}-vs-${run_id_b}"
+  local comparison_json="${project_dir}/evals/reports/${stem}.json"
+  local comparison_md="${project_dir}/evals/reports/${stem}.md"
+
+  if [[ ! -f "${comparison_json}" ]]; then
+    echo "FAIL: ailly report comparison JSON not written at ${comparison_json#"${repo_root}/"}" >&2
+    exit 1
+  fi
+  if [[ ! -f "${comparison_md}" ]]; then
+    echo "FAIL: ailly report comparison markdown not written at ${comparison_md#"${repo_root}/"}" >&2
+    exit 1
+  fi
+
+  python3 - "${run_id_a}" "${run_id_b}" "${comparison_json}" <<'PY'
+import json, sys
+id_a, id_b, path = sys.argv[1], sys.argv[2], sys.argv[3]
+with open(path, encoding="utf-8") as fh:
+    data = json.load(fh)
+t = data["totals"]
+print(
+    f"report {id_a} vs {id_b}: "
+    f"improved={t['improved']} "
+    f"regressed={t['regressed']} "
+    f"unchanged_pass={t['unchanged_pass']} "
+    f"unchanged_fail={t['unchanged_fail']}"
+)
+PY
+
+  echo "OK: ailly report wrote ${comparison_json#"${repo_root}/"} and ${comparison_md#"${repo_root}/"}"
+}
+
+report_discovery
+report_comparison

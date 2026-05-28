@@ -1,4 +1,4 @@
-name: invocation-baseline
+name: baseline
 cases:
   - name: newtype
     assertions:

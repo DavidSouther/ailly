@@ -1,28 +1,34 @@
-//! Feature test for `ailly report` — benchmark-style two-run comparison.
+//! Feature tests for `ailly report` — single-eval and comparison modes.
 //!
-//! User story: a developer has run `ailly eval` twice against the same suite.
-//! The baseline run (2026-05-20) had 5/10 assertions pass; the target run
-//! (2026-05-27) has 7/10 pass. They invoke `ailly -p <project> report`; the
-//! command reads both `evals/reports/*.json` files, computes three-layer
-//! progressive disclosure (verdict + headline, quadrant breakdown, per-case
-//! drill-down of divergent assertions), and writes `evals/reports/summary.json`
-//! and `evals/reports/summary.md`.
+//! Story 1 (single-eval): a developer has run `ailly eval` for a discovery
+//! suite. They invoke `ailly -p <project> report <run-id>`. The command reads
+//! the single `EvalReport` JSON and writes a markdown summary with the overall
+//! pass rate and a per-case table, one column per assertion class. No
+//! comparison logic, no verdict, no delta column.
 //!
-//! The test drives the report CLI handler end-to-end and validates that the
-//! verdict label, headline pass-rate delta, quadrant bucket counts, and
-//! divergent-case list all round-trip through the full pipeline.
+//! Story 2 (comparison): a developer has two runs — `baseline` (no skill
+//! prefix) and `invocation` (skill prefix loaded). They invoke
+//! `ailly -p <project> report <baseline-run-id> <invocation-run-id>`. The
+//! command pairs assertions by (case, conversation, class), classifies each
+//! pair as improved / regressed / unchanged, and writes a JSON report and a
+//! markdown summary.
 
 use std::fs;
 
 use ailly_two::cli::report::ReportCmdArgs;
+use ailly_two::cli::report::ReportCmdOutcome;
+use ailly_two::cli::report::ReportMode;
 use ailly_two::cli::report::run as report_run;
 
-// Baseline: 5/10 pass (50%). No metrics (old run, trace not yet collected).
-// missing-fields: must_call_tool=fail, text_contains=fail, text_equals=fail,
-//   must_not_call_tool=pass, tool_call_count=pass
-// over-limit: tool_call_order=pass, text_contains=fail, text_equals=fail,
-//   judge=pass, latency_ms=pass
-const BASELINE_REPORT: &str = r#"{
+const ARM_A_RUN_ID: &str = "2026-05-20T10-00-00Z-baseline";
+const ARM_B_RUN_ID: &str = "2026-05-27T14-43-31Z-target";
+
+// ARM_A: 5/10 pass (50%). Two cases:
+//   missing-fields: must_call_tool=fail, text_contains=fail, text_equals=fail,
+//                   must_not_call_tool=pass, tool_call_count=pass
+//   over-limit:     tool_call_order=pass, text_contains=fail, text_equals=fail,
+//                   judge=pass, latency_ms=pass
+const ARM_A_REPORT: &str = r#"{
   "suite": "regression",
   "run_id": "2026-05-20T10-00-00Z-baseline",
   "timestamp": "2026-05-20T10:00:00Z",
@@ -75,14 +81,12 @@ const BASELINE_REPORT: &str = r#"{
   ]
 }"#;
 
-// Target: 7/10 pass (70%). Metrics present (trace collected).
-// Tokens: input=30000 + output=12300 = 42300 total.
-// missing-fields: all three previously-failing assertions now pass (Signal ×3);
-//   the two previously-passing assertions stay passing (Baseline ×2).
-// over-limit: tool_call_order regressed pass→fail (Regression ×1);
-//   the two text assertions stay failing (Unreachable ×2);
-//   judge and latency_ms stay passing (Baseline ×2).
-const TARGET_REPORT: &str = r#"{
+// ARM_B: 7/10 pass (70%). Over arm_a:
+//   missing-fields improved: must_call_tool, text_contains, text_equals
+// (fail→pass)   over-limit regressed:    tool_call_order (pass→fail)
+//   unchanged pass:          must_not_call_tool, tool_call_count, judge,
+// latency_ms   unchanged fail:          text_contains, text_equals (over-limit)
+const ARM_B_REPORT: &str = r#"{
   "suite": "regression",
   "run_id": "2026-05-27T14-43-31Z-target",
   "timestamp": "2026-05-27T14:43:31Z",
@@ -143,160 +147,244 @@ const TARGET_REPORT: &str = r#"{
 }"#;
 
 #[tokio::test]
-#[expect(
-    clippy::too_many_lines,
-    reason = "single feature-test function exercises the full report pipeline end-to-end"
-)]
-async fn report_writes_summary_with_verdict_quadrants_and_divergent_cases() {
-    // Arrange: tempdir project with two eval report files for the same suite.
-    // Baseline (2026-05-20) passes 5/10; target (2026-05-27) passes 7/10.
-    // The +20pp lift classifies as "Moderate".
+async fn report_single_eval_mode_writes_markdown_with_per_class_table() {
+    // Arrange: one EvalReport, 5/10 pass.
     let tmp = tempfile::tempdir().expect("tempdir");
     let project = tmp.path().to_path_buf();
     let reports_dir = project.join("evals").join("reports");
     fs::create_dir_all(&reports_dir).expect("create reports dir");
     fs::write(
-        reports_dir.join("2026-05-20T10-00-00Z-baseline.json"),
-        BASELINE_REPORT,
+        reports_dir.join(format!("{ARM_A_RUN_ID}.json")),
+        ARM_A_REPORT,
     )
-    .expect("write baseline");
-    fs::write(
-        reports_dir.join("2026-05-27T14-43-31Z-target.json"),
-        TARGET_REPORT,
-    )
-    .expect("write target");
+    .expect("write report");
 
-    // Act: invoke the CLI handler exactly as the binary will.
+    // Act
     let outcome = report_run(ReportCmdArgs {
         project: project.clone(),
-        suite: None,
-        run_ids: vec![],
+        mode: ReportMode::Single {
+            run_id: ARM_A_RUN_ID.to_string(),
+        },
+        label_a: None,
+        label_b: None,
     })
     .await
-    .expect("report handler succeeds end-to-end");
+    .expect("report handler succeeds");
 
-    // Assert: output paths returned by handler exist on disk.
-    assert!(outcome.summary_json.exists(), "summary.json written");
-    assert!(outcome.summary_md.exists(), "summary.md written");
-
-    // Assert: summary.json structure matches the design doc contract.
-    let json_text = fs::read_to_string(&outcome.summary_json).expect("read summary.json");
-    let summary: serde_json::Value =
-        serde_json::from_str(&json_text).expect("summary.json is valid json");
-
-    assert_eq!(summary["suite"], "regression");
-    assert_eq!(
-        summary["baseline"]["run_id"],
-        "2026-05-20T10-00-00Z-baseline"
-    );
-    assert_eq!(summary["target"]["run_id"], "2026-05-27T14-43-31Z-target");
-
-    // Verdict: +20pp lift → "Moderate" 🟢.
-    assert_eq!(summary["verdict"]["label"], "Moderate");
-    assert_eq!(summary["verdict"]["emoji"], "🟢");
-
-    let headline = &summary["headline"];
-    assert_eq!(headline["baseline_pass_rate"], 0.5_f64);
-    assert_eq!(headline["target_pass_rate"], 0.7_f64);
-    assert_eq!(headline["delta_pp"], 20_i64);
-    // Baseline report has no metrics field; tokens and latency are null.
+    // Assert: output path matches naming convention.
+    let ReportCmdOutcome::Single(single) = outcome else {
+        panic!("expected Single outcome");
+    };
+    assert!(single.report_md.exists(), "report markdown written");
+    let md_name = single.report_md.file_name().unwrap().to_str().unwrap();
     assert!(
-        headline["baseline_tokens"].is_null(),
-        "baseline has no metrics — tokens must be null"
+        md_name.starts_with(ARM_A_RUN_ID),
+        "filename starts with run_id"
     );
-    assert_eq!(
-        headline["target_tokens"], 42_300_i64,
-        "target_tokens = total_input + total_output"
-    );
-    assert_eq!(headline["target_latency_ms"], 3_840_i64);
-
-    // Quadrant breakdown: computed from per-assertion (baseline, target) pairs.
-    // Signal(3) + Regression(1) + Baseline(4) + Unreachable(2) = 10 pairs.
-    let quadrants = &summary["quadrants"];
-    assert_eq!(quadrants["signal"]["count"], 3, "Signal: 3 fail→pass");
-    assert_eq!(
-        quadrants["regression"]["count"], 1,
-        "Regression: 1 pass→fail"
-    );
-    assert_eq!(quadrants["baseline"]["count"], 4, "Baseline: 4 pass→pass");
-    assert_eq!(
-        quadrants["unreachable"]["count"], 2,
-        "Unreachable: 2 fail→fail"
-    );
-
-    // Quadrant class lists name which assertion class contributed.
-    let signal_classes = quadrants["signal"]["classes"]
-        .as_array()
-        .expect("signal classes array");
     assert!(
-        signal_classes.iter().any(|c| c == "must_call_tool"),
-        "must_call_tool in Signal"
+        md_name.ends_with("-report.md"),
+        "filename ends with -report.md"
     );
 
-    let regression_classes = quadrants["regression"]["classes"]
-        .as_array()
-        .expect("regression classes array");
-    assert_eq!(
-        regression_classes,
-        &[serde_json::Value::String(String::from("tool_call_order"))]
+    let md = fs::read_to_string(&single.report_md).expect("read markdown");
+
+    // Layer 1: suite and run_id in header; overall pass rate.
+    assert!(md.contains("regression"), "suite name in header");
+    assert!(md.contains(ARM_A_RUN_ID), "run_id in header");
+    assert!(md.contains("5 / 10"), "pass count / total");
+    assert!(md.contains("50%"), "pass rate percentage");
+
+    // Single mode has no comparison concepts.
+    assert!(!md.contains("Verdict"), "no verdict in single mode");
+    assert!(!md.contains("pp"), "no delta-pp in single mode");
+
+    // Per-case assertion table has one column per class, sorted alphabetically.
+    // Classes in this report: judge, latency_ms, must_call_tool,
+    // must_not_call_tool,                         text_contains, text_equals,
+    // tool_call_count, tool_call_order
+    for class in [
+        "judge",
+        "latency_ms",
+        "must_call_tool",
+        "must_not_call_tool",
+        "text_contains",
+        "text_equals",
+        "tool_call_count",
+        "tool_call_order",
+    ] {
+        assert!(md.contains(class), "column '{class}' in table");
+    }
+
+    // Both case rows present.
+    assert!(md.contains("missing-fields"), "missing-fields row");
+    assert!(md.contains("over-limit"), "over-limit row");
+
+    // Cell values use "pass", "fail", and em-dash for absent classes.
+    assert!(md.contains("pass"), "pass cells in table");
+    assert!(md.contains("fail"), "fail cells in table");
+}
+
+#[tokio::test]
+#[expect(
+    clippy::too_many_lines,
+    reason = "single feature-test function exercises the full comparison pipeline end-to-end"
+)]
+async fn report_comparison_mode_writes_json_and_markdown_with_change_summary() {
+    // Arrange: two EvalReports. arm_a = 5/10 (baseline), arm_b = 7/10 (invocation).
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let project = tmp.path().to_path_buf();
+    let reports_dir = project.join("evals").join("reports");
+    fs::create_dir_all(&reports_dir).expect("create reports dir");
+    fs::write(
+        reports_dir.join(format!("{ARM_A_RUN_ID}.json")),
+        ARM_A_REPORT,
+    )
+    .expect("write arm_a");
+    fs::write(
+        reports_dir.join(format!("{ARM_B_RUN_ID}.json")),
+        ARM_B_REPORT,
+    )
+    .expect("write arm_b");
+
+    // Act
+    let outcome = report_run(ReportCmdArgs {
+        project: project.clone(),
+        mode: ReportMode::Comparison {
+            run_id_a: ARM_A_RUN_ID.to_string(),
+            run_id_b: ARM_B_RUN_ID.to_string(),
+        },
+        label_a: None,
+        label_b: None,
+    })
+    .await
+    .expect("report handler succeeds");
+
+    // Assert: both output paths exist with correct filenames.
+    let ReportCmdOutcome::Comparison(comparison) = outcome else {
+        panic!("expected Comparison outcome");
+    };
+    assert!(
+        comparison.comparison_json.exists(),
+        "comparison JSON written"
+    );
+    assert!(
+        comparison.comparison_md.exists(),
+        "comparison markdown written"
     );
 
-    // Divergent cases: missing-fields (Signal ×3), over-limit (Regression ×1).
-    // Non-divergent cases are excluded from divergent_cases.
-    let divergent = summary["divergent_cases"]
-        .as_array()
-        .expect("divergent_cases is an array");
-    assert_eq!(divergent.len(), 2, "two cases have divergent assertions");
+    let json_stem = comparison
+        .comparison_json
+        .file_stem()
+        .unwrap()
+        .to_str()
+        .unwrap();
+    assert!(
+        json_stem.contains(ARM_A_RUN_ID),
+        "arm_a run_id in JSON filename"
+    );
+    assert!(
+        json_stem.contains(ARM_B_RUN_ID),
+        "arm_b run_id in JSON filename"
+    );
 
-    let mf = divergent
+    // Assert: ComparisonReport JSON structure.
+    let json_text = fs::read_to_string(&comparison.comparison_json).expect("read JSON");
+    let report: serde_json::Value = serde_json::from_str(&json_text).expect("valid JSON");
+
+    assert_eq!(report["arm_a"]["run_id"], ARM_A_RUN_ID, "arm_a run_id");
+    assert_eq!(report["arm_b"]["run_id"], ARM_B_RUN_ID, "arm_b run_id");
+
+    let totals = &report["totals"];
+    // 3 improved: must_call_tool, text_contains, text_equals in missing-fields
+    // (fail→pass).
+    assert_eq!(totals["improved"], 3, "3 assertions improved");
+    // 1 regressed: tool_call_order in over-limit (pass→fail).
+    assert_eq!(totals["regressed"], 1, "1 assertion regressed");
+    // 4 unchanged pass: must_not_call_tool + tool_call_count (missing-fields)
+    //                  + judge + latency_ms (over-limit).
+    assert_eq!(totals["unchanged_pass"], 4, "4 unchanged passing");
+    // 2 unchanged fail: text_contains + text_equals in over-limit (both stayed
+    // fail).
+    assert_eq!(totals["unchanged_fail"], 2, "2 unchanged failing");
+    assert_eq!(totals["total_assertions"], 10, "10 paired assertions");
+
+    // Per-case detail.
+    let cases = report["cases"].as_array().expect("cases array");
+    assert_eq!(cases.len(), 2, "2 cases");
+
+    let mf = cases
         .iter()
         .find(|c| c["case"] == "missing-fields")
-        .expect("missing-fields in divergent_cases");
-    assert_eq!(mf["conversation"], "missing-fields.yaml");
-    let mf_changes = mf["changes"].as_array().expect("missing-fields changes");
+        .expect("missing-fields case");
+    let mf_assertions = mf["assertions"]
+        .as_array()
+        .expect("missing-fields assertions");
+    let mf_improved: Vec<_> = mf_assertions
+        .iter()
+        .filter(|a| a["change"] == "Improved")
+        .collect();
     assert_eq!(
-        mf_changes.len(),
+        mf_improved.len(),
         3,
-        "three assertions changed in missing-fields"
+        "3 improved assertions in missing-fields"
     );
     assert!(
-        mf_changes.iter().all(|ch| ch["quadrant"] == "signal"),
-        "all missing-fields changes are Signal"
+        mf_improved
+            .iter()
+            .all(|a| a["arm_a"] == "fail" && a["arm_b"] == "pass"),
+        "all improved went fail→pass"
     );
 
-    let ol = divergent
+    let ol = cases
         .iter()
         .find(|c| c["case"] == "over-limit")
-        .expect("over-limit in divergent_cases");
-    assert_eq!(ol["conversation"], "over-limit.yaml");
-    let ol_changes = ol["changes"].as_array().expect("over-limit changes");
-    assert_eq!(ol_changes.len(), 1, "one assertion changed in over-limit");
-    assert_eq!(ol_changes[0]["quadrant"], "regression");
-    assert_eq!(ol_changes[0]["class"], "tool_call_order");
-    assert_eq!(ol_changes[0]["baseline"], "pass");
-    assert_eq!(ol_changes[0]["target"], "fail");
+        .expect("over-limit case");
+    let ol_assertions = ol["assertions"].as_array().expect("over-limit assertions");
+    let regressed = ol_assertions
+        .iter()
+        .find(|a| a["change"] == "Regressed")
+        .expect("one regressed assertion in over-limit");
+    assert_eq!(
+        regressed["class"], "tool_call_order",
+        "tool_call_order regressed"
+    );
+    assert_eq!(regressed["arm_a"], "pass", "was passing in arm_a");
+    assert_eq!(regressed["arm_b"], "fail", "now failing in arm_b");
 
-    // Assert: summary.md contains the three-layer structural markers so the
-    // human-readable output is consistent with the machine-readable contract.
-    let md_text = fs::read_to_string(&outcome.summary_md).expect("read summary.md");
-    assert!(md_text.contains("Moderate"), "verdict label in markdown");
-    assert!(md_text.contains("50%"), "baseline pass rate in markdown");
-    assert!(md_text.contains("70%"), "target pass rate in markdown");
-    assert!(md_text.contains("+20pp"), "delta in markdown");
+    // Assert: markdown content.
+    let md = fs::read_to_string(&comparison.comparison_md).expect("read markdown");
+
+    // Summary line names both counts.
+    assert!(md.contains("improved 3"), "improved count in summary line");
     assert!(
-        md_text.contains("## Quadrant breakdown"),
-        "quadrant section header"
+        md.contains("regressed 1"),
+        "regressed count in summary line"
+    );
+
+    // Per-case headline table rows.
+    assert!(md.contains("missing-fields"), "missing-fields in markdown");
+    assert!(md.contains("over-limit"), "over-limit in markdown");
+
+    // Arm labels (default extracted from run_id suffix or displayed as arm-a /
+    // arm-b).
+    let md_lower = md.to_lowercase();
+    assert!(
+        md_lower.contains("arm-a") || md_lower.contains("baseline"),
+        "arm-a label in markdown"
     );
     assert!(
-        md_text.contains("## Changes"),
-        "divergent-cases section header"
+        md_lower.contains("arm-b") || md_lower.contains("target"),
+        "arm-b label in markdown"
+    );
+
+    // Changed-assertions drill-down section is present and names the regressed
+    // class.
+    assert!(
+        md.contains("Changed assertions") || md.contains("## Changes"),
+        "changes section header"
     );
     assert!(
-        md_text.contains("missing-fields"),
-        "divergent case in markdown"
-    );
-    assert!(
-        md_text.contains("over-limit"),
-        "regression case in markdown"
+        md.contains("tool_call_order"),
+        "regressed class in changes section"
     );
 }

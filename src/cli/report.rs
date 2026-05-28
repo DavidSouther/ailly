@@ -1,31 +1,43 @@
-//! Handler for `ailly -p <project> report [--suite <suite>] [<run-id>...]`.
-//!
-//! Reads all `EvalReport` JSON files from `<project>/evals/reports/`,
-//! selects the oldest as baseline and newest as target (by timestamp),
-//! delegates comparison to `knowledge::report::compute_summary`, and
-//! writes `summary.json` + `summary.md` to the same directory.
+//! Handler for `ailly -p <project> report <run-id>` (single mode)
+//! and `ailly -p <project> report <run-id-a> <run-id-b>` (comparison mode).
 
 use std::fs;
 use std::io;
+use std::path::Path;
 use std::path::PathBuf;
 
 use crate::knowledge::eval::EvalReport;
-use crate::knowledge::report::compute_summary;
-use crate::knowledge::report::render_markdown;
+use crate::knowledge::report::compute_comparison;
+use crate::knowledge::report::render_comparison_markdown;
+use crate::knowledge::report::render_single_markdown;
+
+/// Selects single-eval or two-arm comparison mode.
+pub enum ReportMode {
+    Single { run_id: String },
+    Comparison { run_id_a: String, run_id_b: String },
+}
 
 pub struct ReportCmdArgs {
     pub project: PathBuf,
-    /// Optional suite filter. When `None`, the suite name is taken from the
-    /// first report file; all files must share a suite.
-    pub suite: Option<String>,
-    /// Explicit run IDs to include. When empty, all `*.json` files in the
-    /// reports directory are used (excluding `summary.json`).
-    pub run_ids: Vec<String>,
+    pub mode: ReportMode,
+    /// Display label for arm A. Defaults to `"arm-a"`.
+    pub label_a: Option<String>,
+    /// Display label for arm B. Defaults to `"arm-b"`.
+    pub label_b: Option<String>,
 }
 
-pub struct ReportCmdOutcome {
-    pub summary_json: PathBuf,
-    pub summary_md: PathBuf,
+pub struct SingleOutcome {
+    pub report_md: PathBuf,
+}
+
+pub struct ComparisonOutcome {
+    pub comparison_json: PathBuf,
+    pub comparison_md: PathBuf,
+}
+
+pub enum ReportCmdOutcome {
+    Single(SingleOutcome),
+    Comparison(ComparisonOutcome),
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -38,20 +50,14 @@ pub enum ReportCmdError {
         #[source]
         source: serde_json::Error,
     },
-    #[error("need at least 2 runs to compare; found {0}")]
-    NotEnoughRuns(usize),
-    #[error("suite mismatch across report files")]
-    SuiteMismatch,
 }
 
 /// End-to-end CLI handler.
 ///
 /// # Errors
-/// See [`ReportCmdError`].
-///
-/// # Panics
-/// Panics if the internal sort leaves fewer than 2 reports — this cannot
-/// happen because the `reports.len() < 2` guard runs before the sort.
+/// Returns [`ReportCmdError::Io`] if a report file cannot be read or the
+/// output file cannot be written. Returns [`ReportCmdError::Json`] if a
+/// report file contains invalid JSON.
 #[expect(
     clippy::unused_async,
     reason = "async for interface consistency with other CLI handlers"
@@ -59,71 +65,54 @@ pub enum ReportCmdError {
 pub async fn run(args: ReportCmdArgs) -> Result<ReportCmdOutcome, ReportCmdError> {
     let reports_dir = args.project.join("evals").join("reports");
 
-    let mut report_files: Vec<PathBuf> = Vec::new();
-    for entry in fs::read_dir(&reports_dir)? {
-        let entry = entry?;
-        let path = entry.path();
-        if path.extension().and_then(|e| e.to_str()) != Some("json") {
-            continue;
+    match args.mode {
+        ReportMode::Single { run_id } => {
+            let report_path = reports_dir.join(format!("{run_id}.json"));
+            let report = load_report(&report_path)?;
+
+            let md_text = render_single_markdown(&report);
+            let report_md = reports_dir.join(format!("{run_id}-report.md"));
+            fs::write(&report_md, md_text)?;
+
+            Ok(ReportCmdOutcome::Single(SingleOutcome { report_md }))
         }
-        let stem = path
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .unwrap_or_default();
-        if stem == "summary" {
-            continue;
-        }
-        if args.run_ids.is_empty() || args.run_ids.iter().any(|id| id == stem) {
-            report_files.push(path);
+        ReportMode::Comparison { run_id_a, run_id_b } => {
+            let path_a = reports_dir.join(format!("{run_id_a}.json"));
+            let path_b = reports_dir.join(format!("{run_id_b}.json"));
+            let report_a = load_report(&path_a)?;
+            let report_b = load_report(&path_b)?;
+
+            let comparison = compute_comparison(&report_a, &report_b);
+
+            let label_a = args.label_a.unwrap_or_else(|| String::from("arm-a"));
+            let label_b = args.label_b.unwrap_or_else(|| String::from("arm-b"));
+
+            let stem = format!("{run_id_a}-vs-{run_id_b}");
+            let comparison_json = reports_dir.join(format!("{stem}.json"));
+            let json_text = serde_json::to_string_pretty(&comparison).map_err(|source| {
+                ReportCmdError::Json {
+                    path: comparison_json.clone(),
+                    source,
+                }
+            })?;
+            fs::write(&comparison_json, json_text)?;
+
+            let comparison_md = reports_dir.join(format!("{stem}.md"));
+            let md_text = render_comparison_markdown(&comparison, &label_a, &label_b);
+            fs::write(&comparison_md, md_text)?;
+
+            Ok(ReportCmdOutcome::Comparison(ComparisonOutcome {
+                comparison_json,
+                comparison_md,
+            }))
         }
     }
+}
 
-    let mut reports: Vec<EvalReport> = report_files
-        .iter()
-        .map(|path| {
-            let text = fs::read_to_string(path)?;
-            serde_json::from_str::<EvalReport>(&text).map_err(|source| ReportCmdError::Json {
-                path: path.clone(),
-                source,
-            })
-        })
-        .collect::<Result<_, _>>()?;
-
-    let suite_name = if let Some(s) = &args.suite {
-        reports.retain(|r| &r.suite == s);
-        s.clone()
-    } else {
-        let s = reports.first().map(|r| r.suite.clone()).unwrap_or_default();
-        if reports.iter().any(|r| r.suite != s) {
-            return Err(ReportCmdError::SuiteMismatch);
-        }
-        s
-    };
-
-    if reports.len() < 2 {
-        return Err(ReportCmdError::NotEnoughRuns(reports.len()));
-    }
-
-    reports.sort_by_key(|r| r.timestamp);
-    let baseline = reports.remove(0);
-    let target = reports.pop().expect("at least 2 reports remain after sort");
-
-    let summary = compute_summary(&suite_name, &baseline, &target);
-
-    let summary_json = reports_dir.join("summary.json");
-    let json_text =
-        serde_json::to_string_pretty(&summary).map_err(|source| ReportCmdError::Json {
-            path: summary_json.clone(),
-            source,
-        })?;
-    fs::write(&summary_json, json_text)?;
-
-    let summary_md = reports_dir.join("summary.md");
-    let md_text = render_markdown(&summary);
-    fs::write(&summary_md, md_text)?;
-
-    Ok(ReportCmdOutcome {
-        summary_json,
-        summary_md,
+fn load_report(path: &Path) -> Result<EvalReport, ReportCmdError> {
+    let text = fs::read_to_string(path)?;
+    serde_json::from_str::<EvalReport>(&text).map_err(|source| ReportCmdError::Json {
+        path: path.to_path_buf(),
+        source,
     })
 }
