@@ -6,6 +6,8 @@ use ailly_two::cli::assemble::run as assemble_run;
 use ailly_two::cli::eval::EvalCmdArgs;
 use ailly_two::cli::eval::run as eval_run;
 use ailly_two::cli::report::ReportCmdArgs;
+use ailly_two::cli::report::ReportCmdOutcome;
+use ailly_two::cli::report::ReportMode;
 use ailly_two::cli::report::run as report_run;
 use ailly_two::cli::run::RunArgs;
 use ailly_two::cli::run::run as run_cmd;
@@ -43,15 +45,18 @@ enum Command {
         #[arg(long = "over")]
         over: PathBuf,
     },
-    /// Compare two eval runs and write a benchmark-style report.
+    /// Summarise one eval run, or compare two runs side-by-side.
     Report {
-        /// Suite filter. When omitted, all reports in the directory are
-        /// compared.
+        /// First (or only) run ID. With one ID, produces a single-run summary.
+        run_id_a: String,
+        /// Second run ID. When provided, produces a two-arm comparison report.
+        run_id_b: Option<String>,
+        /// Display label for arm A (defaults to "arm-a").
         #[arg(long)]
-        suite: Option<String>,
-        /// Explicit run IDs to include (defaults to all *.json in
-        /// evals/reports/).
-        run_ids: Vec<String>,
+        label_a: Option<String>,
+        /// Display label for arm B (defaults to "arm-b").
+        #[arg(long)]
+        label_b: Option<String>,
     },
 }
 
@@ -115,18 +120,37 @@ fn main() -> ExitCode {
                 }
             }
         }
-        Command::Report { suite, run_ids } => {
+        Command::Report {
+            run_id_a,
+            run_id_b,
+            label_a,
+            label_b,
+        } => {
             let rt = tokio::runtime::Builder::new_current_thread()
                 .enable_all()
                 .build()
                 .expect("build tokio runtime");
+            let mode = if let Some(id_b) = run_id_b {
+                ReportMode::Comparison {
+                    run_id_a,
+                    run_id_b: id_b,
+                }
+            } else {
+                ReportMode::Single { run_id: run_id_a }
+            };
             match rt.block_on(report_run(ReportCmdArgs {
                 project: cli.project,
-                suite,
-                run_ids,
+                mode,
+                label_a,
+                label_b,
             })) {
                 Ok(outcome) => {
-                    println!("{}", outcome.summary_json.display());
+                    match outcome {
+                        ReportCmdOutcome::Single(s) => println!("{}", s.report_md.display()),
+                        ReportCmdOutcome::Comparison(c) => {
+                            println!("{}", c.comparison_json.display());
+                        }
+                    }
                     ExitCode::SUCCESS
                 }
                 Err(err) => {
