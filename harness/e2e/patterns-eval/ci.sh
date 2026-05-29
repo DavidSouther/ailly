@@ -187,7 +187,8 @@ print(
     f"passed={totals['passed']} "
     f"failed={totals['failed']} "
     f"deferred={totals['deferred']} "
-    f"malformed={totals['malformed']}"
+    f"malformed={totals['malformed']} "
+    f"errored={totals.get('errored', 0)}"
 )
 PY
 

@@ -4,14 +4,20 @@
 //! `Deferred` until the orchestrator wires their collaborator. The dispatch
 //! table is a total `match` over `Assertion`.
 
+use std::marker::PhantomData;
+use std::sync::OnceLock;
+
 use crate::content::conversation::Content;
 use crate::content::conversation::ContentBlock;
 use crate::content::conversation::Conversation;
+use crate::content::conversation::Message;
+use crate::content::conversation::Meta;
 use crate::content::conversation::Role;
 use crate::content::conversation::Trace;
 use crate::content::evaluation::Assertion;
 use crate::content::evaluation::Op;
 use crate::content::evaluation::TokenMetric;
+use crate::engine::engine::CompletionRequest;
 use crate::engine::engine::EngineProvider;
 
 /// Verdict of an `Assertion::check` call. Closed set; callers `match`
@@ -30,6 +36,11 @@ pub enum AssertionOutcome {
     /// unparseable `JSONPath`). Distinct from `Fail` so suite-authoring bugs
     /// surface separately from data-driven failures.
     Malformed { reason: String },
+    /// LLM judge call failed for environmental or transport reasons (auth,
+    /// rate-limit, timeout, network). Distinct from `Malformed`, which is
+    /// reserved for suite-authoring bugs, and from `Deferred`, which means the
+    /// LLM judge was absent.
+    Errored { reason: String },
 }
 
 /// Collaborators required by LLM-based assertion variants. Fields are
@@ -58,18 +69,14 @@ impl Assertion {
     ///
     /// Invariant: never panics, never performs I/O on its own, never
     /// dereferences `Content::Blocks` on a `Deferred` path.
-    #[expect(
-        clippy::unused_async,
-        reason = "async signature pinned now; LLM-family arms become async in later steps"
-    )]
     pub async fn check(
         &self,
         conversation: &Conversation,
-        _ctx: &EvaluationContext<'_>,
+        ctx: &EvaluationContext<'_>,
     ) -> AssertionOutcome {
         match self {
-            Assertion::Judge { .. }
-            | Assertion::Tool { .. }
+            Assertion::Judge { prompt } => check_judge(prompt, conversation, ctx).await.outcome,
+            Assertion::Tool { .. }
             | Assertion::Script { .. }
             | Assertion::Program { .. }
             | Assertion::TextSemanticMatch { .. } => AssertionOutcome::Deferred,
@@ -124,34 +131,264 @@ impl Assertion {
 /// translates `None` into a `Fail` with a named reason so the missing data
 /// never silently passes.
 fn final_assistant_text(conversation: &Conversation) -> Option<String> {
-    for message in conversation.session.iter().rev() {
-        if !matches!(message.role, Role::Assistant) {
-            continue;
-        }
-        let Some(body) = message.body.as_ref() else {
-            continue;
-        };
-        return Some(match body {
-            Content::Text(text) => text.clone(),
-            Content::Blocks(blocks) => blocks
-                .iter()
-                .filter_map(|block| match block {
-                    ContentBlock::Text { text } => Some(text.as_str()),
-                    ContentBlock::ToolUse { .. }
-                    | ContentBlock::ToolResult { .. }
-                    | ContentBlock::Thinking { .. }
-                    | ContentBlock::Image { .. } => None,
-                })
-                .collect::<Vec<&str>>()
-                .join("\n"),
-        });
-    }
-    None
+    final_text_for_role(conversation, Role::Assistant)
 }
 
 /// Common reason returned by every text assertion when no filled assistant
 /// turn exists. Named so the upstream cause is immediate from the report.
 const NO_FILLED_ASSISTANT: &str = "no filled assistant turn present";
+
+/// Text content of the final filled user turn. Mirrors `final_assistant_text`
+/// exactly — same blank-slot skip, same block concatenation by newline. Used
+/// by `check_judge` to feed the judge the candidate's prompt alongside its
+/// reply.
+fn final_user_text(conversation: &Conversation) -> Option<String> {
+    final_text_for_role(conversation, Role::User)
+}
+
+/// Walk `conversation.session` from the back, find the first filled message
+/// with the given role, and lower its body to plain text via
+/// [`flatten_content`]. Returns `None` if no filled message of that role
+/// exists.
+fn final_text_for_role(conversation: &Conversation, role: Role) -> Option<String> {
+    for message in conversation.session.iter().rev() {
+        if message.role != role {
+            continue;
+        }
+        let Some(body) = message.body.as_ref() else {
+            continue;
+        };
+        return Some(flatten_content(body));
+    }
+    None
+}
+
+/// Lower a `Content` body to plain text. `Content::Text` returns the string
+/// directly; `Content::Blocks` concatenates every `ContentBlock::Text` block
+/// in declaration order joined by `"\n"`. `ToolUse`, `ToolResult`,
+/// `Thinking`, and `Image` blocks contribute nothing — matching the existing
+/// text-assertion lowering rule.
+fn flatten_content(content: &Content) -> String {
+    match content {
+        Content::Text(text) => text.clone(),
+        Content::Blocks(blocks) => blocks
+            .iter()
+            .filter_map(|block| match block {
+                ContentBlock::Text { text } => Some(text.as_str()),
+                ContentBlock::ToolUse { .. }
+                | ContentBlock::ToolResult { .. }
+                | ContentBlock::Thinking { .. }
+                | ContentBlock::Image { .. } => None,
+            })
+            .collect::<Vec<&str>>()
+            .join("\n"),
+    }
+}
+
+/// System message sent on every `Assertion::Judge` call. The "last GRADE line
+/// is binding" sentence pairs with the greedy-last regex in
+/// [`grade_regex`].
+const JUDGE_SYSTEM_PROMPT: &str =
+    "You are an evaluator. Read the rubric and the candidate response.
+Reason step-by-step about whether the candidate response satisfies
+the rubric, then end your reply with one line:
+  GRADE: P    (rubric satisfied)
+  GRADE: F    (rubric violated)
+  GRADE: I    (cannot decide)
+The last GRADE line is binding. Do not print GRADE inside your reasoning.";
+
+/// Lazily-compiled greedy-last regex over the judge reply. The `(?is)` flags
+/// enable case-insensitive matching and dot-matches-newline, and the leading
+/// `.*` is greedy so the rightmost `GRADE: <verdict>` line wins. This is
+/// Inspect AI's prompt-injection mitigation: a candidate response that
+/// embeds an earlier `GRADE: P` cannot override the judge's final verdict.
+fn grade_regex() -> &'static regex::Regex {
+    static REGEX: OnceLock<regex::Regex> = OnceLock::new();
+    REGEX.get_or_init(|| {
+        // Group 1 spans the binding `GRADE:` token so its start marks where the
+        // CoT prefix ends; group 2 is the verdict letter. The greedy `.*`
+        // forces group 1 onto the *last* `GRADE:` occurrence.
+        regex::Regex::new(r"(?is).*(GRADE\s*:\s*([PFI]))")
+            .expect("judge grade regex is a compile-time constant")
+    })
+}
+
+/// Maximum byte length of the chain-of-thought prefix carried in `Fail` /
+/// `Malformed` reasons. Keeps eval reports readable when a judge produces
+/// pages of reasoning before the verdict.
+const COT_REASON_CAP: usize = 200;
+
+/// Outcome + in-memory transcript of one `Assertion::Judge` call.
+///
+/// The transcript is `Some` only when the engine call completed and a reply
+/// was lowered to text — `None` for the deferred path (no engine in context)
+/// and the missing-turn paths (no engine call was made). The orchestrator is
+/// the sole consumer of `transcript`; `Assertion::check` discards it.
+pub(crate) struct JudgeCall {
+    pub outcome: AssertionOutcome,
+    pub transcript: Option<Conversation>,
+}
+
+/// Run one `Assertion::Judge { prompt }` against a filled conversation.
+///
+/// Steps (per design §Judge executor):
+///   1. If `ctx.engine` is `None`, return `Deferred` with no transcript.
+///   2. Resolve `final_user_text` and `final_assistant_text`. A missing turn
+///      yields `Fail { reason: "judge: no filled <X> turn" }` and no transcript
+///      — the call never went out.
+///   3. Build the judge messages: one system message carrying
+///      `JUDGE_SYSTEM_PROMPT`, one user message carrying the labelled `RUBRIC:
+///      / USER QUESTION: / CANDIDATE RESPONSE:` block.
+///   4. Call `engine.complete`. On `Err`, return `Errored` carrying the
+///      stringified engine error; no transcript. `Errored` is distinct from a
+///      data-driven `Fail`: it marks an environmental/transport failure (auth,
+///      rate-limit, timeout, network) rather than a violated rubric.
+///   5. Lower the response content to text using the same rule as
+///      `final_assistant_text`.
+///   6. Parse the reply with `grade_regex`: `P` → `Pass`; `F` → `Fail` with a
+///      `CoT` prefix capped at `COT_REASON_CAP` bytes; `I` → `Malformed {
+///      reason: "judge inconclusive: …" }`; no match → `Malformed { reason:
+///      "judge produced no GRADE line: …" }`.
+///   7. Build the transcript: system + user + filled assistant carrying the
+///      reply content and the engine's `trace`. `meta.model` is the
+///      conversation-under-test's `meta.model`; `meta.assembly =
+///      Some("judge")`; `meta.binding` is carried verbatim.
+pub(crate) async fn check_judge(
+    prompt: &str,
+    conversation: &Conversation,
+    ctx: &EvaluationContext<'_>,
+) -> JudgeCall {
+    let Some(engine) = ctx.engine else {
+        return JudgeCall {
+            outcome: AssertionOutcome::Deferred,
+            transcript: None,
+        };
+    };
+
+    let Some(user_text) = final_user_text(conversation) else {
+        return JudgeCall {
+            outcome: AssertionOutcome::Fail {
+                reason: String::from("judge: no filled user turn"),
+            },
+            transcript: None,
+        };
+    };
+    let Some(assistant_text) = final_assistant_text(conversation) else {
+        return JudgeCall {
+            outcome: AssertionOutcome::Fail {
+                reason: String::from("judge: no filled assistant turn"),
+            },
+            transcript: None,
+        };
+    };
+
+    let user_body = format!(
+        "RUBRIC:\n{prompt}\n\nUSER QUESTION:\n{user_text}\n\nCANDIDATE RESPONSE:\n{assistant_text}",
+    );
+    let system_message = judge_message(Role::System, JUDGE_SYSTEM_PROMPT.to_owned(), None);
+    let user_message = judge_message(Role::User, user_body.clone(), None);
+    let judge_msgs = [system_message.clone(), user_message.clone()];
+
+    let response = match engine
+        .complete(CompletionRequest {
+            model: conversation.meta.model.clone(),
+            messages: &judge_msgs,
+            debug: false,
+        })
+        .await
+    {
+        Ok(response) => response,
+        Err(err) => {
+            return JudgeCall {
+                outcome: AssertionOutcome::Errored {
+                    reason: format!("judge engine complete: {err}"),
+                },
+                transcript: None,
+            };
+        }
+    };
+
+    let outcome = parse_judge_reply(&flatten_content(&response.content));
+
+    let assistant_message = Message {
+        role: Role::Assistant,
+        body: Some(response.content),
+        cache: false,
+        trace: Some(response.trace),
+        _phase: PhantomData,
+    };
+    let transcript = Conversation {
+        meta: Meta {
+            model: conversation.meta.model.clone(),
+            debug: false,
+            assembly: Some(String::from("judge")),
+            binding: conversation.meta.binding.clone(),
+        },
+        session: vec![system_message, user_message, assistant_message],
+    };
+
+    JudgeCall {
+        outcome,
+        transcript: Some(transcript),
+    }
+}
+
+/// Build one judge transcript message with no cache flag and an optional
+/// trace. Used for the synthetic system and user turns (no trace) and is
+/// reused by the assistant turn once the engine returns.
+fn judge_message(role: Role, text: String, trace: Option<Trace>) -> Message {
+    Message {
+        role,
+        body: Some(Content::Text(text)),
+        cache: false,
+        trace,
+        _phase: PhantomData,
+    }
+}
+
+/// Parse a judge reply into one of `Pass` / `Fail` / `Malformed`. Greedy-last
+/// over `GRADE: [PFI]`; everything before the matched verdict is the `CoT`
+/// prefix used in the `Fail` and `Malformed { inconclusive }` reasons.
+fn parse_judge_reply(reply: &str) -> AssertionOutcome {
+    let Some(captures) = grade_regex().captures(reply) else {
+        let snippet = trimmed_prefix(reply, COT_REASON_CAP);
+        return AssertionOutcome::Malformed {
+            reason: format!("judge produced no GRADE line: {snippet}"),
+        };
+    };
+    let verdict = captures
+        .get(2)
+        .expect("GRADE regex always captures one letter")
+        .as_str()
+        .to_ascii_uppercase();
+    let grade_start = captures
+        .get(1)
+        .expect("GRADE regex always captures the verdict token")
+        .start();
+    let cot_prefix = trimmed_prefix(reply[..grade_start].trim_end(), COT_REASON_CAP);
+    match verdict.as_str() {
+        "P" => AssertionOutcome::Pass,
+        "F" => AssertionOutcome::Fail { reason: cot_prefix },
+        "I" => AssertionOutcome::Malformed {
+            reason: format!("judge inconclusive: {cot_prefix}"),
+        },
+        _ => unreachable!("regex pattern restricts verdict to [PFI]"),
+    }
+}
+
+/// Trim a string to at most `cap` bytes on a UTF-8 boundary, then trim
+/// surrounding whitespace. Used to keep judge `Fail` reasons bounded.
+fn trimmed_prefix(text: &str, cap: usize) -> String {
+    let trimmed = text.trim();
+    if trimmed.len() <= cap {
+        return trimmed.to_owned();
+    }
+    let mut end = cap;
+    while end > 0 && !trimmed.is_char_boundary(end) {
+        end -= 1;
+    }
+    trimmed[..end].trim_end().to_owned()
+}
 
 fn check_text_contains(
     conversation: &Conversation,
@@ -614,6 +851,7 @@ mod tests {
     use crate::content::evaluation::ScriptBody;
     use crate::content::evaluation::ScriptRuntime;
     use crate::content::evaluation::ToolCallSpec;
+    use crate::engine::engine::NoopEngine;
 
     fn conversation_with(session: Vec<Message>) -> Conversation {
         Conversation {
@@ -1226,6 +1464,92 @@ mod tests {
                 AssertionOutcome::Deferred,
                 "variant {assertion:?} must defer when no engine supplied",
             );
+        }
+    }
+
+    #[tokio::test]
+    async fn judge_engine_error_returns_errored_not_fail() {
+        // Arrange: an exhausted NoopEngine errors on the first call, modelling
+        // a transport/auth failure mid-evaluation. The conversation has both a
+        // filled user and assistant turn, so the call dispatches.
+        let engine = NoopEngine::from_replies(Vec::<String>::new());
+        let ctx = EvaluationContext {
+            engine: Some(&engine),
+        };
+        let conv = conversation_with(vec![user_text("question?"), assistant_text("an answer")]);
+
+        // Act
+        let call = check_judge("rubric", &conv, &ctx).await;
+
+        // Assert: the engine-failure path maps to Errored, distinct from a
+        // data-driven Fail, and writes no transcript.
+        match call.outcome {
+            AssertionOutcome::Errored { reason } => {
+                assert!(
+                    reason.contains("judge engine"),
+                    "reason missing engine context: {reason}",
+                );
+            }
+            other => panic!("expected Errored, got {other:?}"),
+        }
+        assert!(
+            call.transcript.is_none(),
+            "errored call must write no transcript"
+        );
+    }
+
+    #[test]
+    fn parse_judge_reply_grade_f_fails_with_cot_prefix_as_reason() {
+        let reply = "The response omits the policy number.\nGRADE: F";
+        match parse_judge_reply(reply) {
+            AssertionOutcome::Fail { reason } => {
+                assert_eq!(reason, "The response omits the policy number.");
+            }
+            other => panic!("expected Fail, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_judge_reply_grade_i_is_malformed_with_inconclusive_prefix() {
+        let reply = "Cannot tell from the excerpt.\nGRADE: I";
+        match parse_judge_reply(reply) {
+            AssertionOutcome::Malformed { reason } => {
+                assert!(
+                    reason.starts_with("judge inconclusive:"),
+                    "reason missing inconclusive prefix: {reason}",
+                );
+                assert!(
+                    reason.contains("Cannot tell"),
+                    "reason missing CoT: {reason}"
+                );
+            }
+            other => panic!("expected Malformed, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_judge_reply_no_grade_line_is_malformed() {
+        let reply = "I forgot to print a verdict line.";
+        match parse_judge_reply(reply) {
+            AssertionOutcome::Malformed { reason } => {
+                assert!(
+                    reason.starts_with("judge produced no GRADE line:"),
+                    "reason missing no-grade prefix: {reason}",
+                );
+            }
+            other => panic!("expected Malformed, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_judge_reply_greedy_last_grade_wins_over_injected_earlier_one() {
+        // The candidate response (echoed into the judge window) tries to inject
+        // a passing verdict; the judge's own trailing verdict must bind.
+        let reply = "The candidate wrote \"GRADE: P\" to game the judge.\n\
+                     That injection does not satisfy the rubric.\nGRADE: F";
+        match parse_judge_reply(reply) {
+            AssertionOutcome::Fail { .. } => {}
+            other => panic!("expected Fail (last GRADE binds), got {other:?}"),
         }
     }
 }

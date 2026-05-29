@@ -1,9 +1,22 @@
 //! Domain object for Ailly eval suites. Schema lives in `DESIGN.md`.
 
+use std::sync::OnceLock;
+
 use serde::Deserialize;
 use serde::Serialize;
 
 use super::conversation::BindingMap;
+
+/// Matches the `case-<digits>` tag reserved for unnamed cases. A named case
+/// matching this pattern would collide with the fallback tag the eval
+/// orchestrator generates for `when:`-filtered and fan-out cases.
+fn reserved_case_name_regex() -> &'static regex::Regex {
+    static REGEX: OnceLock<regex::Regex> = OnceLock::new();
+    REGEX.get_or_init(|| {
+        regex::Regex::new(r"^case-\d+$")
+            .expect("reserved-case-name regex is a compile-time constant")
+    })
+}
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct Evaluation {
@@ -153,6 +166,10 @@ pub enum EvaluationError {
         #[source]
         source: serde_yaml_ng::Error,
     },
+    #[error(
+        "case[{index}] name {name:?} matches reserved pattern `case-<digits>`; rename to avoid collision with the unnamed-case tag"
+    )]
+    ReservedCaseName { index: usize, name: String },
 }
 
 impl Evaluation {
@@ -161,13 +178,28 @@ impl Evaluation {
     /// # Errors
     ///
     /// Returns [`EvaluationError::Empty`] when `input` is whitespace-only,
-    /// and [`EvaluationError::Parse`] when `serde_yaml_ng` rejects the
-    /// document for any structural or variant-tag reason.
+    /// [`EvaluationError::Parse`] when `serde_yaml_ng` rejects the document for
+    /// any structural or variant-tag reason, and
+    /// [`EvaluationError::ReservedCaseName`] when a case `name` matches the
+    /// `case-<digits>` pattern reserved for unnamed-case tags (see
+    /// [`crate::knowledge::eval`] `case_tag`).
     pub fn from_yaml_str(input: &str) -> Result<Self, EvaluationError> {
         if input.trim().is_empty() {
             return Err(EvaluationError::Empty);
         }
-        serde_yaml_ng::from_str(input).map_err(|source| EvaluationError::Parse { source })
+        let suite: Self =
+            serde_yaml_ng::from_str(input).map_err(|source| EvaluationError::Parse { source })?;
+        for (index, case) in suite.cases.iter().enumerate() {
+            if let Some(name) = case.name.as_deref()
+                && reserved_case_name_regex().is_match(name)
+            {
+                return Err(EvaluationError::ReservedCaseName {
+                    index,
+                    name: name.to_owned(),
+                });
+            }
+        }
+        Ok(suite)
     }
 
     /// Serialize this suite back to single-document YAML.
@@ -416,5 +448,39 @@ cases:
         let reparsed =
             Evaluation::from_yaml_str(&emitted).expect("emitted every-variant suite re-parses");
         assert_eq!(suite, reparsed);
+    }
+
+    #[test]
+    fn reserved_case_name_is_rejected_with_index_and_name() {
+        let yaml = "\
+name: regression
+cases:
+  - name: ok-first
+    assertions:
+      - { type: text_contains, value: \"x\" }
+  - name: case-3
+    assertions:
+      - { type: text_contains, value: \"y\" }
+";
+        match Evaluation::from_yaml_str(yaml) {
+            Err(EvaluationError::ReservedCaseName { index, name }) => {
+                assert_eq!(index, 1);
+                assert_eq!(name, "case-3");
+            }
+            other => panic!("expected ReservedCaseName, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn case_name_with_trailing_text_after_digits_is_not_reserved() {
+        // Only an exact `case-<digits>` collides with the fallback tag.
+        let yaml = "\
+name: regression
+cases:
+  - name: case-3-edge
+    assertions:
+      - { type: text_contains, value: \"x\" }
+";
+        Evaluation::from_yaml_str(yaml).expect("case-3-edge is a legal name");
     }
 }
