@@ -1,6 +1,8 @@
 //! Eval orchestrator: pair suite cases with conversations, drive
-//! `Assertion::check`, and assemble the on-disk report. Pure: I/O lives in
-//! `cli::eval`.
+//! `Assertion::check`, and assemble the on-disk report. I/O is bounded:
+//! `cli::eval` writes the JSON report, and `evaluate()` writes one judge
+//! transcript per `Assertion::Judge` call when `EvalArgs::judge_output_dir`
+//! is `Some` (otherwise it performs no I/O).
 
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -16,6 +18,7 @@ use crate::content::evaluation::Case;
 use crate::content::evaluation::Evaluation;
 use crate::knowledge::assertions::AssertionOutcome;
 use crate::knowledge::assertions::EvaluationContext;
+use crate::knowledge::assertions::check_judge;
 
 /// Full report serialized to `<project>/evals/reports/<run-id>.json`.
 /// Field names are the JSON keys; see DESIGN.md §evaluation for the contract.
@@ -60,7 +63,7 @@ pub struct ReportTotals {
     pub assertions: BucketTotals,
 }
 
-/// Four-bucket verdict tally, exhaustive over
+/// Five-bucket verdict tally, exhaustive over
 /// [`crate::knowledge::assertions::AssertionOutcome`].
 #[derive(Serialize, Deserialize, Debug, Default, Clone, Copy)]
 pub struct BucketTotals {
@@ -68,6 +71,11 @@ pub struct BucketTotals {
     pub failed: usize,
     pub deferred: usize,
     pub malformed: usize,
+    /// Added with the fifth `AssertionOutcome` variant. `#[serde(default)]` so
+    /// `ailly report` reads pre-fifth-variant reports (absent ⇒ 0); new reports
+    /// always serialize it (the `Default` derive does not skip the field).
+    #[serde(default)]
+    pub errored: usize,
 }
 
 pub type ClassTotals = BucketTotals;
@@ -142,6 +150,12 @@ pub struct EvalArgs<'a> {
     /// Run-id derived by the caller (run-directory basename or single-file
     /// stem); copied verbatim into `EvalReport.run_id`.
     pub run_id: &'a str,
+    /// When `Some`, the orchestrator writes one Ailly conversation file per
+    /// `Assertion::Judge` call into this directory, using the layout
+    /// `<conv-stem>.<case-tag>.assertion-<M>.yaml`. When `None`, no files are
+    /// written; this preserves the no-I/O contract for callers that only need
+    /// the report value.
+    pub judge_output_dir: Option<&'a std::path::Path>,
 }
 
 /// Pair each suite case with its matching conversations, run every assertion
@@ -163,7 +177,7 @@ pub async fn evaluate(args: EvalArgs<'_>) -> EvalReport {
     let mut cases: Vec<CaseReport> = Vec::with_capacity(args.suite.cases.len());
     let mut match_count: usize = 0;
 
-    for case in &args.suite.cases {
+    for (case_index, case) in args.suite.cases.iter().enumerate() {
         let matched: Vec<&(PathBuf, Conversation)> = matches_for(case, args.conversations);
         let mut match_reports: Vec<MatchReport> = Vec::with_capacity(matched.len());
 
@@ -202,8 +216,27 @@ pub async fn evaluate(args: EvalArgs<'_>) -> EvalReport {
             match_count += 1;
             let mut assertion_reports: Vec<AssertionReport> =
                 Vec::with_capacity(case.assertions.len());
+            let mut judge_idx_in_case: usize = 0;
             for assertion in &case.assertions {
-                let outcome = assertion.check(conv, &args.ctx).await;
+                let outcome = match assertion {
+                    Assertion::Judge { prompt } => {
+                        let call = check_judge(prompt, conv, &args.ctx).await;
+                        if let (Some(out_dir), Some(transcript)) =
+                            (args.judge_output_dir, call.transcript.as_ref())
+                        {
+                            persist_judge_transcript(
+                                out_dir,
+                                stem_of(path),
+                                &case_tag(case, case_index),
+                                judge_idx_in_case,
+                                transcript,
+                            );
+                        }
+                        judge_idx_in_case += 1;
+                        call.outcome
+                    }
+                    _ => assertion.check(conv, &args.ctx).await,
+                };
                 let class = class_tag(assertion);
                 fold_bucket(&mut totals.assertions, &outcome);
                 fold_bucket(per_class.entry(String::from(class)).or_default(), &outcome);
@@ -304,6 +337,79 @@ fn stem_of(path: &Path) -> &str {
     path.file_stem().and_then(|s| s.to_str()).unwrap_or("")
 }
 
+/// Filesystem-safe identifier for a case. Named cases use `case.name`
+/// verbatim with path separators replaced and control characters stripped;
+/// unnamed cases (when:- or fan-out) fall back to `case-<N>` where `N` is
+/// the zero-based index of the case in the suite's `cases:` array.
+///
+/// The reserved-pattern rule on `Evaluation::from_yaml_str` (a follow-up
+/// red-green-refactor cycle) makes the named and unnamed namespaces
+/// disjoint by construction; this helper does not enforce that rule.
+fn case_tag(case: &Case, case_index: usize) -> String {
+    match case.name.as_deref() {
+        Some(name) => sanitize_case_name(name),
+        None => format!("case-{case_index}"),
+    }
+}
+
+fn sanitize_case_name(name: &str) -> String {
+    name.trim()
+        .chars()
+        .map(|c| {
+            if c.is_control() {
+                ' '
+            } else if matches!(c, '/' | '\\') {
+                '_'
+            } else {
+                c
+            }
+        })
+        .collect()
+}
+
+/// Write a judge transcript to
+/// `<out_dir>/<conv_stem>.<case_tag>.assertion-<M>.yaml`.
+///
+/// Failures (directory creation, serialization, write) are logged at
+/// `warn!` and swallowed: a write failure must not alter the assertion
+/// verdict already in `call.outcome`. The report is the source of truth
+/// for verdict; the file is a diff-reviewable side-effect.
+fn persist_judge_transcript(
+    out_dir: &Path,
+    conv_stem: &str,
+    case_tag: &str,
+    judge_idx_in_case: usize,
+    transcript: &Conversation,
+) {
+    if let Err(err) = std::fs::create_dir_all(out_dir) {
+        tracing::warn!(
+            out_dir = %out_dir.display(),
+            error = %err,
+            "judge: failed to create transcript directory",
+        );
+        return;
+    }
+    let yaml = match transcript.to_yaml_string() {
+        Ok(yaml) => yaml,
+        Err(err) => {
+            tracing::warn!(
+                error = %err,
+                "judge: failed to serialize transcript",
+            );
+            return;
+        }
+    };
+    let file_name = format!("{conv_stem}.{case_tag}.assertion-{judge_idx_in_case}.yaml");
+    let path = out_dir.join(&file_name);
+    if let Err(err) = std::fs::write(&path, yaml) {
+        tracing::warn!(
+            path = %path.display(),
+            error = %err,
+            "judge: failed to write transcript",
+        );
+    }
+}
+
 fn filename_of(path: &Path) -> String {
     path.file_name()
         .and_then(|s| s.to_str())
@@ -317,12 +423,15 @@ fn outcome_label(outcome: &AssertionOutcome) -> &'static str {
         AssertionOutcome::Fail { .. } => "fail",
         AssertionOutcome::Deferred => "deferred",
         AssertionOutcome::Malformed { .. } => "malformed",
+        AssertionOutcome::Errored { .. } => "errored",
     }
 }
 
 fn reason_for(outcome: &AssertionOutcome) -> Option<String> {
     match outcome {
-        AssertionOutcome::Fail { reason } | AssertionOutcome::Malformed { reason } => {
+        AssertionOutcome::Fail { reason }
+        | AssertionOutcome::Malformed { reason }
+        | AssertionOutcome::Errored { reason } => {
             if reason.is_empty() {
                 None
             } else {
@@ -339,6 +448,7 @@ fn fold_bucket(bucket: &mut BucketTotals, outcome: &AssertionOutcome) {
         AssertionOutcome::Fail { .. } => bucket.failed += 1,
         AssertionOutcome::Deferred => bucket.deferred += 1,
         AssertionOutcome::Malformed { .. } => bucket.malformed += 1,
+        AssertionOutcome::Errored { .. } => bucket.errored += 1,
     }
 }
 
@@ -556,6 +666,30 @@ mod tests {
             }
         }
 
+        #[test]
+        fn case_tag_uses_sanitized_name_for_named_case() {
+            let case = case_named("over-limit", vec![]);
+            assert_eq!(case_tag(&case, 7), "over-limit");
+        }
+
+        #[test]
+        fn case_tag_sanitizes_path_separators_in_name() {
+            let case = case_named("a/b\\c", vec![]);
+            assert_eq!(case_tag(&case, 0), "a_b_c");
+        }
+
+        #[test]
+        fn case_tag_falls_back_to_index_for_when_filtered_case() {
+            let case = case_when(&[("axis", "x")], vec![]);
+            assert_eq!(case_tag(&case, 2), "case-2");
+        }
+
+        #[test]
+        fn case_tag_falls_back_to_index_for_fanout_case() {
+            let case = case_fanout(vec![]);
+            assert_eq!(case_tag(&case, 0), "case-0");
+        }
+
         #[tokio::test]
         async fn name_hit_runs_assertions_against_matched_conversation_only() {
             let suite = suite_with(vec![case_named(
@@ -575,6 +709,7 @@ mod tests {
                 ctx: EvaluationContext::empty(),
                 suite_name: "regression",
                 run_id: "run-1",
+                judge_output_dir: None,
             };
 
             let report = evaluate(args).await;
@@ -601,6 +736,7 @@ mod tests {
                 ctx: EvaluationContext::empty(),
                 suite_name: "regression",
                 run_id: "run-1",
+                judge_output_dir: None,
             };
 
             let report = evaluate(args).await;
@@ -648,6 +784,7 @@ mod tests {
                 ctx: EvaluationContext::empty(),
                 suite_name: "regression",
                 run_id: "run-1",
+                judge_output_dir: None,
             };
 
             let report = evaluate(args).await;
@@ -673,6 +810,7 @@ mod tests {
                 ctx: EvaluationContext::empty(),
                 suite_name: "regression",
                 run_id: "run-1",
+                judge_output_dir: None,
             };
 
             let report = evaluate(args).await;
@@ -699,6 +837,7 @@ mod tests {
                 ctx: EvaluationContext::empty(),
                 suite_name: "regression",
                 run_id: "run-1",
+                judge_output_dir: None,
             };
 
             let report = evaluate(args).await;
@@ -735,6 +874,7 @@ mod tests {
                 ctx: EvaluationContext::empty(),
                 suite_name: "regression",
                 run_id: "run-1",
+                judge_output_dir: None,
             };
 
             let report = evaluate(args).await;

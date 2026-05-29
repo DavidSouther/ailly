@@ -108,7 +108,7 @@ fn main() -> ExitCode {
             })) {
                 Ok(outcome) => {
                     println!("{}", outcome.report_path.display());
-                    if outcome.assertions_failed + outcome.assertions_malformed > 0 {
+                    if outcome.has_failures() {
                         ExitCode::FAILURE
                     } else {
                         ExitCode::SUCCESS

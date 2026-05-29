@@ -14,6 +14,7 @@ use crate::content::repository::ConversationRepository;
 use crate::content::repository::EvaluationRepository;
 use crate::content::repository::RepositoryError;
 use crate::content::repository::VfsConversationRepository;
+use crate::engine::engine::open_engine_for_model;
 use crate::knowledge::assertions::EvaluationContext;
 use crate::knowledge::eval::EvalArgs;
 use crate::knowledge::eval::evaluate;
@@ -36,7 +37,17 @@ pub struct EvalCmdOutcome {
     pub assertions_failed: usize,
     pub assertions_deferred: usize,
     pub assertions_malformed: usize,
+    pub assertions_errored: usize,
     pub report_path: PathBuf,
+}
+
+impl EvalCmdOutcome {
+    /// `true` when the run should exit non-zero: any failed, malformed, or
+    /// errored assertion. Passed and deferred assertions do not fail the run.
+    #[must_use]
+    pub fn has_failures(&self) -> bool {
+        self.assertions_failed + self.assertions_malformed + self.assertions_errored > 0
+    }
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -79,12 +90,35 @@ pub async fn run(args: EvalCmdArgs) -> Result<EvalCmdOutcome, EvalCmdError> {
     }
 
     let run_id = derive_run_id(&args.over);
+
+    // Resolve the judge engine once, from the first conversation's model. A
+    // failed open (no API key, unserviceable model) is not fatal: log it and
+    // proceed with `engine: None`, which makes judge assertions defer. The
+    // "engine present but call fails mid-evaluation" path is the only one that
+    // produces `Errored`. Heterogeneous run dirs bind to the first model; per-
+    // conversation dispatch is deferred
+    // (docs/developer/TASK-NOTES-eval-judge-deferred.md).
+    let engine = match conversations.first() {
+        Some((_, conv)) => match open_engine_for_model(&conv.meta.model) {
+            Ok(engine) => Some(engine),
+            Err(err) => {
+                tracing::warn!("judge engine unavailable: {err}; judge assertions will defer");
+                None
+            }
+        },
+        None => None,
+    };
+
+    let judge_dir = args.project.join("evals").join("judges").join(&run_id);
     let report = evaluate(EvalArgs {
         suite: &suite,
         conversations: &conversations,
-        ctx: EvaluationContext::empty(),
+        ctx: EvaluationContext {
+            engine: engine.as_deref(),
+        },
         suite_name: &args.suite,
         run_id: &run_id,
+        judge_output_dir: Some(&judge_dir),
     })
     .await;
 
@@ -109,6 +143,7 @@ pub async fn run(args: EvalCmdArgs) -> Result<EvalCmdOutcome, EvalCmdError> {
         assertions_failed: report.totals.assertions.failed,
         assertions_deferred: report.totals.assertions.deferred,
         assertions_malformed: report.totals.assertions.malformed,
+        assertions_errored: report.totals.assertions.errored,
         report_path,
     })
 }
