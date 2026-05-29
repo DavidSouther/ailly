@@ -1,0 +1,15 @@
+{
+  "plan_file": "/Users/davidsouther/devel/davidsouther/ailly/main_two/docs/developer/2026-05-28-A-eval-judge/design.md",
+  "review_summary": "All four stated fixes are present in the document text. One newly discovered issue: the reserved-pattern citation resolves to a function whose current body contains no such validation, making the cited location an untested assumption rather than a verified insertion point.",
+  "alignment_score": "high",
+  "risk_level": "low",
+  "issues": [
+    {
+      "severity": "should_fix",
+      "category": "untested_assumption",
+      "title": "Reserved-pattern validation not present at cited line range",
+      "description": "The design states: 'The validation lives in `Evaluation::from_yaml_str` ([src/content/evaluation.rs:166-171])'. Lines 166-171 of that file are the existing `from_yaml_str` body: an empty-string guard followed by `serde_yaml_ng::from_str`. There is no `^case-\\d+$` regex check, no new `EvaluationError` variant for the reserved-pattern rejection, and no post-deserialization validation loop. The citation presents the validation as already identified at a concrete location, but the location contains only the existing deserialization path. The fifth sub-test that asserts 'a parse error naming the reserved-pattern rule' will therefore fail to compile until both a new error variant and a new post-deserialization check are added, neither of which is specified in the design.",
+      "suggested_fix": "Clarify that `from_yaml_str` is the function where the validation must be added, not where it currently lives. Specify that a new `EvaluationError` variant (e.g. `ReservedCaseName { name: String }`) must be introduced to carry the rejection reason, because the existing variants (`Empty`, `Parse`, `Emit`) cover only deserialization failures, not post-deserialization semantic checks. If the validator is a private helper called by `from_yaml_str`, name it in the design so the implementer has an unambiguous insertion point."
+    }
+  ]
+}

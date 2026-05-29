@@ -1,0 +1,92 @@
+{
+  "plan_file": "docs/developer/2026-05-28-A-eval-judge/design.md",
+  "review_summary": "The design is well-structured and all required sections are present, but contains multiple verifiable code-state mismatches: the EvaluationContext currently holds `engine: Option<&dyn EngineProvider>` not `engine_factory`, the Judge arm returns Deferred at lines 71-75 (correct location, wrong grouping description), fold_bucket/outcome_label/reason_for are at lines 314-343 but currently lack the Errored variant match arm, and EvalCmdOutcome has no assertions_errored field. These are pre-existing state gaps the design intends to introduce, but several cited line ranges and field names are described as current reality when they are proposed additions.",
+  "alignment_score": "high",
+  "risk_level": "medium",
+  "issues": [
+    {
+      "severity": "must_fix",
+      "category": "untested_assumption",
+      "title": "EvaluationContext field name mismatch: design says engine_factory, code has engine",
+      "description": "The design's Specification section (Public API changes > EvaluationContext updated) cites src/knowledge/assertions.rs:39-52 and states the struct currently has (or will have) `engine_factory: Option<&'a dyn EngineFactory>`. The actual struct at those lines is `pub engine: Option<&'a dyn EngineProvider>`. The design also states `EvaluationContext::empty()` returns `engine_factory: None`, but the actual code at line 50 returns `EvaluationContext { engine: None }`. The feature test update table (Testing section) says to 'rename engine to engine_factory' in eval_assertions.rs, confirming this is a rename, but the Specification prose presents the new struct shape without making clear it is replacing an existing differently-named field. The test at line 1197-1230 of assertions.rs asserts 'variant must defer when no engine supplied' — the comment says 'engine' not 'engine_factory', which is what the design says must be renamed.",
+      "evidence": "src/knowledge/assertions.rs:39-52 — field is `pub engine: Option<&'a dyn EngineProvider>`, not `engine_factory`; src/knowledge/assertions.rs:50 — `EvaluationContext { engine: None }`"
+    },
+    {
+      "severity": "must_fix",
+      "category": "untested_assumption",
+      "title": "AssertionOutcome::Errored variant does not exist yet; fold_bucket/outcome_label/reason_for match arms are incomplete",
+      "description": "The design states at Specification > Fifth variant that fold_bucket, outcome_label, and reason_for at src/knowledge/eval.rs:314-343 propagate the new Errored variant. The actual code at those lines has no Errored arm in any of the three functions. The design cites these lines as if they already handle Errored, but they do not. This is a to-be-added item, not a current fact. The framing 'This propagates to: fold_bucket, outcome_label, and reason_for helpers' implies these already exist with Errored handling, which is false.",
+      "evidence": "src/knowledge/eval.rs:314-343 — outcome_label matches only Pass/Fail/Deferred/Malformed; fold_bucket matches only those four; reason_for matches only those four; no Errored arm present"
+    },
+    {
+      "severity": "must_fix",
+      "category": "untested_assumption",
+      "title": "EvalCmdOutcome has no assertions_errored field; design claims it gains one",
+      "description": "The design states 'EvalCmdOutcome in src/cli/eval.rs:32-40 gains assertions_errored: usize'. The actual struct at those lines (lines 32-40) has: conversations_matched, assertions_passed, assertions_failed, assertions_deferred, assertions_malformed, report_path — no assertions_errored field. The design presents this as a planned addition but the phrasing 'gains' without further qualification could be read as already present.",
+      "evidence": "src/cli/eval.rs:32-40 — EvalCmdOutcome has no assertions_errored field"
+    },
+    {
+      "severity": "must_fix",
+      "category": "untested_assumption",
+      "title": "src/cli/report.rs exists but design does not verify exit-code logic is there",
+      "description": "The design states 'The exit-code logic in src/cli/report.rs treats errored > 0 as failure'. The file exists. However, the design does not verify whether the current file already contains exit-code logic or whether this is a new addition. This is a minor framing issue: the file exists but whether it already contains the relevant logic is unverified in the design.",
+      "evidence": "src/cli/report.rs — file exists (verified); current content not examined; design treats the addition as a propagation fact"
+    },
+    {
+      "severity": "must_fix",
+      "category": "untested_assumption",
+      "title": "Judge arm in assertions.rs groups with four other variants, not described correctly in design",
+      "description": "The design says at Problem Statement: 'every judge assertion returns AssertionOutcome::Deferred (src/knowledge/assertions.rs:71-75)'. The actual code at lines 71-75 groups Judge with Tool, Script, Program, and TextSemanticMatch in a single match arm returning Deferred. The design's line citation is accurate in that Judge is handled in that range, but the design elsewhere implies Judge will be separated from the other deferred variants into its own arm. This is consistent with the plan, but the line range description slightly misrepresents the grouping (five variants share those lines, not one).",
+      "evidence": "src/knowledge/assertions.rs:71-75 — `Assertion::Judge { .. } | Assertion::Tool { .. } | Assertion::Script { .. } | Assertion::Program { .. } | Assertion::TextSemanticMatch { .. } => AssertionOutcome::Deferred`"
+    },
+    {
+      "severity": "must_fix",
+      "category": "definition_of_done",
+      "title": "Feature test pre-state mismatch: e2e_patterns_eval invocation comment says '3 passed (tokens) + 6 deferred' but design says pre-state is '6 deferred (3 script + 3 judge)'",
+      "description": "The design's Testing table states the pre-state for e2e_patterns_eval invocation is 'Deferred-carry totals shift. Invocation: 6 deferred (3 script + 3 judge)'. The actual test at tests/e2e_patterns_eval.rs:328 has a comment '3 cases x (script + judge + tokens) = 3 passed (tokens) + 6 deferred'. This matches the design's pre-state assertion count of 6 deferred, so the count is correct. However the design says the post-state is '3 deferred (script) + 3 errored (judge)'. Since EvalCmdOutcome currently has no assertions_errored field, the post-state assertion cannot be written against the current struct. This is a future-state description presented as a test update plan against a struct that does not yet have the necessary field.",
+      "evidence": "tests/e2e_patterns_eval.rs:332 — `assert_eq!(invocation_outcome.assertions_deferred, 6)` confirms pre-state; src/cli/eval.rs:32-40 — no assertions_errored field to assert against post-state"
+    },
+    {
+      "severity": "should_fix",
+      "category": "definition_of_done",
+      "title": "eval_cmd.rs currently asserts assertions_deferred == 1 and per_class[judge][deferred] == 1; design says these flip to Errored but the EvalCmdOutcome struct lacks assertions_errored",
+      "description": "The design's Testing table says eval_cmd.rs should be updated so 'Judge case flips from Deferred to Errored in the no-key environment'. The current test at tests/eval_cmd.rs:155 asserts assertions_deferred == 1 and at line 196 per_class[judge][deferred] == 1. For the post-state to be testable, EvalCmdOutcome must gain assertions_errored, BucketTotals must gain errored, and the JSON report shape must include an errored field. The design describes these additions but does not explicitly list BucketTotals as gaining an errored field in the Specification prose (it is only implied by 'Five buckets sum to total assertions' in the Metrics section).",
+      "evidence": "tests/eval_cmd.rs:155 — assertions_deferred == 1; tests/eval_cmd.rs:196 — per_class[judge][deferred] == 1; design Specification section does not explicitly list BucketTotals struct changes"
+    },
+    {
+      "severity": "should_fix",
+      "category": "definition_of_done",
+      "title": "BucketTotals struct change not explicitly called out in Specification",
+      "description": "The design says 'BucketTotals gains an errored: usize field' in the Specification section as a one-line propagation note. The BucketTotals struct change is the load-bearing schema change for all downstream assertions (JSON report shape, EvalCmdOutcome population, per-class map serialization). The Specification should call out where BucketTotals is defined and what its current shape is, matching the pattern used for other struct citations.",
+      "evidence": "design.md Specification > Fifth variant — 'BucketTotals gains an errored: usize field' without file/line citation; no Grep performed to locate BucketTotals definition"
+    },
+    {
+      "severity": "should_fix",
+      "category": "risk_quality",
+      "title": "Hedge 'could potentially' conceals a decision in the EngineFactory dyn-compatibility claim",
+      "description": "The design does not contain 'could potentially' but uses 'when wired' and 'continues to return Deferred' language in the EvaluationContext update section. Separately, the sentence 'The text_semantic_match arm continues to return Deferred when engine_factory is None, matching the existing collaborator absent contract' asserts future behavior as if it is specified, but text_semantic_match is grouped with Judge in the same Deferred arm currently — splitting them is an implied implementation detail not called out as a task.",
+      "evidence": "design.md Specification > EvaluationContext updated — 'The text_semantic_match arm continues to return Deferred when engine_factory is None'; src/knowledge/assertions.rs:71-75 — TextSemanticMatch is in the same arm as Judge currently"
+    },
+    {
+      "severity": "should_fix",
+      "category": "task_completeness",
+      "title": "eval_assertions.rs test name cited in update table is not the test's actual name",
+      "description": "The design's Testing update table says to update 'the judge defers when no engine pin' in tests/eval_assertions.rs. The actual test in assertions.rs (the unit test module, not a separate file) at line 1197 is named `remote_variants_return_deferred_when_context_is_empty` and tests all five deferred variants together, not a dedicated judge-deferral test. The design implies there is a dedicated judge-deferral test in eval_assertions.rs; the actual coverage is a multi-variant test. Whether tests/eval_assertions.rs is a separate integration test file from the inline tests should be verified.",
+      "evidence": "src/knowledge/assertions.rs:1197-1230 — test `remote_variants_return_deferred_when_context_is_empty` covers Judge plus four other variants; no separate eval_assertions.rs file was Globbed"
+    },
+    {
+      "severity": "suggestion",
+      "category": "scope_alignment",
+      "title": "Data flow diagram redundantly restates the Specification prose",
+      "description": "The Data flow section (a code-block diagram under Engine wiring at the CLI) conveys no information not already in the preceding Specification prose and the error handling decision table. It is not wrong, but it adds length without adding new decisions or constraints.",
+      "evidence": "design.md Specification > Data flow — full diagram mirrors the text above it and the decision table below it"
+    },
+    {
+      "severity": "suggestion",
+      "category": "clarity",
+      "title": "Prior Art convergence paragraph introduces a hedge ('around 85-95%') without a locked decision",
+      "description": "The sentence 'Provider-native paths hit greater than 99% schema compliance versus around 85-95% for prompt-only JSON' uses 'around' as a hedge. This is contextual background, not a locked decision, so it does not hide a decision. Flagged for clarity only.",
+      "evidence": "design.md Prior Art — 'versus around 85-95% for prompt-only JSON (Carrick benchmark)'"
+    }
+  ]
+}
