@@ -289,12 +289,21 @@ model: claude-opus-4-7
             .expect("read missing-fields conversation");
         let conv = Conversation::from_yaml_str(&missing).expect("parses");
 
-        let system_count = conv
+        let systems: Vec<&Message<Rendered>> = conv
             .session
             .iter()
             .filter(|m| matches!(m.role, Role::System))
-            .count();
-        assert_eq!(system_count, 4, "one System message per prefix block");
+            .collect();
+        assert_eq!(systems.len(), 5, "one System message per prefix block");
+        match &systems[4].body {
+            Some(Content::Text(t)) => assert!(
+                t.is_empty(),
+                "fifth (knowledge) prefix block body should be empty against the placeholder corpus, got {t:?}",
+            ),
+            other => {
+                panic!("expected Some(Content::Text(\"\")) for knowledge block, got {other:?}")
+            }
+        }
 
         let user_count = conv
             .session
@@ -332,15 +341,16 @@ model: claude-opus-4-7
             .collect();
         assert_eq!(
             systems.len(),
-            4,
-            "four prefix blocks → four System messages"
+            5,
+            "five prefix blocks → five System messages"
         );
-        // Prefix block declaration order: file, system, tools, examples.
-        // Cache assignments from the fixture: true, true, true, false.
+        // Prefix block declaration order: file, system, tools, examples, context.
+        // Cache assignments from the fixture: true, true, true, false, false.
         assert!(systems[0].cache, "file block: cache true");
         assert!(systems[1].cache, "system block: cache true");
         assert!(systems[2].cache, "tools block: cache true");
         assert!(!systems[3].cache, "examples block: cache false");
+        assert!(!systems[4].cache, "context (knowledge) block: cache false");
     }
 
     #[test]

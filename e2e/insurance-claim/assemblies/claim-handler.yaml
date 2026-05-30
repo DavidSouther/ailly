@@ -1,11 +1,3 @@
-# Insurance claim handler assembly.
-#
-# The README documents a fifth prefix block (`kind: retrieval`) over
-# `context/knowledge/docs/`. That block is deferred to the
-# `knowledge: prefix-retrieval` slice and is intentionally omitted here
-# so the in-scope `cli/assemble` slice produces a working conversation
-# end to end. Re-add it when retrieval lands.
-
 name: claim-handler
 model: claude-sonnet-4-6
 
@@ -13,10 +5,11 @@ matrix:
   case: [default, missing-fields, ambiguous, over-limit]
 
 prefix:
-  - { kind: file,     path: ./AGENTS.md,                          cache: true }
-  - { kind: system,   path: context/system/*.md,                  cache: true }
-  - { kind: tools,    path: context/tools/*.json,                 cache: true }
+  - { kind: file,     path: ./AGENTS.md,                                                  cache: true }
+  - { kind: system,   path: context/system/*.md,                                          cache: true }
+  - { kind: tools,    path: context/tools/*.json,                                         cache: true }
   - { kind: examples, path: context/examples/classification/*.md }
+  - { kind: context,  source: "context/knowledge/docs/{{ case }}", glob: "*.md", count: 5 }
 
 conversation:
   - { role: user, path: "prompts/{{ case }}.md" }
