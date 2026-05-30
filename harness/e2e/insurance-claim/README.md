@@ -66,11 +66,11 @@ matrix:
   case: [default, missing-fields, ambiguous, over-limit]
 
 prefix:
-  - { kind: file,       path: ./AGENTS.md,                                                        cache: true }
-  - { kind: system,     path: context/system/*.md,                                                cache: true }
-  - { kind: tools,      path: context/tools/*.json,                                               cache: true }
-  - { kind: examples,   path: context/examples/classification/*.md }
-  - { kind: retrieval,  source: context/knowledge/docs/, query: "{{ case }}", top_k: 5 }
+  - { kind: file,     path: ./AGENTS.md,                                                  cache: true }
+  - { kind: system,   path: context/system/*.md,                                          cache: true }
+  - { kind: tools,    path: context/tools/*.json,                                         cache: true }
+  - { kind: examples, path: context/examples/classification/*.md }
+  - { kind: context,  source: "context/knowledge/docs/{{ case }}", glob: "*.md", count: 5 }
 
 conversation:
   - { role: user, path: "prompts/{{ case }}.md" }
@@ -81,7 +81,7 @@ What this proves about context-window management:
 
 - **Every prefix block is named.** The conversation contains exactly these blocks, in this order. No agent loop adds or drops anything; `AGENTS.md` is at position zero only because the assembly puts it there. The conversation file in `runs/<id>/<case>.yaml` is the verbatim materialisation.
 - **The cache plan rides on the content.** `cache: true` on a prefix block marks the end of that block as a prompt-cache breakpoint; the inline trace in the conversation file records whether the breakpoint hit.
-- **Retrieval is auditable.** `top_k: 5` plus the source folder means the retrieved chunks land in the prefix portion of the conversation file and can be inspected after the fact, not inferred from a vector store.
+- **Knowledge selection is auditable.** `count: 5` plus the per-case source folder means the knowledge chunks land in the prefix portion of the conversation file and can be inspected after the fact, not inferred from a vector store.
 - **No assembly code.** A new contributor adds a few-shot by dropping a file under `context/examples/classification/` (the glob picks it up); no Python, no SDK call, no redeploy.
 - **The matrix is the sweep.** `case:` enumerates the bindings; `ailly assemble` writes one conversation skeleton per case. Adding a case is one line plus one file under `prompts/`.
 
@@ -179,7 +179,7 @@ The CI threshold is "no regressions against the previous green run". The run tha
 ## Current limitations
 
 The project demonstrates the assemble -> run -> eval pipeline end to
-end, with three intentionally deferred capabilities that affect what
+end, with two intentionally deferred capabilities that affect what
 the regression suite can prove today. Each item is tracked separately
 in [docs/developer/TASKS.md](../../docs/developer/TASKS.md):
 
@@ -196,8 +196,3 @@ in [docs/developer/TASKS.md](../../docs/developer/TASKS.md):
   `AssertionOutcome::Deferred` in [src/knowledge/assertions.rs](../../src/knowledge/assertions.rs);
   the eval report records the case as `deferred`, which does not fail
   the CLI exit code. Tracked under the `eval-judge` entry in TASKS.md.
-- **`kind: retrieval` is omitted from the assembly.** The README
-  documents a fifth prefix block over `context/knowledge/docs/`. The
-  assembly intentionally drops it because `kind: retrieval` is
-  rejected at parse time today. Tracked under
-  `knowledge: prefix-retrieval` in TASKS.md.

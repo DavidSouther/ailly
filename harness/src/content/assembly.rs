@@ -39,10 +39,6 @@ pub struct Assembly {
 
 /// One entry in the assembly's prefix list. Variants mirror DESIGN.md's
 /// prefix-kind discriminator.
-///
-/// `Seed` and `Retrieval` are intentionally absent: an assembly carrying
-/// either kind returns [`AssemblyError::UnsupportedKind`] so the failure is
-/// loud, not silent.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum PrefixBlock {
@@ -82,8 +78,6 @@ pub enum PrefixBlock {
 pub enum AssemblyError {
     #[error("failed to parse assembly YAML: {0}")]
     Parse(#[from] serde_yaml_ng::Error),
-    #[error("unsupported prefix kind: {kind}")]
-    UnsupportedKind { kind: &'static str },
 }
 
 /// Errors emitted when rendering templated turns or prefix blocks.
@@ -109,29 +103,12 @@ impl Assembly {
     ///
     /// # Errors
     ///
-    /// Returns [`AssemblyError::UnsupportedKind`] when any prefix block uses
-    /// `kind: seed` or `kind: retrieval`; otherwise propagates serde errors
-    /// through [`AssemblyError::Parse`].
+    /// Returns [`AssemblyError::Parse`] when the YAML is malformed or the
+    /// document does not match the [`Assembly`] schema (including unknown
+    /// prefix-block kinds, which surface through serde's default unknown-
+    /// variant error).
     pub fn from_yaml_str(input: &str) -> Result<Self, AssemblyError> {
-        let value: serde_yaml_ng::Value = serde_yaml_ng::from_str(input)?;
-        if let Some(prefix) = value
-            .get("prefix")
-            .and_then(serde_yaml_ng::Value::as_sequence)
-        {
-            for block in prefix {
-                if let Some(kind) = block.get("kind").and_then(serde_yaml_ng::Value::as_str) {
-                    match kind {
-                        "seed" => return Err(AssemblyError::UnsupportedKind { kind: "seed" }),
-                        "retrieval" => {
-                            return Err(AssemblyError::UnsupportedKind { kind: "retrieval" });
-                        }
-                        _ => {}
-                    }
-                }
-            }
-        }
-        let assembly: Self = serde_yaml_ng::from_value(value)?;
-        Ok(assembly)
+        serde_yaml_ng::from_str(input).map_err(AssemblyError::from)
     }
 
     /// Serialize this assembly back to YAML.
@@ -365,23 +342,12 @@ conversation:
     }
 
     #[test]
-    fn seed_prefix_kind_returns_unsupported_kind() {
+    fn unknown_prefix_kind_surfaces_serde_error() {
         let yaml = "name: x\nmodel: m\nprefix:\n  - { kind: seed, value: hello }\n";
-        let err = Assembly::from_yaml_str(yaml).expect_err("seed rejected");
-        assert!(
-            matches!(err, AssemblyError::UnsupportedKind { kind: "seed" }),
-            "got {err:?}"
-        );
-    }
-
-    #[test]
-    fn retrieval_prefix_kind_returns_unsupported_kind() {
-        let yaml = "name: x\nmodel: m\nprefix:\n  - { kind: retrieval, source: docs/, query: q }\n";
-        let err = Assembly::from_yaml_str(yaml).expect_err("retrieval rejected");
-        assert!(
-            matches!(err, AssemblyError::UnsupportedKind { kind: "retrieval" }),
-            "got {err:?}"
-        );
+        let err = Assembly::from_yaml_str(yaml).expect_err("unknown kind rejected");
+        let msg = format!("{err}");
+        assert!(msg.contains("seed"), "got {msg}");
+        assert!(msg.contains("context"), "got {msg}");
     }
 
     fn binding_with_case(case: &str) -> Binding {

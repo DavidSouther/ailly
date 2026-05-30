@@ -48,13 +48,11 @@ prefix: PrefixBlock[]                        # ordered content rendered into the
 conversation: TurnTemplate[]                 # ordered user/assistant turns; blank assistant turns are filled by `ailly run`
 
 PrefixBlock:
-  kind: file | system | tools | examples | seed | context | retrieval
+  kind: file | system | tools | examples | context
   path?: string                              # file or glob; templated with matrix variables
-  source?: string                            # directory (kind: context, retrieval)
+  source?: string                            # directory (kind: context)
   glob?: string                              # filter inside source (kind: context)
   count?: number                             # cap on selected items (kind: context)
-  query?: string                             # templated query string (kind: retrieval)
-  top_k?: number                             # retrieval cap
   cache: bool                                # mark end-of-block as a cache breakpoint
 
 TurnTemplate:
@@ -63,7 +61,7 @@ TurnTemplate:
   cache: bool                                # mark end-of-turn as a cache breakpoint
 ```
 
-The `kind:` tag on a prefix block is a documentation/convention label; the engine treats every block as ordered text concatenated into the window, except `kind: retrieval`, which executes a query against `source` and inlines the top-k results. Cache breakpoints ride on the blocks and turns they cache; there is no separate `cache_breakpoints:` list.
+The `kind:` tag on a prefix block is a documentation/convention label; the engine treats every block as ordered text concatenated into the window. Cache breakpoints ride on the blocks and turns they cache; there is no separate `cache_breakpoints:` list.
 
 No content is included implicitly. `AGENTS.md` only appears in the window if the assembly names it (typically `{kind: file, path: ./AGENTS.md}` as the first prefix block).
 

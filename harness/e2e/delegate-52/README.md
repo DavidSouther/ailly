@@ -87,7 +87,7 @@ matrix:
 prefix:
   - { kind: file,    path: ./AGENTS.md,                                                    cache: true }
   - { kind: system,  path: context/system/*.md,                                            cache: true }
-  - { kind: seed,    path: context/seeds/{{ domain }}.md,                                  cache: true }
+  - { kind: file,    path: context/seeds/{{ domain }}.md,                                  cache: true }
   - { kind: context, source: context/distractors/, glob: "*.md", count: "{{ distractor_count }}" }
 
 conversation:
@@ -107,9 +107,9 @@ conversation:
 
 What this proves about context composition:
 
-- **Single source of truth.** The system prompt, the seed selection, the distractor glob, and the turn sequence appear once. Provider, domain, and distractor count are matrix axes; `ailly assemble` writes the cross-product as one conversation file per binding without duplicating the recipe.
+- **Single source of truth.** The system prompt, the seed file path, the distractor glob, and the turn sequence appear once. Provider, domain, and distractor count are matrix axes; `ailly assemble` writes the cross-product as one conversation file per binding without duplicating the recipe.
 - **Axes are explicit.** The paper's documented degradation axes (document size, distractor count, workflow length) are matrix entries (`distractor_count`) or a list edit on `conversation:` (workflow length). No CLI sweep flags are needed.
-- **Cache markers align with the protocol.** The `cache: true` on the seed block is the natural breakpoint: the seed is constant across all six turns of a run, so every assistant turn after the first hits the prompt cache for the seed prefix.
+- **Cache markers align with the protocol.** The `cache: true` on the seed file is the natural breakpoint: the seed is constant across all six turns of a run, so every assistant turn after the first hits the prompt cache for the seed prefix.
 - **Multi-turn skeletons are filled in place.** `assemble` writes six blank assistant turns per conversation file; `run` walks them in order, each resolved against the cumulative transcript so far. The post-edit document for turn N lives inside that turn's assistant content.
 
 ## Evaluation (the paper's scorers, run as `program` assertions)

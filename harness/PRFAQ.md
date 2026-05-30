@@ -5,7 +5,7 @@
 
 Today we are releasing Ailly, an open-source toolkit for teams building LLM agents. LLM agents fail silently when their context windows drift. A two-line edit to a system prompt can change tool-selection behavior across dozens of conversation paths. Current practice surfaces this only through manual eyeballing in a playground, or through user complaints a week after deployment.
 
-Ailly organizes the components of a context window, the system prompts, tool schemas, AGENTS.md files, retrieval corpora, and user templates, as source controlled artifacts. It assembles them via declarative recipes, runs them against any chat-completion API, and verifies behavioral changes through a regression suite. Every run produces a self-contained, replayable artifact on disk. Every change to a component is testable against a versioned suite of assertions before it ships.
+Ailly organizes the components of a context window, the system prompts, tool schemas, AGENTS.md files, knowledge corpora, and user templates, as source controlled artifacts. It assembles them via declarative recipes, runs them against any chat-completion API, and verifies behavioral changes through a regression suite. Every run produces a self-contained, replayable artifact on disk. Every change to a component is testable against a versioned suite of assertions before it ships.
 
 "We were shipping agent updates and finding regressions in production logs a week later," said [NAME, TITLE]. "Ailly turned that loop into a five-minute pull request action.”
 
