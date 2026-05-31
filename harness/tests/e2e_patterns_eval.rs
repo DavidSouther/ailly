@@ -11,7 +11,9 @@
 //! case, writes a JSON report under evals/reports/<run-id>.json, and exits
 //! 0 (`assertions_failed` + `assertions_malformed` == 0). The deferred-carry
 //! matches the design exactly: two judge assertions defer on the paired
-//! discovery cases; one script + one judge per invocation case defer.
+//! discovery cases; one judge per invocation case defers, while each
+//! invocation `script` now executes through the wired subprocess runner and
+//! passes (the `knowledge: eval-script` slice).
 //!
 //! Fails until e2e/patterns-eval/evals/discovery.yaml and
 //! evals/invocation.yaml exist with the README-verbatim assertions.
@@ -325,11 +327,14 @@ async fn patterns_eval_slice_evaluates_both_suites_end_to_end() {
     .expect("invocation eval succeeds end-to-end");
 
     // Per-case assertion totals for invocation:
-    //   3 cases × (script + judge + tokens) = 3 passed (tokens) + 6 deferred
+    //   3 cases × (script + judge + tokens) = 6 passed (script + tokens) + 3
+    //   deferred (judge). The `knowledge: eval-script` slice wires a real
+    //   subprocess runner into `ailly eval`, so each placeholder checker now
+    //   executes and exits 0 (Pass) instead of deferring.
     assert_eq!(invocation_outcome.conversations_matched, 3);
-    assert_eq!(invocation_outcome.assertions_passed, 3);
+    assert_eq!(invocation_outcome.assertions_passed, 6);
     assert_eq!(invocation_outcome.assertions_failed, 0);
-    assert_eq!(invocation_outcome.assertions_deferred, 6);
+    assert_eq!(invocation_outcome.assertions_deferred, 3);
     assert_eq!(invocation_outcome.assertions_malformed, 0);
     assert_eq!(
         invocation_outcome.assertions_failed + invocation_outcome.assertions_malformed,
@@ -348,9 +353,9 @@ async fn patterns_eval_slice_evaluates_both_suites_end_to_end() {
         "invocation",
         invocation_run_id,
         3,
-        3,
-        0,
         6,
+        0,
+        3,
         0,
     );
 

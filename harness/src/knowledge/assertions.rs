@@ -5,6 +5,8 @@
 //! table is a total `match` over `Assertion`.
 
 use std::marker::PhantomData;
+use std::path::Path;
+use std::path::PathBuf;
 use std::sync::OnceLock;
 
 use crate::content::conversation::Content;
@@ -16,9 +18,16 @@ use crate::content::conversation::Role;
 use crate::content::conversation::Trace;
 use crate::content::evaluation::Assertion;
 use crate::content::evaluation::Op;
+use crate::content::evaluation::ScriptBody;
+use crate::content::evaluation::ScriptRuntime;
 use crate::content::evaluation::TokenMetric;
 use crate::engine::engine::CompletionRequest;
 use crate::engine::engine::EngineProvider;
+use crate::knowledge::script_runner::ExitDisposition;
+use crate::knowledge::script_runner::SCRIPT_TIMEOUT_DEFAULT;
+use crate::knowledge::script_runner::ScriptOutput;
+use crate::knowledge::script_runner::ScriptRunner;
+use crate::knowledge::script_runner::ScriptSpec;
 
 /// Verdict of an `Assertion::check` call. Closed set; callers `match`
 /// exhaustively. Adding a variant is a deliberate contract change.
@@ -51,14 +60,27 @@ pub struct EvaluationContext<'a> {
     /// Engine consulted by `Judge` (and, when wired, `TextSemanticMatch`).
     /// `None` ⇒ those variants return `Deferred`.
     pub engine: Option<&'a dyn EngineProvider>,
+    /// Subprocess runner consulted by the `Script` / `Program` families.
+    /// Required together with `project_root`; either missing ⇒ those variants
+    /// return `Deferred`.
+    pub script_runner: Option<&'a dyn ScriptRunner>,
+    /// Project root the `Script` / `Program` families run subprocesses in and
+    /// confine `ScriptBody::Path` against. Required together with
+    /// `script_runner`; either missing ⇒ those variants return `Deferred`.
+    pub project_root: Option<&'a Path>,
 }
 
 impl EvaluationContext<'_> {
-    /// The no-collaborators context. Tests of the 12 sync families and any
-    /// orchestrator slice that does not yet need LLM execution pass this.
+    /// The no-collaborators context. Tests of the sync families and any
+    /// orchestrator slice that does not yet need LLM or subprocess execution
+    /// pass this.
     #[must_use]
     pub const fn empty() -> EvaluationContext<'static> {
-        EvaluationContext { engine: None }
+        EvaluationContext {
+            engine: None,
+            script_runner: None,
+            project_root: None,
+        }
     }
 }
 
@@ -76,10 +98,17 @@ impl Assertion {
     ) -> AssertionOutcome {
         match self {
             Assertion::Judge { prompt } => check_judge(prompt, conversation, ctx).await.outcome,
-            Assertion::Tool { .. }
-            | Assertion::Script { .. }
-            | Assertion::Program { .. }
-            | Assertion::TextSemanticMatch { .. } => AssertionOutcome::Deferred,
+            Assertion::Script {
+                runtime,
+                script,
+                pass_env,
+            } => check_script(runtime, script, pass_env, conversation, ctx).await,
+            Assertion::Program { script, pass_env } => {
+                check_program(script, pass_env, conversation, ctx).await
+            }
+            Assertion::Tool { .. } | Assertion::TextSemanticMatch { .. } => {
+                AssertionOutcome::Deferred
+            }
 
             Assertion::TextContains {
                 value,
@@ -388,6 +417,378 @@ fn trimmed_prefix(text: &str, cap: usize) -> String {
         end -= 1;
     }
     trimmed[..end].trim_end().to_owned()
+}
+
+/// A subprocess command resolved and ready to run: the program, its argv, and
+/// a tempfile handle (for a materialized `Contents` body) whose lifetime must
+/// outlive the run. Built by `check_script` / `check_program`, consumed by
+/// `run_checker`.
+struct PreparedScript {
+    program: String,
+    args: Vec<String>,
+    tempfile_guard: Option<tempfile::NamedTempFile>,
+}
+
+/// Run one `Assertion::Script` as a subprocess and map its exit to a verdict.
+///
+/// Steps (design §`check_script` flow):
+///   1. let-else over `(ctx.script_runner, ctx.project_root)`; either `None` ⇒
+///      `Deferred` with no work.
+///   2. Resolve the runtime binary from the trusted parent env (`AILLY_PYTHON`
+///      / `AILLY_NODE`, defaulting to `python3` / `node`).
+///   3. Resolve the script body to argv: `Contents` empty-after-trim ⇒
+///      `Malformed`, else written to a `.py`/`.js` tempfile whose lifetime
+///      spans `run()`; `Path` is joined onto and confined within the project
+///      root, escapes and missing paths ⇒ `Malformed`.
+///   4. stdin is the final assistant text ONLY; the user question rides
+///      `AILLY_USER_QUESTION`. Either turn missing ⇒ `Fail`.
+///   5. Build the cleared-env allowlist plus any per-assertion `pass_env`
+///      opt-ins and call `runner.run`; a `ScriptError` ⇒ `Errored`.
+///   6. Classify the exit (see [`classify_exit`]), redacting handed secrets.
+///   7. Warn-log any non-empty stderr once, with handed secrets redacted.
+async fn check_script(
+    runtime: &ScriptRuntime,
+    script: &ScriptBody,
+    pass_env: &[String],
+    conversation: &Conversation,
+    ctx: &EvaluationContext<'_>,
+) -> AssertionOutcome {
+    let (Some(runner), Some(project_root)) = (ctx.script_runner, ctx.project_root) else {
+        return AssertionOutcome::Deferred;
+    };
+
+    let program = resolve_runtime_binary(runtime);
+
+    // Resolve the body to argv, keeping any tempfile alive across the run.
+    let (args, tempfile_guard): (Vec<String>, Option<tempfile::NamedTempFile>) = match script {
+        ScriptBody::Contents { contents } => {
+            if contents.trim().is_empty() {
+                return AssertionOutcome::Malformed {
+                    reason: String::from("script: contents is empty"),
+                };
+            }
+            match write_contents_tempfile(runtime, contents) {
+                Ok(file) => (vec![file.path().to_string_lossy().into_owned()], Some(file)),
+                Err(err) => {
+                    return AssertionOutcome::Errored {
+                        reason: format!("script: failed to write temporary script: {err}"),
+                    };
+                }
+            }
+        }
+        ScriptBody::Path { path } => match resolve_script_path(project_root, path) {
+            Ok(resolved) => (vec![resolved.to_string_lossy().into_owned()], None),
+            Err(outcome) => return outcome,
+        },
+    };
+
+    run_checker(
+        PreparedScript {
+            program,
+            args,
+            tempfile_guard,
+        },
+        pass_env,
+        conversation,
+        runner,
+        project_root,
+    )
+    .await
+}
+
+/// Run one `Assertion::Program` as a subprocess. The `script` field names the
+/// program to spawn, resolved by [`resolve_program`]: a bare name (no path
+/// separator) is passed through for allowlisted-`PATH` lookup, a relative path
+/// bearing a separator is joined onto the project root, and an absolute path is
+/// passed through as-is. It runs with no args, no runtime resolution, and no
+/// script-body materialization. A non-existent binary surfaces as
+/// `ScriptError::Spawn` ⇒ `Errored`, not `Malformed`.
+async fn check_program(
+    script: &str,
+    pass_env: &[String],
+    conversation: &Conversation,
+    ctx: &EvaluationContext<'_>,
+) -> AssertionOutcome {
+    let (Some(runner), Some(project_root)) = (ctx.script_runner, ctx.project_root) else {
+        return AssertionOutcome::Deferred;
+    };
+    run_checker(
+        PreparedScript {
+            program: resolve_program(project_root, script),
+            args: Vec::new(),
+            tempfile_guard: None,
+        },
+        pass_env,
+        conversation,
+        runner,
+        project_root,
+    )
+    .await
+}
+
+/// Resolve an `Assertion::Program` program name to the string handed to the
+/// runner. `std`/`tokio` `Command` resolve a separator-bearing relative program
+/// against the *caller's* cwd, not `current_dir`, so a relative path must be
+/// joined onto the project root here to match the documented behaviour. An
+/// absolute path is trusted verbatim; a bare name (no separator) is left alone
+/// so the allowlisted `PATH` resolves it. `Program` is trusted suite-author
+/// input, so no containment check is applied — unlike `ScriptBody::Path`.
+fn resolve_program(project_root: &Path, script: &str) -> String {
+    let p = Path::new(script);
+    if p.is_absolute() {
+        return script.to_owned();
+    }
+    match p.parent() {
+        Some(parent) if !parent.as_os_str().is_empty() => {
+            project_root.join(p).to_string_lossy().into_owned()
+        }
+        _ => script.to_owned(), // bare name: resolve via the allowlisted PATH
+    }
+}
+
+/// Shared tail for the `Script` and `Program` families: feed the candidate
+/// response on stdin, build the cleared child env (plus `pass_env`), run the
+/// prepared subprocess, and classify its exit with handed secrets redacted.
+/// `prepared.tempfile_guard` keeps a materialized `Contents` script alive
+/// across the run.
+async fn run_checker(
+    prepared: PreparedScript,
+    pass_env: &[String],
+    conversation: &Conversation,
+    runner: &dyn ScriptRunner,
+    project_root: &Path,
+) -> AssertionOutcome {
+    let Some(assistant_text) = final_assistant_text(conversation) else {
+        return AssertionOutcome::Fail {
+            reason: String::from("script: no filled assistant turn"),
+        };
+    };
+    let Some(user_question) = final_user_text(conversation) else {
+        return AssertionOutcome::Fail {
+            reason: String::from("script: no filled user turn"),
+        };
+    };
+
+    let (env, handed) = build_child_env(project_root, &user_question, pass_env);
+
+    let spec = ScriptSpec {
+        program: prepared.program,
+        args: prepared.args,
+        cwd: project_root.to_path_buf(),
+        env,
+        stdin: assistant_text.into_bytes(),
+        timeout: SCRIPT_TIMEOUT_DEFAULT,
+    };
+
+    let output = match runner.run(spec).await {
+        Ok(output) => output,
+        Err(err) => {
+            return AssertionOutcome::Errored {
+                reason: format!("script: {err}"),
+            };
+        }
+    };
+
+    // The tempfile (if any) outlived the subprocess; release it now.
+    drop(prepared.tempfile_guard);
+
+    if !output.stderr.is_empty() {
+        tracing::warn!(
+            stderr = %redact(&String::from_utf8_lossy(&output.stderr), &handed),
+            "script: stderr captured",
+        );
+    }
+
+    classify_exit(&output, &handed)
+}
+
+/// Resolve the interpreter binary for `runtime` from the trusted parent env.
+/// `AILLY_PYTHON` / `AILLY_NODE` override the `python3` / `node` defaults;
+/// they name an interpreter, not a candidate-controlled path, so they are not
+/// containment-checked.
+fn resolve_runtime_binary(runtime: &ScriptRuntime) -> String {
+    match runtime {
+        ScriptRuntime::Python => {
+            std::env::var("AILLY_PYTHON").unwrap_or_else(|_| String::from("python3"))
+        }
+        ScriptRuntime::Node => std::env::var("AILLY_NODE").unwrap_or_else(|_| String::from("node")),
+    }
+}
+
+/// Write `contents` to a `.py` / `.js` tempfile. The returned handle deletes
+/// the file on drop, so the caller keeps it alive until the subprocess exits.
+fn write_contents_tempfile(
+    runtime: &ScriptRuntime,
+    contents: &str,
+) -> std::io::Result<tempfile::NamedTempFile> {
+    use std::io::Write;
+
+    let suffix = match runtime {
+        ScriptRuntime::Python => ".py",
+        ScriptRuntime::Node => ".js",
+    };
+    let mut file = tempfile::Builder::new().suffix(suffix).tempfile()?;
+    file.write_all(contents.as_bytes())?;
+    file.flush()?;
+    Ok(file)
+}
+
+/// Resolve and confine a `ScriptBody::Path` against the project root.
+/// `Path::join` does not confine — an absolute argument replaces the base and
+/// `..` is not normalized — so the join is canonicalized and verified to stay
+/// inside the canonicalized project root. The root is canonicalized too, and a
+/// failure there is fail-closed (`Errored`): comparing a canonical child
+/// against a non-canonical root would let a path escape through an
+/// unnormalized root. The runner is never called on a containment, existence,
+/// or root-canonicalization failure.
+fn resolve_script_path(project_root: &Path, path: &str) -> Result<PathBuf, AssertionOutcome> {
+    let joined = project_root.join(path);
+    let Ok(canonical) = joined.canonicalize() else {
+        return Err(AssertionOutcome::Malformed {
+            reason: format!("script: path does not exist: {}", joined.display()),
+        });
+    };
+    let Ok(root) = project_root.canonicalize() else {
+        return Err(AssertionOutcome::Errored {
+            reason: format!(
+                "script: project root cannot be canonicalized: {}",
+                project_root.display()
+            ),
+        });
+    };
+    if canonical.starts_with(&root) {
+        Ok(canonical)
+    } else {
+        Err(AssertionOutcome::Malformed {
+            reason: format!("script: path escapes project root: {}", canonical.display()),
+        })
+    }
+}
+
+/// Environment variable `(name, value)` pairs handed to a child subprocess.
+type EnvVars = Vec<(String, String)>;
+
+/// Build the COMPLETE child env and the set of handed `(name, value)` secrets
+/// to redact. The base allowlist is `PATH` (so the interpreter resolves),
+/// `AILLY_PROJECT_ROOT`, `AILLY_USER_QUESTION` (omitted with a warn when it
+/// carries a NUL byte), and `HOME` / `TMPDIR` / `LANG` when present. On top of
+/// that, each name in `pass_env` present in the trusted parent env is copied in
+/// (and recorded for redaction); an absent name is skipped with a warn. Names
+/// are literal — no glob or prefix expansion.
+///
+/// `HOME` / `TMPDIR` / `LANG` are passed for interpreter compatibility, so the
+/// cleared env protects environment-borne secrets but NOT filesystem-rooted
+/// credentials: a checker can still read e.g. `~/.aws/credentials` off disk.
+fn build_child_env(
+    project_root: &Path,
+    user_question: &str,
+    pass_env: &[String],
+) -> (EnvVars, EnvVars) {
+    let mut env: Vec<(String, String)> = Vec::new();
+    if let Ok(path) = std::env::var("PATH") {
+        env.push((String::from("PATH"), path));
+    }
+    env.push((
+        String::from("AILLY_PROJECT_ROOT"),
+        project_root.display().to_string(),
+    ));
+    if user_question.contains('\0') {
+        tracing::warn!("script: user question contains NUL byte; omitting AILLY_USER_QUESTION");
+    } else {
+        env.push((
+            String::from("AILLY_USER_QUESTION"),
+            user_question.to_owned(),
+        ));
+    }
+    for key in ["HOME", "TMPDIR", "LANG"] {
+        if let Ok(value) = std::env::var(key) {
+            env.push((String::from(key), value));
+        }
+    }
+
+    let mut handed: Vec<(String, String)> = Vec::new();
+    for name in pass_env {
+        match std::env::var(name) {
+            Ok(value) => {
+                handed.push((name.clone(), value.clone()));
+                env.push((name.clone(), value));
+            }
+            Err(_) => {
+                tracing::warn!(
+                    var = %name,
+                    "pass_env: requested variable not present in environment",
+                );
+            }
+        }
+    }
+
+    (env, handed)
+}
+
+/// Replace every occurrence of each handed secret value with `«redacted:NAME»`
+/// before captured output reaches a report reason or a tracing field. Empty
+/// values are skipped so an empty secret cannot blanket the text.
+fn redact(text: &str, handed: &[(String, String)]) -> String {
+    let mut out = text.to_owned();
+    for (name, value) in handed {
+        if value.is_empty() {
+            continue;
+        }
+        out = out.replace(value.as_str(), &format!("«redacted:{name}»"));
+    }
+    out
+}
+
+/// Map a completed `ScriptOutput` to a verdict. The non-zero exit splits three
+/// ways so a checker that *malfunctions* is never reported as a candidate that
+/// *failed* (design §step 6):
+///   - `Exited(0)`                                    ⇒ `Pass`
+///   - `Exited(n≠0)`, stdout non-empty                ⇒ `Fail` (stdout is the
+///     reason)
+///   - `Exited(n≠0)`, stdout empty, stderr non-empty  ⇒ `Errored` (broken
+///     checker)
+///   - `Exited(n≠0)`, both streams empty              ⇒ `Fail` ("exit n (no
+///     output)")
+///   - `TimedOut`                                     ⇒ `Errored`
+///   - `Signaled`                                     ⇒ `Errored`
+fn classify_exit(output: &ScriptOutput, handed: &[(String, String)]) -> AssertionOutcome {
+    match output.exit {
+        ExitDisposition::Exited(0) => AssertionOutcome::Pass,
+        ExitDisposition::Exited(code) => {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            if stdout.trim().is_empty() {
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                if stderr.trim().is_empty() {
+                    AssertionOutcome::Fail {
+                        reason: format!("script: exit {code} (no output)"),
+                    }
+                } else {
+                    AssertionOutcome::Errored {
+                        reason: format!(
+                            "script: exit {code}, empty stdout; stderr: {}",
+                            trimmed_prefix(&redact(&stderr, handed), COT_REASON_CAP),
+                        ),
+                    }
+                }
+            } else {
+                AssertionOutcome::Fail {
+                    reason: format!(
+                        "script: exit {code}: {}",
+                        trimmed_prefix(&redact(&stdout, handed), COT_REASON_CAP),
+                    ),
+                }
+            }
+        }
+        ExitDisposition::TimedOut => AssertionOutcome::Errored {
+            reason: format!(
+                "script: timed out after {}s",
+                SCRIPT_TIMEOUT_DEFAULT.as_secs()
+            ),
+        },
+        ExitDisposition::Signaled => AssertionOutcome::Errored {
+            reason: String::from("script: killed by signal"),
+        },
+    }
 }
 
 fn check_text_contains(
@@ -837,7 +1238,9 @@ fn check_tool_call_order(conversation: &Conversation, sequence: &[String]) -> As
 
 #[cfg(test)]
 mod tests {
+    use std::collections::VecDeque;
     use std::marker::PhantomData;
+    use std::sync::Mutex;
 
     use super::*;
     use crate::content::conversation::BindingMap;
@@ -852,6 +1255,7 @@ mod tests {
     use crate::content::evaluation::ScriptRuntime;
     use crate::content::evaluation::ToolCallSpec;
     use crate::engine::engine::NoopEngine;
+    use crate::knowledge::script_runner::ScriptError;
 
     fn conversation_with(session: Vec<Message>) -> Conversation {
         Conversation {
@@ -1449,9 +1853,11 @@ mod tests {
                 script: ScriptBody::Contents {
                     contents: String::from("noop"),
                 },
+                pass_env: Vec::new(),
             },
             Assertion::Program {
                 script: String::from("ailly-check"),
+                pass_env: Vec::new(),
             },
             Assertion::TextSemanticMatch {
                 value: String::from("ok"),
@@ -1475,6 +1881,8 @@ mod tests {
         let engine = NoopEngine::from_replies(Vec::<String>::new());
         let ctx = EvaluationContext {
             engine: Some(&engine),
+            script_runner: None,
+            project_root: None,
         };
         let conv = conversation_with(vec![user_text("question?"), assistant_text("an answer")]);
 
@@ -1551,5 +1959,392 @@ mod tests {
             AssertionOutcome::Fail { .. } => {}
             other => panic!("expected Fail (last GRADE binds), got {other:?}"),
         }
+    }
+
+    /// Hand-rolled subprocess fake (the `NoopEngine` precedent): returns canned
+    /// outputs in order and records every `ScriptSpec` it was handed, so a test
+    /// drives `classify_exit` deterministically and inspects the wiring.
+    struct FakeScriptRunner {
+        canned: Mutex<VecDeque<ScriptOutput>>,
+        calls: Mutex<Vec<ScriptSpec>>,
+    }
+
+    impl FakeScriptRunner {
+        fn new(outputs: Vec<ScriptOutput>) -> Self {
+            Self {
+                canned: Mutex::new(outputs.into()),
+                calls: Mutex::new(Vec::new()),
+            }
+        }
+
+        fn call_count(&self) -> usize {
+            self.calls.lock().expect("calls lock").len()
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl ScriptRunner for FakeScriptRunner {
+        async fn run(&self, spec: ScriptSpec) -> Result<ScriptOutput, ScriptError> {
+            self.calls.lock().expect("calls lock").push(spec);
+            Ok(self
+                .canned
+                .lock()
+                .expect("canned lock")
+                .pop_front()
+                .expect("FakeScriptRunner: a canned output is available"))
+        }
+    }
+
+    fn fake_output(exit: ExitDisposition, stdout: &[u8], stderr: &[u8]) -> ScriptOutput {
+        ScriptOutput {
+            stdout: stdout.to_vec(),
+            stderr: stderr.to_vec(),
+            exit,
+        }
+    }
+
+    fn python_contents(src: &str) -> Assertion {
+        Assertion::Script {
+            runtime: ScriptRuntime::Python,
+            script: ScriptBody::Contents {
+                contents: String::from(src),
+            },
+            pass_env: Vec::new(),
+        }
+    }
+
+    fn label_of(outcome: &AssertionOutcome) -> &'static str {
+        match outcome {
+            AssertionOutcome::Pass => "pass",
+            AssertionOutcome::Fail { .. } => "fail",
+            AssertionOutcome::Deferred => "deferred",
+            AssertionOutcome::Malformed { .. } => "malformed",
+            AssertionOutcome::Errored { .. } => "errored",
+        }
+    }
+
+    fn reason_of(outcome: &AssertionOutcome) -> Option<&str> {
+        match outcome {
+            AssertionOutcome::Fail { reason }
+            | AssertionOutcome::Malformed { reason }
+            | AssertionOutcome::Errored { reason } => Some(reason.as_str()),
+            AssertionOutcome::Pass | AssertionOutcome::Deferred => None,
+        }
+    }
+
+    #[tokio::test]
+    async fn script_classifies_exit_disposition_into_verdict() {
+        // Same candidate, varied subprocess outcome: the exit disposition alone
+        // drives the verdict, and a broken checker (empty stdout, stderr set)
+        // is `Errored`, never `Fail`.
+        let project = tempfile::tempdir().expect("project root");
+        let conv = conversation_with(vec![user_text("q"), assistant_text("candidate response")]);
+
+        let cases: Vec<(ScriptOutput, &str, Option<&str>)> = vec![
+            (
+                fake_output(ExitDisposition::Exited(0), b"", b""),
+                "pass",
+                None,
+            ),
+            (
+                fake_output(ExitDisposition::Exited(1), b"because reasons", b""),
+                "fail",
+                Some("because reasons"),
+            ),
+            (
+                fake_output(ExitDisposition::Exited(1), b"", b"Traceback: boom"),
+                "errored",
+                Some("Traceback: boom"),
+            ),
+            (
+                fake_output(ExitDisposition::Exited(3), b"", b""),
+                "fail",
+                Some("no output"),
+            ),
+            (
+                fake_output(ExitDisposition::TimedOut, b"", b""),
+                "errored",
+                Some("timed out"),
+            ),
+            (
+                fake_output(ExitDisposition::Signaled, b"", b""),
+                "errored",
+                Some("signal"),
+            ),
+        ];
+
+        for (canned, expected_label, reason_needle) in cases {
+            let runner = FakeScriptRunner::new(vec![canned]);
+            let ctx = EvaluationContext {
+                engine: None,
+                script_runner: Some(&runner),
+                project_root: Some(project.path()),
+            };
+            let outcome = python_contents("import sys").check(&conv, &ctx).await;
+            assert_eq!(label_of(&outcome), expected_label, "outcome {outcome:?}");
+            if let Some(needle) = reason_needle {
+                let reason = reason_of(&outcome).unwrap_or_default();
+                assert!(
+                    reason.contains(needle),
+                    "reason {reason:?} missing {needle:?}"
+                );
+            }
+            assert_eq!(
+                runner.call_count(),
+                1,
+                "runner must be invoked exactly once"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn script_sends_candidate_only_on_stdin_with_question_in_env() {
+        let project = tempfile::tempdir().expect("project root");
+        let runner = FakeScriptRunner::new(vec![fake_output(ExitDisposition::Exited(0), b"", b"")]);
+        let ctx = EvaluationContext {
+            engine: None,
+            script_runner: Some(&runner),
+            project_root: Some(project.path()),
+        };
+        let conv = conversation_with(vec![
+            user_text("what is the routing decision?"),
+            assistant_text("Routing to human-review."),
+        ]);
+
+        let outcome = python_contents("import sys").check(&conv, &ctx).await;
+        assert_eq!(outcome, AssertionOutcome::Pass);
+
+        let calls = runner.calls.lock().expect("calls lock");
+        let spec = calls.first().expect("one recorded call");
+        // The candidate response is the entire stdin payload, with no label.
+        assert_eq!(spec.stdin, b"Routing to human-review.".to_vec());
+        let stdin_text = String::from_utf8(spec.stdin.clone()).expect("utf-8 stdin");
+        assert!(
+            !stdin_text.contains("USER QUESTION"),
+            "stdin must carry the response alone, got {stdin_text:?}",
+        );
+        // The question rides AILLY_USER_QUESTION; the project root is exported.
+        let env: Vec<(&str, &str)> = spec
+            .env
+            .iter()
+            .map(|(k, v)| (k.as_str(), v.as_str()))
+            .collect();
+        let question = env
+            .iter()
+            .find(|&&(k, _)| k == "AILLY_USER_QUESTION")
+            .map(|&(_, v)| v);
+        assert_eq!(
+            question,
+            Some("what is the routing decision?"),
+            "env: {env:?}",
+        );
+        assert!(
+            env.iter().any(|&(k, _)| k == "AILLY_PROJECT_ROOT"),
+            "env: {env:?}",
+        );
+    }
+
+    #[tokio::test]
+    async fn script_path_escaping_project_root_is_malformed_without_spawning() {
+        let project = tempfile::tempdir().expect("project root");
+        let outside = tempfile::tempdir().expect("outside dir");
+        let escape = outside.path().join("escape.py");
+        std::fs::write(&escape, "import sys\nsys.exit(0)\n").expect("write escape file");
+
+        let runner = FakeScriptRunner::new(Vec::new());
+        let ctx = EvaluationContext {
+            engine: None,
+            script_runner: Some(&runner),
+            project_root: Some(project.path()),
+        };
+        let conv = conversation_with(vec![user_text("q"), assistant_text("a")]);
+        let assertion = Assertion::Script {
+            runtime: ScriptRuntime::Python,
+            script: ScriptBody::Path {
+                path: escape.to_string_lossy().into_owned(),
+            },
+            pass_env: Vec::new(),
+        };
+
+        let outcome = assertion.check(&conv, &ctx).await;
+        assert!(
+            matches!(outcome, AssertionOutcome::Malformed { .. }),
+            "a path outside the project root must be Malformed, got {outcome:?}",
+        );
+        assert_eq!(
+            runner.call_count(),
+            0,
+            "a containment failure must never spawn the runner",
+        );
+    }
+
+    #[test]
+    fn redact_substitutes_handed_values_and_skips_empty() {
+        let handed = vec![
+            (String::from("API_KEY"), String::from("s3cr3t")),
+            (String::from("EMPTY"), String::new()),
+        ];
+        assert_eq!(
+            redact("token=s3cr3t; rest", &handed),
+            "token=«redacted:API_KEY»; rest",
+        );
+        // An empty value must be skipped, not used to blanket every position.
+        let only_empty = vec![(String::from("E"), String::new())];
+        assert_eq!(redact("abc", &only_empty), "abc");
+    }
+
+    #[test]
+    fn build_child_env_layers_present_pass_env_and_skips_absent() {
+        let project = tempfile::tempdir().expect("project root");
+        let pass = vec![
+            String::from("PATH"),
+            String::from("AILLY_DEFINITELY_ABSENT_VAR_XYZ"),
+        ];
+        let (env, handed) = build_child_env(project.path(), "the question", &pass);
+
+        assert!(
+            env.iter().any(|(k, _)| k.as_str() == "AILLY_PROJECT_ROOT"),
+            "base allowlist must export the project root",
+        );
+        assert!(
+            env.iter()
+                .any(|(k, v)| k.as_str() == "AILLY_USER_QUESTION" && v.as_str() == "the question"),
+            "the question rides AILLY_USER_QUESTION",
+        );
+        // A present pass_env name is recorded as handed (for redaction).
+        assert!(
+            handed
+                .iter()
+                .any(|(k, v)| k.as_str() == "PATH" && !v.is_empty()),
+            "a present pass_env var must be handed for redaction",
+        );
+        // An absent pass_env name is skipped from both env and handed.
+        assert!(
+            !handed
+                .iter()
+                .any(|(k, _)| k.as_str() == "AILLY_DEFINITELY_ABSENT_VAR_XYZ"),
+            "an absent pass_env var must not be handed",
+        );
+        assert!(
+            !env.iter()
+                .any(|(k, _)| k.as_str() == "AILLY_DEFINITELY_ABSENT_VAR_XYZ"),
+            "an absent pass_env var must not reach the child env",
+        );
+    }
+
+    #[tokio::test]
+    async fn script_redacts_handed_pass_env_value_from_the_fail_reason() {
+        // PATH is always present; naming it in pass_env hands its value to the
+        // checker, and a checker that leaks it must have it scrubbed from the
+        // report reason. This proves classify_exit redacts with the handed set.
+        let pathval = std::env::var("PATH").expect("PATH is set in the test environment");
+        let project = tempfile::tempdir().expect("project root");
+        let leak = format!("leaked secret: {pathval}");
+        let runner = FakeScriptRunner::new(vec![fake_output(
+            ExitDisposition::Exited(1),
+            leak.as_bytes(),
+            b"",
+        )]);
+        let ctx = EvaluationContext {
+            engine: None,
+            script_runner: Some(&runner),
+            project_root: Some(project.path()),
+        };
+        let conv = conversation_with(vec![user_text("q"), assistant_text("a")]);
+        let assertion = Assertion::Script {
+            runtime: ScriptRuntime::Python,
+            script: ScriptBody::Contents {
+                contents: String::from("import sys"),
+            },
+            pass_env: vec![String::from("PATH")],
+        };
+
+        let outcome = assertion.check(&conv, &ctx).await;
+        let reason =
+            reason_of(&outcome).expect("a non-zero exit with stdout is a Fail carrying a reason");
+        assert!(
+            reason.contains("«redacted:PATH»"),
+            "the handed value must be redacted, got {reason:?}",
+        );
+        assert!(
+            !reason.contains(&pathval),
+            "the raw secret must never appear verbatim in the reason",
+        );
+    }
+
+    fn program_assertion(script: &str) -> Assertion {
+        Assertion::Program {
+            script: String::from(script),
+            pass_env: Vec::new(),
+        }
+    }
+
+    #[tokio::test]
+    async fn program_assertion_runs_verbatim_and_classifies_exit() {
+        let project = tempfile::tempdir().expect("project root");
+        let conv = conversation_with(vec![user_text("q"), assistant_text("candidate")]);
+
+        // Exit 0 -> Pass.
+        let pass_runner =
+            FakeScriptRunner::new(vec![fake_output(ExitDisposition::Exited(0), b"", b"")]);
+        let pass_ctx = EvaluationContext {
+            engine: None,
+            script_runner: Some(&pass_runner),
+            project_root: Some(project.path()),
+        };
+        assert_eq!(
+            program_assertion("ailly-check")
+                .check(&conv, &pass_ctx)
+                .await,
+            AssertionOutcome::Pass,
+        );
+
+        // Broken checker (exit 1, empty stdout, stderr) -> Errored, not Fail.
+        let broken_runner =
+            FakeScriptRunner::new(vec![fake_output(ExitDisposition::Exited(1), b"", b"boom")]);
+        let broken_ctx = EvaluationContext {
+            engine: None,
+            script_runner: Some(&broken_runner),
+            project_root: Some(project.path()),
+        };
+        let broken = program_assertion("ailly-check")
+            .check(&conv, &broken_ctx)
+            .await;
+        assert!(
+            matches!(broken, AssertionOutcome::Errored { .. }),
+            "a broken program checker is Errored, got {broken:?}",
+        );
+
+        // The program is spawned with no args (no runtime, no tempfile); a bare
+        // name passes through for PATH lookup.
+        let calls = broken_runner.calls.lock().expect("calls lock");
+        let spec = calls.first().expect("one recorded call");
+        assert_eq!(spec.program, "ailly-check");
+        assert!(spec.args.is_empty(), "program mode passes no args");
+    }
+
+    #[test]
+    fn resolve_program_passes_absolute_and_bare_through_and_roots_relative() {
+        let root = Path::new("/srv/project");
+
+        // Absolute path: trusted verbatim.
+        assert_eq!(
+            resolve_program(root, "/usr/local/bin/checker"),
+            "/usr/local/bin/checker",
+        );
+
+        // Bare name (no separator): left alone so the allowlisted PATH resolves.
+        assert_eq!(resolve_program(root, "ailly-check"), "ailly-check");
+
+        // Relative path bearing a separator: joined onto the project root, since
+        // Command would otherwise resolve it against the caller's cwd.
+        assert_eq!(
+            resolve_program(root, "scripts/check.sh"),
+            "/srv/project/scripts/check.sh",
+        );
+        assert_eq!(
+            resolve_program(root, "./check.sh"),
+            "/srv/project/./check.sh",
+        );
     }
 }

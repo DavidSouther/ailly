@@ -45,9 +45,19 @@ pub enum Assertion {
     Script {
         runtime: ScriptRuntime,
         script: ScriptBody,
+        /// Names (never values) of env vars this checker opts into receiving
+        /// from the otherwise-cleared child env. Defaults empty;
+        /// `#[serde(default)]` leaves every existing suite YAML
+        /// unchanged.
+        #[serde(default)]
+        pass_env: Vec<String>,
     },
     Program {
         script: String,
+        /// Names (never values) of env vars this checker opts into receiving
+        /// from the otherwise-cleared child env. Defaults empty.
+        #[serde(default)]
+        pass_env: Vec<String>,
     },
 
     MustCallTool {
@@ -348,6 +358,10 @@ cases:
     /// a future variant being added with a serde rename or tag that
     /// silently breaks dispatch.
     #[test]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "exhaustive fixture over every Assertion variant"
+    )]
     fn every_variant_round_trips() {
         let suite = Evaluation {
             name: "every-variant".to_string(),
@@ -369,15 +383,18 @@ cases:
                         script: ScriptBody::Contents {
                             contents: "process.exit(0)".to_string(),
                         },
+                        pass_env: Vec::new(),
                     },
                     Assertion::Script {
                         runtime: ScriptRuntime::Python,
                         script: ScriptBody::Path {
                             path: "evals/scripts/check.py".to_string(),
                         },
+                        pass_env: Vec::new(),
                     },
                     Assertion::Program {
                         script: "ailly-check".to_string(),
+                        pass_env: Vec::new(),
                     },
                     Assertion::MustCallTool {
                         tool: "auto_approve".to_string(),

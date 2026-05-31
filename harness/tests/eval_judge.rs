@@ -80,6 +80,8 @@ async fn judge_assertion_with_grade_p_reply_tallies_pass_and_writes_judge_transc
     let engine = NoopEngine::from_replies([JUDGE_REPLY]);
     let ctx = EvaluationContext {
         engine: Some(&engine),
+        script_runner: None,
+        project_root: None,
     };
 
     // Act: run the orchestrator with the judge output directory wired in.
