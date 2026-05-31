@@ -86,8 +86,8 @@ Assertion:
   # ─── Open-ended assertions (delegate to a model, tool, or external process)
   | { type: "judge";       prompt: string }                                                # sends the final assistant turn plus prompt; passes if the judge accepts
   | { type: "tool";        tool_call: ToolCallSpec }                                       # invokes an existing tool with the final response as input
-  | { type: "script";      runtime: Node | Python; script: { contents | path: string } }   # runtime process; exit 0 passes; conversation YAML on stdin, reasoning on stdout
-  | { type: "program";     script: string }                                                # shell-interpreted path to an executable validator; same I/O contract as script
+  | { type: "script";   runtime: Node | Python; script: { contents | path: string }; pass_env?: string[] }   # runtime process; cleared env + base allowlist + any pass_env names; exit 0 passes; candidate response on stdin, question in AILLY_USER_QUESTION; non-zero exit ⇒ Fail (stdout as reason), or Errored when stdout empty and stderr present
+  | { type: "program";  script: string; pass_env?: string[] }                               # path or PATH-looked-up executable; spawned directly (no shell); cleared env + base allowlist + pass_env; same stdin / env / exit contract as script
 
   # ─── Tool-call assertions (over assistant tool_use blocks across the session)
   | { type: "must_call_tool";     tool: string; with_args?: Record<string, unknown> }

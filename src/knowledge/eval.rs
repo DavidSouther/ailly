@@ -490,12 +490,14 @@ mod tests {
                     script: ScriptBody::Contents {
                         contents: String::from("x"),
                     },
+                    pass_env: Vec::new(),
                 },
                 "script",
             ),
             (
                 Assertion::Program {
                     script: String::from("./x"),
+                    pass_env: Vec::new(),
                 },
                 "program",
             ),

@@ -1,18 +1,32 @@
-# Developer Tasks
+# TASKS
 
-<!-- Tasks left here by developer sessions. Remove a task when you start it. -->
-<!-- Ignore # comment lines and HTML section comments. -->
+Initial development queue to reach MVP for the three e2e projects under `e2e/`: `insurance-claim`, `patterns-eval`, `delegate-52`. Ordered so each task delivers a running slice the next task builds on. Source of truth for schemas is [DESIGN.md](../../DESIGN.md); source of truth for e2e behaviour is each project's `README.md`.
 
-## ailly report — out-of-scope follow-ups
+## Patterns-eval enablement
 
-The dual-mode `report` command (commits `bc6bb42`, `999ca85`) supersedes the older quadrant/verdict design. The two feature tests in `tests/report_cmd.rs` cover the happy path for single mode and comparison mode; the items below are not yet exercised:
+- **e2e-patterns-eval** — Wire patterns-eval: resolve deferred items. Green end to end. Refactor step, then dedicated global refactor. Add CI step.
 
-- Three-or-more-run mode: more than two run IDs is rejected today (`expected 1 or 2 run IDs`). If a strategy is needed, decide whether to keep oldest as `arm_a` / newest as `arm_b` and ignore intermediates, or to render N-column tables.
-- `deferred` / `malformed` footnote rendering in `render_single_markdown` and `render_comparison_markdown` (currently the cell shows `defer` / `err` inline; no footnote).
-- `--label-a` / `--label-b` override flags on `ReportCmdArgs` (struct fields exist, no CLI plumbing in `main.rs`). Today both default to `None` and the markdown extracts the label from the trailing `-`-segment of the run_id.
-- `assemblies/invocation.yaml` prefix fix — pre-existing issue noted during this session, not touched by the report redesign.
+## Delegate-52 enablement
 
-## eval-judge — deferred decisions
+- **multi-turn-skeletons** — Assembly `conversation:` with multiple blank assistant turns; `run` resolves each against the cumulative transcript so far.
+- **matrix-provider-axis** — Matrix entries that are maps (e.g. `{ name: anthropic, model: claude-opus-4-7 }`); per-binding `model:` override flows through to the engine call.
+- **engine-multi-provider** — Additional `EngineProvider` adapters for OpenAI and Google via Rig (gpt-5-turbo, gemini-3-pro per the e2e README).
+- **eval-when-filter** — `when:` subset match against `meta.binding`; no-filter fanout case running once per matched conversation; `program_outputs` plumbed into later cases for cross-binding rollups.
+- **e2e-delegate-52** — Wire delegate-52: provider × domain × distractor_count matrix, six-turn workflow, per-domain scorers ported from microsoft/DELEGATE52, cross-provider judge rollup. Add scheduled CI step.
 
-`Assertion::Judge` is wired (topic `2026-05-28-A-eval-judge`). Ten trigger-gated follow-ups (per-conversation engine dispatch, forced tool-call verdict, judge-model override, cost accounting, `text_semantic_match` runtime, refusal/position-bias handling, report linkage, orphan/collision policy) are recorded in [TASK-NOTES-eval-judge-deferred.md](TASK-NOTES-eval-judge-deferred.md). Each waits on its own trigger; none is active work.
+## Follow-ups
 
+- **dotenvy README pointer** — Once `e2e-insurance-claim` and `e2e-delegate-52` are wired, add a one-line note to each project's README that contributors can drop a `<project>/.env` instead of exporting `ANTHROPIC_API_KEY` in the shell, with a forward pointer to [src/cli/env.rs](../../src/cli/env.rs). Not blocking; lands as a docs commit once the projects exist.
+- **eval-cmd review-and-refactor** — Once `knowledge/eval.rs eval-cmd` is fully implemented and green, run `developer:refactor` over `src/knowledge/eval.rs`, `src/cli/eval.rs`, the `EvaluationRepository` additions in `src/content/repository.rs`, and `tests/eval_cmd.rs`. Confirm the orchestrator/CLI split mirrors `cli/run.rs`, the four outcome buckets are accounted for at each report level, and the report-shape contract is locked in by the feature test.
+- **project-layout review-and-refactor** — Once the `Project` aggregate ([src/content/project.rs](../../src/content/project.rs)), the `Vfs<T>` adapter migration in [src/content/repository.rs](../../src/content/repository.rs), and the `RunTx` Unit of Work are fully implemented and green, run `developer:refactor` over `src/content/project.rs`, the migrated `src/content/repository.rs` adapters, `src/cli/{assemble,run,eval}.rs`, and `tests/project_layout.rs`. Confirm `ProjectPath` is the only path argument accepted by the read-side sub-handles, the `grep -r tempfile src/content/` lint guard is in place, and no `Fs<T>` adapter, `open_fs_repositories`, or `AssembleUnitOfWork` reference survives.
+- **e2e-patterns-eval review-and-refactor** — Once the e2e-patterns-eval wiring slice is fully implemented and the feature test [tests/e2e_patterns_eval.rs](../../tests/e2e_patterns_eval.rs) is green, run `developer:refactor` over the new e2e project files ([e2e/patterns-eval/](../../e2e/patterns-eval/) — assemblies, prompts, eval YAMLs, Python checker stubs, `ci.sh`, AGENTS.md, `.gitignore`, the GitHub Actions workflow) and the feature test itself. Confirm the assemblies match `e2e/insurance-claim/` shape, the eval YAMLs match the README verbatim, `ci.sh` mirrors the insurance-claim driver with the documented two-suite differences, and the deferred-carry totals in the feature test match the design's Metrics section exactly (discovery: 12 passed / 2 deferred; invocation: 3 passed / 6 deferred).
+
+## Deferred
+
+- **content/conversation deferred decisions** — Five revisit-after items carried over from the conversation design doc: typed `ImageSource`, narrowing `tool_result.content`, closing `TraceEvent` into a named enum, promoting `Conversation` to an aggregate root, and lifting blank/filled `Message` into type-states. See [TASK-NOTES-conversation-deferred.md](TASK-NOTES-conversation-deferred.md) for trigger conditions per item.
+- **content/evaluation deferred decisions** — Three revisit-after items carried over from the evaluation design doc: `ToolCallSpec` extension, `f64` on `TextSemanticMatch.threshold` (and the resulting `PartialEq` rather than `Eq` derivations), and strict `ScriptBody` exclusivity. (The fourth original item, semantic validation on assertion shapes, was resolved by eval-assertions-core in favor of executor-level `Malformed` outcomes.) See [TASK-NOTES-evaluation-deferred.md](TASK-NOTES-evaluation-deferred.md) for trigger conditions per item.
+- **knowledge/assertions deferred decisions** — Four revisit-after items carried over from the eval-assertions-core design doc: cache-hit token budgets, first-result vs all-results quantifier on `json_path`, reason-string format stability, and `tool_call_order` strict-contiguous variant. See [TASK-NOTES-assertions-deferred.md](TASK-NOTES-assertions-deferred.md) for trigger conditions per item.
+- **knowledge/eval-script deferred decisions** — Eight revisit-after items carried over from the eval-script design doc: per-assertion `timeout_ms` override, suite-level `pass_env` defaults plus a denylist, hermetic `Program` resolution, runtime-version pinning via project config, stdout streaming into the report, an opt-in shared script library outside the project root, the Approach-2 `ScriptContext` bundle refactor, and full stderr surfacing. See [TASK-NOTES-eval-script-deferred.md](TASK-NOTES-eval-script-deferred.md) for trigger conditions per item.
+- **engine deferred decisions** — revisit-after items across the engine-provider and engine-rig design docs: keyed `NoopEngine::from_table` constructor, `open_engine` bootstrap helper, `Conversation::request_at` on the aggregate, promoting `tokio` from dev-dep to runtime dep, live wire-up for OpenAI / Gemini / Bedrock, `Message.cache` forwarding into the Rig request, streaming, tool-definition wiring on requests, and the `RateLimited` quota vs request-rate distinction. See [TASK-NOTES-engine-deferred.md](TASK-NOTES-engine-deferred.md) for trigger conditions per item.
+- **eval-cmd deferred decisions** — Five revisit-after items carried over from the eval-cmd design doc: per-class drill-down for `script` and `program`, report streaming, `--report-dir` override, exit code for deferred-only outcome, and `run_id` source. See [TASK-NOTES-eval-cmd-deferred.md](TASK-NOTES-eval-cmd-deferred.md) for trigger conditions per item.
+- **project-layout deferred decisions** — Five revisit-after items carried over from the project-layout design doc: recursive `**` glob support, per-prompt cache strategy, `RemoteAssemblyRepository`, project schema validation at `Project::open`, and concurrent-writer atomicity on `MemoryFS`. See [TASK-NOTES-project-layout-deferred.md](TASK-NOTES-project-layout-deferred.md) for trigger conditions per item.

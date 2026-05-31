@@ -5,6 +5,7 @@
 //! `<project>/evals/reports/<run-id>.json`, and returns the structured outcome
 //! the binary maps to an exit code.
 
+use std::collections::BTreeMap;
 use std::fs;
 use std::io;
 use std::path::PathBuf;
@@ -16,8 +17,10 @@ use crate::content::repository::RepositoryError;
 use crate::content::repository::VfsConversationRepository;
 use crate::engine::engine::open_engine_for_model;
 use crate::knowledge::assertions::EvaluationContext;
+use crate::knowledge::eval::ClassTotals;
 use crate::knowledge::eval::EvalArgs;
 use crate::knowledge::eval::evaluate;
+use crate::knowledge::script_runner::TokioScriptRunner;
 
 #[derive(Clone, Debug)]
 pub struct EvalCmdArgs {
@@ -38,15 +41,25 @@ pub struct EvalCmdOutcome {
     pub assertions_deferred: usize,
     pub assertions_malformed: usize,
     pub assertions_errored: usize,
+    /// Count of `script` + `program` assertions that resolved to `Deferred` —
+    /// a runner-wiring regression, since those families only defer when the
+    /// runner or project root is absent. Folded into [`Self::has_failures`].
+    pub assertions_deferred_executable: usize,
     pub report_path: PathBuf,
 }
 
 impl EvalCmdOutcome {
     /// `true` when the run should exit non-zero: any failed, malformed, or
-    /// errored assertion. Passed and deferred assertions do not fail the run.
+    /// errored assertion, or a `script`/`program` assertion that deferred (a
+    /// runner-wiring regression). Passed and other deferred assertions (judge,
+    /// tool, `text_semantic_match`) do not fail the run.
     #[must_use]
     pub fn has_failures(&self) -> bool {
-        self.assertions_failed + self.assertions_malformed + self.assertions_errored > 0
+        self.assertions_failed
+            + self.assertions_malformed
+            + self.assertions_errored
+            + self.assertions_deferred_executable
+            > 0
     }
 }
 
@@ -110,11 +123,14 @@ pub async fn run(args: EvalCmdArgs) -> Result<EvalCmdOutcome, EvalCmdError> {
     };
 
     let judge_dir = args.project.join("evals").join("judges").join(&run_id);
+    let script_runner = TokioScriptRunner;
     let report = evaluate(EvalArgs {
         suite: &suite,
         conversations: &conversations,
         ctx: EvaluationContext {
             engine: engine.as_deref(),
+            script_runner: Some(&script_runner),
+            project_root: Some(args.project.as_path()),
         },
         suite_name: &args.suite,
         run_id: &run_id,
@@ -144,6 +160,7 @@ pub async fn run(args: EvalCmdArgs) -> Result<EvalCmdOutcome, EvalCmdError> {
         assertions_deferred: report.totals.assertions.deferred,
         assertions_malformed: report.totals.assertions.malformed,
         assertions_errored: report.totals.assertions.errored,
+        assertions_deferred_executable: executable_deferred_count(&report.per_class),
         report_path,
     })
 }
@@ -190,5 +207,67 @@ fn derive_run_id(over: &std::path::Path) -> String {
             .and_then(|s| s.to_str())
             .map(String::from)
             .unwrap_or_default()
+    }
+}
+
+/// Count `script` + `program` assertions that resolved to `Deferred`. Those
+/// families defer ONLY when the runner or project root is missing — a wiring
+/// regression — so the gate fails the run on them, unlike `judge` / `tool` /
+/// `text_semantic_match` deferrals which stay non-failing.
+fn executable_deferred_count(per_class: &BTreeMap<String, ClassTotals>) -> usize {
+    per_class.get("script").map_or(0, |b| b.deferred)
+        + per_class.get("program").map_or(0, |b| b.deferred)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn executable_deferred_counts_only_script_and_program() {
+        let mut per_class: BTreeMap<String, ClassTotals> = BTreeMap::new();
+        per_class.insert(
+            String::from("script"),
+            ClassTotals {
+                deferred: 1,
+                ..Default::default()
+            },
+        );
+        per_class.insert(
+            String::from("program"),
+            ClassTotals {
+                deferred: 2,
+                ..Default::default()
+            },
+        );
+        per_class.insert(
+            String::from("judge"),
+            ClassTotals {
+                deferred: 5,
+                ..Default::default()
+            },
+        );
+        assert_eq!(executable_deferred_count(&per_class), 3);
+    }
+
+    #[test]
+    fn script_or_program_deferral_fails_the_run_but_other_deferrals_do_not() {
+        let gated = EvalCmdOutcome {
+            assertions_deferred_executable: 1,
+            ..Default::default()
+        };
+        assert!(
+            gated.has_failures(),
+            "a script/program deferral must fail the run",
+        );
+
+        let benign = EvalCmdOutcome {
+            assertions_deferred: 9,
+            ..Default::default()
+        };
+        assert!(
+            !benign.has_failures(),
+            "judge/tool/text_semantic_match deferrals stay non-failing",
+        );
     }
 }
