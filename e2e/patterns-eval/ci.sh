@@ -5,11 +5,11 @@
 # (discovery and invocation):
 #   1. `ailly assemble <suite>` -- always runs; asserts N conversation
 #      files land under runs/<id>/ for each suite.
-#   2. `ailly run runs/<id>/`   -- runs when ANTHROPIC_API_KEY is
-#      present; asserts every conversation file's trailing blank
-#      assistant slot has been filled. Skipped with a clear notice
-#      otherwise so contributors without API access still see the
-#      assemble half pass.
+#   2. `ailly run runs/<id>/`   -- requires a live model. Asserts every
+#      conversation file's trailing blank assistant slot has been
+#      filled. With neither ANTHROPIC_API_KEY nor a project .env the
+#      script hard-fails: there is no assemble-only success path, so the
+#      live half (and the falsification gate below) always runs.
 #   3. `ailly eval <suite> --over runs/<id>/` -- runs after `ailly run`;
 #      asserts the per-run report file landed at
 #      evals/reports/<run-id>.json and prints a deferred-tolerance
@@ -19,7 +19,6 @@
 # resolves its own location to find the project root.
 
 set -euo pipefail
-set -x
 
 project_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd "${project_dir}/../.." && pwd)"
@@ -96,8 +95,9 @@ assemble_suite invocation
 # --- CUJ 2: run (both suites, gated on credentials) -------------------------
 
 if [[ -z "${ANTHROPIC_API_KEY:-}" && ! -f "${project_dir}/.env" ]]; then
-  echo "SKIP: ailly run requires ANTHROPIC_API_KEY in the shell or ${project_dir#"${repo_root}/"}/.env; assemble half passed."
-  exit 0
+  echo "FAIL: ailly run requires a live model. Set ANTHROPIC_API_KEY in the shell or drop a ${project_dir#"${repo_root}/"}/.env file." >&2
+  echo "      The live half exercises the model and the falsification gate; there is no assemble-only success path." >&2
+  exit 1
 fi
 
 # Asserts that every assembled conversation file under the suite's
@@ -235,6 +235,11 @@ report_comparison() {
     exit 1
   fi
 
+  # Falsification gate: the invocation arm (skill loaded) must pass
+  # assertions the baseline arm (no skill) fails -- improved > 0 -- and the
+  # skill must never make a passing baseline case fail -- regressed == 0.
+  # A checker too lenient to fail baseline output yields improved == 0 and
+  # fails CI here, turning the README's falsification property into a gate.
   python3 - "${run_id_a}" "${run_id_b}" "${comparison_json}" <<'PY'
 import json, sys
 id_a, id_b, path = sys.argv[1], sys.argv[2], sys.argv[3]
@@ -248,9 +253,25 @@ print(
     f"unchanged_pass={t['unchanged_pass']} "
     f"unchanged_fail={t['unchanged_fail']}"
 )
+errors = []
+if t["improved"] <= 0:
+    errors.append(
+        f"improved={t['improved']} (expected > 0): the invocation arm passed no "
+        "assertion the baseline arm failed; the checkers are too lenient to "
+        "falsify un-skilled output, so the falsification claim is vacuous"
+    )
+if t["regressed"] != 0:
+    errors.append(
+        f"regressed={t['regressed']} (expected 0): loading the skill made a "
+        "passing baseline case fail"
+    )
+if errors:
+    for e in errors:
+        print(f"FAIL: {e}", file=sys.stderr)
+    sys.exit(1)
 PY
 
-  echo "OK: ailly report wrote ${comparison_json#"${repo_root}/"} and ${comparison_md#"${repo_root}/"}"
+  echo "OK: ailly report wrote ${comparison_json#"${repo_root}/"} and ${comparison_md#"${repo_root}/"} (improved>0, regressed==0)"
 }
 
 report_discovery

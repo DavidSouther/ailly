@@ -175,7 +175,7 @@ role: user
 content: \"Wrap a string UserId.\"
 ---
 role: assistant
-content: \"struct UserId(String); impl UserId { pub fn new(raw: String) -> Result<Self, Error> { /* validate */ Ok(Self(raw)) } }\"
+content: \"type UserId = string & { readonly __brand: 'UserId' }; export function makeUserId(raw: string): UserId { if (raw.length === 0) throw new Error('empty UserId'); return raw as UserId; }\"
 trace:
   span_id: span-i1
   model: noop
@@ -196,7 +196,7 @@ role: user
 content: \"Stand up the five-layer subscriber registry in main.\"
 ---
 role: assistant
-content: \"fn init() { Registry::default().with(Format::json()).with(Filter::env()).with(Enrich::resource(...)).with(Export::otlp(...)).init(); }\"
+content: \"export function initLogging(): void { const registry = new Registry().with(Format.json()).with(Filter.fromEnv()).with(Enrich.resource({ 'service.name': 'hello' })).with(Export.otlp({ endpoint: 'http://collector:4317' })); registry.install(); process.on('SIGTERM', () => registry.shutdown(5000)); }\"
 trace:
   span_id: span-i2
   model: noop
@@ -217,7 +217,7 @@ role: user
 content: \"Emit order.placed with semantic-convention keys.\"
 ---
 role: assistant
-content: \"info!(event_name = \\\"order.placed\\\", order.id = %order.id, user.id = %user.id, http.response.status_code = 201, \\\"order placed\\\");\"
+content: \"logger.info({ eventName: 'order.placed', 'order.id': order.id, 'user.id': user.id, 'http.response.status_code': res.statusCode }, 'order placed');\"
 trace:
   span_id: span-i3
   model: noop

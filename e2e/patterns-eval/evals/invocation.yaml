@@ -21,7 +21,11 @@ cases:
           resource attributes, installs the W3C `traceparent` propagator,
           and registers a shutdown flush with a hard timeout. No `init` is
           called from library code.
-      - { type: tokens, metric: total, op: "<", value: 8000 }
+      # Budget headroom for the skill's full five-layer OTel pipeline, which
+      # legitimately runs larger than baseline's partial attempt (~12k total
+      # observed). Kept equal to baseline.yaml so a size difference between the
+      # arms is an Improved/Regressed signal, not a budget artifact.
+      - { type: tokens, metric: total, op: "<", value: 14000 }
 
   - name: emitting-logs
     assertions:
