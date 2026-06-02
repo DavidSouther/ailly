@@ -21,7 +21,9 @@ cases:
           resource attributes, installs the W3C `traceparent` propagator,
           and registers a shutdown flush with a hard timeout. No `init` is
           called from library code.
-      - { type: tokens, metric: total, op: "<", value: 8000 }
+      # Kept equal to invocation.yaml: see the note there. The budget must match
+      # across arms so the comparison's token outcome reflects a real size delta.
+      - { type: tokens, metric: total, op: "<", value: 14000 }
 
   - name: emitting-logs
     assertions:
