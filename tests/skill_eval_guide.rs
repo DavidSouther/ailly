@@ -61,17 +61,18 @@ fn link_targets(markdown: &str) -> Vec<String> {
     let bytes = markdown.as_bytes();
     let mut i = 0;
     while i + 1 < bytes.len() {
-        if bytes[i] == b']' && bytes[i + 1] == b'(' {
-            if let Some(close) = markdown[i + 2..].find(')') {
-                let raw = &markdown[i + 2..i + 2 + close];
-                let target = raw.split_whitespace().next().unwrap_or("");
-                let target = target.split('#').next().unwrap_or("");
-                if !target.is_empty() {
-                    targets.push(target.to_string());
-                }
-                i += 2 + close + 1;
-                continue;
+        if bytes[i] == b']'
+            && bytes[i + 1] == b'('
+            && let Some(close) = markdown[i + 2..].find(')')
+        {
+            let raw = &markdown[i + 2..i + 2 + close];
+            let target = raw.split_whitespace().next().unwrap_or("");
+            let target = target.split('#').next().unwrap_or("");
+            if !target.is_empty() {
+                targets.push(target.to_string());
             }
+            i += 2 + close + 1;
+            continue;
         }
         i += 1;
     }
@@ -83,6 +84,10 @@ fn is_external(target: &str) -> bool {
 }
 
 #[test]
+#[expect(
+    clippy::too_many_lines,
+    reason = "single test covering the full user story; splitting would obscure the assertion-to-metric mapping"
+)]
 fn skill_eval_guide_is_reusable_from_its_directory_alone() {
     let dir = skill_dir();
     let skill_md = dir.join("SKILL.md");
