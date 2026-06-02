@@ -20,6 +20,8 @@ use crate::knowledge::assertions::AssertionOutcome;
 use crate::knowledge::assertions::EvaluationContext;
 use crate::knowledge::assertions::check_judge;
 
+const MISSING_CONVERSATION_CLASS: &str = "missing_conversation";
+
 /// Full report serialized to `<project>/evals/reports/<run-id>.json`.
 /// Field names are the JSON keys; see DESIGN.md §evaluation for the contract.
 #[derive(Serialize, Deserialize, Debug)]
@@ -170,7 +172,7 @@ pub struct EvalArgs<'a> {
 /// - `name: None, when: empty` — fan out to every conversation.
 ///
 /// Assertion order within a case is preserved. The per-class rollup and
-/// four-bucket totals are folded in as verdicts are produced.
+/// five-bucket totals are folded in as verdicts are produced.
 pub async fn evaluate(args: EvalArgs<'_>) -> EvalReport {
     let mut totals = ReportTotals::default();
     let mut per_class: BTreeMap<String, ClassTotals> = BTreeMap::new();
@@ -182,29 +184,23 @@ pub async fn evaluate(args: EvalArgs<'_>) -> EvalReport {
         let mut match_reports: Vec<MatchReport> = Vec::with_capacity(matched.len());
 
         if matched.is_empty() && case.name.is_some() {
+            let missing = AssertionOutcome::Malformed {
+                reason: String::new(),
+            };
             let assertion = AssertionReport {
-                class: String::from("missing_conversation"),
-                outcome: String::from(outcome_label(&AssertionOutcome::Malformed {
-                    reason: String::new(),
-                })),
+                class: String::from(MISSING_CONVERSATION_CLASS),
+                outcome: String::from(outcome_label(&missing)),
                 reason: Some(format!(
                     "no conversation found for case name {:?}",
                     case.name.as_deref().unwrap_or_default()
                 )),
             };
-            fold_bucket(
-                &mut totals.assertions,
-                &AssertionOutcome::Malformed {
-                    reason: String::new(),
-                },
-            );
+            fold_bucket(&mut totals.assertions, &missing);
             fold_bucket(
                 per_class
-                    .entry(String::from("missing_conversation"))
+                    .entry(String::from(MISSING_CONVERSATION_CLASS))
                     .or_default(),
-                &AssertionOutcome::Malformed {
-                    reason: String::new(),
-                },
+                &missing,
             );
             match_reports.push(MatchReport {
                 conversation: String::new(),
@@ -748,7 +744,7 @@ mod tests {
             assert_eq!(
                 report
                     .per_class
-                    .get("missing_conversation")
+                    .get(MISSING_CONVERSATION_CLASS)
                     .copied()
                     .unwrap_or_default()
                     .malformed,
@@ -756,7 +752,7 @@ mod tests {
             );
             assert_eq!(
                 report.cases[0].matches[0].assertions[0].class,
-                "missing_conversation"
+                MISSING_CONVERSATION_CLASS
             );
         }
 

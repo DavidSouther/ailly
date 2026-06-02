@@ -11,9 +11,9 @@
 //! This test drives the orchestrator-and-CLI seam end-to-end. Per-variant
 //! pass/fail coverage already lives in `tests/eval_assertions.rs` and the
 //! unit tests inside `src/knowledge/assertions.rs` per the design doc; the
-//! suite below exercises the four outcome buckets (pass, fail, deferred,
-//! malformed) once each, plus the two matching modes (`name:` exact match
-//! and `when:` subset filter), which is what the orchestrator owns.
+//! suite below exercises four of the five outcome buckets (pass, fail,
+//! deferred, malformed) once each, plus the two matching modes (`name:` exact
+//! match and `when:` subset filter), which is what the orchestrator owns.
 
 use std::fs;
 
