@@ -9,6 +9,7 @@ matrix:
 
 prefix:
   - { kind: file,   path: ./AGENTS.md,                                cache: true }
+  - { kind: file,   path: ./context/AGENTS.md,                        cache: true }
   - { kind: system, path: ./context/skills/using-patterns/SKILL.md,   cache: true }
   - kind: system
     path: "context/skills/{{ skill }}/SKILL.md"

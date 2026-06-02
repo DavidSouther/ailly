@@ -1,5 +1,6 @@
-Introduce a `UserId` type that wraps a `String`. The inner primitive
-must be private, construction must be the only sanctioned entry point,
-and a plain string must not be assignable where a `UserId` is required.
-No `as` casts at call sites. Show the type definition and one example
-call site.
+Our HTTP handlers pass user ids and order ids around as plain strings,
+and we keep accidentally swapping the two arguments. Add `UserId` and
+`OrderId` so the compiler rejects a call that passes one where the other
+is expected. Show the type definitions and one call site that loads a
+user by id. Keep it to the type layer — we do not want a class, an ORM
+entity, or heavyweight runtime objects.

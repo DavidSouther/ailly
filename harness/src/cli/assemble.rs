@@ -451,8 +451,8 @@ prefix:
         let run_dir = assemble_patterns_eval("invocation");
         assert_eq!(
             system_message_count(&run_dir, "newtype.yaml"),
-            3,
-            "positive arm: AGENTS.md + using-patterns + one skill = 3 system messages"
+            4,
+            "positive arm: root AGENTS.md + context AGENTS.md + using-patterns + one skill = 4 system messages"
         );
     }
 
@@ -461,8 +461,8 @@ prefix:
         let run_dir = assemble_patterns_eval("baseline");
         assert_eq!(
             system_message_count(&run_dir, "newtype.yaml"),
-            1,
-            "baseline arm: AGENTS.md only = 1 system message"
+            2,
+            "baseline arm: root AGENTS.md + context AGENTS.md, no skills = 2 system messages"
         );
     }
 

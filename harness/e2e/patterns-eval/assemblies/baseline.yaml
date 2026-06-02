@@ -8,7 +8,8 @@ matrix:
     - emitting-logs
 
 prefix:
-  - { kind: file, path: ./AGENTS.md, cache: true }
+  - { kind: file, path: ./AGENTS.md,         cache: true }
+  - { kind: file, path: ./context/AGENTS.md, cache: true }
 
 conversation:
   - { role: user, path: "prompts/invocation/{{ skill }}.md" }

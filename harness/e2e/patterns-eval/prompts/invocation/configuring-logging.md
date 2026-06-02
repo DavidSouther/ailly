@@ -1,5 +1,5 @@
-Stand up the service's logging pipeline in `main`. Install a single
-subscriber registry with Format, Filter, Enrich, and Export layers,
-attach `service.*` resource attributes, install the W3C `traceparent`
-propagator, and register a shutdown flush with a hard timeout. Library
-code must not call `init`.
+Set up the service's logging in `main` so our records come out
+structured and get shipped to the OpenTelemetry collector. We run
+several copies of this service, so we need to tell instances apart in
+the backend. Make sure nothing buffered is lost when the service is
+told to shut down. Library code should not configure logging itself.
