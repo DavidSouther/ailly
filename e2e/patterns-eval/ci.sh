@@ -151,7 +151,7 @@ run_suite() {
 }
 
 run_suite discovery
-run_suite baseline 
+run_suite baseline
 run_suite invocation
 
 # --- CUJ 3: eval (both suites) ----------------------------------------------

@@ -24,6 +24,8 @@ Rules:
 import re
 import sys
 
+from _checker_utils import extract_code, fail, strip_comments
+
 INSTALL = re.compile(
     r"\.install\s*\(|\.init\s*\(|\bsetGlobalLogger\w*\s*\(|\bsetLoggerProvider\s*\("
     r"|\.start\s*\(|\bregisterGlobal\w*\s*\(|\b(?:logs|trace)\.setGlobal\w*\s*\("
@@ -37,33 +39,6 @@ LAYERS = {
 }
 
 FLUSH = re.compile(r"\b(?:shutdown|flush|forceFlush)\s*\(")
-
-FENCE = re.compile(r"```[^\n]*\n(.*?)```", re.DOTALL)
-
-
-def extract_code(src: str) -> str:
-    """The runner pipes the whole assistant message: prose, tables, and fenced
-    code. Validate the code, not the explanation. Concatenate fenced blocks; if
-    there are none (e.g. a raw-source candidate), use the whole input."""
-    blocks = FENCE.findall(src)
-    return "\n".join(blocks) if blocks else src
-
-
-def strip_comments(src: str) -> str:
-    """Remove block and line comments so a keyword that appears only in prose
-    does not satisfy a rule. `://` (URLs) is preserved."""
-    src = re.sub(r"/\*.*?\*/", " ", src, flags=re.DOTALL)
-    src = re.sub(r"(?<!:)//[^\n]*", " ", src)
-    return src
-
-
-def fail(reason: str) -> int:
-    """Print the single-line reason to stdout and signal a failed candidate.
-
-    Leaves stderr untouched so the runner records Fail, not Errored.
-    """
-    sys.stdout.write(reason + "\n")
-    return 1
 
 
 def main() -> int:
