@@ -165,35 +165,19 @@ pub async fn run(args: EvalCmdArgs) -> Result<EvalCmdOutcome, EvalCmdError> {
     })
 }
 
-/// Resolve `over` to a [`vfs::VfsPath`]. Absolute paths mount onto a
-/// host-rooted `vfs::PhysicalFS::new("/")`; relative paths join onto
-/// `project.root()` (the project's vfs mount). UTF-8 invalid bytes in
-/// the input are an explicit error at the CLI argument boundary.
+/// Resolve `over` to a [`vfs::VfsPath`]. Delegates to
+/// [`Project::resolve_host_path`]; the non-UTF-8 case is surfaced as
+/// [`EvalCmdError::NonUtf8Path`] before the shared helper is called.
 fn resolve_over(
     project: &crate::content::project::Project,
     over: &std::path::Path,
 ) -> Result<vfs::VfsPath, EvalCmdError> {
-    let over_str = over.to_str().ok_or_else(|| EvalCmdError::NonUtf8Path {
-        path: over.to_path_buf(),
-    })?;
-    if over.is_absolute() {
-        let host = vfs::VfsPath::new(vfs::PhysicalFS::new("/"));
-        host.join(over_str.trim_start_matches('/'))
-            .map_err(|source| RepositoryError::Vfs {
-                path: over_str.to_string(),
-                source,
-            })
-            .map_err(EvalCmdError::from)
-    } else {
-        project
-            .root()
-            .join(over_str)
-            .map_err(|source| RepositoryError::Vfs {
-                path: over_str.to_string(),
-                source,
-            })
-            .map_err(EvalCmdError::from)
+    if over.to_str().is_none() {
+        return Err(EvalCmdError::NonUtf8Path {
+            path: over.to_path_buf(),
+        });
     }
+    project.resolve_host_path(over).map_err(EvalCmdError::from)
 }
 
 fn derive_run_id(over: &std::path::Path) -> String {

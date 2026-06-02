@@ -21,7 +21,6 @@ use crate::content::conversation::Role;
 use crate::content::project::Project;
 use crate::content::project::ProjectError;
 use crate::content::repository::AssemblyRepository;
-use crate::content::repository::ContextRepository;
 use crate::content::repository::RepositoryError;
 
 /// Arguments for the assemble handler. Public field list is fixed by the
@@ -146,13 +145,13 @@ fn resolve_prefix_block(
     match block {
         PrefixBlock::File { path, .. } => {
             let resolved = project.resolve(path, binding)?;
-            Ok(context.read_file(resolved.relative())?)
+            Ok(context.read_file(&resolved)?)
         }
         PrefixBlock::System { path, .. }
         | PrefixBlock::Tools { path, .. }
         | PrefixBlock::Examples { path, .. } => {
             let resolved = project.resolve(path, binding)?;
-            Ok(context.glob_concat(resolved.relative(), None)?.body)
+            Ok(context.glob_concat(&resolved, None)?.body)
         }
         PrefixBlock::Context {
             source,
@@ -165,7 +164,7 @@ fn resolve_prefix_block(
                 None => source.clone(),
             };
             let resolved = project.resolve(&pattern, binding)?;
-            Ok(context.glob_concat(resolved.relative(), *count)?.body)
+            Ok(context.glob_concat(&resolved, *count)?.body)
         }
     }
 }

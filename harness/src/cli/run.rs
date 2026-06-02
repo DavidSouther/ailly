@@ -134,35 +134,19 @@ async fn fill_and_save(
     Ok(())
 }
 
-/// Resolve `target` to a [`vfs::VfsPath`]. Absolute paths mount onto a
-/// host-rooted `vfs::PhysicalFS::new("/")`; relative paths join onto
-/// `project.root()` (the project's vfs mount). UTF-8 invalid bytes in
-/// the input are an explicit error at the CLI argument boundary.
+/// Resolve `target` to a [`vfs::VfsPath`]. Delegates to
+/// [`Project::resolve_host_path`]; the non-UTF-8 case is surfaced as
+/// [`RunCmdError::NonUtf8Path`] before the shared helper is called.
 fn resolve_target(
     project: &crate::content::project::Project,
     target: &std::path::Path,
 ) -> Result<vfs::VfsPath, RunCmdError> {
-    let target_str = target.to_str().ok_or_else(|| RunCmdError::NonUtf8Path {
-        path: target.to_path_buf(),
-    })?;
-    if target.is_absolute() {
-        let host = vfs::VfsPath::new(vfs::PhysicalFS::new("/"));
-        host.join(target_str.trim_start_matches('/'))
-            .map_err(|source| RepositoryError::Vfs {
-                path: target_str.to_string(),
-                source,
-            })
-            .map_err(RunCmdError::from)
-    } else {
-        project
-            .root()
-            .join(target_str)
-            .map_err(|source| RepositoryError::Vfs {
-                path: target_str.to_string(),
-                source,
-            })
-            .map_err(RunCmdError::from)
+    if target.to_str().is_none() {
+        return Err(RunCmdError::NonUtf8Path {
+            path: target.to_path_buf(),
+        });
     }
+    project.resolve_host_path(target).map_err(RunCmdError::from)
 }
 
 fn count_blank_assistants(conv: &Conversation) -> usize {

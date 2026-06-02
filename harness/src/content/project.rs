@@ -5,11 +5,6 @@
 //! [`RunTx`] Unit of Work for the `runs/` subtree. Path validation goes
 //! through [`Project::resolve`] or [`Project::child`], so untyped strings
 //! cannot reach the I/O surface.
-//!
-//! See `docs/developer/2026-05-25-A-project-layout/design.md`. Step 0 lands
-//! the type vocabulary; bodies are stubs that compile and leave the suite
-//! green. Steps 2–4 wire the sub-handle trait impls; Step 5 inlines
-//! `assembly::substitute` into [`Project::resolve`].
 
 use std::path::PathBuf;
 
@@ -84,26 +79,37 @@ impl EvaluationRepository for Evaluations<'_> {
     }
 }
 
-/// Borrow over a [`Project`] plus the `context/` subfolder. Implements
-/// [`ContextRepository`] by delegating to [`VfsContextRepository`] over
-/// the project root.
+/// Borrow over a [`Project`] plus the `context/` subfolder. Accepts
+/// [`ProjectPath`] arguments — all context reads must first pass through
+/// [`Project::resolve`] or [`Project::child`], matching [`Prompts::read`].
 pub struct Context<'a>(pub(crate) &'a Project);
 
-impl ContextRepository for Context<'_> {
-    fn read_file(&self, path: &str) -> Result<String, RepositoryError> {
-        self.repo().read_file(path)
+impl Context<'_> {
+    /// Read `path` as UTF-8 text.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`RepositoryError::Vfs`] when the underlying VFS read fails.
+    pub fn read_file(&self, path: &ProjectPath) -> Result<String, RepositoryError> {
+        self.repo().read_file(path.relative())
     }
 
-    fn glob_concat(
+    /// Expand the glob in `path` and concatenate matched files in
+    /// filename-ascending order, separated by a single newline. When `limit`
+    /// is `Some(n)`, only the first `n` paths after sorting are included.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`RepositoryError::Pattern`] if the glob is unsupported and
+    /// [`RepositoryError::Vfs`] if a matched file is unreadable.
+    pub fn glob_concat(
         &self,
-        pattern: &str,
+        path: &ProjectPath,
         limit: Option<usize>,
     ) -> Result<GlobResult, RepositoryError> {
-        self.repo().glob_concat(pattern, limit)
+        self.repo().glob_concat(path.relative(), limit)
     }
-}
 
-impl Context<'_> {
     fn repo(&self) -> VfsContextRepository {
         match self.0.host_root() {
             Some(hr) => VfsContextRepository::with_host_root(self.0.root.clone(), hr.to_path_buf()),
@@ -304,32 +310,68 @@ impl Project {
         })
     }
 
-    /// Borrow an [`Assemblies`] handle. Trait impl lands in Step 2.
+    /// Borrow an [`Assemblies`] handle.
     #[must_use]
     pub fn assemblies(&self) -> Assemblies<'_> {
         Assemblies(self)
     }
 
-    /// Borrow an [`Evaluations`] handle. Trait impl lands in Step 2.
+    /// Borrow an [`Evaluations`] handle.
     #[must_use]
     pub fn evals(&self) -> Evaluations<'_> {
         Evaluations(self)
     }
 
-    /// Borrow a [`Context`] handle. Trait impl lands in Step 3.
+    /// Borrow a [`Context`] handle.
     #[must_use]
     pub fn context(&self) -> Context<'_> {
         Context(self)
     }
 
-    /// Borrow a [`Prompts`] handle. `read` lands in Step 3.
+    /// Borrow a [`Prompts`] handle.
     #[must_use]
     pub fn prompts(&self) -> Prompts<'_> {
         Prompts(self)
     }
 
-    /// Open a [`RunTx`]. Returns a stub `RunTx` that errors on `stage` and
-    /// `commit` until Step 4 lands real bodies.
+    /// Resolve a host `path` to a [`vfs::VfsPath`]. Absolute paths mount onto
+    /// a host-rooted `vfs::PhysicalFS::new("/")`; relative paths join onto
+    /// `self.root()`. Returns `Err` when `path` contains non-UTF-8 bytes or
+    /// the VFS join fails.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`RepositoryError::Vfs`] for non-UTF-8 input or VFS join
+    /// failures.
+    pub fn resolve_host_path(
+        &self,
+        path: &std::path::Path,
+    ) -> Result<vfs::VfsPath, RepositoryError> {
+        let path_str = path.to_str().ok_or_else(|| RepositoryError::Vfs {
+            path: path.to_string_lossy().into_owned(),
+            source: vfs::VfsError::from(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "path is not valid UTF-8",
+            )),
+        })?;
+        if path.is_absolute() {
+            vfs::VfsPath::new(vfs::PhysicalFS::new("/"))
+                .join(path_str.trim_start_matches('/'))
+                .map_err(|source| RepositoryError::Vfs {
+                    path: path_str.to_string(),
+                    source,
+                })
+        } else {
+            self.root
+                .join(path_str)
+                .map_err(|source| RepositoryError::Vfs {
+                    path: path_str.to_string(),
+                    source,
+                })
+        }
+    }
+
+    /// Open a [`RunTx`].
     #[must_use]
     pub fn begin_run(&self) -> RunTx<'_> {
         RunTx {
@@ -357,7 +399,7 @@ impl ProjectPath {
 }
 
 impl RunTx<'_> {
-    /// Stage one conversation under `binding`. Real body lands in Step 4.
+    /// Stage one conversation under `binding`.
     ///
     /// # Errors
     ///
@@ -379,7 +421,7 @@ impl RunTx<'_> {
     /// Mint a fresh `runs/<id>-<assembly_name>/` directory under the
     /// project root, write every staged file, and transition the
     /// transaction to committed. One-shot — a second call returns
-    /// [`RepositoryError::AlreadyCommitted`]. Real body lands in Step 4.
+    /// [`RepositoryError::AlreadyCommitted`].
     ///
     /// # Errors
     ///
