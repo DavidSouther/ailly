@@ -2,10 +2,6 @@
 
 Initial development queue to reach MVP for the three e2e projects under `e2e/`: `insurance-claim`, `patterns-eval`, `delegate-52`. Ordered so each task delivers a running slice the next task builds on. Source of truth for schemas is [DESIGN.md](../../DESIGN.md); source of truth for e2e behaviour is each project's `README.md`.
 
-## Patterns-eval enablement
-
-- **Documentation** - Create documentation and agent skills for applying this pattern generally. These docs will be used by another project to create a full suite of tests for a variety of agentic skillsets.
-
 ## Delegate-52 enablement
 
 - **multi-turn-skeletons** — Assembly `conversation:` with multiple blank assistant turns; `run` resolves each against the cumulative transcript so far.
@@ -28,6 +24,8 @@ Initial development queue to reach MVP for the three e2e projects under `e2e/`: 
 - **patterns-eval non-TypeScript checkers** — The three `check_*.py` checkers target TypeScript only, because the invocation prompts pin TS (via [e2e/patterns-eval/context/AGENTS.md](../../e2e/patterns-eval/context/AGENTS.md)). If a future sweep pins a different output language, each checker needs a language branch or a per-language sibling. **Trigger:** a patterns-eval sweep pins a non-TS output language.
 
 - **patterns-eval structural-checker fragility** — The live falsification gate in [e2e/patterns-eval/ci.sh](../../e2e/patterns-eval/ci.sh) passes but with a thin, variable margin: `improved` ranged 1–3 across live runs and the gate survives largely on the LLM-as-judge assertion. The regex/heuristic `check_*.py` checkers reliably discriminate only `emitting-logs`, and even there a capable model's idiom variation (a bare `name:` event field, `Brand<>` helpers, expression-bodied arrow constructors) intermittently fails the invocation arm. `newtype` is an intentional null result (both arms pass). Decide whether to (a) lean the structural assertion on the judge and demote the script checkers to advisory, (b) pin model temperature/seed so the gate is reproducible, or (c) accept occasional gate flake and document it. Current framing is in [e2e/patterns-eval/AGENTS.md](../../e2e/patterns-eval/AGENTS.md) "Reading the invocation comparison".
+
+- **ailly-skill-eval review-and-refactor** — Once the `ailly-skill-eval` skill is fully written and the feature test [tests/skill_eval_guide.rs](../../tests/skill_eval_guide.rs) is green, run `developer:refactor` over `skills/ailly-skill-eval/SKILL.md`, `skills/ailly-skill-eval/references/method.md`, and the feature test itself. Confirm: no schema is duplicated from [DESIGN.md](../../DESIGN.md) (the guide links out); every section of `method.md` traces to what `e2e/patterns-eval/` actually builds (Fidelity rule — `baseline.yaml`, not `invocation-baseline.yaml`); the `SKILL.md` body has not grown a standalone "before you start, set up the project" section (the `general:writing-paired-skills` split trigger from the design's deferred decisions); and the final `name`/`description` wording was validated against the discovery-dogfooding metric, with the test's `SKILL_NAME` constant matching.
 
 ## Deferred
 
