@@ -1,8 +1,4 @@
-//! Repository ports for `cli/assemble` and their `std::fs` adapters.
-//!
-//! See `docs/developer/2026-05-23-A-cli-assemble/plan.md` Step 2. The
-//! `content/project.rs layout` slice replaces these adapters with a shared
-//! `Project` value without changing the trait shapes.
+//! Repository ports and their `vfs`-backed adapters.
 
 use std::io;
 use std::path::PathBuf;
@@ -653,7 +649,8 @@ cases:
         let body = "hello\nworld\n";
         write_vfs_file(project.root(), "a.md", body);
 
-        let got = project.context().read_file("a.md").expect("read");
+        let path = project.child("a.md").expect("child");
+        let got = project.context().read_file(&path).expect("read");
         assert_eq!(got, body);
     }
 
@@ -663,10 +660,8 @@ cases:
         write_vfs_file(project.root(), "ctx/b.md", "second");
         write_vfs_file(project.root(), "ctx/a.md", "first");
 
-        let result = project
-            .context()
-            .glob_concat("ctx/*.md", None)
-            .expect("glob");
+        let pattern = project.child("ctx/*.md").expect("child");
+        let result = project.context().glob_concat(&pattern, None).expect("glob");
         assert_eq!(result.paths.len(), 2);
         assert!(result.paths[0].ends_with("a.md"));
         assert!(result.paths[1].ends_with("b.md"));
@@ -682,9 +677,10 @@ cases:
         write_vfs_file(project.root(), "ctx/a.md", "first");
         write_vfs_file(project.root(), "ctx/b.md", "second");
 
+        let pattern = project.child("ctx/*.md").expect("child");
         let result = project
             .context()
-            .glob_concat("ctx/*.md", Some(2))
+            .glob_concat(&pattern, Some(2))
             .expect("glob");
         assert_eq!(result.paths.len(), 2);
         assert!(result.paths[0].ends_with("a.md"));
@@ -695,9 +691,10 @@ cases:
     #[test]
     fn vfs_context_repository_rejects_recursive_glob() {
         let project = crate::content::project::Project::open_memory();
+        let pattern = project.child("ctx/**/*.md").expect("child");
         let err = project
             .context()
-            .glob_concat("ctx/**/*.md", None)
+            .glob_concat(&pattern, None)
             .expect_err("recursive glob");
         assert!(
             matches!(err, RepositoryError::Pattern { .. }),

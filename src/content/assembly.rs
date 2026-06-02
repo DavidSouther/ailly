@@ -18,7 +18,6 @@ use crate::content::conversation::ModelId;
 use crate::content::conversation::Rendered;
 use crate::content::conversation::Template;
 use crate::content::conversation::TurnBody;
-use crate::content::repository::ContextRepository;
 use crate::content::repository::RepositoryError;
 
 /// Aggregate root for a single assembly recipe.
@@ -179,7 +178,7 @@ impl Message<Template> {
         let body = match &self.body {
             TurnBody::UserPath { path } => {
                 let resolved = project.resolve(path, binding)?;
-                let text = ContextRepository::read_file(&project.context(), resolved.relative())?;
+                let text = project.context().read_file(&resolved)?;
                 Some(Content::Text(text))
             }
             TurnBody::AssistantBlank => None,
