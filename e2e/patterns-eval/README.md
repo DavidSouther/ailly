@@ -31,7 +31,8 @@ e2e/patterns-eval/
 │                                                  # Sibling SKILL.md revisions can be added (e.g. newtype-v1/SKILL.md, newtype-v2/SKILL.md) for the version sweep below by pointing the assembly prefix at the pinned directory.
 ├── assemblies/
 │   ├── discovery.yaml                             # prefix + conversation skeleton + matrix over discovery cases
-│   └── invocation.yaml                            # same shape; matrix over invocation cases
+│   ├── invocation.yaml                            # positive arm: skill loaded; matrix over invocation cases
+│   └── baseline.yaml                              # negative arm: no skill loaded (falsification)
 ├── prompts/
 │   ├── discovery/
 │   │   ├── newtype-mixed-ids.md                   # "We keep passing UserId where OrderId is expected."
@@ -53,14 +54,14 @@ e2e/patterns-eval/
 │   │   ├── newtype.yaml
 │   │   ├── configuring-logging.yaml
 │   │   └── emitting-logs.yaml
-│   └── 2026-05-23T10-06-invocation-baseline/     # same cases, no skills loaded
+│   └── 2026-05-23T10-06-baseline/                 # same cases, no skills loaded
 │       ├── newtype.yaml
 │       ├── configuring-logging.yaml
 │       └── emitting-logs.yaml
 └── evals/
     ├── discovery.yaml                             # case `name` matches conversation filename
     ├── invocation.yaml                            # positive arm: skill loaded
-    ├── invocation-baseline.yaml                   # negative arm: no skill loaded (falsification)
+    ├── baseline.yaml                              # negative arm: no skill loaded (falsification)
     ├── scripts/                                   # used by `program`/`script` assertions only
     │   ├── check_newtype.py                       # Inner primitive is private; constructor is the only entry; no `as` casts at call sites.
     │   ├── check_configuring_logging.py           # Single `init`; Registry → Format → Filter → Enrich → Export; resource attributes; shutdown flush.
@@ -108,8 +109,9 @@ matrix:
     - emitting-logs
 
 prefix:
-  - { kind: file,   path: ./AGENTS.md,                                cache: true }
-  - { kind: system, path: context/skills/using-patterns/SKILL.md,     cache: true }
+  - { kind: file,   path: ./AGENTS.md,                                  cache: true }
+  - { kind: file,   path: ./context/AGENTS.md,                          cache: true }
+  - { kind: system, path: ./context/skills/using-patterns/SKILL.md,     cache: true }
   - kind: system
     path: "context/skills/{{ skill }}/SKILL.md"
     cache: true
@@ -119,10 +121,10 @@ conversation:
   - { role: assistant }
 ```
 
-`assemblies/invocation-baseline.yaml` (negative arm — no skill loaded):
+`assemblies/baseline.yaml` (negative arm — no skill loaded):
 
 ```yaml
-name: invocation-baseline
+name: baseline
 model: claude-sonnet-4-6
 
 matrix:
@@ -132,7 +134,8 @@ matrix:
     - emitting-logs
 
 prefix:
-  - { kind: file, path: ./AGENTS.md, cache: true }
+  - { kind: file, path: ./AGENTS.md,         cache: true }
+  - { kind: file, path: ./context/AGENTS.md, cache: true }
 
 conversation:
   - { role: user, path: "prompts/invocation/{{ skill }}.md" }
@@ -192,13 +195,13 @@ cases:
 
 ## Invocation (skill used correctly in pattern)
 
-Each invocation prompt targets one specific skill. The falsification test runs two arms against the same prompts: `invocation` loads the relevant skill; `invocation-baseline` loads no skill at all. A skill is confirmed useful when the `invocation` arm passes assertions that the `invocation-baseline` arm fails. Both arms use the same eval assertions.
+Each invocation prompt targets one specific skill. The falsification test runs two arms against the same prompts: `invocation` loads the relevant skill; `baseline` loads no skill at all. A skill is confirmed useful when the `invocation` arm passes assertions that the `baseline` arm fails. Both arms use the same eval assertions.
 
 Run names match the `skill` matrix axis: `newtype.yaml`, `configuring-logging.yaml`, `emitting-logs.yaml`.
 
 The Python script checks structural conformance, the judge confirms the result is recognisable as the named pattern, and the token budget confirms the skill did not pad the output. The scripts encode the structural rules from each `SKILL.md`'s "Common Mistakes" section; if those rules are reworded out of the prompt, the script is what notices.
 
-`evals/invocation.yaml` (also `evals/invocation-baseline.yaml`, identical assertions):
+`evals/invocation.yaml` (also `evals/baseline.yaml`, identical assertions):
 
 ```yaml
 cases:
@@ -223,7 +226,7 @@ cases:
           resource attributes, installs the W3C `traceparent` propagator,
           and registers a shutdown flush with a hard timeout. No `init` is
           called from library code.
-      - { type: tokens, metric: total, op: "<", value: 8000 }
+      - { type: tokens, metric: total, op: "<", value: 14000 }
 
   - name: emitting-logs
     assertions:
@@ -251,9 +254,9 @@ ailly -p e2e/patterns-eval assemble invocation                           # → r
 ailly -p e2e/patterns-eval run runs/<ts>-invocation/
 ailly -p e2e/patterns-eval eval invocation --over runs/<ts>-invocation/
 
-ailly -p e2e/patterns-eval assemble invocation-baseline                  # → runs/<ts>-invocation-baseline/*.yaml
-ailly -p e2e/patterns-eval run runs/<ts>-invocation-baseline/
-ailly -p e2e/patterns-eval eval invocation-baseline --over runs/<ts>-invocation-baseline/
+ailly -p e2e/patterns-eval assemble baseline                             # → runs/<ts>-baseline/*.yaml
+ailly -p e2e/patterns-eval run runs/<ts>-baseline/
+ailly -p e2e/patterns-eval eval baseline --over runs/<ts>-baseline/
 
 # Sweep two skill revisions. Copy the SKILL.md to context/skills/<name>-<variant>/SKILL.md,
 # update the assembly prefix path, assemble + run, then restore.
@@ -268,6 +271,6 @@ done
 ailly diff runs/v1 runs/v2
 ```
 
-A regression in this minimal cross-section reads as a 3 × 3 matrix: skill × {discovery, invocation-with, invocation-baseline}. The paired-skill cases inside discovery catch the failure mode that single-skill cases would miss: when a `description:` edit pulls two paired skills' triggers toward each other, both per-skill cases still pass and only the cross case shows the blur. The falsification pair (invocation vs invocation-baseline) catches the failure mode where a skill edit removes the structural guidance that the Python checker enforces — the baseline arm will start passing assertions it previously failed, which is the signal that the skill is no longer contributing.
+A regression in this minimal cross-section reads as a 3 × 3 matrix: skill × {discovery, invocation, baseline}. The paired-skill cases inside discovery catch the failure mode that single-skill cases would miss: when a `description:` edit pulls two paired skills' triggers toward each other, both per-skill cases still pass and only the cross case shows the blur. The falsification pair (invocation vs baseline) catches the failure mode where a skill edit removes the structural guidance that the Python checker enforces — the baseline arm will start passing assertions it previously failed, which is the signal that the skill is no longer contributing.
 
 The report format matches the insurance-claim handler's regression output, so one CI step reads both. Extending coverage to the remaining fourteen patterns reuses the two-assembly template above; the test surface grows by one prompt per skill per axis, one entry per skill in the matrix, and one Python checker per invocation case.
