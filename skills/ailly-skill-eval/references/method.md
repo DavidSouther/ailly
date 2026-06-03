@@ -131,6 +131,50 @@ break nothing the baseline passed. A checker too lenient to fail un-skilled
 output yields `improved == 0` and the gate fails — which is the point, because a
 gate that never fails proves nothing.
 
+### Reading the comparison report
+
+`report <baseline-id> <invocation-id>` writes a three-layer markdown next to the
+run as `<baseline-id>-vs-<invocation-id>.md`. The patterns-eval comparison reads:
+
+```
+# Report: …-baseline vs …-invocation
+
+**Summary:** improved 2, regressed 0, unchanged pass 5, unchanged fail 2
+
+| Case | arm-a | arm-b |
+|------|--------|--------|
+| configuring-logging | +1 / -0 | |
+| emitting-logs | +1 / -0 | |
+| newtype | +0 / -0 | |
+
+## Changed assertions
+
+### configuring-logging
+
+| Class | arm-a | arm-b | Change |
+|-------|--------|--------|--------|
+| judge | fail | pass | Improved |
+```
+
+Read it top-down:
+
+- **Summary** is the four buckets totalled across every assertion. This is the
+  line the gate reads: `improved 2, regressed 0` clears `improved > 0 &&
+  regressed == 0`.
+- **Per-case table** collapses each case to a `+improved / -regressed` headline
+  (arm-a is the baseline run, arm-b the invocation; the labels default from the
+  run order and can be set with `--label-a` / `--label-b`). `newtype`'s
+  `+0 / -0` is a null result — the skill moved nothing.
+- **Changed assertions** drills into only the assertions that flipped, one row
+  per class (`judge`, `script`, `tokens`, …) with its baseline → invocation
+  outcome. An assertion that did not change never appears, so this section is
+  the shortlist of what the skill actually moved — here, the `judge` on
+  `configuring-logging`.
+
+The single-run `report <run-id>` instead writes `<run-id>-report.md`: a
+`**Pass rate:**` line and a case-by-class outcome grid, with no buckets, since a
+lone run has nothing to compare against.
+
 ### Reading a deliberate null result
 
 Not every skill produces improvement, and that is a feature. In patterns-eval,
@@ -193,5 +237,4 @@ steps on credentials (`ANTHROPIC_API_KEY` in the shell or a project `.env`):
   comparison report that surfaces the four falsification buckets and the gate.
 
 `report` is a real subcommand: single-run summary, or the two-arm comparison
-that surfaces the falsification buckets. The top-level README still says "three
-commands" and predates it.
+that surfaces the falsification buckets (§6 reads one).

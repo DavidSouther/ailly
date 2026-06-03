@@ -107,8 +107,6 @@ gate yourself. Only `assemble` runs without a model; gate `run`, `eval`, and
 - `report <run-id>` (single) or `report <id-a> <id-b>` (comparison) — emit the
   report; the comparison is what surfaces the falsification buckets.
 
-(The top-level README still says "three commands"; `report` is the real fourth.)
-
 ## Pointers
 
 - [e2e/patterns-eval/](../../e2e/patterns-eval/) — the worked example this skill
