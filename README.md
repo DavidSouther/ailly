@@ -26,22 +26,24 @@ Organizes an entire project into its context/, prompts/, assemblies/, runs/, and
 
 ### CLI
 
-Ailly's CLI provides three commands: `assemble` to prepare a Conversation file from an Assembly; `run` to run a Conversation through an LLM inference provider; and `eval` to perform automated evaluations on those runs.
+Ailly's CLI provides four commands: `assemble` to prepare a Conversation file from an Assembly; `run` to run a Conversation through an LLM inference provider; `eval` to perform automated evaluations on those runs; and `report` to summarize one run or compare two.
 
 ```bash
 ailly assemble <name>                       # Expand matrix; write N skeleton conversations to runs/<id>/
 ailly run <conversation.yaml | run-dir>     # Fill blank assistant turns by calling the model
 ailly eval <suite> --over <run-dir>         # Score conversations against assertions
+ailly report <run-id>                       # Summarize one run; `report <id-a> <id-b>` compares two
 
 # Project form: `-p <project-dir>` resolves assemblies/<name>.yaml and evals/<name>.yaml by convention.
 ailly -p e2e/insurance-claim assemble claim-handler
 ailly -p e2e/insurance-claim run runs/2026-05-23T14-32-claim-handler/
 ailly -p e2e/insurance-claim eval regression --over runs/2026-05-23T14-32-claim-handler/
+ailly -p e2e/insurance-claim report 2026-05-23T14-32-claim-handler
 ```
 
-`assemble` expands the assembly's `matrix:` into one conversation file per binding, with user turns filled and assistant turns blank. `run` walks each conversation and asks the model to fill any blank assistant turn. The conversation file is the run artifact; there is no parallel `window.txt`, `response.json`, or `meta.yaml`. Trace lives inline per message, per the conversation schema.
+`assemble` expands the assembly's `matrix:` into one conversation file per binding, with user turns filled and assistant turns blank. `run` walks each conversation and asks the model to fill any blank assistant turn. The conversation file is the run artifact; there is no parallel `window.txt`, `response.json`, or `meta.yaml`. Trace lives inline per message, per the conversation schema. `eval` scores the filled conversations against a suite's assertions, and `report` renders those scores — a single-run summary, or a two-run comparison that sorts each assertion into improved / regressed / unchanged.
 
-> `diff` comes from source control or native diff tools.
+> A `diff` of the conversation files themselves comes from source control or native diff tools; `report` compares the *scored* outcomes.
 
 ### Integrations & Examples
 
