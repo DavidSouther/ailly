@@ -2,9 +2,6 @@
 
 Initial development queue to reach MVP for the three e2e projects under `e2e/`: `insurance-claim`, `patterns-eval`, `delegate-52`. Ordered so each task delivers a running slice the next task builds on. Source of truth for schemas is [DESIGN.md](../../DESIGN.md); source of truth for e2e behaviour is each project's `README.md`.
 
-- **ailly-skill-eval review-and-refactor** — Once the `ailly-skill-eval` skill is fully written and the feature test [tests/skill_eval_guide.rs](../../tests/skill_eval_guide.rs) is green, run `developer:refactor` over `skills/ailly-skill-eval/SKILL.md`, `skills/ailly-skill-eval/references/method.md`, and the feature test itself. Confirm: no schema is duplicated from [DESIGN.md](../../DESIGN.md) (the guide links out); every section of `method.md` traces to what `e2e/patterns-eval/` actually builds (Fidelity rule — `baseline.yaml`, not `invocation-baseline.yaml`); the `SKILL.md` body has not grown a standalone "before you start, set up the project" section (the `general:writing-paired-skills` split trigger from the design's deferred decisions); and the final `name`/`description` wording was validated against the discovery-dogfooding metric, with the test's `SKILL_NAME` constant matching.
-
-
 ## Delegate-52 enablement
 
 - **multi-turn-skeletons** — Assembly `conversation:` with multiple blank assistant turns; `run` resolves each against the cumulative transcript so far.
