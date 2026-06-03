@@ -1,3 +1,4 @@
 runs/
 evals/reports/
 evals/judges/
+evals/scripts/__pycache__/
