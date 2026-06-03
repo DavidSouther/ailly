@@ -248,6 +248,7 @@ cases:
 ailly -p e2e/patterns-eval assemble discovery                            # → runs/<ts>-discovery/*.yaml
 ailly -p e2e/patterns-eval run runs/<ts>-discovery/                      # fill assistant turns
 ailly -p e2e/patterns-eval eval discovery --over runs/<ts>-discovery/
+ailly -p e2e/patterns-eval report <ts>-discovery                         # single-run summary
 
 # Invocation falsification: run positive and baseline arms, then compare
 ailly -p e2e/patterns-eval assemble invocation                           # → runs/<ts>-invocation/*.yaml
@@ -258,17 +259,22 @@ ailly -p e2e/patterns-eval assemble baseline                             # → r
 ailly -p e2e/patterns-eval run runs/<ts>-baseline/
 ailly -p e2e/patterns-eval eval baseline --over runs/<ts>-baseline/
 
+# Compare the arms; the comparison report sorts every assertion into the four
+# falsification buckets (improved / regressed / unchanged_pass / unchanged_fail).
+ailly -p e2e/patterns-eval report <ts>-baseline <ts>-invocation
+
 # Sweep two skill revisions. Copy the SKILL.md to context/skills/<name>-<variant>/SKILL.md,
-# update the assembly prefix path, assemble + run, then restore.
+# update the assembly prefix path, then assemble + run + eval each revision.
 for v in v1 v2; do
   sed -i.bak "s|context/skills/newtype/SKILL.md|context/skills/newtype-$v/SKILL.md|" \
     assemblies/invocation.yaml
   ailly -p e2e/patterns-eval assemble invocation
-  ailly -p e2e/patterns-eval run runs/<ts>/
-  mv runs/<ts> runs/$v
+  ailly -p e2e/patterns-eval run runs/<ts>-invocation/
+  mv runs/<ts>-invocation runs/$v
+  ailly -p e2e/patterns-eval eval invocation --over runs/$v/
   mv assemblies/invocation.yaml.bak assemblies/invocation.yaml
 done
-ailly diff runs/v1 runs/v2
+ailly -p e2e/patterns-eval report v1 v2                                  # compare the two revisions
 ```
 
 A regression in this minimal cross-section reads as a 3 × 3 matrix: skill × {discovery, invocation, baseline}. The paired-skill cases inside discovery catch the failure mode that single-skill cases would miss: when a `description:` edit pulls two paired skills' triggers toward each other, both per-skill cases still pass and only the cross case shows the blur. The falsification pair (invocation vs baseline) catches the failure mode where a skill edit removes the structural guidance that the Python checker enforces — the baseline arm will start passing assertions it previously failed, which is the signal that the skill is no longer contributing.
