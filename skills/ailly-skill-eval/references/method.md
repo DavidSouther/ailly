@@ -136,9 +136,12 @@ gate that never fails proves nothing.
 Not every skill produces improvement, and that is a feature. In patterns-eval,
 `emitting-logs` is the clear positive — without it the model interpolates values
 into the message body and skips the event name; with it the record is structured
-under semantic-convention keys, and both the checker and the judge flip from fail
-to pass. `configuring-logging` improves on the judge alone (a fuller pipeline
-than the baseline's partial attempt).
+under semantic-convention keys, and the judge flips from fail to pass. (The
+structural checker encodes those same three changes as rules, but a capable
+baseline often already satisfies some of them, so it is the judge that reliably
+carries the `improved` signal — both `improved` assertions in the committed
+comparison report are judges.) `configuring-logging` improves on the judge alone
+(a fuller pipeline than the baseline's partial attempt).
 
 `newtype` is a deliberate **null result**. A capable model already reaches for
 brand types when asked for swap-proof ids, with or without the skill, so both
@@ -152,12 +155,12 @@ true statement about the model, not a defect in the suite.
 
 ### Fidelity rule
 
-Describe what the project *builds*, not a stale README narrative where the two
-diverge. The built falsification arm is named `baseline` — `assemblies/baseline.yaml`
-and `evals/baseline.yaml`. The patterns-eval README's prose still narrates an
-older, differently-named arm that does not match the built files; trust the
-files. Reconciling that README is a separate follow-up, out of scope for the
-method.
+Describe what the project *builds*, not a README narrative that has drifted from
+it. The built falsification arm is named `baseline` — `assemblies/baseline.yaml`
+and `evals/baseline.yaml`. An earlier draft of the patterns-eval README narrated
+a differently-named arm; when the prose and the built files disagree, trust the
+files and reconcile the prose. (That README has since been reconciled to
+`baseline`, so the two now agree.)
 
 ## 7. Extending to N skills
 
@@ -176,10 +179,10 @@ the prompt/checker count, not the structure.
 
 ## 8. CLI workflow
 
-The operator's journey is four subcommands. `ci.sh` runs them for each suite and
-gates the live half on credentials (`ANTHROPIC_API_KEY` in the shell or a project
-`.env`), so the `assemble` half can be exercised without a model but the
-`run`/`eval`/`report` half needs one.
+The operator's journey is four subcommands. You run them — by hand while
+iterating, or scripted into whatever CI your project uses — gating the live
+steps on credentials (`ANTHROPIC_API_KEY` in the shell or a project `.env`):
+`assemble` runs without a model, while `run`/`eval`/`report` need one.
 
 - `assemble <suite>` — expand the matrix; write one conversation skeleton per
   binding under `runs/<id>/`.
@@ -189,5 +192,6 @@ gates the live half on credentials (`ANTHROPIC_API_KEY` in the shell or a projec
 - `report <run-id>` — single-run summary; `report <id-a> <id-b>` — the
   comparison report that surfaces the four falsification buckets and the gate.
 
-`report` is a real subcommand, exercised by `ci.sh`. The top-level and
-patterns-eval READMEs still say "three commands" and predate it.
+`report` is a real subcommand: single-run summary, or the two-arm comparison
+that surfaces the falsification buckets. The top-level README still says "three
+commands" and predates it.

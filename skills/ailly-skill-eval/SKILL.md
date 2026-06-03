@@ -49,8 +49,10 @@ A skill-eval project is an Ailly content folder. Each part has one job:
   filename; `evals/scripts/` holds the optional `script`/`program` checkers.
 - `runs/` — the conversation files `assemble` writes and `run` fills; the run
   artifact is the conversation itself.
-- `ci.sh` — the driver that walks `assemble` → `run` → `eval` → `report` and
-  enforces the falsification gate.
+
+You drive these parts with the four-subcommand workflow below; wiring that walk
+into a CI script and enforcing the gate is your project's job, not a fixed part
+of the anatomy.
 
 ## The two axes
 
@@ -93,8 +95,11 @@ full, including how to read a deliberate null result.
 
 ## CLI workflow
 
-The operator's journey is four subcommands, gated on credentials the way
-`ci.sh` gates the live half:
+The operator's journey is four subcommands. You run them — by hand while
+iterating, or wired into a CI script you write — and check the falsification
+gate yourself. Only `assemble` runs without a model; gate `run`, `eval`, and
+`report` on credentials (an `ANTHROPIC_API_KEY` in the shell or a project
+`.env`):
 
 - `assemble <suite>` — expand the matrix; write the conversation skeletons.
 - `run <run-dir>` — fill each blank assistant turn by calling the model.
@@ -102,8 +107,7 @@ The operator's journey is four subcommands, gated on credentials the way
 - `report <run-id>` (single) or `report <id-a> <id-b>` (comparison) — emit the
   report; the comparison is what surfaces the falsification buckets.
 
-(The top-level README still says "three commands"; `report` is the real fourth,
-exercised by `ci.sh`.)
+(The top-level README still says "three commands"; `report` is the real fourth.)
 
 ## Pointers
 
