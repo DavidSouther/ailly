@@ -145,7 +145,6 @@ fn skill_eval_guide_is_reusable_from_its_directory_alone() {
         "prompts/",
         "evals/",
         "runs/",
-        "ci.sh",
     ] {
         assert!(
             skill.contains(token),
@@ -162,8 +161,9 @@ fn skill_eval_guide_is_reusable_from_its_directory_alone() {
     }
 
     // --- M1: the four-verb operator workflow ---------------------------------
-    // `report` is a real subcommand ci.sh exercises; the guide must include it
-    // even though the top-level README still says "three commands".
+    // `report` is a real subcommand the operator runs as the comparison step;
+    // the guide must name it even though the top-level README still says
+    // "three commands".
     let workflow_text = format!("{skill}\n{method}").to_lowercase();
     for verb in ["assemble", "run", "eval", "report"] {
         assert!(
