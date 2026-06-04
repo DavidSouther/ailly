@@ -643,6 +643,7 @@ mod tests {
         let project = Project::open_memory();
         let binding = Binding {
             values: BindingMap::new(),
+            model: None,
         };
         let err = project
             .resolve("prompts/{{ missing }}.md", &binding)
