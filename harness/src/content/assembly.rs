@@ -77,6 +77,11 @@ pub enum PrefixBlock {
 pub enum AssemblyError {
     #[error("failed to parse assembly YAML: {0}")]
     Parse(#[from] serde_yaml_ng::Error),
+    /// A map-valued matrix axis entry lacked the required `name:` key. Names
+    /// the offending axis so the operator can fix the assembly. Surfaced
+    /// instead of silently serializing the map into a filename stem.
+    #[error("matrix axis `{axis}` has a map value missing required `name:` key")]
+    MatrixMapMissingName { axis: String },
 }
 
 /// Errors emitted when rendering templated turns or prefix blocks.
@@ -90,11 +95,22 @@ pub enum RenderError {
     Repository(#[from] RepositoryError),
 }
 
-/// One point in the matrix cross-product. Values reuse [`BindingMap`] so the
-/// rest of the crate sees a single binding type.
+/// One point in the matrix cross-product. `values` holds only scalar axis
+/// values (a map axis is unwrapped to its `name` before it lands here, so
+/// [`filename_for`](crate::content::repository), `substitute_template`, and
+/// eval `when:` keep seeing a scalar [`BindingMap`]). `model` is the
+/// per-binding override of the assembly-level default `model:`, set only when
+/// a map axis carried a `model:` field; `None` for every scalar binding
+/// (byte-identical to today).
+///
+/// Invariant: `values` never retains a map [`serde_yaml_ng::Value`]; the map's
+/// identity in `values` is the scalar `name` string. The map's `model` lives
+/// here, not in `values`, so it is excluded from binding identity (eval `when:`
+/// and the filename both read `values` only).
 #[derive(Clone, Debug, PartialEq, Eq, Default)]
 pub struct Binding {
     pub values: BindingMap,
+    pub model: Option<ModelId>,
 }
 
 impl Assembly {
@@ -125,28 +141,75 @@ impl Assembly {
     /// Axes iterate in [`BTreeMap`] order; per-axis values iterate in
     /// declaration order. An empty matrix yields a single [`Binding`] with an
     /// empty values map so callers can treat the no-matrix case uniformly.
-    #[must_use]
-    pub fn expand_matrix(&self) -> Vec<Binding> {
+    ///
+    /// A *map-valued* axis entry (e.g. `{ name: anthropic, model: ... }`) is
+    /// projected before it lands in a binding: its `name` becomes the scalar
+    /// `values` entry (so the filename and eval `when:` see a string, never a
+    /// serialized map), and its optional `model` becomes the binding's
+    /// per-binding [`Binding::model`] override. A *scalar* axis value is cloned
+    /// into `values` unchanged, byte-identical to before this feature.
+    ///
+    /// When two map axes each carry a `model:`, the later axis in [`BTreeMap`]
+    /// order wins (last write into the candidate binding's `model`).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`AssemblyError::MatrixMapMissingName`] when a map-valued axis
+    /// entry omits the required `name:` key, naming the offending axis.
+    pub fn expand_matrix(&self) -> Result<Vec<Binding>, AssemblyError> {
         if self.matrix.is_empty() {
-            return vec![Binding::default()];
+            return Ok(vec![Binding::default()]);
         }
-        let mut result: Vec<BindingMap> = vec![BindingMap::new()];
+        let mut result: Vec<Binding> = vec![Binding::default()];
         for (axis, values) in &self.matrix {
-            let mut next: Vec<BindingMap> = Vec::with_capacity(result.len() * values.len());
+            let mut next: Vec<Binding> = Vec::with_capacity(result.len() * values.len());
             for base in &result {
                 for value in values {
                     let mut new = base.clone();
-                    new.insert(axis.clone(), value.clone());
+                    project_axis_value(axis, value, &mut new)?;
                     next.push(new);
                 }
             }
             result = next;
         }
-        result
-            .into_iter()
-            .map(|values| Binding { values })
-            .collect()
+        Ok(result)
     }
+}
+
+/// Project one raw matrix axis value into a candidate [`Binding`].
+///
+/// Scalar values clone straight into `values` (the byte-identical scalar
+/// path). A map value is unwrapped: its required `name` becomes the scalar
+/// `values` entry for `axis`, and its optional `model` sets the binding's
+/// per-binding override.
+fn project_axis_value(
+    axis: &str,
+    value: &serde_yaml_ng::Value,
+    binding: &mut Binding,
+) -> Result<(), AssemblyError> {
+    match value {
+        serde_yaml_ng::Value::Mapping(map) => {
+            let name = map
+                .get(serde_yaml_ng::Value::from("name"))
+                .and_then(serde_yaml_ng::Value::as_str)
+                .ok_or_else(|| AssemblyError::MatrixMapMissingName {
+                    axis: axis.to_string(),
+                })?;
+            binding
+                .values
+                .insert(axis.to_string(), serde_yaml_ng::Value::from(name));
+            if let Some(model) = map
+                .get(serde_yaml_ng::Value::from("model"))
+                .and_then(serde_yaml_ng::Value::as_str)
+            {
+                binding.model = Some(ModelId::from(model));
+            }
+        }
+        scalar => {
+            binding.values.insert(axis.to_string(), scalar.clone());
+        }
+    }
+    Ok(())
 }
 
 #[expect(
@@ -276,7 +339,7 @@ conversation:
     fn empty_matrix_yields_single_empty_binding() {
         let yaml = "name: x\nmodel: m\n";
         let assembly = Assembly::from_yaml_str(yaml).expect("parses");
-        let bindings = assembly.expand_matrix();
+        let bindings = assembly.expand_matrix().expect("expand");
         assert_eq!(bindings.len(), 1);
         assert!(bindings[0].values.is_empty());
     }
@@ -285,7 +348,7 @@ conversation:
     fn single_axis_matrix_expands_in_declaration_order() {
         let yaml = "name: x\nmodel: m\nmatrix:\n  case: [a, b, c]\n";
         let assembly = Assembly::from_yaml_str(yaml).expect("parses");
-        let bindings = assembly.expand_matrix();
+        let bindings = assembly.expand_matrix().expect("expand");
         assert_eq!(bindings.len(), 3);
         let cases: Vec<String> = bindings
             .iter()
@@ -305,7 +368,7 @@ conversation:
         let yaml =
             "name: x\nmodel: m\nmatrix:\n  alpha: [a1, a2]\n  beta: [b1, b2, b3]\n".to_string();
         let assembly = Assembly::from_yaml_str(&yaml).expect("parses");
-        let bindings = assembly.expand_matrix();
+        let bindings = assembly.expand_matrix().expect("expand");
         assert_eq!(bindings.len(), 6, "2 x 3 cross-product");
 
         let pairs: Vec<(String, String)> = bindings
@@ -338,6 +401,98 @@ conversation:
                 ("a2".into(), "b3".into()),
             ]
         );
+    }
+
+    #[test]
+    fn scalar_axis_binding_has_no_model_override() {
+        // The byte-identical scalar path: a scalar axis value never sets the
+        // per-binding model override, so `meta.model` falls back to the
+        // assembly default.
+        let yaml = "name: x\nmodel: m\nmatrix:\n  case: [a, b]\n";
+        let assembly = Assembly::from_yaml_str(yaml).expect("parses");
+        let bindings = assembly.expand_matrix().expect("expand");
+        assert!(
+            bindings.iter().all(|b| b.model.is_none()),
+            "scalar bindings carry no model override",
+        );
+    }
+
+    #[test]
+    fn map_axis_unwraps_name_into_values_and_model_into_override() {
+        let yaml = "\
+name: x
+model: default-model
+matrix:
+  provider:
+    - { name: anthropic, model: claude-opus-4-7 }
+    - { name: openai,    model: gpt-5-turbo }
+";
+        let assembly = Assembly::from_yaml_str(yaml).expect("parses");
+        let bindings = assembly.expand_matrix().expect("expand");
+        assert_eq!(bindings.len(), 2);
+
+        // `values` holds the scalar `name`, never the map.
+        assert_eq!(
+            bindings[0].values.get("provider").and_then(|v| v.as_str()),
+            Some("anthropic"),
+        );
+        assert_eq!(
+            bindings[1].values.get("provider").and_then(|v| v.as_str()),
+            Some("openai"),
+        );
+        // The map's `model` becomes the per-binding override.
+        assert_eq!(
+            bindings[0].model.as_ref().map(AsRef::as_ref),
+            Some("claude-opus-4-7"),
+        );
+        assert_eq!(
+            bindings[1].model.as_ref().map(AsRef::as_ref),
+            Some("gpt-5-turbo"),
+        );
+    }
+
+    #[test]
+    fn map_axis_without_model_leaves_override_unset() {
+        // A map axis may carry only `name:`; the model override stays None and
+        // the binding falls back to the assembly default.
+        let yaml = "\
+name: x
+model: default-model
+matrix:
+  provider:
+    - { name: anthropic }
+";
+        let assembly = Assembly::from_yaml_str(yaml).expect("parses");
+        let bindings = assembly.expand_matrix().expect("expand");
+        assert_eq!(bindings.len(), 1);
+        assert_eq!(
+            bindings[0].values.get("provider").and_then(|v| v.as_str()),
+            Some("anthropic"),
+        );
+        assert!(bindings[0].model.is_none());
+    }
+
+    #[test]
+    fn map_axis_missing_name_is_a_loud_error() {
+        // A map value missing `name:` must fail loudly rather than serialize
+        // the map into a filename stem.
+        let yaml = "\
+name: x
+model: default-model
+matrix:
+  provider:
+    - { model: claude-opus-4-7 }
+";
+        let assembly = Assembly::from_yaml_str(yaml).expect("parses");
+        let err = assembly
+            .expand_matrix()
+            .expect_err("map value missing name must error");
+        match err {
+            AssemblyError::MatrixMapMissingName { axis } => assert_eq!(axis, "provider"),
+            other @ AssemblyError::Parse(_) => {
+                panic!("expected MatrixMapMissingName, got {other:?}")
+            }
+        }
     }
 
     #[test]

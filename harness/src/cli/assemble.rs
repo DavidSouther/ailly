@@ -8,6 +8,7 @@ use std::marker::PhantomData;
 use std::path::PathBuf;
 
 use crate::content::assembly::Assembly;
+use crate::content::assembly::AssemblyError;
 use crate::content::assembly::Binding;
 use crate::content::assembly::PrefixBlock;
 use crate::content::assembly::RenderError;
@@ -41,6 +42,8 @@ pub enum AssembleError {
     Repository(#[from] RepositoryError),
     #[error("rendering failed: {0}")]
     Render(#[from] RenderError),
+    #[error("matrix error: {0}")]
+    Matrix(#[from] AssemblyError),
     #[error("assembling '{name}': {source}")]
     Assembling {
         name: String,
@@ -85,7 +88,7 @@ pub fn run_with_project(
 ) -> Result<vfs::VfsPath, AssembleError> {
     let assembly = project.assemblies().get(assembly_name)?;
     let mut tx = project.begin_run();
-    for binding in assembly.expand_matrix() {
+    for binding in assembly.expand_matrix()? {
         let conversation = render_conversation(project, &assembly, &binding).map_err(|e| {
             AssembleError::Assembling {
                 name: assembly_name.to_string(),
@@ -127,7 +130,14 @@ fn render_conversation(
     }
     Ok(Conversation {
         meta: Meta {
-            model: assembly.model.clone(),
+            // Per-binding model override (set by a map-valued matrix axis) wins
+            // over the assembly-level default; scalar bindings have model: None
+            // and fall back to assembly.model, byte-identical to before this
+            // feature.
+            model: binding
+                .model
+                .clone()
+                .unwrap_or_else(|| assembly.model.clone()),
             debug: false,
             assembly: Some(assembly.name.clone()),
             binding: binding.values.clone(),
