@@ -576,31 +576,54 @@ fn read_required_key(var: &'static str) -> Result<String, EngineError> {
     }
 }
 
-/// Construct a `RigEngine` backed by Rig's `OpenAI` Responses API model.
+/// Construct a `RigEngine` backed by Rig's `OpenAI` Responses API model,
+/// reading `OPENAI_API_KEY` from the process environment. The key read runs
+/// before the client build so a missing key short-circuits to `Auth` without
+/// touching the network; this invariant is what makes the keyless path
+/// testable offline.
 ///
 /// # Errors
 /// Returns [`EngineError::Auth`] when `OPENAI_API_KEY` is missing or empty
 /// and [`EngineError::Provider`] when the Rig client cannot be constructed.
 pub fn openai_from_env(
-    _model: &str,
+    model: &str,
 ) -> Result<RigEngine<rig::providers::openai::responses_api::ResponsesCompletionModel>, EngineError>
 {
-    Err(EngineError::Provider {
-        message: String::from("rig_engine: not yet implemented"),
-    })
+    use rig::client::CompletionClient;
+
+    let key = read_required_key("OPENAI_API_KEY")?;
+    let client = rig::providers::openai::Client::builder()
+        .api_key(key)
+        .build()
+        .map_err(|err| EngineError::Provider {
+            message: format!("openai client build failed: {err}"),
+        })?;
+    let completion_model = client.completion_model(model);
+    Ok(RigEngine::new(completion_model, "openai", model))
 }
 
-/// Construct a `RigEngine` backed by Rig's Gemini completion model.
+/// Construct a `RigEngine` backed by Rig's Gemini completion model, reading
+/// `GEMINI_API_KEY` from the process environment. The key read runs before the
+/// client build so a missing key short-circuits to `Auth` without touching the
+/// network.
 ///
 /// # Errors
 /// Returns [`EngineError::Auth`] when `GEMINI_API_KEY` is missing or empty
 /// and [`EngineError::Provider`] when the Rig client cannot be constructed.
 pub fn gemini_from_env(
-    _model: &str,
+    model: &str,
 ) -> Result<RigEngine<rig::providers::gemini::completion::CompletionModel>, EngineError> {
-    Err(EngineError::Provider {
-        message: String::from("rig_engine: not yet implemented"),
-    })
+    use rig::client::CompletionClient;
+
+    let key = read_required_key("GEMINI_API_KEY")?;
+    let client = rig::providers::gemini::Client::builder()
+        .api_key(key)
+        .build()
+        .map_err(|err| EngineError::Provider {
+            message: format!("gemini client build failed: {err}"),
+        })?;
+    let completion_model = client.completion_model(model);
+    Ok(RigEngine::new(completion_model, "gemini", model))
 }
 
 /// Construct a `RigEngine` backed by `rig-bedrock`. Gated on the `bedrock`
@@ -1438,5 +1461,63 @@ mod tests {
             &requested(),
         );
         assert!(matches!(err, EngineError::Timeout), "got {err:?}");
+    }
+
+    #[test]
+    fn openai_from_env_without_key_fails_with_auth() {
+        // The key read precedes any client construction, so a missing
+        // OPENAI_API_KEY short-circuits to Auth without touching the network.
+        // SAFETY: tests run single-threaded against env vars by convention;
+        // clear the key to force the deterministic Auth path, restore after.
+        let saved = std::env::var("OPENAI_API_KEY").ok();
+        // SAFETY: removing an env var; documented unsafe in the 2024 edition.
+        unsafe {
+            std::env::remove_var("OPENAI_API_KEY");
+        }
+
+        let result = openai_from_env("gpt-5-turbo");
+
+        // SAFETY: restoring the previously observed value (or its absence).
+        unsafe {
+            match saved {
+                Some(value) => std::env::set_var("OPENAI_API_KEY", value),
+                None => std::env::remove_var("OPENAI_API_KEY"),
+            }
+        }
+
+        match result {
+            Err(EngineError::Auth { .. }) => {}
+            Err(other) => panic!("expected Auth, got {other:?}"),
+            Ok(_) => panic!("expected Auth with no OPENAI_API_KEY in environment"),
+        }
+    }
+
+    #[test]
+    fn gemini_from_env_without_key_fails_with_auth() {
+        // The key read precedes any client construction, so a missing
+        // GEMINI_API_KEY short-circuits to Auth without touching the network.
+        // SAFETY: tests run single-threaded against env vars by convention;
+        // clear the key to force the deterministic Auth path, restore after.
+        let saved = std::env::var("GEMINI_API_KEY").ok();
+        // SAFETY: removing an env var; documented unsafe in the 2024 edition.
+        unsafe {
+            std::env::remove_var("GEMINI_API_KEY");
+        }
+
+        let result = gemini_from_env("gemini-3-pro");
+
+        // SAFETY: restoring the previously observed value (or its absence).
+        unsafe {
+            match saved {
+                Some(value) => std::env::set_var("GEMINI_API_KEY", value),
+                None => std::env::remove_var("GEMINI_API_KEY"),
+            }
+        }
+
+        match result {
+            Err(EngineError::Auth { .. }) => {}
+            Err(other) => panic!("expected Auth, got {other:?}"),
+            Ok(_) => panic!("expected Auth with no GEMINI_API_KEY in environment"),
+        }
     }
 }
