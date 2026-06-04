@@ -95,23 +95,40 @@ pub trait EngineProvider: Send + Sync {
 
 /// Pick the engine adapter for one conversation's `meta.model`.
 ///
-/// - Models whose id begins with `"claude-"` resolve via
-///   `rig_engine::anthropic_from_env(model.as_ref())`; this reuses the existing
-///   `EngineError::Auth` mapping for a missing key.
-/// - Any other id returns [`EngineError::ModelNotFound`]. The user-visible
-///   failure mode is the same as Rig's 404: this model is not serviceable.
+/// The id's prefix names the provider family, and each family resolves through
+/// its own `*_from_env` constructor, which reads that provider's key:
+///
+/// - `"claude-"` resolves via `rig_engine::anthropic_from_env`
+///   (`ANTHROPIC_API_KEY`).
+/// - `"gpt-"` resolves via `rig_engine::openai_from_env` (`OPENAI_API_KEY`).
+/// - `"gemini-"` resolves via `rig_engine::gemini_from_env` (`GEMINI_API_KEY`).
+/// - Any other id returns [`EngineError::ModelNotFound`]: an unrecognised
+///   prefix is the only `ModelNotFound` path from routing. A provider's own 404
+///   for a recognised family is a separate live concern mapped by
+///   `engine_error_from_rig`, not by this function.
+///
+/// Recognition (prefix) and authorisation (key) are distinct failures: a
+/// recognised prefix with a missing key reaches its `*_from_env` constructor
+/// and fails with [`EngineError::Auth`], never `ModelNotFound`.
 ///
 /// Instantiated per conversation so a future heterogeneous run-dir
 /// (multiple models across bindings) needs no further refactoring.
 ///
 /// # Errors
-/// [`EngineError::Auth`] when `claude-*` is requested without
-/// `ANTHROPIC_API_KEY`; [`EngineError::ModelNotFound`] for any non-`claude-*`
-/// id.
+/// [`EngineError::Auth`] when a recognised family is requested without its
+/// provider key; [`EngineError::ModelNotFound`] for any unrecognised prefix.
 pub fn open_engine_for_model(model: &ModelId) -> Result<Box<dyn EngineProvider>, EngineError> {
     let id = model.as_ref();
     if id.starts_with("claude-") {
         let engine = crate::engine::rig_engine::anthropic_from_env(id)?;
+        return Ok(Box::new(engine));
+    }
+    if id.starts_with("gpt-") {
+        let engine = crate::engine::rig_engine::openai_from_env(id)?;
+        return Ok(Box::new(engine));
+    }
+    if id.starts_with("gemini-") {
+        let engine = crate::engine::rig_engine::gemini_from_env(id)?;
         return Ok(Box::new(engine));
     }
     Err(EngineError::ModelNotFound {
@@ -385,12 +402,17 @@ mod tests {
     }
 
     #[test]
-    fn open_engine_for_model_non_claude_model_returns_model_not_found() {
-        let requested = ModelId::from("gpt-5-turbo");
+    fn open_engine_for_model_unrecognised_prefix_returns_model_not_found() {
+        // `mistral-large` matches no wired provider family (claude-/gpt-/gemini-),
+        // so it pins the `else -> ModelNotFound` fallthrough. A recognised-but-
+        // keyless id like `gpt-5-turbo` instead reaches its constructor and
+        // fails with `Auth`; that distinction is covered by the routing feature
+        // test and the constructor-boundary unit tests.
+        let requested = ModelId::from("mistral-large");
         match open_engine_for_model(&requested) {
             Err(EngineError::ModelNotFound { model }) => assert_eq!(model, requested),
             Err(other) => panic!("expected ModelNotFound, got {other:?}"),
-            Ok(_) => panic!("non-claude id must not resolve to an engine"),
+            Ok(_) => panic!("an unrecognised prefix must not resolve to an engine"),
         }
     }
 }

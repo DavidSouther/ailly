@@ -338,12 +338,16 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn non_claude_model_returns_model_not_found() {
+    async fn unrecognised_model_returns_model_not_found() {
+        // `mistral-large` matches no wired provider family, so it surfaces
+        // ModelNotFound through `run`. A recognised-but-keyless id like
+        // `gpt-5-turbo` instead fails with Auth at its constructor; that
+        // distinction is covered by the engine routing tests.
         let tmp = tempfile::tempdir().expect("tempdir");
         let path = tmp.path().join("conv.yaml");
         let conv = Conversation {
             meta: Meta {
-                model: ModelId::from("gpt-5-turbo"),
+                model: ModelId::from("mistral-large"),
                 debug: false,
                 assembly: None,
                 binding: BindingMap::new(),
@@ -370,7 +374,7 @@ mod tests {
         let result = run(args_for(&path)).await;
         match result {
             Err(RunCmdError::Engine(EngineError::ModelNotFound { model })) => {
-                assert_eq!(model, ModelId::from("gpt-5-turbo"));
+                assert_eq!(model, ModelId::from("mistral-large"));
             }
             Err(other) => panic!("expected ModelNotFound, got {other:?}"),
             Ok(outcome) => panic!("expected error, got {outcome:?}"),
