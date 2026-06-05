@@ -1,5 +1,6 @@
 //! Repository ports and their `vfs`-backed adapters.
 
+use std::fmt;
 use std::io;
 use std::path::PathBuf;
 
@@ -11,6 +12,82 @@ use crate::content::conversation::ConversationError;
 use crate::content::evaluation::Evaluation;
 use crate::content::evaluation::EvaluationError;
 
+/// Identifies a run directory relative to the project root
+/// (e.g. `"runs/2026-05-23T14-32-claim-handler"`). A database-backed
+/// repository uses this as a foreign key; a VFS-backed one maps it to a
+/// subdirectory path.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
+pub struct RunId(String);
+
+impl RunId {
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl From<String> for RunId {
+    fn from(value: String) -> Self {
+        Self(value)
+    }
+}
+
+impl From<&str> for RunId {
+    fn from(value: &str) -> Self {
+        Self(value.to_owned())
+    }
+}
+
+impl AsRef<str> for RunId {
+    fn as_ref(&self) -> &str {
+        &self.0
+    }
+}
+
+impl fmt::Display for RunId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+/// Names one conversation within a run — the filename stem that
+/// [`filename_for`] derives from a [`Binding`] (e.g. `"missing-fields"`).
+/// A database-backed repository uses this as the row key alongside
+/// [`RunId`]; a VFS-backed one appends `.yaml` to get the file name.
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct ConversationName(String);
+
+impl ConversationName {
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl From<String> for ConversationName {
+    fn from(value: String) -> Self {
+        Self(value)
+    }
+}
+
+impl From<&str> for ConversationName {
+    fn from(value: &str) -> Self {
+        Self(value.to_owned())
+    }
+}
+
+impl AsRef<str> for ConversationName {
+    fn as_ref(&self) -> &str {
+        &self.0
+    }
+}
+
+impl fmt::Display for ConversationName {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
 /// Logical identity of one conversation within a run. The `run_id` is the
 /// path of the run directory relative to the repository root (e.g.
 /// `"runs/2026-05-23T14-32-claim-handler"`). The `name` is the within-run
@@ -21,17 +98,17 @@ use crate::content::evaluation::EvaluationError;
 /// `run_id` as a foreign key and `name` as the row key.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ConversationKey {
-    pub run_id: String,
-    pub name: String,
+    pub run_id: RunId,
+    pub name: ConversationName,
 }
 
 impl ConversationKey {
     /// Construct a key from a run identifier and a binding. The `name` field
     /// is the filename stem that [`filename_for`] produces for `binding`.
     #[must_use]
-    pub fn from_binding(run_id: impl Into<String>, binding: &Binding) -> Self {
+    pub fn from_binding(run_id: impl Into<RunId>, binding: &Binding) -> Self {
         let filename = filename_for(binding);
-        let name = filename.trim_end_matches(".yaml").to_string();
+        let name = ConversationName::from(filename.trim_end_matches(".yaml"));
         Self {
             run_id: run_id.into(),
             name,
@@ -48,7 +125,7 @@ pub trait ConversationRepository {
     /// # Errors
     /// [`RepositoryError::TargetNotFound`] if the run does not exist;
     /// [`RepositoryError::Vfs`] if the run directory cannot be read.
-    fn list(&self, run_id: &str) -> Result<Vec<ConversationKey>, RepositoryError>;
+    fn list(&self, run_id: &RunId) -> Result<Vec<ConversationKey>, RepositoryError>;
 
     /// Load and parse the conversation identified by `key`.
     ///
@@ -88,12 +165,12 @@ impl VfsConversationRepository {
             })
     }
 
-    fn dir_for(&self, run_id: &str) -> Result<vfs::VfsPath, RepositoryError> {
-        if run_id.is_empty() {
+    fn dir_for(&self, run_id: &RunId) -> Result<vfs::VfsPath, RepositoryError> {
+        if run_id.as_str().is_empty() {
             return Ok(self.root.clone());
         }
         self.root
-            .join(run_id)
+            .join(run_id.as_str())
             .map_err(|source| RepositoryError::Vfs {
                 path: run_id.to_string(),
                 source,
@@ -102,7 +179,7 @@ impl VfsConversationRepository {
 }
 
 impl ConversationRepository for VfsConversationRepository {
-    fn list(&self, run_id: &str) -> Result<Vec<ConversationKey>, RepositoryError> {
+    fn list(&self, run_id: &RunId) -> Result<Vec<ConversationKey>, RepositoryError> {
         let dir = self.dir_for(run_id)?;
         let is_dir = dir.is_dir().map_err(|source| RepositoryError::Vfs {
             path: run_id.to_string(),
@@ -110,7 +187,7 @@ impl ConversationRepository for VfsConversationRepository {
         })?;
         if !is_dir {
             return Err(RepositoryError::TargetNotFound {
-                path: PathBuf::from(run_id),
+                path: PathBuf::from(run_id.as_str()),
             });
         }
         let entries = dir.read_dir().map_err(|source| RepositoryError::Vfs {
@@ -120,8 +197,8 @@ impl ConversationRepository for VfsConversationRepository {
         let mut keys: Vec<ConversationKey> = entries
             .filter(|e| e.extension().is_some_and(|ext| ext == "yaml"))
             .map(|e| ConversationKey {
-                run_id: run_id.to_string(),
-                name: e.filename().trim_end_matches(".yaml").to_string(),
+                run_id: run_id.clone(),
+                name: ConversationName::from(e.filename().trim_end_matches(".yaml")),
             })
             .collect();
         keys.sort_by(|a, b| a.name.cmp(&b.name));
@@ -548,7 +625,7 @@ fn stringify_binding_value(value: &serde_yaml_ng::Value) -> String {
     }
 }
 
-pub(crate) fn run_id(assembly_name: &str) -> String {
+pub(crate) fn run_id(assembly_name: &str) -> RunId {
     let now = chrono::Utc::now();
     let ts = now.format("%Y-%m-%dT%H-%M-%SZ").to_string();
     // v7 prefixes 48 bits of millisecond timestamp; slicing the *leading*
@@ -560,7 +637,7 @@ pub(crate) fn run_id(assembly_name: &str) -> String {
     // 24 bits of entropy per call.
     let uuid_hex = uuid::Uuid::now_v7().simple().to_string();
     let uuid6: String = uuid_hex.chars().skip(17).take(6).collect();
-    format!("{ts}-{uuid6}-{assembly_name}")
+    RunId::from(format!("{ts}-{uuid6}-{assembly_name}"))
 }
 
 #[cfg(test)]
@@ -802,10 +879,10 @@ cases:
         seed_run(&project, "runs/test", &["c", "a", "b"]);
 
         let repo = VfsConversationRepository::new(project.root().clone());
-        let keys = repo.list("runs/test").expect("list");
+        let keys = repo.list(&RunId::from("runs/test")).expect("list");
         let names: Vec<&str> = keys.iter().map(|k| k.name.as_str()).collect();
         assert_eq!(names, vec!["a", "b", "c"]);
-        assert!(keys.iter().all(|k| k.run_id == "runs/test"));
+        assert!(keys.iter().all(|k| k.run_id == RunId::from("runs/test")));
     }
 
     #[test]
@@ -822,16 +899,18 @@ cases:
             .expect("mkdir subdir");
 
         let repo = VfsConversationRepository::new(project.root().clone());
-        let keys = repo.list("runs/test").expect("list");
+        let keys = repo.list(&RunId::from("runs/test")).expect("list");
         assert_eq!(keys.len(), 1);
-        assert_eq!(keys[0].name, "keep");
+        assert_eq!(keys[0].name, ConversationName::from("keep"));
     }
 
     #[test]
     fn vfs_conversation_repository_list_returns_target_not_found_for_missing_run() {
         let project = crate::content::project::Project::open_memory();
         let repo = VfsConversationRepository::new(project.root().clone());
-        let err = repo.list("runs/nope").expect_err("missing run");
+        let err = repo
+            .list(&RunId::from("runs/nope"))
+            .expect_err("missing run");
         match err {
             RepositoryError::TargetNotFound { path } => {
                 assert_eq!(path, PathBuf::from("runs/nope"));
@@ -851,8 +930,8 @@ cases:
             .expect("mkdir");
         let conv = blank_assistant_conversation();
         let key = ConversationKey {
-            run_id: "runs/test".into(),
-            name: "conv".into(),
+            run_id: RunId::from("runs/test"),
+            name: ConversationName::from("conv"),
         };
 
         let repo = VfsConversationRepository::new(project.root().clone());
@@ -875,8 +954,8 @@ cases:
             .expect("mkdir");
         let conv = blank_assistant_conversation();
         let key = ConversationKey {
-            run_id: "runs/test".into(),
-            name: "conv".into(),
+            run_id: RunId::from("runs/test"),
+            name: ConversationName::from("conv"),
         };
 
         let repo = VfsConversationRepository::new(project.root().clone());
@@ -903,8 +982,8 @@ cases:
             "not a conversation",
         );
         let key = ConversationKey {
-            run_id: "runs/test".into(),
-            name: "broken".into(),
+            run_id: RunId::from("runs/test"),
+            name: ConversationName::from("broken"),
         };
 
         let repo = VfsConversationRepository::new(project.root().clone());

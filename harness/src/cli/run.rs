@@ -11,8 +11,10 @@ use crate::content::conversation::ConversationError;
 use crate::content::conversation::Role;
 use crate::content::conversation::RunError;
 use crate::content::repository::ConversationKey;
+use crate::content::repository::ConversationName;
 use crate::content::repository::ConversationRepository;
 use crate::content::repository::RepositoryError;
+use crate::content::repository::RunId;
 use crate::engine::engine::EngineError;
 use crate::engine::engine::EngineProvider;
 use crate::engine::engine::open_engine_for_model;
@@ -123,11 +125,8 @@ fn resolve_keys(
         })
     })?;
     if is_file {
-        let name = target
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .unwrap_or("")
-            .to_string();
+        let name =
+            ConversationName::from(target.file_stem().and_then(|s| s.to_str()).unwrap_or(""));
         let run_id = project_relative(project, target.parent().unwrap_or(target));
         return Ok(vec![ConversationKey { run_id, name }]);
     }
@@ -146,12 +145,12 @@ fn resolve_keys(
     }))
 }
 
-/// Return `path` relative to the project's host root, with forward-slash
-/// separators and no leading slash. Falls back to the raw path string when
-/// the project has no host root (in-memory) or when `path` is not under it.
-fn project_relative(project: &crate::content::project::Project, path: &std::path::Path) -> String {
+/// Return `path` relative to the project's host root as a [`RunId`].
+/// Uses forward-slash separators; falls back to the raw path string when
+/// the project has no host root (in-memory) or `path` is not under it.
+fn project_relative(project: &crate::content::project::Project, path: &std::path::Path) -> RunId {
     let canonical = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
-    if let Some(host_root) = project.host_root() {
+    let s = if let Some(host_root) = project.host_root() {
         canonical
             .strip_prefix(host_root)
             .ok()
@@ -162,7 +161,8 @@ fn project_relative(project: &crate::content::project::Project, path: &std::path
         path.to_str()
             .unwrap_or("")
             .replace(std::path::MAIN_SEPARATOR, "/")
-    }
+    };
+    RunId::from(s)
 }
 
 fn count_blank_assistants(conv: &Conversation) -> usize {
@@ -319,8 +319,8 @@ mod tests {
         let repo = project.conversations();
         // conv.yaml is at the project root, so run_id is empty.
         let key = ConversationKey {
-            run_id: String::new(),
-            name: String::from("conv"),
+            run_id: RunId::default(),
+            name: ConversationName::from("conv"),
         };
         let mut conv = repo.load(&key).expect("load conv");
         let engine = NoopEngine::from_replies(["first"]);
