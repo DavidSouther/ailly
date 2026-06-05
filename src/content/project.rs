@@ -20,6 +20,7 @@ use crate::content::repository::GlobResult;
 use crate::content::repository::RepositoryError;
 use crate::content::repository::VfsAssemblyRepository;
 use crate::content::repository::VfsContextRepository;
+use crate::content::repository::VfsConversationRepository;
 use crate::content::repository::VfsEvaluationRepository;
 
 /// Aggregate root over a `vfs`-backed project root. Vends typed sub-handles
@@ -326,6 +327,12 @@ impl Project {
     #[must_use]
     pub fn context(&self) -> Context<'_> {
         Context(self)
+    }
+
+    /// Return a [`VfsConversationRepository`] rooted at this project.
+    #[must_use]
+    pub fn conversations(&self) -> VfsConversationRepository {
+        VfsConversationRepository::new(self.root.clone())
     }
 
     /// Borrow a [`Prompts`] handle.

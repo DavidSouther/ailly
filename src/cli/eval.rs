@@ -11,10 +11,10 @@ use std::io;
 use std::path::PathBuf;
 
 use crate::content::evaluation::EvaluationError;
+use crate::content::repository::ConversationKey;
 use crate::content::repository::ConversationRepository;
 use crate::content::repository::EvaluationRepository;
 use crate::content::repository::RepositoryError;
-use crate::content::repository::VfsConversationRepository;
 use crate::engine::engine::open_engine_for_model;
 use crate::knowledge::assertions::EvaluationContext;
 use crate::knowledge::eval::ClassTotals;
@@ -93,16 +93,14 @@ pub async fn run(args: EvalCmdArgs) -> Result<EvalCmdOutcome, EvalCmdError> {
     crate::cli::env::load_project_env(&args.project);
     let suite = project.evals().get(&args.suite)?;
 
-    let conv_repo = VfsConversationRepository;
-    let over_vfs = resolve_over(&project, &args.over)?;
-    let paths = conv_repo.list(&over_vfs)?;
-    let mut conversations: Vec<(PathBuf, _)> = Vec::with_capacity(paths.len());
-    for path in paths {
-        let conv = conv_repo.load(&path)?;
-        conversations.push((PathBuf::from(path.as_str()), conv));
+    let conv_repo = project.conversations();
+    let run_id = project_relative(&project, &args.over);
+    let keys = conv_repo.list(&run_id)?;
+    let mut conversations: Vec<(PathBuf, _)> = Vec::with_capacity(keys.len());
+    for key in &keys {
+        let conv = conv_repo.load(key)?;
+        conversations.push((key_path(key), conv));
     }
-
-    let run_id = derive_run_id(&args.over);
 
     // Resolve the judge engine once, from the first conversation's model. A
     // failed open (no API key, unserviceable model) is not fatal: log it and
@@ -165,32 +163,31 @@ pub async fn run(args: EvalCmdArgs) -> Result<EvalCmdOutcome, EvalCmdError> {
     })
 }
 
-/// Resolve `over` to a [`vfs::VfsPath`]. Delegates to
-/// [`Project::resolve_host_path`]; the non-UTF-8 case is surfaced as
-/// [`EvalCmdError::NonUtf8Path`] before the shared helper is called.
-fn resolve_over(
-    project: &crate::content::project::Project,
-    over: &std::path::Path,
-) -> Result<vfs::VfsPath, EvalCmdError> {
-    if over.to_str().is_none() {
-        return Err(EvalCmdError::NonUtf8Path {
-            path: over.to_path_buf(),
-        });
-    }
-    project.resolve_host_path(over).map_err(EvalCmdError::from)
-}
-
-fn derive_run_id(over: &std::path::Path) -> String {
-    if over.is_dir() {
-        over.file_name()
-            .and_then(|s| s.to_str())
-            .map(String::from)
+/// Return `path` relative to the project host root, with forward-slash
+/// separators. Mirrors the same helper in `cli/run.rs`.
+fn project_relative(project: &crate::content::project::Project, path: &std::path::Path) -> String {
+    let canonical = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
+    if let Some(host_root) = project.host_root() {
+        canonical
+            .strip_prefix(host_root)
+            .ok()
+            .and_then(|rel| rel.to_str())
+            .map(|s| s.replace(std::path::MAIN_SEPARATOR, "/"))
             .unwrap_or_default()
     } else {
-        over.file_stem()
-            .and_then(|s| s.to_str())
-            .map(String::from)
-            .unwrap_or_default()
+        path.to_str()
+            .unwrap_or("")
+            .replace(std::path::MAIN_SEPARATOR, "/")
+    }
+}
+
+/// Stable `PathBuf` identity for a conversation key, used as the per-row
+/// identifier in the eval report (`{run_id}/{name}.yaml`).
+fn key_path(key: &ConversationKey) -> PathBuf {
+    if key.run_id.is_empty() {
+        PathBuf::from(format!("{}.yaml", key.name))
+    } else {
+        PathBuf::from(format!("{}/{}.yaml", key.run_id, key.name))
     }
 }
 

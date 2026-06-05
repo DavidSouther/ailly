@@ -10,9 +10,9 @@ use crate::content::conversation::Conversation;
 use crate::content::conversation::ConversationError;
 use crate::content::conversation::Role;
 use crate::content::conversation::RunError;
+use crate::content::repository::ConversationKey;
 use crate::content::repository::ConversationRepository;
 use crate::content::repository::RepositoryError;
-use crate::content::repository::VfsConversationRepository;
 use crate::engine::engine::EngineError;
 use crate::engine::engine::EngineProvider;
 use crate::engine::engine::open_engine_for_model;
@@ -72,21 +72,20 @@ impl From<RunError> for RunCmdError {
 pub async fn run(args: RunArgs) -> Result<RunOutcome, RunCmdError> {
     let project = crate::content::project::Project::open(&args.project)?;
     crate::cli::env::load_project_env(&args.project);
-    let repo = VfsConversationRepository;
-    let target = resolve_target(&project, &args.target)?;
-    let paths = repo.list(&target)?;
+    let repo = project.conversations();
+    let keys = resolve_keys(&project, &repo, &args.target)?;
     let mut outcome = RunOutcome::default();
-    for path in &paths {
-        let mut conv = repo.load(path)?;
+    for key in &keys {
+        let mut conv = repo.load(key)?;
         let engine = open_engine_for_model(&conv.meta.model)?;
-        fill_and_save(&repo, path, &mut conv, engine.as_ref(), &mut outcome).await?;
+        fill_and_save(&repo, key, &mut conv, engine.as_ref(), &mut outcome).await?;
     }
     Ok(outcome)
 }
 
 async fn fill_and_save(
-    repo: &VfsConversationRepository,
-    path: &vfs::VfsPath,
+    repo: &impl ConversationRepository,
+    key: &ConversationKey,
     conv: &mut Conversation,
     engine: &dyn EngineProvider,
     outcome: &mut RunOutcome,
@@ -94,26 +93,76 @@ async fn fill_and_save(
     let blanks_before = count_blank_assistants(conv);
     let engine_result = conv.run(engine).await;
     let blanks_after = count_blank_assistants(conv);
-    repo.save(path, conv)?;
-    engine_result?;
+    repo.save(key, conv)?;
+    engine_result?; // Save first, then surface engine errors.
     outcome.conversations_processed += 1;
     outcome.blank_assistants_filled += blanks_before - blanks_after;
     Ok(())
 }
 
-/// Resolve `target` to a [`vfs::VfsPath`]. Delegates to
-/// [`Project::resolve_host_path`]; the non-UTF-8 case is surfaced as
-/// [`RunCmdError::NonUtf8Path`] before the shared helper is called.
-fn resolve_target(
+/// Resolve `target` to one or more [`ConversationKey`]s. A file produces a
+/// single key; a directory lists all keys in that run. Neither returns
+/// [`RepositoryError::TargetNotFound`].
+fn resolve_keys(
     project: &crate::content::project::Project,
+    repo: &impl ConversationRepository,
     target: &std::path::Path,
-) -> Result<vfs::VfsPath, RunCmdError> {
+) -> Result<Vec<ConversationKey>, RunCmdError> {
     if target.to_str().is_none() {
         return Err(RunCmdError::NonUtf8Path {
             path: target.to_path_buf(),
         });
     }
-    project.resolve_host_path(target).map_err(RunCmdError::from)
+    let vfs_path = project
+        .resolve_host_path(target)
+        .map_err(RunCmdError::Repository)?;
+    let is_file = vfs_path.is_file().map_err(|source| {
+        RunCmdError::Repository(RepositoryError::Vfs {
+            path: target.to_string_lossy().to_string(),
+            source,
+        })
+    })?;
+    if is_file {
+        let name = target
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("")
+            .to_string();
+        let run_id = project_relative(project, target.parent().unwrap_or(target));
+        return Ok(vec![ConversationKey { run_id, name }]);
+    }
+    let is_dir = vfs_path.is_dir().map_err(|source| {
+        RunCmdError::Repository(RepositoryError::Vfs {
+            path: target.to_string_lossy().to_string(),
+            source,
+        })
+    })?;
+    if is_dir {
+        let run_id = project_relative(project, target);
+        return Ok(repo.list(&run_id).map_err(RunCmdError::Repository)?);
+    }
+    Err(RunCmdError::Repository(RepositoryError::TargetNotFound {
+        path: target.to_path_buf(),
+    }))
+}
+
+/// Return `path` relative to the project's host root, with forward-slash
+/// separators and no leading slash. Falls back to the raw path string when
+/// the project has no host root (in-memory) or when `path` is not under it.
+fn project_relative(project: &crate::content::project::Project, path: &std::path::Path) -> String {
+    let canonical = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
+    if let Some(host_root) = project.host_root() {
+        canonical
+            .strip_prefix(host_root)
+            .ok()
+            .and_then(|rel| rel.to_str())
+            .map(|s| s.replace(std::path::MAIN_SEPARATOR, "/"))
+            .unwrap_or_default()
+    } else {
+        path.to_str()
+            .unwrap_or("")
+            .replace(std::path::MAIN_SEPARATOR, "/")
+    }
 }
 
 fn count_blank_assistants(conv: &Conversation) -> usize {
@@ -267,12 +316,16 @@ mod tests {
         // NoopEngine can be injected while still testing the partial-
         // persistence guarantee: progress saved before the error bubbles.
         let project = crate::content::project::Project::open(tmp.path()).expect("project open");
-        let repo = VfsConversationRepository;
-        let vfs_path = project.resolve_host_path(&path).expect("resolve host path");
-        let mut conv = repo.load(&vfs_path).expect("load conv");
+        let repo = project.conversations();
+        // conv.yaml is at the project root, so run_id is empty.
+        let key = ConversationKey {
+            run_id: String::new(),
+            name: String::from("conv"),
+        };
+        let mut conv = repo.load(&key).expect("load conv");
         let engine = NoopEngine::from_replies(["first"]);
         let mut outcome = RunOutcome::default();
-        let result = fill_and_save(&repo, &vfs_path, &mut conv, &engine, &mut outcome).await;
+        let result = fill_and_save(&repo, &key, &mut conv, &engine, &mut outcome).await;
 
         match result {
             Err(RunCmdError::Engine(EngineError::NoopExhausted { call_index })) => {

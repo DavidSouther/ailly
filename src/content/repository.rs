@@ -11,79 +11,125 @@ use crate::content::conversation::ConversationError;
 use crate::content::evaluation::Evaluation;
 use crate::content::evaluation::EvaluationError;
 
-/// Lists, loads, and saves single conversation files. Independent of the
-/// per-binding [`RunRepository`], which buffers a many-file write; `ailly run`
-/// operates one file at a time, in place, so it has no `stage`/`flush`
+/// Logical identity of one conversation within a run. The `run_id` is the
+/// path of the run directory relative to the repository root (e.g.
+/// `"runs/2026-05-23T14-32-claim-handler"`). The `name` is the within-run
+/// filename stem produced by [`filename_for`] (e.g. `"missing-fields"`).
+///
+/// A VFS-backed repository derives the storage path as
+/// `{root}/{run_id}/{name}.yaml`; a database-backed repository uses
+/// `run_id` as a foreign key and `name` as the row key.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ConversationKey {
+    pub run_id: String,
+    pub name: String,
+}
+
+impl ConversationKey {
+    /// Construct a key from a run identifier and a binding. The `name` field
+    /// is the filename stem that [`filename_for`] produces for `binding`.
+    #[must_use]
+    pub fn from_binding(run_id: impl Into<String>, binding: &Binding) -> Self {
+        let filename = filename_for(binding);
+        let name = filename.trim_end_matches(".yaml").to_string();
+        Self {
+            run_id: run_id.into(),
+            name,
+        }
+    }
+}
+
+/// Lists, loads, and saves conversations by logical key. `ailly run` operates
+/// one conversation at a time, in place, so there is no `stage`/`flush`
 /// ceremony.
 pub trait ConversationRepository {
-    /// Resolve `target` to one or more conversation file paths.
-    ///
-    /// - target is a file → `[target.clone()]`.
-    /// - target is a directory → entries with extension `yaml`, sorted
-    ///   ascending.
-    /// - Neither → [`RepositoryError::TargetNotFound`].
+    /// Return all conversation keys for the named run.
     ///
     /// # Errors
-    /// Returns [`RepositoryError::Vfs`] if directory iteration fails or
-    /// [`RepositoryError::TargetNotFound`] when neither branch matches.
-    fn list(&self, target: &vfs::VfsPath) -> Result<Vec<vfs::VfsPath>, RepositoryError>;
+    /// [`RepositoryError::TargetNotFound`] if the run does not exist;
+    /// [`RepositoryError::Vfs`] if the run directory cannot be read.
+    fn list(&self, run_id: &str) -> Result<Vec<ConversationKey>, RepositoryError>;
 
-    /// Read and parse one conversation file.
+    /// Load and parse the conversation identified by `key`.
     ///
     /// # Errors
     /// [`RepositoryError::Vfs`] for I/O failures;
-    /// [`RepositoryError::ParseConversation`] when the YAML does not parse
+    /// [`RepositoryError::ParseConversation`] when the content does not parse
     /// as a [`Conversation`].
-    fn load(&self, path: &vfs::VfsPath) -> Result<Conversation, RepositoryError>;
+    fn load(&self, key: &ConversationKey) -> Result<Conversation, RepositoryError>;
 
-    /// Serialize `conv` and write atomically to `path` via temp-then-rename.
-    /// Best-effort cleanup of `<path>.tmp` on serialization or rename failure.
-    /// The same-file collision case (two `ailly run` instances against one
-    /// target) is undefined behaviour and not protected against.
+    /// Persist `conv` under `key`.
     ///
     /// # Errors
     /// [`RepositoryError::Emit`] when serialization fails;
-    /// [`RepositoryError::Write`] or [`RepositoryError::Vfs`] when the
-    /// write or rename fails.
-    fn save(&self, path: &vfs::VfsPath, conv: &Conversation) -> Result<(), RepositoryError>;
+    /// [`RepositoryError::Write`] or [`RepositoryError::Vfs`] when the write
+    /// fails.
+    fn save(&self, key: &ConversationKey, conv: &Conversation) -> Result<(), RepositoryError>;
 }
 
-/// `vfs`-backed [`ConversationRepository`]. Unit-style: holds no state,
-/// resolves every path argument as-given without rerooting through a project
-/// directory, because `ailly run` resolves `target` against the current
-/// working directory (the CLI handler joins it onto a host-rooted VFS).
-pub struct VfsConversationRepository;
+/// `vfs`-backed [`ConversationRepository`] rooted at a project directory.
+/// Derives the storage path for a key as `{root}/{run_id}/{name}.yaml`.
+pub struct VfsConversationRepository {
+    root: vfs::VfsPath,
+}
 
-impl ConversationRepository for VfsConversationRepository {
-    fn list(&self, target: &vfs::VfsPath) -> Result<Vec<vfs::VfsPath>, RepositoryError> {
-        let is_file = target.is_file().map_err(|source| RepositoryError::Vfs {
-            path: target.as_str().to_string(),
-            source,
-        })?;
-        if is_file {
-            return Ok(vec![target.clone()]);
-        }
-        let is_dir = target.is_dir().map_err(|source| RepositoryError::Vfs {
-            path: target.as_str().to_string(),
-            source,
-        })?;
-        if is_dir {
-            let entries = target.read_dir().map_err(|source| RepositoryError::Vfs {
-                path: target.as_str().to_string(),
-                source,
-            })?;
-            let mut paths: Vec<vfs::VfsPath> = entries
-                .filter(|entry| entry.extension().is_some_and(|ext| ext == "yaml"))
-                .collect();
-            paths.sort_by_key(vfs::VfsPath::filename);
-            return Ok(paths);
-        }
-        Err(RepositoryError::TargetNotFound {
-            path: PathBuf::from(target.as_str()),
-        })
+impl VfsConversationRepository {
+    #[must_use]
+    pub fn new(root: vfs::VfsPath) -> Self {
+        Self { root }
     }
 
-    fn load(&self, path: &vfs::VfsPath) -> Result<Conversation, RepositoryError> {
+    fn path_for(&self, key: &ConversationKey) -> Result<vfs::VfsPath, RepositoryError> {
+        let dir = self.dir_for(&key.run_id)?;
+        dir.join(format!("{}.yaml", key.name))
+            .map_err(|source| RepositoryError::Vfs {
+                path: format!("{}/{}.yaml", key.run_id, key.name),
+                source,
+            })
+    }
+
+    fn dir_for(&self, run_id: &str) -> Result<vfs::VfsPath, RepositoryError> {
+        if run_id.is_empty() {
+            return Ok(self.root.clone());
+        }
+        self.root
+            .join(run_id)
+            .map_err(|source| RepositoryError::Vfs {
+                path: run_id.to_string(),
+                source,
+            })
+    }
+}
+
+impl ConversationRepository for VfsConversationRepository {
+    fn list(&self, run_id: &str) -> Result<Vec<ConversationKey>, RepositoryError> {
+        let dir = self.dir_for(run_id)?;
+        let is_dir = dir.is_dir().map_err(|source| RepositoryError::Vfs {
+            path: run_id.to_string(),
+            source,
+        })?;
+        if !is_dir {
+            return Err(RepositoryError::TargetNotFound {
+                path: PathBuf::from(run_id),
+            });
+        }
+        let entries = dir.read_dir().map_err(|source| RepositoryError::Vfs {
+            path: run_id.to_string(),
+            source,
+        })?;
+        let mut keys: Vec<ConversationKey> = entries
+            .filter(|e| e.extension().is_some_and(|ext| ext == "yaml"))
+            .map(|e| ConversationKey {
+                run_id: run_id.to_string(),
+                name: e.filename().trim_end_matches(".yaml").to_string(),
+            })
+            .collect();
+        keys.sort_by(|a, b| a.name.cmp(&b.name));
+        Ok(keys)
+    }
+
+    fn load(&self, key: &ConversationKey) -> Result<Conversation, RepositoryError> {
+        let path = self.path_for(key)?;
         let body = path
             .read_to_string()
             .map_err(|source| RepositoryError::Vfs {
@@ -96,11 +142,12 @@ impl ConversationRepository for VfsConversationRepository {
         })
     }
 
-    fn save(&self, path: &vfs::VfsPath, conv: &Conversation) -> Result<(), RepositoryError> {
+    fn save(&self, key: &ConversationKey, conv: &Conversation) -> Result<(), RepositoryError> {
+        let path = self.path_for(key)?;
         let body = conv
             .to_yaml_string()
             .map_err(|source| RepositoryError::Emit { source })?;
-        let tmp_path = vfs_tmp_path(path).map_err(|source| RepositoryError::Vfs {
+        let tmp_path = vfs_tmp_path(&path).map_err(|source| RepositoryError::Vfs {
             path: format!("{}.tmp", path.as_str()),
             source,
         })?;
@@ -125,15 +172,11 @@ impl ConversationRepository for VfsConversationRepository {
         // `vfs::VfsPath::move_file` refuses to overwrite an existing
         // destination (unlike `std::fs::rename` on Unix, which is atomic
         // overwrite). For the `ailly run` update path the destination
-        // usually exists, so remove it first. This narrows the atomic
-        // window (a crash between remove and move leaves no file) but
-        // matches the "best effort" guarantee the trait already
-        // documents, and preserves the partial-write protection
-        // temp-then-rename was actually for.
+        // usually exists, so remove it first.
         if path.exists().unwrap_or(false) {
             let _ = path.remove_file();
         }
-        if let Err(source) = tmp_path.move_file(path) {
+        if let Err(source) = tmp_path.move_file(&path) {
             let _ = tmp_path.remove_file();
             return Err(RepositoryError::Vfs {
                 path: path.as_str().to_string(),
@@ -151,27 +194,23 @@ fn vfs_tmp_path(path: &vfs::VfsPath) -> Result<vfs::VfsPath, vfs::VfsError> {
     parent.join(filename)
 }
 
-/// Loads parsed [`Evaluation`] suites by name. Mirrors [`AssemblyRepository`];
-/// resolves `<project>/evals/<name>.yaml`.
+/// Loads a named [`Evaluation`] suite.
 pub trait EvaluationRepository {
-    /// Read `<project>/evals/<name>.yaml` and parse it.
+    /// Load and return the named evaluation suite.
     ///
     /// # Errors
-    ///
-    /// Returns [`RepositoryError::Read`] if the file is missing or unreadable
-    /// and [`RepositoryError::ParseEvaluation`] if the file is not a valid
-    /// suite.
+    /// [`RepositoryError::Vfs`] if the suite is missing or unreadable;
+    /// [`RepositoryError::ParseEvaluation`] if it is not a valid suite.
     fn get(&self, name: &str) -> Result<Evaluation, RepositoryError>;
 }
 
-/// Loads parsed [`Assembly`] aggregates by name.
+/// Loads a named [`Assembly`].
 pub trait AssemblyRepository {
-    /// Read `<project>/assemblies/<name>.yaml` and parse it.
+    /// Load and return the named assembly.
     ///
     /// # Errors
-    ///
-    /// Returns [`RepositoryError::Read`] if the file is missing or unreadable
-    /// and [`RepositoryError::Parse`] if the file is not a valid assembly.
+    /// [`RepositoryError::Vfs`] if the assembly is missing or unreadable;
+    /// [`RepositoryError::Parse`] if it is not a valid assembly.
     fn get(&self, name: &str) -> Result<Assembly, RepositoryError>;
 }
 
@@ -748,82 +787,54 @@ cases:
         }
     }
 
-    fn seed_conversation(root: &vfs::VfsPath, rel: &str) -> vfs::VfsPath {
-        use std::io::Write;
+    fn seed_run(project: &crate::content::project::Project, run_id: &str, names: &[&str]) {
         let body = blank_assistant_conversation()
             .to_yaml_string()
             .expect("emit");
-        let path = root.join(rel).expect("join");
-        let mut f = path.create_file().expect("create file");
-        f.write_all(body.as_bytes()).expect("write");
-        path
-    }
-
-    #[test]
-    fn vfs_conversation_repository_list_returns_single_file_when_target_is_a_file() {
-        let project = crate::content::project::Project::open_memory();
-        let path = seed_conversation(project.root(), "one.yaml");
-
-        let repo = VfsConversationRepository;
-        let paths = repo.list(&path).expect("list single file");
-        assert_eq!(paths, vec![path]);
-    }
-
-    #[test]
-    fn vfs_conversation_repository_list_returns_yaml_entries_in_sorted_order() {
-        let project = crate::content::project::Project::open_memory();
-        for name in ["c.yaml", "a.yaml", "b.yaml"] {
-            seed_conversation(project.root(), name);
+        for name in names {
+            write_vfs_file(project.root(), &format!("{run_id}/{name}.yaml"), &body);
         }
+    }
 
-        let repo = VfsConversationRepository;
-        let paths = repo.list(project.root()).expect("list dir");
-        let names: Vec<String> = paths.iter().map(vfs::VfsPath::filename).collect();
-        assert_eq!(names, vec!["a.yaml", "b.yaml", "c.yaml"]);
+    #[test]
+    fn vfs_conversation_repository_list_returns_keys_sorted_by_name() {
+        let project = crate::content::project::Project::open_memory();
+        seed_run(&project, "runs/test", &["c", "a", "b"]);
+
+        let repo = VfsConversationRepository::new(project.root().clone());
+        let keys = repo.list("runs/test").expect("list");
+        let names: Vec<&str> = keys.iter().map(|k| k.name.as_str()).collect();
+        assert_eq!(names, vec!["a", "b", "c"]);
+        assert!(keys.iter().all(|k| k.run_id == "runs/test"));
     }
 
     #[test]
     fn vfs_conversation_repository_list_filters_non_yaml_entries() {
-        use std::io::Write;
         let project = crate::content::project::Project::open_memory();
-        seed_conversation(project.root(), "keep.yaml");
-        let mut md = project
-            .root()
-            .join("skip.md")
-            .unwrap()
-            .create_file()
-            .expect("create md");
-        md.write_all(b"ignore").expect("write md");
-        let mut json = project
-            .root()
-            .join("skip.json")
-            .unwrap()
-            .create_file()
-            .expect("create json");
-        json.write_all(b"{}").expect("write json");
+        seed_run(&project, "runs/test", &["keep"]);
+        write_vfs_file(project.root(), "runs/test/skip.md", "ignore");
+        write_vfs_file(project.root(), "runs/test/skip.json", "{}");
         project
             .root()
-            .join("subdir")
+            .join("runs/test/subdir")
             .unwrap()
             .create_dir_all()
             .expect("mkdir subdir");
 
-        let repo = VfsConversationRepository;
-        let paths = repo.list(project.root()).expect("list dir");
-        assert_eq!(paths.len(), 1);
-        assert_eq!(paths[0].filename(), "keep.yaml");
+        let repo = VfsConversationRepository::new(project.root().clone());
+        let keys = repo.list("runs/test").expect("list");
+        assert_eq!(keys.len(), 1);
+        assert_eq!(keys[0].name, "keep");
     }
 
     #[test]
-    fn vfs_conversation_repository_list_returns_target_not_found_when_neither() {
+    fn vfs_conversation_repository_list_returns_target_not_found_for_missing_run() {
         let project = crate::content::project::Project::open_memory();
-        let missing = project.root().join("nope.yaml").unwrap();
-
-        let repo = VfsConversationRepository;
-        let err = repo.list(&missing).expect_err("missing target");
+        let repo = VfsConversationRepository::new(project.root().clone());
+        let err = repo.list("runs/nope").expect_err("missing run");
         match err {
             RepositoryError::TargetNotFound { path } => {
-                assert_eq!(path, PathBuf::from("/nope.yaml"));
+                assert_eq!(path, PathBuf::from("runs/nope"));
             }
             other => panic!("expected TargetNotFound, got {other:?}"),
         }
@@ -832,12 +843,21 @@ cases:
     #[test]
     fn vfs_conversation_repository_load_round_trips_save() {
         let project = crate::content::project::Project::open_memory();
-        let path = project.root().join("conv.yaml").unwrap();
+        project
+            .root()
+            .join("runs/test")
+            .unwrap()
+            .create_dir_all()
+            .expect("mkdir");
         let conv = blank_assistant_conversation();
+        let key = ConversationKey {
+            run_id: "runs/test".into(),
+            name: "conv".into(),
+        };
 
-        let repo = VfsConversationRepository;
-        repo.save(&path, &conv).expect("save");
-        let loaded = repo.load(&path).expect("load");
+        let repo = VfsConversationRepository::new(project.root().clone());
+        repo.save(&key, &conv).expect("save");
+        let loaded = repo.load(&key).expect("load");
         assert_eq!(loaded.meta.model, conv.meta.model);
         assert_eq!(loaded.session.len(), conv.session.len());
         assert_eq!(loaded.session[0].role, Role::Assistant);
@@ -847,17 +867,27 @@ cases:
     #[test]
     fn vfs_conversation_repository_save_is_atomic_temp_then_rename() {
         let project = crate::content::project::Project::open_memory();
-        let path = project.root().join("conv.yaml").unwrap();
+        project
+            .root()
+            .join("runs/test")
+            .unwrap()
+            .create_dir_all()
+            .expect("mkdir");
         let conv = blank_assistant_conversation();
+        let key = ConversationKey {
+            run_id: "runs/test".into(),
+            name: "conv".into(),
+        };
 
-        let repo = VfsConversationRepository;
-        repo.save(&path, &conv).expect("save");
+        let repo = VfsConversationRepository::new(project.root().clone());
+        repo.save(&key, &conv).expect("save");
 
+        let file_path = project.root().join("runs/test/conv.yaml").unwrap();
         assert!(
-            path.exists().unwrap_or(false),
+            file_path.exists().unwrap_or(false),
             "target file should exist after save"
         );
-        let tmp_path = project.root().join("conv.yaml.tmp").unwrap();
+        let tmp_path = project.root().join("runs/test/conv.yaml.tmp").unwrap();
         assert!(
             !tmp_path.exists().unwrap_or(true),
             "tmp companion file should be gone after successful rename",
@@ -866,17 +896,22 @@ cases:
 
     #[test]
     fn vfs_conversation_repository_load_returns_parse_conversation_on_bad_yaml() {
-        use std::io::Write;
         let project = crate::content::project::Project::open_memory();
-        let path = project.root().join("broken.yaml").unwrap();
-        let mut f = path.create_file().expect("create file");
-        f.write_all(b"not a conversation").expect("write");
+        write_vfs_file(
+            project.root(),
+            "runs/test/broken.yaml",
+            "not a conversation",
+        );
+        let key = ConversationKey {
+            run_id: "runs/test".into(),
+            name: "broken".into(),
+        };
 
-        let repo = VfsConversationRepository;
-        let err = repo.load(&path).expect_err("bad yaml");
+        let repo = VfsConversationRepository::new(project.root().clone());
+        let err = repo.load(&key).expect_err("bad yaml");
         match err {
             RepositoryError::ParseConversation { path: got, .. } => {
-                assert_eq!(got, PathBuf::from("/broken.yaml"));
+                assert_eq!(got, PathBuf::from("/runs/test/broken.yaml"));
             }
             other => panic!("expected ParseConversation, got {other:?}"),
         }
