@@ -2,8 +2,7 @@
 //!
 //! Walks each conversation in `target`, asks the engine to fill any blank
 //! assistant slot, and writes the result back in place. The conversation file
-//! is the run artifact; no parallel `response.json`, `meta.yaml`, or
-//! `window.txt` is produced. See `docs/developer/2026-05-24-A-run-cmd/`.
+//! is the entire run artifact.
 
 use std::path::PathBuf;
 
@@ -28,16 +27,13 @@ pub struct RunArgs {
 }
 
 /// Outcome counters returned to the library caller. The CLI binary does not
-/// display the value; tests use it as a structured assertion seam.
+/// display the value; tests use it for structuree assertions.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct RunOutcome {
     pub conversations_processed: usize,
     pub blank_assistants_filled: usize,
 }
 
-/// Closed library-boundary error type. Disambiguated from
-/// `content::conversation::RunError` (the aggregate-side error) by the
-/// `Cmd` suffix; `From` impls peel inner errors into the variants below.
 #[derive(Debug, thiserror::Error)]
 pub enum RunCmdError {
     #[error("project error: {0}")]
@@ -63,9 +59,8 @@ impl From<RunError> for RunCmdError {
     }
 }
 
-/// Drive the run pipeline against `args.target`, constructing one engine per
-/// conversation from its `meta.model`. The duplicated loop body relative to
-/// [`run_with_engine`] is deliberate: heterogeneous models across bindings
+/// Run Ailly in `args.target`, constructing one engine per
+/// conversation from its `meta.model`. Heterogeneous models across bindings
 /// work without further refactoring because each conversation's engine is
 /// resolved against its own `meta.model`.
 ///
@@ -84,34 +79,6 @@ pub async fn run(args: RunArgs) -> Result<RunOutcome, RunCmdError> {
     for path in &paths {
         let mut conv = repo.load(path)?;
         let engine = open_engine_for_model(&conv.meta.model)?;
-        fill_and_save(&repo, path, &mut conv, engine.as_ref(), &mut outcome).await?;
-    }
-    Ok(outcome)
-}
-
-/// Drive the run pipeline against `args.target` using a caller-supplied
-/// engine.
-///
-/// Lists conversation files under `args.target`, loads each in turn, asks the
-/// engine to fill any blank assistant slot, and writes the result back in
-/// place. Engine failures bubble after the in-memory progress is persisted,
-/// so a partial run leaves earlier slots filled on disk.
-///
-/// # Errors
-/// Returns [`RunCmdError::Repository`] when listing, loading, or saving fails;
-/// [`RunCmdError::Engine`] when the engine cannot serve a slot; and
-/// [`RunCmdError::Conversation`] when the aggregate rejects a fill.
-pub async fn run_with_engine(
-    args: RunArgs,
-    engine: Box<dyn EngineProvider>,
-) -> Result<RunOutcome, RunCmdError> {
-    let project = crate::content::project::Project::open(&args.project)?;
-    let repo = VfsConversationRepository;
-    let target = resolve_target(&project, &args.target)?;
-    let paths = repo.list(&target)?;
-    let mut outcome = RunOutcome::default();
-    for path in &paths {
-        let mut conv = repo.load(path)?;
         fill_and_save(&repo, path, &mut conv, engine.as_ref(), &mut outcome).await?;
     }
     Ok(outcome)
@@ -229,10 +196,9 @@ mod tests {
         let path = tmp.path().join("conv.yaml");
         write_conversation(&path, None, false);
 
-        let engine = NoopEngine::from_replies(["hello"]);
-        let outcome = run_with_engine(args_for(&path), Box::new(engine))
-            .await
-            .expect("run");
+        // `open_engine_for_model("noop")` returns `NoopEngine::auto()`, which
+        // generates `"noop-{call_index}"` replies without a pre-loaded script.
+        let outcome = run(args_for(&path)).await.expect("run");
 
         assert_eq!(outcome.conversations_processed, 1);
         assert_eq!(outcome.blank_assistants_filled, 1);
@@ -242,8 +208,8 @@ mod tests {
         assert!(conv.next_blank_assistant().is_none(), "no blanks remain");
         let assistant = conv.session.last().expect("trailing message");
         match assistant.body.as_ref().expect("assistant filled") {
-            Content::Text(text) => assert_eq!(text, "hello"),
-            Content::Blocks(_) => panic!("from_replies produces Content::Text"),
+            Content::Text(text) => assert_eq!(text, "noop-0"),
+            Content::Blocks(_) => panic!("auto noop produces Content::Text"),
         }
         let trace = assistant.trace.as_ref().expect("trace inlined");
         assert_eq!(trace.model, ModelId::from("noop"));
@@ -256,22 +222,21 @@ mod tests {
             write_conversation(&tmp.path().join(name), None, false);
         }
 
-        let engine = NoopEngine::from_replies(["alpha", "beta", "gamma"]);
-        let outcome = run_with_engine(args_for(tmp.path()), Box::new(engine))
-            .await
-            .expect("run dir");
+        let outcome = run(args_for(tmp.path())).await.expect("run dir");
 
         assert_eq!(outcome.conversations_processed, 3);
         assert_eq!(outcome.blank_assistants_filled, 3);
 
-        for (name, reply) in [("a.yaml", "alpha"), ("b.yaml", "beta"), ("c.yaml", "gamma")] {
+        // Each file gets its own engine instance so we verify fill, not order.
+        // Sort-order correctness is covered by repository unit tests.
+        for name in ["a.yaml", "b.yaml", "c.yaml"] {
             let body = fs::read_to_string(tmp.path().join(name)).expect("read back");
             let conv = Conversation::from_yaml_str(&body).expect("parse");
             let assistant = conv.session.last().expect("assistant");
-            match assistant.body.as_ref().expect("filled") {
-                Content::Text(text) => assert_eq!(text, reply, "reply for {name}"),
-                Content::Blocks(_) => panic!("expected Text in {name}"),
-            }
+            assert!(
+                assistant.body.is_some(),
+                "assistant in {name} should be filled"
+            );
         }
     }
 
@@ -282,10 +247,7 @@ mod tests {
         write_conversation(&path, Some("already filled"), false);
         let before = fs::read(&path).expect("read before");
 
-        let engine = NoopEngine::from_replies::<[&str; 0], &str>([]);
-        let outcome = run_with_engine(args_for(&path), Box::new(engine))
-            .await
-            .expect("run no-op");
+        let outcome = run(args_for(&path)).await.expect("run no-op");
 
         assert_eq!(outcome.conversations_processed, 1);
         assert_eq!(outcome.blank_assistants_filled, 0);
@@ -301,8 +263,16 @@ mod tests {
         // Two trailing blanks; engine scripted with only one reply.
         write_conversation(&path, None, true);
 
+        // Exercise `fill_and_save` directly so a scripted (exhaustible)
+        // NoopEngine can be injected while still testing the partial-
+        // persistence guarantee: progress saved before the error bubbles.
+        let project = crate::content::project::Project::open(tmp.path()).expect("project open");
+        let repo = VfsConversationRepository;
+        let vfs_path = project.resolve_host_path(&path).expect("resolve host path");
+        let mut conv = repo.load(&vfs_path).expect("load conv");
         let engine = NoopEngine::from_replies(["first"]);
-        let result = run_with_engine(args_for(&path), Box::new(engine)).await;
+        let mut outcome = RunOutcome::default();
+        let result = fill_and_save(&repo, &vfs_path, &mut conv, &engine, &mut outcome).await;
 
         match result {
             Err(RunCmdError::Engine(EngineError::NoopExhausted { call_index })) => {
@@ -386,8 +356,7 @@ mod tests {
         let tmp = tempfile::tempdir().expect("tempdir");
         let missing = tmp.path().join("nope.yaml");
 
-        let engine = NoopEngine::from_replies::<[&str; 0], &str>([]);
-        let result = run_with_engine(args_for(&missing), Box::new(engine)).await;
+        let result = run(args_for(&missing)).await;
 
         match result {
             Err(RunCmdError::Repository(RepositoryError::TargetNotFound { path })) => {
