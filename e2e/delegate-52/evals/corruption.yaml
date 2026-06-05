@@ -1,0 +1,28 @@
+name: corruption
+cases:
+  - when: { domain: prose-bio }
+    assertions:
+      - { type: program, script: "evals/scripts/score_prose_bio.py" }
+      - { type: tokens, metric: total, op: "<", value: 50000 }
+
+  - when: { domain: code-sql }
+    assertions:
+      - { type: program, script: "evals/scripts/score_code_sql.py" }
+
+  - when: { domain: data-citation }
+    assertions:
+      - { type: program, script: "evals/scripts/score_data_citation.py" }
+
+  - when: { domain: notation-music }
+    assertions:
+      - { type: program, script: "evals/scripts/score_notation_music.py" }
+
+  - assertions:
+      - type: judge
+        prompt: |
+          For each domain, compare the final document (last assistant turn)
+          from anthropic, openai, and google against its seed. Identify any
+          named entity, date, citation, or numeric value that drifted in any
+          provider's output. Report the per-provider corruption count and
+          the per-domain worst offender. Do not re-score; consume the
+          per-domain scorer output attached as PROGRAM_OUTPUTS.
