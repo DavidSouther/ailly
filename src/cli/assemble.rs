@@ -4,21 +4,10 @@
 //! load the assembly, expand the matrix, render one conversation per
 //! binding, stage each, commit.
 
-use std::marker::PhantomData;
 use std::path::PathBuf;
 
-use crate::content::assembly::Assembly;
 use crate::content::assembly::AssemblyError;
-use crate::content::assembly::Binding;
-use crate::content::assembly::PrefixBlock;
 use crate::content::assembly::RenderError;
-use crate::content::assembly::prefix_cache;
-use crate::content::conversation::Content;
-use crate::content::conversation::Conversation;
-use crate::content::conversation::Message;
-use crate::content::conversation::Meta;
-use crate::content::conversation::Rendered;
-use crate::content::conversation::Role;
 use crate::content::project::Project;
 use crate::content::project::ProjectError;
 use crate::content::repository::AssemblyRepository;
@@ -82,101 +71,20 @@ pub fn run(args: AssembleArgs) -> Result<PathBuf, AssembleError> {
 /// # Errors
 ///
 /// See [`AssembleError`].
-pub fn run_with_project(
-    project: &Project,
-    assembly_name: &str,
-) -> Result<vfs::VfsPath, AssembleError> {
+fn run_with_project(project: &Project, assembly_name: &str) -> Result<vfs::VfsPath, AssembleError> {
     let assembly = project.assemblies().get(assembly_name)?;
     let mut tx = project.begin_run();
     for binding in assembly.expand_matrix()? {
-        let conversation = render_conversation(project, &assembly, &binding).map_err(|e| {
-            AssembleError::Assembling {
-                name: assembly_name.to_string(),
-                source: Box::new(e),
-            }
-        })?;
+        let conversation =
+            assembly
+                .render(project, &binding)
+                .map_err(|e| AssembleError::Assembling {
+                    name: assembly_name.to_string(),
+                    source: Box::new(AssembleError::Render(e)),
+                })?;
         tx.stage(&binding, &conversation)?;
     }
     Ok(tx.commit(&assembly.name)?)
-}
-
-/// Render an [`Assembly`] against one [`Binding`] into a full
-/// [`Conversation`]: prefix system messages followed by the rendered
-/// template turns, ending in a blank assistant slot for `ailly run` to fill.
-///
-/// # Errors
-///
-/// Returns [`AssembleError::Repository`] when a prefix block read fails or
-/// [`AssembleError::Render`] when a template references an unknown variable
-/// or a templated path cannot be read.
-fn render_conversation(
-    project: &Project,
-    assembly: &Assembly,
-    binding: &Binding,
-) -> Result<Conversation, AssembleError> {
-    let mut session: Vec<Message<Rendered>> = Vec::new();
-    for block in &assembly.prefix {
-        let body = resolve_prefix_block(project, block, binding)?;
-        session.push(Message {
-            role: Role::System,
-            body: Some(Content::Text(body)),
-            cache: prefix_cache(block),
-            trace: None,
-            _phase: PhantomData,
-        });
-    }
-    for turn in &assembly.conversation {
-        session.push(turn.render(project, binding)?);
-    }
-    Ok(Conversation {
-        meta: Meta {
-            // Per-binding model override (set by a map-valued matrix axis) wins
-            // over the assembly-level default; scalar bindings have model: None
-            // and fall back to assembly.model, byte-identical to before this
-            // feature.
-            model: binding
-                .model
-                .clone()
-                .unwrap_or_else(|| assembly.model.clone()),
-            debug: false,
-            assembly: Some(assembly.name.clone()),
-            binding: binding.values.clone(),
-        },
-        session,
-    })
-}
-
-fn resolve_prefix_block(
-    project: &Project,
-    block: &PrefixBlock,
-    binding: &Binding,
-) -> Result<String, AssembleError> {
-    let context = project.context();
-    match block {
-        PrefixBlock::File { path, .. } => {
-            let resolved = project.resolve(path, binding)?;
-            Ok(context.read_file(&resolved)?)
-        }
-        PrefixBlock::System { path, .. }
-        | PrefixBlock::Tools { path, .. }
-        | PrefixBlock::Examples { path, .. } => {
-            let resolved = project.resolve(path, binding)?;
-            Ok(context.glob_concat(&resolved, None)?.body)
-        }
-        PrefixBlock::Context {
-            source,
-            glob,
-            count,
-            ..
-        } => {
-            let pattern = match glob {
-                Some(g) => format!("{source}/{g}"),
-                None => source.clone(),
-            };
-            let resolved = project.resolve(&pattern, binding)?;
-            Ok(context.glob_concat(&resolved, *count)?.body)
-        }
-    }
 }
 
 #[cfg(test)]
@@ -184,7 +92,11 @@ mod tests {
     use std::fs;
 
     use super::*;
+    use crate::content::conversation::Content;
     use crate::content::conversation::Conversation;
+    use crate::content::conversation::Message;
+    use crate::content::conversation::Rendered;
+    use crate::content::conversation::Role;
 
     const SINGLE_AXIS_ASSEMBLY: &str = "\
 name: claim-handler
@@ -503,35 +415,6 @@ prefix:
             msg.contains(tmp.path().to_str().expect("tmp path is valid utf-8")),
             "error should show real path, not vfs-relative path: {msg}"
         );
-    }
-
-    #[test]
-    fn context_block_count_truncates_glob_after_sort() {
-        use crate::content::assembly::Binding;
-
-        let tmp = tempfile::tempdir().expect("tempdir");
-        let ctx_dir = tmp.path().join("ctx");
-        fs::create_dir_all(&ctx_dir).expect("mkdir ctx");
-        for (i, name) in ["01.md", "02.md", "03.md", "04.md", "05.md"]
-            .iter()
-            .enumerate()
-        {
-            fs::write(ctx_dir.join(name), format!("body{i}")).expect("write context file");
-        }
-
-        let project = Project::open(tmp.path()).expect("open project");
-        let block = PrefixBlock::Context {
-            source: String::from("ctx"),
-            glob: Some(String::from("*.md")),
-            count: Some(2),
-            cache: false,
-        };
-        let binding = Binding::default();
-        let body = resolve_prefix_block(&project, &block, &binding).expect("resolve");
-
-        // Filename-ascending sort puts 01.md, 02.md first; bodies are body0
-        // (01.md) and body1 (02.md), joined by a single newline.
-        assert_eq!(body, "body0\nbody1");
     }
 
     fn seed_memory_assembly(project: &Project, yaml: &str) {

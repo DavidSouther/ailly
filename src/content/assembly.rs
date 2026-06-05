@@ -2,8 +2,6 @@
 //! of conversation files. Owns the matrix, the prefix block list, and the
 //! templated conversation; round-trips through `from_yaml_str` /
 //! `to_yaml_string`.
-//!
-//! See `docs/developer/2026-05-23-A-cli-assemble/plan.md` Step 1.
 
 use std::collections::BTreeMap;
 use std::marker::PhantomData;
@@ -13,9 +11,12 @@ use serde::Serialize;
 
 use crate::content::conversation::BindingMap;
 use crate::content::conversation::Content;
+use crate::content::conversation::Conversation;
 use crate::content::conversation::Message;
+use crate::content::conversation::Meta;
 use crate::content::conversation::ModelId;
 use crate::content::conversation::Rendered;
+use crate::content::conversation::Role;
 use crate::content::conversation::Template;
 use crate::content::conversation::TurnBody;
 use crate::content::repository::RepositoryError;
@@ -36,8 +37,7 @@ pub struct Assembly {
     pub conversation: Vec<Message<Template>>,
 }
 
-/// One entry in the assembly's prefix list. Variants mirror DESIGN.md's
-/// prefix-kind discriminator.
+/// One entry in the assembly's prefix list.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum PrefixBlock {
@@ -100,8 +100,7 @@ pub enum RenderError {
 /// [`filename_for`](crate::content::repository), `substitute_template`, and
 /// eval `when:` keep seeing a scalar [`BindingMap`]). `model` is the
 /// per-binding override of the assembly-level default `model:`, set only when
-/// a map axis carried a `model:` field; `None` for every scalar binding
-/// (byte-identical to today).
+/// a map axis carried a `model:` field; `None` for every scalar binding.
 ///
 /// Invariant: `values` never retains a map [`serde_yaml_ng::Value`]; the map's
 /// identity in `values` is the scalar `name` string. The map's `model` lives
@@ -147,7 +146,7 @@ impl Assembly {
     /// `values` entry (so the filename and eval `when:` see a string, never a
     /// serialized map), and its optional `model` becomes the binding's
     /// per-binding [`Binding::model`] override. A *scalar* axis value is cloned
-    /// into `values` unchanged, byte-identical to before this feature.
+    /// into `values` unchanged.
     ///
     /// When two map axes each carry a `model:`, the later axis in [`BTreeMap`]
     /// order wins (last write into the candidate binding's `model`).
@@ -174,12 +173,85 @@ impl Assembly {
         }
         Ok(result)
     }
+
+    /// Render `self` against one [`Binding`] into a full [`Conversation`]:
+    /// prefix system messages followed by the rendered template turns, ending
+    /// in a blank assistant slot for `ailly run` to fill.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`RenderError::Repository`] when a prefix block read fails or
+    /// [`RenderError::UnknownVar`] / [`RenderError::UnterminatedPlaceholder`]
+    /// when a template references an unknown variable or has a malformed
+    /// placeholder.
+    pub fn render(
+        &self,
+        project: &crate::content::project::Project,
+        binding: &Binding,
+    ) -> Result<Conversation, RenderError> {
+        let mut session: Vec<Message<Rendered>> = Vec::new();
+        for block in &self.prefix {
+            let body = resolve_prefix_block(project, block, binding)?;
+            session.push(Message {
+                role: Role::System,
+                body: Some(Content::Text(body)),
+                cache: prefix_cache(block),
+                trace: None,
+                _phase: PhantomData,
+            });
+        }
+        for turn in &self.conversation {
+            session.push(turn.render(project, binding)?);
+        }
+        Ok(Conversation {
+            meta: Meta {
+                model: binding.model.clone().unwrap_or_else(|| self.model.clone()),
+                debug: false,
+                assembly: Some(self.name.clone()),
+                binding: binding.values.clone(),
+            },
+            session,
+        })
+    }
+}
+
+fn resolve_prefix_block(
+    project: &crate::content::project::Project,
+    block: &PrefixBlock,
+    binding: &Binding,
+) -> Result<String, RenderError> {
+    let context = project.context();
+    match block {
+        PrefixBlock::File { path, .. } => {
+            let resolved = project.resolve(path, binding)?;
+            Ok(context.read_file(&resolved)?)
+        }
+        PrefixBlock::System { path, .. }
+        | PrefixBlock::Tools { path, .. }
+        | PrefixBlock::Examples { path, .. } => {
+            let resolved = project.resolve(path, binding)?;
+            Ok(context.glob_concat(&resolved, None)?.body)
+        }
+        PrefixBlock::Context {
+            source,
+            glob,
+            count,
+            ..
+        } => {
+            let pattern = match glob {
+                Some(g) => format!("{source}/{g}"),
+                None => source.clone(),
+            };
+            let resolved = project.resolve(&pattern, binding)?;
+            Ok(context.glob_concat(&resolved, *count)?.body)
+        }
+    }
 }
 
 /// Project one raw matrix axis value into a candidate [`Binding`].
 ///
-/// Scalar values clone straight into `values` (the byte-identical scalar
-/// path). A map value is unwrapped: its required `name` becomes the scalar
+/// Scalar values clone straight into `values`. A map value is unwrapped:
+/// its required `name` becomes the scalar
 /// `values` entry for `axis`, and its optional `model` sets the binding's
 /// per-binding override.
 fn project_axis_value(
@@ -405,9 +477,8 @@ conversation:
 
     #[test]
     fn scalar_axis_binding_has_no_model_override() {
-        // The byte-identical scalar path: a scalar axis value never sets the
-        // per-binding model override, so `meta.model` falls back to the
-        // assembly default.
+        // A scalar axis value never sets the per-binding model override,
+        // so `meta.model` falls back to the assembly default.
         let yaml = "name: x\nmodel: m\nmatrix:\n  case: [a, b]\n";
         let assembly = Assembly::from_yaml_str(yaml).expect("parses");
         let bindings = assembly.expand_matrix().expect("expand");
@@ -582,5 +653,32 @@ matrix:
             }
             other => panic!("expected RenderError::UnknownVar, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn context_block_count_truncates_glob_after_sort() {
+        use std::fs;
+
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let ctx_dir = tmp.path().join("ctx");
+        fs::create_dir_all(&ctx_dir).expect("mkdir ctx");
+        for (i, name) in ["01.md", "02.md", "03.md", "04.md", "05.md"]
+            .iter()
+            .enumerate()
+        {
+            fs::write(ctx_dir.join(name), format!("body{i}")).expect("write context file");
+        }
+
+        let project = crate::content::project::Project::open(tmp.path()).expect("open project");
+        let block = PrefixBlock::Context {
+            source: String::from("ctx"),
+            glob: Some(String::from("*.md")),
+            count: Some(2),
+            cache: false,
+        };
+        let binding = Binding::default();
+        let body = resolve_prefix_block(&project, &block, &binding).expect("resolve");
+
+        assert_eq!(body, "body0\nbody1");
     }
 }

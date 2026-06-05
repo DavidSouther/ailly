@@ -12,81 +12,23 @@ use crate::content::conversation::ConversationError;
 use crate::content::evaluation::Evaluation;
 use crate::content::evaluation::EvaluationError;
 
-/// Identifies a run directory relative to the project root
-/// (e.g. `"runs/2026-05-23T14-32-claim-handler"`). A database-backed
-/// repository uses this as a foreign key; a VFS-backed one maps it to a
-/// subdirectory path.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
-pub struct RunId(String);
+string_newtype!(
+    #[derive(Default)]
+    /// Identifies a run directory relative to the project root
+    /// (e.g. `"runs/2026-05-23T14-32-claim-handler"`). A database-backed
+    /// repository uses this as a foreign key; a VFS-backed one maps it to a
+    /// subdirectory path.
+    RunId
+);
 
-impl RunId {
-    #[must_use]
-    pub fn as_str(&self) -> &str {
-        &self.0
-    }
-}
-
-impl From<String> for RunId {
-    fn from(value: String) -> Self {
-        Self(value)
-    }
-}
-
-impl From<&str> for RunId {
-    fn from(value: &str) -> Self {
-        Self(value.to_owned())
-    }
-}
-
-impl AsRef<str> for RunId {
-    fn as_ref(&self) -> &str {
-        &self.0
-    }
-}
-
-impl fmt::Display for RunId {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.0)
-    }
-}
-
-/// Names one conversation within a run — the filename stem that
-/// [`filename_for`] derives from a [`Binding`] (e.g. `"missing-fields"`).
-/// A database-backed repository uses this as the row key alongside
-/// [`RunId`]; a VFS-backed one appends `.yaml` to get the file name.
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct ConversationName(String);
-
-impl ConversationName {
-    #[must_use]
-    pub fn as_str(&self) -> &str {
-        &self.0
-    }
-}
-
-impl From<String> for ConversationName {
-    fn from(value: String) -> Self {
-        Self(value)
-    }
-}
-
-impl From<&str> for ConversationName {
-    fn from(value: &str) -> Self {
-        Self(value.to_owned())
-    }
-}
-
-impl AsRef<str> for ConversationName {
-    fn as_ref(&self) -> &str {
-        &self.0
-    }
-}
-
-impl fmt::Display for ConversationName {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.0)
-    }
-}
+string_newtype!(
+    #[derive(PartialOrd, Ord)]
+    /// Names one conversation within a run — the filename stem that
+    /// [`filename_for`] derives from a [`Binding`] (e.g. `"missing-fields"`).
+    /// A database-backed repository uses this as the row key alongside
+    /// [`RunId`]; a VFS-backed one appends `.yaml` to get the file name.
+    ConversationName
+);
 
 /// Logical identity of one conversation within a run. The `run_id` is the
 /// path of the run directory relative to the repository root (e.g.
@@ -135,13 +77,17 @@ pub trait ConversationRepository {
     /// as a [`Conversation`].
     fn load(&self, key: &ConversationKey) -> Result<Conversation, RepositoryError>;
 
-    /// Persist `conv` under `key`.
+    /// Persist `conversation` under `key`.
     ///
     /// # Errors
     /// [`RepositoryError::Emit`] when serialization fails;
     /// [`RepositoryError::Write`] or [`RepositoryError::Vfs`] when the write
     /// fails.
-    fn save(&self, key: &ConversationKey, conv: &Conversation) -> Result<(), RepositoryError>;
+    fn save(
+        &self,
+        key: &ConversationKey,
+        conversation: &Conversation,
+    ) -> Result<(), RepositoryError>;
 }
 
 /// `vfs`-backed [`ConversationRepository`] rooted at a project directory.

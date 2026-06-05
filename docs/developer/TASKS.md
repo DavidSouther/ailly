@@ -2,6 +2,8 @@
 
 Initial development queue to reach MVP for the three e2e projects under `e2e/`: `insurance-claim`, `patterns-eval`, `delegate-52`. Ordered so each task delivers a running slice the next task builds on. Source of truth for schemas is [DESIGN.md](../../DESIGN.md); source of truth for e2e behaviour is each project's `README.md`.
 
+- Make reports make sense and useful.
+
 ## Follow-ups
 
 - **eval-program-outputs final review** — Once the `CheckerCall` side-channel, the per-conversation `program_outputs` accumulator in [src/knowledge/eval.rs](../../src/knowledge/eval.rs), and the `check_judge` `PROGRAM_OUTPUTS:` block in [src/knowledge/assertions.rs](../../src/knowledge/assertions.rs) are implemented and the feature test [tests/eval_program_outputs.rs](../../tests/eval_program_outputs.rs) passes, run `developer:refactor` + `general:review` over the full slice: confirm the empty-accumulator judge body is byte-identical to today's (a `check_judge` unit test with `&[]`), per-conversation isolation holds (two convs, distinct markers, an `eval.rs` unit test), `CheckerCall` captures stdout on the `Pass` path with redaction preserved, and that the inner assertion loop's explicit `Judge`/`Program`/`Script` arms left the remaining sync variants on the `_ => assertion.check(...)` arm. Session: docs/developer/2026-06-04-C-eval-program-outputs.

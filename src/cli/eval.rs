@@ -10,12 +10,13 @@ use std::fs;
 use std::io;
 use std::path::PathBuf;
 
+use crate::cli::env;
 use crate::content::evaluation::EvaluationError;
+use crate::content::project::Project;
 use crate::content::repository::ConversationKey;
 use crate::content::repository::ConversationRepository;
 use crate::content::repository::EvaluationRepository;
 use crate::content::repository::RepositoryError;
-use crate::content::repository::RunId;
 use crate::engine::engine::open_engine_for_model;
 use crate::knowledge::assertions::EvaluationContext;
 use crate::knowledge::eval::ClassTotals;
@@ -90,16 +91,16 @@ pub enum EvalCmdError {
 /// See [`EvalCmdError`]. The orchestrator itself does not produce errors; per-
 /// assertion failures surface as `fail` or `malformed` verdicts in the report.
 pub async fn run(args: EvalCmdArgs) -> Result<EvalCmdOutcome, EvalCmdError> {
-    let project = crate::content::project::Project::open(&args.project)?;
-    crate::cli::env::load_project_env(&args.project);
+    let project = Project::open(&args.project)?;
+    env::load_project_env(&args.project);
     let suite = project.evals().get(&args.suite)?;
 
-    let conv_repo = project.conversations();
-    let run_id = project_relative(&project, &args.over);
-    let keys = conv_repo.list(&run_id)?;
+    let conversations_repository = project.conversations();
+    let run_id = super::project_relative(&project, &args.over);
+    let keys = conversations_repository.list(&run_id)?;
     let mut conversations: Vec<(PathBuf, _)> = Vec::with_capacity(keys.len());
     for key in &keys {
-        let conv = conv_repo.load(key)?;
+        let conv = conversations_repository.load(key)?;
         conversations.push((key_path(key), conv));
     }
 
@@ -166,25 +167,6 @@ pub async fn run(args: EvalCmdArgs) -> Result<EvalCmdOutcome, EvalCmdError> {
         assertions_deferred_executable: executable_deferred_count(&report.per_class),
         report_path,
     })
-}
-
-/// Return `path` relative to the project host root, with forward-slash
-/// separators. Mirrors the same helper in `cli/run.rs`.
-fn project_relative(project: &crate::content::project::Project, path: &std::path::Path) -> RunId {
-    let canonical = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
-    let s = if let Some(host_root) = project.host_root() {
-        canonical
-            .strip_prefix(host_root)
-            .ok()
-            .and_then(|rel| rel.to_str())
-            .map(|s| s.replace(std::path::MAIN_SEPARATOR, "/"))
-            .unwrap_or_default()
-    } else {
-        path.to_str()
-            .unwrap_or("")
-            .replace(std::path::MAIN_SEPARATOR, "/")
-    };
-    RunId::from(s)
 }
 
 /// Stable `PathBuf` identity for a conversation key, used as the per-row
