@@ -1,7 +1,4 @@
 //! Conversation domain object and its multi-document YAML serde.
-//!
-//! See `docs/developer/2026-05-23-A-content-conversation/design.md` for the
-//! full contract; the type shapes below mirror the schema in `DESIGN.md`.
 
 use std::collections::BTreeMap;
 use std::fmt;
@@ -18,50 +15,23 @@ use serde::de::Error as DeError;
 /// without per-axis variants.
 pub type BindingMap = BTreeMap<String, serde_yaml_ng::Value>;
 
-macro_rules! string_newtype {
-    ($(#[$meta:meta])* $name:ident) => {
-        $(#[$meta])*
-        #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
-        #[serde(transparent)]
-        pub struct $name(String);
-
-        impl From<String> for $name {
-            fn from(value: String) -> Self {
-                Self(value)
-            }
-        }
-
-        impl From<&str> for $name {
-            fn from(value: &str) -> Self {
-                Self(value.to_owned())
-            }
-        }
-
-        impl AsRef<str> for $name {
-            fn as_ref(&self) -> &str {
-                &self.0
-            }
-        }
-
-        impl fmt::Display for $name {
-            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                f.write_str(&self.0)
-            }
-        }
-    };
-}
-
 string_newtype!(
+    #[derive(Serialize, Deserialize)]
+    #[serde(transparent)]
     /// Names a provider model, e.g. `claude-opus-4-7`.
     ModelId
 );
 
 string_newtype!(
+    #[derive(Serialize, Deserialize)]
+    #[serde(transparent)]
     /// The `id` on a `tool_use` block that a later `tool_result` references.
     ToolUseId
 );
 
 string_newtype!(
+    #[derive(Serialize, Deserialize)]
+    #[serde(transparent)]
     /// OTEL span id on a [`Trace`].
     SpanId
 );

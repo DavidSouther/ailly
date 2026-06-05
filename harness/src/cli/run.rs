@@ -14,7 +14,6 @@ use crate::content::repository::ConversationKey;
 use crate::content::repository::ConversationName;
 use crate::content::repository::ConversationRepository;
 use crate::content::repository::RepositoryError;
-use crate::content::repository::RunId;
 use crate::engine::engine::EngineError;
 use crate::engine::engine::EngineProvider;
 use crate::engine::engine::open_engine_for_model;
@@ -63,14 +62,13 @@ impl From<RunError> for RunCmdError {
 
 /// Run Ailly in `args.target`, constructing one engine per
 /// conversation from its `meta.model`. Heterogeneous models across bindings
-/// work without further refactoring because each conversation's engine is
-/// resolved against its own `meta.model`.
+/// work as conversation's engine is resolved against its own `meta.model`.
 ///
 /// # Errors
 /// Returns [`RunCmdError::Repository`] when listing, loading, or saving fails;
 /// [`RunCmdError::Engine`] when the model id has no factory branch or the
-/// engine cannot serve a slot; and [`RunCmdError::Conversation`] when the
-/// aggregate rejects a fill.
+/// engine cannot serve a slot; and [`RunCmdError::Conversation`] when
+/// unable to fill a conversation response.
 pub async fn run(args: RunArgs) -> Result<RunOutcome, RunCmdError> {
     let project = crate::content::project::Project::open(&args.project)?;
     crate::cli::env::load_project_env(&args.project);
@@ -103,8 +101,8 @@ async fn fill_and_save(
 }
 
 /// Resolve `target` to one or more [`ConversationKey`]s. A file produces a
-/// single key; a directory lists all keys in that run. Neither returns
-/// [`RepositoryError::TargetNotFound`].
+/// single key; a directory lists all keys in that run. Providing neither
+/// returns [`RepositoryError::TargetNotFound`].
 fn resolve_keys(
     project: &crate::content::project::Project,
     repo: &impl ConversationRepository,
@@ -127,7 +125,7 @@ fn resolve_keys(
     if is_file {
         let name =
             ConversationName::from(target.file_stem().and_then(|s| s.to_str()).unwrap_or(""));
-        let run_id = project_relative(project, target.parent().unwrap_or(target));
+        let run_id = super::project_relative(project, target.parent().unwrap_or(target));
         return Ok(vec![ConversationKey { run_id, name }]);
     }
     let is_dir = vfs_path.is_dir().map_err(|source| {
@@ -137,32 +135,12 @@ fn resolve_keys(
         })
     })?;
     if is_dir {
-        let run_id = project_relative(project, target);
-        return Ok(repo.list(&run_id).map_err(RunCmdError::Repository)?);
+        let run_id = super::project_relative(project, target);
+        return repo.list(&run_id).map_err(RunCmdError::Repository);
     }
     Err(RunCmdError::Repository(RepositoryError::TargetNotFound {
         path: target.to_path_buf(),
     }))
-}
-
-/// Return `path` relative to the project's host root as a [`RunId`].
-/// Uses forward-slash separators; falls back to the raw path string when
-/// the project has no host root (in-memory) or `path` is not under it.
-fn project_relative(project: &crate::content::project::Project, path: &std::path::Path) -> RunId {
-    let canonical = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
-    let s = if let Some(host_root) = project.host_root() {
-        canonical
-            .strip_prefix(host_root)
-            .ok()
-            .and_then(|rel| rel.to_str())
-            .map(|s| s.replace(std::path::MAIN_SEPARATOR, "/"))
-            .unwrap_or_default()
-    } else {
-        path.to_str()
-            .unwrap_or("")
-            .replace(std::path::MAIN_SEPARATOR, "/")
-    };
-    RunId::from(s)
 }
 
 fn count_blank_assistants(conv: &Conversation) -> usize {
@@ -184,6 +162,7 @@ mod tests {
     use crate::content::conversation::Message;
     use crate::content::conversation::Meta;
     use crate::content::conversation::ModelId;
+    use crate::content::repository::RunId;
     use crate::engine::engine::NoopEngine;
 
     fn write_conversation(path: &Path, body_text: Option<&str>, trailing_blank: bool) {

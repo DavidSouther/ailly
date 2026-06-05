@@ -42,7 +42,7 @@ enum Command {
         /// Suite name (resolves to `<project>/evals/<suite>.yaml`).
         suite: String,
         /// Conversation file or run directory to evaluate.
-        #[arg(long = "over")]
+        #[arg(long)]
         over: PathBuf,
     },
     /// Summarise one eval run, or compare two runs side-by-side.
