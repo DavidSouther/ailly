@@ -15,6 +15,7 @@ use crate::content::repository::ConversationKey;
 use crate::content::repository::ConversationRepository;
 use crate::content::repository::EvaluationRepository;
 use crate::content::repository::RepositoryError;
+use crate::content::repository::RunId;
 use crate::engine::engine::open_engine_for_model;
 use crate::knowledge::assertions::EvaluationContext;
 use crate::knowledge::eval::ClassTotals;
@@ -120,7 +121,11 @@ pub async fn run(args: EvalCmdArgs) -> Result<EvalCmdOutcome, EvalCmdError> {
         None => None,
     };
 
-    let judge_dir = args.project.join("evals").join("judges").join(&run_id);
+    let judge_dir = args
+        .project
+        .join("evals")
+        .join("judges")
+        .join(run_id.as_str());
     let script_runner = TokioScriptRunner;
     let report = evaluate(EvalArgs {
         suite: &suite,
@@ -131,7 +136,7 @@ pub async fn run(args: EvalCmdArgs) -> Result<EvalCmdOutcome, EvalCmdError> {
             project_root: Some(args.project.as_path()),
         },
         suite_name: &args.suite,
-        run_id: &run_id,
+        run_id: run_id.as_str(),
         judge_output_dir: Some(&judge_dir),
     })
     .await;
@@ -165,9 +170,9 @@ pub async fn run(args: EvalCmdArgs) -> Result<EvalCmdOutcome, EvalCmdError> {
 
 /// Return `path` relative to the project host root, with forward-slash
 /// separators. Mirrors the same helper in `cli/run.rs`.
-fn project_relative(project: &crate::content::project::Project, path: &std::path::Path) -> String {
+fn project_relative(project: &crate::content::project::Project, path: &std::path::Path) -> RunId {
     let canonical = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
-    if let Some(host_root) = project.host_root() {
+    let s = if let Some(host_root) = project.host_root() {
         canonical
             .strip_prefix(host_root)
             .ok()
@@ -178,13 +183,14 @@ fn project_relative(project: &crate::content::project::Project, path: &std::path
         path.to_str()
             .unwrap_or("")
             .replace(std::path::MAIN_SEPARATOR, "/")
-    }
+    };
+    RunId::from(s)
 }
 
 /// Stable `PathBuf` identity for a conversation key, used as the per-row
 /// identifier in the eval report (`{run_id}/{name}.yaml`).
 fn key_path(key: &ConversationKey) -> PathBuf {
-    if key.run_id.is_empty() {
+    if key.run_id.as_str().is_empty() {
         PathBuf::from(format!("{}.yaml", key.name))
     } else {
         PathBuf::from(format!("{}/{}.yaml", key.run_id, key.name))
