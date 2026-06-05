@@ -97,14 +97,25 @@ impl Assertion {
         ctx: &EvaluationContext<'_>,
     ) -> AssertionOutcome {
         match self {
-            Assertion::Judge { prompt } => check_judge(prompt, conversation, ctx).await.outcome,
+            Assertion::Judge { prompt } => {
+                // A synchronous `check` has no cross-case accumulator, so it
+                // hands the judge an empty `program_outputs` slice (today's
+                // byte-identical body). The orchestrator passes the real slice.
+                check_judge(prompt, conversation, ctx, &[]).await.outcome
+            }
             Assertion::Script {
                 runtime,
                 script,
                 pass_env,
-            } => check_script(runtime, script, pass_env, conversation, ctx).await,
+            } => {
+                check_script(runtime, script, pass_env, conversation, ctx)
+                    .await
+                    .outcome
+            }
             Assertion::Program { script, pass_env } => {
-                check_program(script, pass_env, conversation, ctx).await
+                check_program(script, pass_env, conversation, ctx)
+                    .await
+                    .outcome
             }
             Assertion::Tool { .. } | Assertion::TextSemanticMatch { .. } => {
                 AssertionOutcome::Deferred
@@ -258,6 +269,20 @@ pub(crate) struct JudgeCall {
     pub transcript: Option<Conversation>,
 }
 
+/// Verdict + the raw stdout a `program`/`script` subprocess printed, captured
+/// so a later fanout judge can read it as `program_outputs`. `captured` is
+/// `Some` only when the subprocess actually ran and printed non-empty stdout;
+/// every deferred/malformed/errored path before the run leaves it `None`, as
+/// does an empty-stdout pass (an empty capture contributes nothing to the judge
+/// prompt). Carries the same redacted, trimmed text `classify_exit` folds into
+/// a `Fail` reason, kept on the `Pass` path too. The orchestrator is the sole
+/// consumer of `captured`; `Assertion::check` discards it by reading
+/// `.outcome`, exactly as it does for `JudgeCall`.
+pub(crate) struct CheckerCall {
+    pub outcome: AssertionOutcome,
+    pub captured: Option<String>,
+}
+
 /// Run one `Assertion::Judge { prompt }` against a filled conversation.
 ///
 /// Steps (per design §Judge executor):
@@ -267,7 +292,10 @@ pub(crate) struct JudgeCall {
 ///      — the call never went out.
 ///   3. Build the judge messages: one system message carrying
 ///      `JUDGE_SYSTEM_PROMPT`, one user message carrying the labelled `RUBRIC:
-///      / USER QUESTION: / CANDIDATE RESPONSE:` block.
+///      / USER QUESTION: / CANDIDATE RESPONSE:` block. When `program_outputs`
+///      is non-empty, a trailing `PROGRAM_OUTPUTS:` block of `[{class}] {text}`
+///      entries (joined by `\n`) is appended; an empty slice leaves the body
+///      byte-identical to the heading-free form.
 ///   4. Call `engine.complete`. On `Err`, return `Errored` carrying the
 ///      stringified engine error; no transcript. `Errored` is distinct from a
 ///      data-driven `Fail`: it marks an environmental/transport failure (auth,
@@ -286,6 +314,7 @@ pub(crate) async fn check_judge(
     prompt: &str,
     conversation: &Conversation,
     ctx: &EvaluationContext<'_>,
+    program_outputs: &[(String, String)],
 ) -> JudgeCall {
     let Some(engine) = ctx.engine else {
         return JudgeCall {
@@ -311,9 +340,25 @@ pub(crate) async fn check_judge(
         };
     };
 
-    let user_body = format!(
+    let mut user_body = format!(
         "RUBRIC:\n{prompt}\n\nUSER QUESTION:\n{user_text}\n\nCANDIDATE RESPONSE:\n{assistant_text}",
     );
+    // When earlier `program`/`script` cases captured stdout for this
+    // conversation, append it under a `PROGRAM_OUTPUTS:` heading so the judge
+    // can consume the prior scorer results instead of re-scoring. An empty
+    // accumulator leaves the body byte-identical to the heading-free form every
+    // existing judge produces (the insurance-claim / patterns-eval judges and
+    // every `eval_judge.rs` assertion). The heading is uppercase to match the
+    // sibling `RUBRIC:` / `USER QUESTION:` / `CANDIDATE RESPONSE:` headings.
+    if !program_outputs.is_empty() {
+        user_body.push_str("\n\nPROGRAM_OUTPUTS:\n");
+        let block = program_outputs
+            .iter()
+            .map(|(class, text)| format!("[{class}] {text}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        user_body.push_str(&block);
+    }
     let system_message = judge_message(Role::System, JUDGE_SYSTEM_PROMPT.to_owned(), None);
     let user_message = judge_message(Role::User, user_body.clone(), None);
     let judge_msgs = [system_message.clone(), user_message.clone()];
@@ -446,15 +491,18 @@ struct PreparedScript {
 ///      opt-ins and call `runner.run`; a `ScriptError` ⇒ `Errored`.
 ///   6. Classify the exit (see [`classify_exit`]), redacting handed secrets.
 ///   7. Warn-log any non-empty stderr once, with handed secrets redacted.
-async fn check_script(
+pub(crate) async fn check_script(
     runtime: &ScriptRuntime,
     script: &ScriptBody,
     pass_env: &[String],
     conversation: &Conversation,
     ctx: &EvaluationContext<'_>,
-) -> AssertionOutcome {
+) -> CheckerCall {
     let (Some(runner), Some(project_root)) = (ctx.script_runner, ctx.project_root) else {
-        return AssertionOutcome::Deferred;
+        return CheckerCall {
+            outcome: AssertionOutcome::Deferred,
+            captured: None,
+        };
     };
 
     let program = resolve_runtime_binary(runtime);
@@ -463,22 +511,33 @@ async fn check_script(
     let (args, tempfile_guard): (Vec<String>, Option<tempfile::NamedTempFile>) = match script {
         ScriptBody::Contents { contents } => {
             if contents.trim().is_empty() {
-                return AssertionOutcome::Malformed {
-                    reason: String::from("script: contents is empty"),
+                return CheckerCall {
+                    outcome: AssertionOutcome::Malformed {
+                        reason: String::from("script: contents is empty"),
+                    },
+                    captured: None,
                 };
             }
             match write_contents_tempfile(runtime, contents) {
                 Ok(file) => (vec![file.path().to_string_lossy().into_owned()], Some(file)),
                 Err(err) => {
-                    return AssertionOutcome::Errored {
-                        reason: format!("script: failed to write temporary script: {err}"),
+                    return CheckerCall {
+                        outcome: AssertionOutcome::Errored {
+                            reason: format!("script: failed to write temporary script: {err}"),
+                        },
+                        captured: None,
                     };
                 }
             }
         }
         ScriptBody::Path { path } => match resolve_script_path(project_root, path) {
             Ok(resolved) => (vec![resolved.to_string_lossy().into_owned()], None),
-            Err(outcome) => return outcome,
+            Err(outcome) => {
+                return CheckerCall {
+                    outcome,
+                    captured: None,
+                };
+            }
         },
     };
 
@@ -503,14 +562,17 @@ async fn check_script(
 /// passed through as-is. It runs with no args, no runtime resolution, and no
 /// script-body materialization. A non-existent binary surfaces as
 /// `ScriptError::Spawn` ⇒ `Errored`, not `Malformed`.
-async fn check_program(
+pub(crate) async fn check_program(
     script: &str,
     pass_env: &[String],
     conversation: &Conversation,
     ctx: &EvaluationContext<'_>,
-) -> AssertionOutcome {
+) -> CheckerCall {
     let (Some(runner), Some(project_root)) = (ctx.script_runner, ctx.project_root) else {
-        return AssertionOutcome::Deferred;
+        return CheckerCall {
+            outcome: AssertionOutcome::Deferred,
+            captured: None,
+        };
     };
     run_checker(
         PreparedScript {
@@ -557,15 +619,21 @@ async fn run_checker(
     conversation: &Conversation,
     runner: &dyn ScriptRunner,
     project_root: &Path,
-) -> AssertionOutcome {
+) -> CheckerCall {
     let Some(assistant_text) = final_assistant_text(conversation) else {
-        return AssertionOutcome::Fail {
-            reason: String::from("script: no filled assistant turn"),
+        return CheckerCall {
+            outcome: AssertionOutcome::Fail {
+                reason: String::from("script: no filled assistant turn"),
+            },
+            captured: None,
         };
     };
     let Some(user_question) = final_user_text(conversation) else {
-        return AssertionOutcome::Fail {
-            reason: String::from("script: no filled user turn"),
+        return CheckerCall {
+            outcome: AssertionOutcome::Fail {
+                reason: String::from("script: no filled user turn"),
+            },
+            captured: None,
         };
     };
 
@@ -583,8 +651,11 @@ async fn run_checker(
     let output = match runner.run(spec).await {
         Ok(output) => output,
         Err(err) => {
-            return AssertionOutcome::Errored {
-                reason: format!("script: {err}"),
+            return CheckerCall {
+                outcome: AssertionOutcome::Errored {
+                    reason: format!("script: {err}"),
+                },
+                captured: None,
             };
         }
     };
@@ -599,7 +670,23 @@ async fn run_checker(
         );
     }
 
-    classify_exit(&output, &handed)
+    // Capture the same redacted, trimmed stdout `classify_exit` would fold into
+    // a `Fail` reason, but keep it on the `Pass` path too so a later fanout
+    // judge can read it as `program_outputs`. Empty stdout contributes nothing.
+    let captured = {
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let trimmed = trimmed_prefix(&redact(&stdout, &handed), COT_REASON_CAP);
+        if trimmed.is_empty() {
+            None
+        } else {
+            Some(trimmed)
+        }
+    };
+
+    CheckerCall {
+        outcome: classify_exit(&output, &handed),
+        captured,
+    }
 }
 
 /// Resolve the interpreter binary for `runtime` from the trusted parent env.
@@ -1887,7 +1974,7 @@ mod tests {
         let conv = conversation_with(vec![user_text("question?"), assistant_text("an answer")]);
 
         // Act
-        let call = check_judge("rubric", &conv, &ctx).await;
+        let call = check_judge("rubric", &conv, &ctx, &[]).await;
 
         // Assert: the engine-failure path maps to Errored, distinct from a
         // data-driven Fail, and writes no transcript.
@@ -1903,6 +1990,73 @@ mod tests {
         assert!(
             call.transcript.is_none(),
             "errored call must write no transcript"
+        );
+    }
+
+    /// Read the judge's user-message text out of a completed [`JudgeCall`]
+    /// transcript. The transcript reuses the same `user_body` the engine saw
+    /// (session[1] is the user turn), so it is the in-test window onto the
+    /// prompt the judge received.
+    fn transcript_user_text(call: &JudgeCall) -> String {
+        let transcript = call
+            .transcript
+            .as_ref()
+            .expect("a completed judge call must carry a transcript");
+        let user = &transcript.session[1];
+        assert_eq!(user.role, Role::User, "session[1] must be the user turn");
+        match user.body.as_ref().expect("user turn has a body") {
+            Content::Text(text) => text.clone(),
+            other @ Content::Blocks(_) => panic!("user turn must be text, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn check_judge_empty_program_outputs_is_byte_identical() {
+        // Arrange: a completed judge call with no accumulated program outputs.
+        let engine = NoopEngine::from_replies(["GRADE: P"]);
+        let ctx = EvaluationContext {
+            engine: Some(&engine),
+            script_runner: None,
+            project_root: None,
+        };
+        let conv = conversation_with(vec![user_text("question?"), assistant_text("an answer")]);
+
+        // Act
+        let call = check_judge("rubric", &conv, &ctx, &[]).await;
+
+        // Assert: the body is exactly today's heading-free form. Pins backward
+        // compatibility for the insurance-claim / patterns-eval judges and every
+        // eval_judge.rs assertion (design metric 3).
+        assert_eq!(
+            transcript_user_text(&call),
+            "RUBRIC:\nrubric\n\nUSER QUESTION:\nquestion?\n\nCANDIDATE RESPONSE:\nan answer",
+        );
+    }
+
+    #[tokio::test]
+    async fn check_judge_appends_program_outputs_block_in_order() {
+        // Arrange: two accumulated captures, one script, one program.
+        let engine = NoopEngine::from_replies(["GRADE: P"]);
+        let ctx = EvaluationContext {
+            engine: Some(&engine),
+            script_runner: None,
+            project_root: None,
+        };
+        let conv = conversation_with(vec![user_text("question?"), assistant_text("an answer")]);
+        let outputs = vec![
+            (String::from("script"), String::from("corruption=0")),
+            (String::from("program"), String::from("entities_drifted=2")),
+        ];
+
+        // Act
+        let call = check_judge("rubric", &conv, &ctx, &outputs).await;
+
+        // Assert: the heading and both class-tagged entries appear, in order,
+        // after the candidate response (design "Injecting into the judge prompt").
+        assert_eq!(
+            transcript_user_text(&call),
+            "RUBRIC:\nrubric\n\nUSER QUESTION:\nquestion?\n\nCANDIDATE RESPONSE:\nan answer\n\n\
+             PROGRAM_OUTPUTS:\n[script] corruption=0\n[program] entities_drifted=2",
         );
     }
 
@@ -2269,6 +2423,74 @@ mod tests {
         assert!(
             !reason.contains(&pathval),
             "the raw secret must never appear verbatim in the reason",
+        );
+    }
+
+    #[tokio::test]
+    async fn check_script_captures_redacted_stdout_on_pass_path() {
+        // A scorer that exits 0 and prints to stdout: the verdict is Pass (the
+        // classify_exit contract is unchanged) AND the redacted, trimmed stdout
+        // is captured on the side-channel so a later fanout judge can read it.
+        let project = tempfile::tempdir().expect("project root");
+        let runner = FakeScriptRunner::new(vec![fake_output(
+            ExitDisposition::Exited(0),
+            b"  corruption=0 entities_drifted=0  ",
+            b"",
+        )]);
+        let ctx = EvaluationContext {
+            engine: None,
+            script_runner: Some(&runner),
+            project_root: Some(project.path()),
+        };
+        let conv = conversation_with(vec![user_text("q"), assistant_text("a")]);
+
+        let call = check_script(
+            &ScriptRuntime::Python,
+            &ScriptBody::Contents {
+                contents: String::from("import sys"),
+            },
+            &[],
+            &conv,
+            &ctx,
+        )
+        .await;
+
+        assert_eq!(call.outcome, AssertionOutcome::Pass);
+        assert_eq!(
+            call.captured.as_deref(),
+            Some("corruption=0 entities_drifted=0"),
+            "the Pass path must capture the trimmed stdout",
+        );
+    }
+
+    #[tokio::test]
+    async fn check_script_empty_stdout_pass_captures_nothing() {
+        // An exit-0 scorer that prints nothing contributes no program_outputs.
+        let project = tempfile::tempdir().expect("project root");
+        let runner = FakeScriptRunner::new(vec![fake_output(ExitDisposition::Exited(0), b"", b"")]);
+        let ctx = EvaluationContext {
+            engine: None,
+            script_runner: Some(&runner),
+            project_root: Some(project.path()),
+        };
+        let conv = conversation_with(vec![user_text("q"), assistant_text("a")]);
+
+        let call = check_script(
+            &ScriptRuntime::Python,
+            &ScriptBody::Contents {
+                contents: String::from("import sys"),
+            },
+            &[],
+            &conv,
+            &ctx,
+        )
+        .await;
+
+        assert_eq!(call.outcome, AssertionOutcome::Pass);
+        assert!(
+            call.captured.is_none(),
+            "an empty-stdout pass must capture nothing, got {:?}",
+            call.captured,
         );
     }
 
