@@ -19,6 +19,8 @@ use crate::content::evaluation::Evaluation;
 use crate::knowledge::assertions::AssertionOutcome;
 use crate::knowledge::assertions::EvaluationContext;
 use crate::knowledge::assertions::check_judge;
+use crate::knowledge::assertions::check_program;
+use crate::knowledge::assertions::check_script;
 
 const MISSING_CONVERSATION_CLASS: &str = "missing_conversation";
 
@@ -173,11 +175,103 @@ pub struct EvalArgs<'a> {
 ///
 /// Assertion order within a case is preserved. The per-class rollup and
 /// five-bucket totals are folded in as verdicts are produced.
+/// Push a `program`/`script` capture onto the per-conversation accumulator a
+/// later fanout judge reads as `program_outputs`. A `None` capture (a deferred,
+/// malformed, errored, or empty-stdout run) contributes nothing. The entry is
+/// keyed by the owned conversation `path`, tagged with the assertion's class
+/// (`"script"` / `"program"`), in suite-then-assertion order.
+fn accumulate_capture(
+    program_outputs: &mut BTreeMap<PathBuf, Vec<(String, String)>>,
+    path: &Path,
+    assertion: &Assertion,
+    captured: Option<String>,
+) {
+    if let Some(text) = captured {
+        program_outputs
+            .entry(path.to_path_buf())
+            .or_default()
+            .push((String::from(class_tag(assertion)), text));
+    }
+}
+
+/// Per-assertion bookkeeping threaded into [`run_assertion`]: the enclosing
+/// case and its suite index (for the judge transcript filename) plus a mutable
+/// per-case judge counter the judge arm bumps on each call.
+struct RunContext<'a> {
+    case: &'a Case,
+    case_index: usize,
+    judge_idx_in_case: &'a mut usize,
+}
+
+/// Run one assertion against one matched conversation and return its verdict.
+///
+/// The three subprocess/LLM families get explicit arms so the orchestrator can
+/// thread the `program_outputs` side-channel; the remaining sync variants fall
+/// through to [`Assertion::check`]:
+/// - `Judge` reads the conversation's accumulated captures (suite order) and
+///   passes them to `check_judge`, then persists the transcript when a judge
+///   output directory is configured.
+/// - `Program` / `Script` run the `CheckerCall`-returning executor and push any
+///   capture onto the accumulator for a later fanout judge.
+async fn run_assertion(
+    assertion: &Assertion,
+    conv: &Conversation,
+    path: &Path,
+    args: &EvalArgs<'_>,
+    run: RunContext<'_>,
+    program_outputs: &mut BTreeMap<PathBuf, Vec<(String, String)>>,
+) -> AssertionOutcome {
+    match assertion {
+        Assertion::Judge { prompt } => {
+            // Feed the judge the program/script stdout captured for this
+            // conversation by earlier cases (suite order), or an empty slice
+            // when none ran. Empty ⇒ today's byte-identical prompt.
+            let prior = program_outputs.get(path).map_or(&[][..], Vec::as_slice);
+            let call = check_judge(prompt, conv, &args.ctx, prior).await;
+            if let (Some(out_dir), Some(transcript)) =
+                (args.judge_output_dir, call.transcript.as_ref())
+            {
+                persist_judge_transcript(
+                    out_dir,
+                    stem_of(path),
+                    &case_tag(run.case, run.case_index),
+                    *run.judge_idx_in_case,
+                    transcript,
+                );
+            }
+            *run.judge_idx_in_case += 1;
+            call.outcome
+        }
+        Assertion::Script {
+            runtime,
+            script,
+            pass_env,
+        } => {
+            let call = check_script(runtime, script, pass_env, conv, &args.ctx).await;
+            accumulate_capture(program_outputs, path, assertion, call.captured);
+            call.outcome
+        }
+        Assertion::Program { script, pass_env } => {
+            let call = check_program(script, pass_env, conv, &args.ctx).await;
+            accumulate_capture(program_outputs, path, assertion, call.captured);
+            call.outcome
+        }
+        _ => assertion.check(conv, &args.ctx).await,
+    }
+}
+
 pub async fn evaluate(args: EvalArgs<'_>) -> EvalReport {
     let mut totals = ReportTotals::default();
     let mut per_class: BTreeMap<String, ClassTotals> = BTreeMap::new();
     let mut cases: Vec<CaseReport> = Vec::with_capacity(args.suite.cases.len());
     let mut match_count: usize = 0;
+
+    // Conversation path -> ordered (class tag, captured stdout) pairs captured
+    // this run, in suite-then-assertion order. Keyed by the owned PathBuf so the
+    // entry outlives the borrow of each `&(PathBuf, Conversation)` match tuple.
+    // A later fanout judge case reads its conversation's slice as
+    // `program_outputs` (DESIGN.md §evaluation, line 118).
+    let mut program_outputs: BTreeMap<PathBuf, Vec<(String, String)>> = BTreeMap::new();
 
     for (case_index, case) in args.suite.cases.iter().enumerate() {
         let matched: Vec<&(PathBuf, Conversation)> = matches_for(case, args.conversations);
@@ -214,25 +308,19 @@ pub async fn evaluate(args: EvalArgs<'_>) -> EvalReport {
                 Vec::with_capacity(case.assertions.len());
             let mut judge_idx_in_case: usize = 0;
             for assertion in &case.assertions {
-                let outcome = match assertion {
-                    Assertion::Judge { prompt } => {
-                        let call = check_judge(prompt, conv, &args.ctx).await;
-                        if let (Some(out_dir), Some(transcript)) =
-                            (args.judge_output_dir, call.transcript.as_ref())
-                        {
-                            persist_judge_transcript(
-                                out_dir,
-                                stem_of(path),
-                                &case_tag(case, case_index),
-                                judge_idx_in_case,
-                                transcript,
-                            );
-                        }
-                        judge_idx_in_case += 1;
-                        call.outcome
-                    }
-                    _ => assertion.check(conv, &args.ctx).await,
-                };
+                let outcome = run_assertion(
+                    assertion,
+                    conv,
+                    path,
+                    &args,
+                    RunContext {
+                        case,
+                        case_index,
+                        judge_idx_in_case: &mut judge_idx_in_case,
+                    },
+                    &mut program_outputs,
+                )
+                .await;
                 let class = class_tag(assertion);
                 fold_bucket(&mut totals.assertions, &outcome);
                 fold_bucket(per_class.entry(String::from(class)).or_default(), &outcome);
@@ -916,6 +1004,178 @@ mod tests {
                     .unwrap_or_default()
                     .deferred,
                 1
+            );
+        }
+
+        /// A conversation carrying both a filled user and assistant turn, so
+        /// the `script`/`program` executor and the judge both find the
+        /// turns they require (a bare-assistant `conv` would `Fail` the
+        /// scorer before it runs).
+        fn conv_with_turns(
+            binding: &[(&str, &str)],
+            user: &str,
+            assistant_text: &str,
+        ) -> Conversation {
+            let mut convo = conv(binding, assistant_text);
+            convo.session.insert(
+                0,
+                Message {
+                    role: Role::User,
+                    body: Some(Content::Text(String::from(user))),
+                    cache: false,
+                    trace: None,
+                    _phase: PhantomData,
+                },
+            );
+            convo
+        }
+
+        /// An exit-0 `script` scorer (python) that prints `marker` on stdout,
+        /// so its capture is a deterministic per-conversation
+        /// `program_output`.
+        fn scorer_printing(marker: &str) -> Assertion {
+            Assertion::Script {
+                runtime: ScriptRuntime::Python,
+                script: ScriptBody::Contents {
+                    contents: format!(
+                        "import sys\nsys.stdin.read()\nsys.stdout.write({marker:?})\n"
+                    ),
+                },
+                pass_env: Vec::new(),
+            }
+        }
+
+        /// Records every user-role message text it is asked to complete, then
+        /// serves scripted replies in call order. The shipped `NoopEngine`
+        /// discards its request; this metric must observe it, so the test owns
+        /// a recorder (the same precedent the feature test follows).
+        struct RecordingEngine {
+            replies: std::sync::Mutex<std::collections::VecDeque<String>>,
+            seen_user_text: std::sync::Mutex<Vec<String>>,
+        }
+
+        impl RecordingEngine {
+            fn new<I: IntoIterator<Item = &'static str>>(replies: I) -> Self {
+                Self {
+                    replies: std::sync::Mutex::new(replies.into_iter().map(String::from).collect()),
+                    seen_user_text: std::sync::Mutex::new(Vec::new()),
+                }
+            }
+
+            fn recorded_user_text(&self) -> Vec<String> {
+                self.seen_user_text.lock().expect("recorder mutex").clone()
+            }
+        }
+
+        #[async_trait::async_trait]
+        impl crate::engine::engine::EngineProvider for RecordingEngine {
+            async fn complete(
+                &self,
+                request: crate::engine::engine::CompletionRequest<'_>,
+            ) -> Result<crate::engine::engine::CompletionResponse, crate::engine::engine::EngineError>
+            {
+                for message in request.messages {
+                    if message.role != Role::User {
+                        continue;
+                    }
+                    if let Some(Content::Text(text)) = message.body.as_ref() {
+                        self.seen_user_text
+                            .lock()
+                            .expect("recorder mutex")
+                            .push(text.clone());
+                    }
+                }
+                let reply = self
+                    .replies
+                    .lock()
+                    .expect("reply mutex")
+                    .pop_front()
+                    .expect("RecordingEngine ran out of scripted replies");
+                Ok(crate::engine::engine::CompletionResponse {
+                    content: Content::Text(reply),
+                    trace: noop_trace(),
+                })
+            }
+        }
+
+        fn noop_trace() -> crate::content::conversation::Trace {
+            use crate::content::conversation::SpanId;
+            use crate::content::conversation::TokenCounts;
+            crate::content::conversation::Trace {
+                span_id: SpanId::from("recording-0"),
+                model: ModelId::from("noop"),
+                tokens: TokenCounts {
+                    input: 0,
+                    output: 0,
+                    cache_hit: None,
+                    cache_write: None,
+                },
+                latency_ms: 0,
+                events: Vec::new(),
+            }
+        }
+
+        #[tokio::test]
+        async fn fanout_judge_sees_only_its_own_conversation_program_output() {
+            // Arrange: two conversations, each scored by a per-binding `when:`
+            // `script` case that prints a distinct marker on stdout, then a
+            // single no-`when:` fanout `judge` case. The judge fanned out onto A
+            // must carry A's marker and not B's (design metric 4).
+            let suite = suite_with(vec![
+                case_when(&[("axis", "a")], vec![scorer_printing("MARKER-A")]),
+                case_when(&[("axis", "b")], vec![scorer_printing("MARKER-B")]),
+                case_fanout(vec![Assertion::Judge {
+                    prompt: String::from("consume program_outputs, do not re-score"),
+                }]),
+            ]);
+            let conversations = vec![
+                (
+                    PathBuf::from("a.yaml"),
+                    conv_with_turns(&[("axis", "a")], "question a", "answer a"),
+                ),
+                (
+                    PathBuf::from("b.yaml"),
+                    conv_with_turns(&[("axis", "b")], "question b", "answer b"),
+                ),
+            ];
+            let runner = crate::knowledge::script_runner::TokioScriptRunner;
+            let project_root = tempfile::tempdir().expect("project root");
+            // Two judge fanout instances (one per conversation), both pass.
+            let engine = RecordingEngine::new(["GRADE: P", "GRADE: P"]);
+            let args = EvalArgs {
+                suite: &suite,
+                conversations: &conversations,
+                ctx: EvaluationContext {
+                    engine: Some(&engine),
+                    script_runner: Some(&runner),
+                    project_root: Some(project_root.path()),
+                },
+                suite_name: "regression",
+                run_id: "run-1",
+                judge_output_dir: None,
+            };
+
+            // Act
+            let report = evaluate(args).await;
+
+            // Assert: nothing deferred; both scorers and both judges passed.
+            assert_eq!(report.totals.assertions.deferred, 0);
+            assert_eq!(report.totals.assertions.passed, 4);
+
+            // Assert: each judge request carries only its own conversation's
+            // marker. The fanout judge runs in suite order over (a.yaml, b.yaml),
+            // so the recorder sees A's prompt then B's.
+            let seen = engine.recorded_user_text();
+            assert_eq!(seen.len(), 2, "one judge request per fanout conversation");
+            assert!(
+                seen[0].contains("MARKER-A") && !seen[0].contains("MARKER-B"),
+                "judge over a.yaml must see only A's program_output, got:\n{}",
+                seen[0],
+            );
+            assert!(
+                seen[1].contains("MARKER-B") && !seen[1].contains("MARKER-A"),
+                "judge over b.yaml must see only B's program_output, got:\n{}",
+                seen[1],
             );
         }
 
