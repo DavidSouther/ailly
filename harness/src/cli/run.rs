@@ -27,7 +27,7 @@ pub struct RunArgs {
 }
 
 /// Outcome counters returned to the library caller. The CLI binary does not
-/// display the value; tests use it for structuree assertions.
+/// display the value; tests use it for structure assertions.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct RunOutcome {
     pub conversations_processed: usize,
