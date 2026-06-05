@@ -27,7 +27,7 @@ import re
 import sys
 from pathlib import Path
 
-from _checker_utils import fail
+from _scorer_utils import check_facts, ordered_unique
 
 SEED_PATH = Path("context/seeds/prose-bio.md")
 
@@ -51,39 +51,21 @@ def seed_facts(seed: str) -> list[str]:
     Full dates first (most corruption-prone), then the standalone publication
     year, then the named entities that the seed actually contains.
     """
-    facts: list[str] = []
-    seen: set[str] = set()
-
-    def add(fact: str) -> None:
-        if fact and fact not in seen:
-            seen.add(fact)
-            facts.append(fact)
-
     dates = FULL_DATE.findall(seed)
-    for date in dates:
-        add(date)
     # Years already inside a full date are covered; add the rest (e.g. 1843).
     date_blob = " ".join(dates)
-    for year in YEAR.findall(seed):
-        if year not in date_blob:
-            add(year)
+    years = [year for year in YEAR.findall(seed) if year not in date_blob]
     # Whitespace-normalize the seed so a name split across a wrapped line still
     # counts as present.
     seed_flat = re.sub(r"\s+", " ", seed)
-    for entity in NAMED_ENTITIES:
-        if entity in seed_flat:
-            add(entity)
-    return facts
+    entities = [entity for entity in NAMED_ENTITIES if entity in seed_flat]
+    return ordered_unique([*dates, *years, *entities])
 
 
 def main() -> int:
     candidate = re.sub(r"\s+", " ", sys.stdin.read())
     seed = SEED_PATH.read_text(encoding="utf-8")
-
-    for fact in seed_facts(seed):
-        if fact not in candidate:
-            return fail(f"prose-bio: load-bearing fact dropped or altered: {fact!r}")
-    return 0
+    return check_facts("prose-bio", candidate, seed_facts(seed))
 
 
 if __name__ == "__main__":
