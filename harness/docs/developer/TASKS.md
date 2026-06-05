@@ -2,17 +2,10 @@
 
 Initial development queue to reach MVP for the three e2e projects under `e2e/`: `insurance-claim`, `patterns-eval`, `delegate-52`. Ordered so each task delivers a running slice the next task builds on. Source of truth for schemas is [DESIGN.md](../../DESIGN.md); source of truth for e2e behaviour is each project's `README.md`.
 
-## Delegate-52 enablement
-
-- **multi-turn-skeletons** — Assembly `conversation:` with multiple blank assistant turns; `run` resolves each against the cumulative transcript so far.
-- **matrix-provider-axis** — Matrix entries that are maps (e.g. `{ name: anthropic, model: claude-opus-4-7 }`); per-binding `model:` override flows through to the engine call.
-- **engine-multi-provider** — Additional `EngineProvider` adapters for OpenAI and Google via Rig (gpt-5-turbo, gemini-3-pro per the e2e README).
-- **eval-when-filter** — `when:` subset match against `meta.binding`; no-filter fanout case running once per matched conversation; `program_outputs` plumbed into later cases for cross-binding rollups.
-- **e2e-delegate-52** — Wire delegate-52: provider × domain × distractor_count matrix, six-turn workflow, per-domain scorers ported from microsoft/DELEGATE52, cross-provider judge rollup. Add scheduled CI step.
-
 ## Follow-ups
 
-- **dotenvy README pointer** — Once `e2e-insurance-claim` and `e2e-delegate-52` are wired, add a one-line note to each project's README that contributors can drop a `<project>/.env` instead of exporting `ANTHROPIC_API_KEY` in the shell, with a forward pointer to [src/cli/env.rs](../../src/cli/env.rs). Not blocking; lands as a docs commit once the projects exist.
+- **eval-program-outputs final review** — Once the `CheckerCall` side-channel, the per-conversation `program_outputs` accumulator in [src/knowledge/eval.rs](../../src/knowledge/eval.rs), and the `check_judge` `PROGRAM_OUTPUTS:` block in [src/knowledge/assertions.rs](../../src/knowledge/assertions.rs) are implemented and the feature test [tests/eval_program_outputs.rs](../../tests/eval_program_outputs.rs) passes, run `developer:refactor` + `general:review` over the full slice: confirm the empty-accumulator judge body is byte-identical to today's (a `check_judge` unit test with `&[]`), per-conversation isolation holds (two convs, distinct markers, an `eval.rs` unit test), `CheckerCall` captures stdout on the `Pass` path with redaction preserved, and that the inner assertion loop's explicit `Judge`/`Program`/`Script` arms left the remaining sync variants on the `_ => assertion.check(...)` arm. Session: docs/developer/2026-06-04-C-eval-program-outputs.
+
 - **patterns-eval no-key CI policy** — The live falsification step in [e2e/patterns-eval/ci.sh](../../e2e/patterns-eval/ci.sh) now hard-fails when `ANTHROPIC_API_KEY` is absent, against the insurance-claim convention of gracefully skipping the live half so keyless contributors still see the assemble half pass. The acceptance run uses the key in `e2e/patterns-eval/.env`; the broader policy for the no-key case is unresolved. **Trigger:** a contributor without API access needs the assemble half to pass in CI without the live half erroring.
 
 - **patterns-eval non-TypeScript checkers** — The three `check_*.py` checkers target TypeScript only, because the invocation prompts pin TS (via [e2e/patterns-eval/context/AGENTS.md](../../e2e/patterns-eval/context/AGENTS.md)). If a future sweep pins a different output language, each checker needs a language branch or a per-language sibling. **Trigger:** a patterns-eval sweep pins a non-TS output language.

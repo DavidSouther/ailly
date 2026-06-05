@@ -210,6 +210,8 @@ ailly -p e2e/delegate-52 eval corruption --over runs/<ts>/
 
 Per-PR cost is bounded by the narrowed matrix; the full sweep runs on a schedule and posts its report alongside the `insurance-claim` and `patterns-eval` reports in the shared format.
 
+Rather than exporting `ANTHROPIC_API_KEY` (and the OpenAI and Google keys the provider axis needs) in the shell, drop them in a `e2e/delegate-52/.env`: `ailly run` and `ailly eval` load it through [src/cli/env.rs](../../src/cli/env.rs), with any exported shell var taking precedence over the file.
+
 ## Fidelity notes
 
 - **Domain count.** Four of the paper's 52, chosen for axis variety, not statistical comparability. Adding domains is one file per domain under `context/seeds/`, one entry in `matrix.domain`, and one scorer under `evals/scripts/`.
