@@ -119,6 +119,9 @@ pub trait EngineProvider: Send + Sync {
 /// provider key; [`EngineError::ModelNotFound`] for any unrecognised prefix.
 pub fn open_engine_for_model(model: &ModelId) -> Result<Box<dyn EngineProvider>, EngineError> {
     let id = model.as_ref();
+    if id == NOOP_MODEL {
+        return Ok(Box::new(NoopEngine::auto()));
+    }
     if id.starts_with("claude-") {
         let engine = crate::engine::rig_engine::anthropic_from_env(id)?;
         return Ok(Box::new(engine));
@@ -169,9 +172,14 @@ fn noop_trace(call_index: usize) -> Trace {
 /// Scripts are consumed in call order regardless of input contents; the
 /// caller controls determinism through script construction, not through input
 /// matching.
+///
+/// When `auto_fill` is true (see [`Self::auto`]) and the scripted queue is
+/// empty, the engine generates `"noop-{call_index}"` text indefinitely rather
+/// than returning [`EngineError::NoopExhausted`].
 pub struct NoopEngine {
     scripts: Mutex<VecDeque<ScriptEntry>>,
     call_count: AtomicUsize,
+    auto_fill: bool,
 }
 
 impl NoopEngine {
@@ -184,6 +192,7 @@ impl NoopEngine {
         Self {
             scripts: Mutex::new(scripts.into_iter().map(ScriptEntry::Fixed).collect()),
             call_count: AtomicUsize::new(0),
+            auto_fill: false,
         }
     }
 
@@ -208,6 +217,19 @@ impl NoopEngine {
         Self {
             scripts: Mutex::new(scripts),
             call_count: AtomicUsize::new(0),
+            auto_fill: false,
+        }
+    }
+
+    /// Generate `"noop-{call_index}"` replies indefinitely. Used by
+    /// [`open_engine_for_model`] when the conversation's model id is `"noop"`,
+    /// so integration tests can call `run` without injecting an engine.
+    #[must_use]
+    pub fn auto() -> Self {
+        Self {
+            scripts: Mutex::new(VecDeque::new()),
+            call_count: AtomicUsize::new(0),
+            auto_fill: true,
         }
     }
 }
@@ -226,7 +248,13 @@ impl EngineProvider for NoopEngine {
                 .expect("NoopEngine script queue mutex poisoned");
             guard.pop_front()
         };
-        let entry = popped.ok_or(EngineError::NoopExhausted { call_index: index })?;
+        let entry = match popped {
+            Some(entry) => entry,
+            None if self.auto_fill => {
+                ScriptEntry::AutoStamp(Content::Text(format!("{NOOP_MODEL}-{index}")))
+            }
+            None => return Err(EngineError::NoopExhausted { call_index: index }),
+        };
         let response = match entry {
             ScriptEntry::Fixed(response) => response,
             ScriptEntry::AutoStamp(content) => CompletionResponse {
