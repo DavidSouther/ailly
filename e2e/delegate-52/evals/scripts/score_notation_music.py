@@ -23,7 +23,7 @@ import re
 import sys
 from pathlib import Path
 
-from _checker_utils import fail
+from _scorer_utils import check_facts, ordered_unique
 
 SEED_PATH = Path("context/seeds/notation-music.md")
 
@@ -36,38 +36,19 @@ DYNAMICS = re.compile(r"\bDynamics:\s*([a-z]+)\b")
 
 def seed_facts(seed: str) -> list[str]:
     """Ordered, de-duplicated load-bearing facts extracted from the seed."""
-    facts: list[str] = []
-    seen: set[str] = set()
-
-    def add(fact: str) -> None:
-        if fact and fact not in seen:
-            seen.add(fact)
-            facts.append(fact)
-
-    for match in TIME_SIGNATURE.findall(seed):
-        add(match)
-    for match in TEMPO.findall(seed):
-        add(match)
-    for match in PITCH.findall(seed):
-        add(match)
-    for match in DURATION.findall(seed):
-        add(match)
+    time_signatures = TIME_SIGNATURE.findall(seed)
+    tempi = TEMPO.findall(seed)
+    pitches = PITCH.findall(seed)
+    durations = DURATION.findall(seed)
     dynamics = DYNAMICS.search(seed)
-    if dynamics:
-        add(dynamics.group(1))
-    return facts
+    markings = [dynamics.group(1)] if dynamics else []
+    return ordered_unique([*time_signatures, *tempi, *pitches, *durations, *markings])
 
 
 def main() -> int:
     candidate = sys.stdin.read()
-    seed = Path(SEED_PATH).read_text(encoding="utf-8")
-
-    for fact in seed_facts(seed):
-        if fact not in candidate:
-            return fail(
-                f"notation-music: load-bearing fact dropped or altered: {fact!r}"
-            )
-    return 0
+    seed = SEED_PATH.read_text(encoding="utf-8")
+    return check_facts("notation-music", candidate, seed_facts(seed))
 
 
 if __name__ == "__main__":
