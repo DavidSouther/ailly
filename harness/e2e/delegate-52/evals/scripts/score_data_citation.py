@@ -1,0 +1,76 @@
+#!/usr/bin/env python3
+"""Corruption scorer for the `data-citation` domain.
+
+Ported in spirit from microsoft/DELEGATE52: a citation's load-bearing facts are
+its author surname, its year, its venue, its page range, and its DOI. The
+paper's failure mode is a transposed page range or a DOI digit that flips during
+a "standardise the formatting" edit while the citation still looks well-formed.
+
+Reads the candidate (the final assistant turn's document) from stdin and the
+seed from `context/seeds/data-citation.md`, resolved relative to the
+project-root working directory. `program` assertions take no arguments; the seed
+path is hardcoded (see the README fidelity notes).
+
+Extracts the seed's facts structurally at fixture scale: the DOI (after the
+`doi:` marker), the volume/issue/page span (`13(6), 377-387`), the standalone
+year, and the leading author surname. Each must survive verbatim in the
+candidate. On the first missing fact it prints a single-line reason to stdout
+and exits 1; if all survive it exits 0. stderr is never written to.
+"""
+
+import re
+import sys
+from pathlib import Path
+
+from _checker_utils import fail
+
+SEED_PATH = Path("context/seeds/data-citation.md")
+
+DOI = re.compile(r"\b10\.\d{4,9}/[-._;()/:A-Za-z0-9]+")
+PAGE_SPAN = re.compile(r"\b\d+\(\d+\),\s*\d+-\d+")
+YEAR = re.compile(r"\((\d{4})\)")
+AUTHOR = re.compile(r"^([A-Z][a-z]+),", re.MULTILINE)
+
+
+def seed_facts(seed: str) -> list[str]:
+    """Ordered, de-duplicated load-bearing facts extracted from the seed.
+
+    DOI first (most corruption-prone), then the page span, the year, and the
+    leading author surname.
+    """
+    facts: list[str] = []
+    seen: set[str] = set()
+
+    def add(fact: str) -> None:
+        if fact and fact not in seen:
+            seen.add(fact)
+            facts.append(fact)
+
+    for match in DOI.findall(seed):
+        # The DOI char class admits `.`, so a sentence-ending period after the
+        # DOI is captured; a DOI never ends in a bare period, so trim it.
+        add(match.rstrip("."))
+    for match in PAGE_SPAN.findall(seed):
+        add(match)
+    for match in YEAR.findall(seed):
+        add(match)
+    author = AUTHOR.search(seed)
+    if author:
+        add(author.group(1))
+    return facts
+
+
+def main() -> int:
+    candidate = sys.stdin.read()
+    seed = Path(SEED_PATH).read_text(encoding="utf-8")
+
+    for fact in seed_facts(seed):
+        if fact not in candidate:
+            return fail(
+                f"data-citation: load-bearing fact dropped or altered: {fact!r}"
+            )
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

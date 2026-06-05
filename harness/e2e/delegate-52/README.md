@@ -55,10 +55,10 @@ e2e/delegate-52/
 │   └── delegated-workflow.yaml                       # prefix + six-turn conversation skeleton + provider × domain × distractor_count matrix
 ├── runs/
 │   └── 2026-05-20T09-00-delegated-workflow/         # One conversation .yaml per matrix binding
-│       ├── anthropic-prose-bio.yaml                  # 12 files at the default distractor_count: 3 providers × 4 domains
-│       ├── anthropic-code-sql.yaml                   # Each file holds the full six-turn transcript with inline trace
-│       ├── ...
-│       └── google-notation-music.yaml
+│       ├── 3-prose-bio-anthropic.yaml                # 12 files at the default distractor_count: 3 providers × 4 domains
+│       ├── 3-code-sql-anthropic.yaml                 # Stems are <distractor_count>-<domain>-<provider> in BTreeMap axis order (fidelity note 1)
+│       ├── ...                                       # Each file holds the full six-turn transcript with inline trace
+│       └── 3-notation-music-google.yaml
 └── evals/
     ├── corruption.yaml
     ├── scripts/                                      # Per-domain scorers ported from microsoft/DELEGATE52
@@ -75,6 +75,7 @@ e2e/delegate-52/
 
 ```yaml
 name: delegated-workflow
+model: claude-opus-4-7                                # schema-required default; always overridden by the provider map axis
 
 matrix:
   provider:
@@ -82,13 +83,13 @@ matrix:
     - { name: openai,    model: gpt-5-turbo }
     - { name: google,    model: gemini-3-pro }
   domain:           [prose-bio, code-sql, data-citation, notation-music]
-  distractor_count: [3]                              # axis sweep: edit to [0, 3, 6, 9] to reproduce the paper's degradation curve
+  distractor_count: [3]                              # axis sweep: add distractor files and widen the glob to reproduce the paper's degradation curve (fidelity note 2)
 
 prefix:
-  - { kind: file,    path: ./AGENTS.md,                                                    cache: true }
-  - { kind: system,  path: context/system/*.md,                                            cache: true }
-  - { kind: file,    path: context/seeds/{{ domain }}.md,                                  cache: true }
-  - { kind: context, source: context/distractors/, glob: "*.md", count: "{{ distractor_count }}" }
+  - { kind: file,    path: ./AGENTS.md,                     cache: true }
+  - { kind: system,  path: context/system/*.md,             cache: true }
+  - { kind: file,    path: "context/seeds/{{ domain }}.md", cache: true }
+  - { kind: context, source: context/distractors, glob: "*.md" }   # glob-all; distractor_count is binding metadata, not a count cap (fidelity note 2)
 
 conversation:
   - { role: user, path: prompts/turns/01-tighten.md }
@@ -114,31 +115,31 @@ What this proves about context composition:
 
 ## Evaluation (the paper's scorers, run as `program` assertions)
 
-The per-domain scorers from `microsoft/DELEGATE52` are ported under `evals/scripts/` and invoked as `program` assertions. Each scorer reads the final assistant turn of a conversation file (the post-edit document at turn six) and the seed, and exits non-zero on corruption above the per-domain threshold. The judge assertion adds a cross-provider rollup that the paper's scorers do not by themselves provide.
+The per-domain scorers from `microsoft/DELEGATE52` are ported under `evals/scripts/` and invoked as `program` assertions. Each scorer reads the final assistant turn of a conversation file (the post-edit document at turn six) from stdin and its seed from a hardcoded path relative to the project root, then exits non-zero on corruption above the per-domain threshold. The judge assertion adds a cross-provider rollup that the paper's scorers do not by themselves provide.
 
 `evals/corruption.yaml`. Cases bind a subset of matrix axes; one case template fans out across every binding that matches the `when:` filter. No `input:` field is needed; the eval walks every conversation file in the run directory and applies matching cases.
 
 ```yaml
+name: corruption
 cases:
-  - when: { domain: prose-bio }                      # applies to anthropic-prose-bio.yaml, openai-prose-bio.yaml, google-prose-bio.yaml
+  - when: { domain: prose-bio }                      # applies to every prose-bio conversation (3-prose-bio-anthropic.yaml, -openai, -google)
     assertions:
-      - { type: program, script: "evals/scripts/score_prose_bio.py --seed context/seeds/prose-bio.md" }
+      - { type: program, script: "evals/scripts/score_prose_bio.py" }   # argv-free; the scorer hardcodes its seed path (fidelity note 3)
       - { type: tokens, metric: total, op: "<", value: 50000 }
 
   - when: { domain: code-sql }
     assertions:
-      - { type: program, script: "evals/scripts/score_code_sql.py --seed context/seeds/code-sql.md" }
+      - { type: program, script: "evals/scripts/score_code_sql.py" }
 
   - when: { domain: data-citation }
     assertions:
-      - { type: program, script: "evals/scripts/score_data_citation.py --seed context/seeds/data-citation.md" }
+      - { type: program, script: "evals/scripts/score_data_citation.py" }
 
   - when: { domain: notation-music }
     assertions:
-      - { type: program, script: "evals/scripts/score_notation_music.py --seed context/seeds/notation-music.md" }
+      - { type: program, script: "evals/scripts/score_notation_music.py" }
 
-  - name: cross-provider-corruption-rollup            # no `when:` ⇒ runs once over the whole run directory
-    assertions:
+  - assertions:                                       # no `name:` and no `when:` ⇒ fans out once per conversation in the run directory
       - type: judge
         prompt: |
           For each domain, compare the final document (last assistant turn)
@@ -146,7 +147,7 @@ cases:
           named entity, date, citation, or numeric value that drifted in any
           provider's output. Report the per-provider corruption count and
           the per-domain worst offender. Do not re-score; consume the
-          per-domain scorer output attached as `program_outputs`.
+          per-domain scorer output attached as PROGRAM_OUTPUTS.
 ```
 
 The cross-provider rollup is the headline output: per-provider corruption counts, per-domain worst offenders, written into `evals/reports/`. The paper's scoring methodology is preserved verbatim by the per-domain scripts; what Ailly contributes is the side-by-side comparison across providers from one recipe.
@@ -157,9 +158,12 @@ The paper documents three axes along which silent corruption increases: document
 
 ```sh
 # Distractor-count sweep: reproduce the paper's degradation curve at fixture scale.
-# Either widen the matrix in the assembly to `distractor_count: [0, 3, 6, 9]` and run once,
-# or loop with --var to keep one binding per run directory:
+# `distractor_count` is binding metadata (it labels the run), not a count cap on the
+# glob (fidelity note 2). To vary how many distractors the model actually sees, add or
+# remove files under context/distractors/ and re-run; the `distractor_count` axis value
+# records which rung of the curve each run sits on.
 for n in 0 3 6 9; do
+  # stage the n distractor files for this rung under context/distractors/, then:
   ailly -p e2e/delegate-52 assemble delegated-workflow --var distractor_count=$n
   ailly -p e2e/delegate-52 run runs/<ts>/
   mv runs/<ts> runs/distractors-$n
@@ -172,7 +176,7 @@ ailly diff runs/distractors-0 runs/distractors-9
 # Cross-provider sweep is implicit in the assembly's provider matrix axis.
 ```
 
-The diff reports the change in corruption count per provider, per domain, per axis value. Reproducing the paper's degradation curve at fixture scale is a shell loop over one matrix-value edit, not a notebook.
+The diff reports the change in corruption count per provider, per domain, per axis value. Reproducing the paper's degradation curve at fixture scale is a shell loop plus the distractor files for each rung, not a notebook.
 
 ## Workflow at a glance
 
@@ -195,10 +199,11 @@ ailly -p e2e/delegate-52 assemble delegated-workflow --var domain=prose-bio,code
 ailly -p e2e/delegate-52 run  runs/<ts>/
 ailly -p e2e/delegate-52 eval corruption --over runs/<ts>/
 
-# Weekly scheduled step: full four-domain matrix and the distractor sweep.
-# The assembly's matrix is `domain: [prose-bio, code-sql, data-citation, notation-music]` and
-# `distractor_count: [0, 3, 6, 9]` on the scheduled branch; otherwise pass --var to widen.
-ailly -p e2e/delegate-52 assemble delegated-workflow --var distractor_count=0,3,6,9
+# Weekly scheduled step: full four-domain matrix across all three providers.
+# The assembly's matrix is `domain: [prose-bio, code-sql, data-citation, notation-music]`.
+# The distractor-count rungs are run as separate jobs, each staging its own set of files
+# under context/distractors/ (fidelity note 2), labelled by the `distractor_count` axis value.
+ailly -p e2e/delegate-52 assemble delegated-workflow --var distractor_count=3
 ailly -p e2e/delegate-52 run  runs/<ts>/
 ailly -p e2e/delegate-52 eval corruption --over runs/<ts>/
 ```
@@ -211,3 +216,11 @@ Per-PR cost is bounded by the narrowed matrix; the full sweep runs on a schedule
 - **Model selection.** Three providers (Anthropic, OpenAI, Google) rather than the paper's 19 models. Adding models is an entry in `matrix.provider` with a `model:` field.
 - **Scorers.** Ported verbatim from `microsoft/DELEGATE52`; no re-implementation of corruption detection. Each scorer reads the final assistant turn out of the conversation YAML rather than a standalone `document.md`.
 - **Terminology.** The paper says "delegated workflows"; the project's earlier framing used "round-trip relay", which is approximate. The recipe uses `delegated-workflow` as the assembly name to match the source.
+
+The following three notes reconcile this README's literal YAML with the built Ailly schema. The fixture is bent to the schema, not the other way round, so the project stays at zero `src/` changes. Each note records exactly where the README's first draw diverged from what ships.
+
+1. **Filename order.** `assemble` writes each conversation file by joining its `meta.binding` values in `BTreeMap` key order with `-`. The matrix axes sort `distractor_count` < `domain` < `provider`, so the file for the Anthropic prose-bio binding at distractor count 3 is `3-prose-bio-anthropic.yaml`, not the original draw's `anthropic-prose-bio.yaml`. The eval `when:` filters key on `domain` alone, so they are unaffected by filename order: `when: { domain: prose-bio }` matches all three providers' prose-bio files regardless of stem.
+
+2. **Distractor count.** `distractor_count` is recorded in `meta.binding` (and the filename) for the A/B sweep narrative, but it does **not** drive the prefix `count:`. `PrefixBlock::Context.count` is a literal `Option<usize>` that does not template, so the README's first draw `count: "{{ distractor_count }}"` would not deserialize. At fixture scale there are exactly three distractor files and the default count is 3, so the count cap is unnecessary and the assembly globs all distractors (`glob: "*.md"`, no `count:`). This is the one place the original README oversold: widening the degradation-curve sweep means adding distractor files and widening the glob, not interpolating a count template. State the limitation plainly — the distractor *count* axis is binding metadata, while the actual file selection is "glob all present."
+
+3. **Argv-free programs.** `program` assertions take no arguments; the built runner spawns the entire `script:` string as one program path with `args: Vec::new()`. The README's first draw `script: "...py --seed context/seeds/prose-bio.md"` would try to spawn a file literally named with the trailing `--seed ...` and fail. Each scorer therefore hardcodes its own seed path relative to the subprocess working directory, which `eval_run` sets to the project root (`e2e/delegate-52`). So per-scorer configuration lives in the scorer, not the assertion string; the committed assertion is just `script: "evals/scripts/score_<domain>.py"`.
