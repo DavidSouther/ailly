@@ -176,6 +176,8 @@ ailly -p e2e/patterns-eval eval invocation --over runs/<ts>-invocation/
 
 The CI threshold is "no regressions against the previous green run". The run that establishes a new baseline is the one with the deliberate change, called out in the PR.
 
+A contributor may drop a `e2e/insurance-claim/.env` with `ANTHROPIC_API_KEY` instead of exporting it in the shell; `ailly run` and `ailly eval` load it via [src/cli/env.rs](../../src/cli/env.rs), and an exported shell var still wins over the file.
+
 ## Current limitations
 
 The project demonstrates the assemble -> run -> eval pipeline end to
