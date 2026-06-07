@@ -70,6 +70,17 @@ pub enum PrefixBlock {
         #[serde(default, skip_serializing_if = "is_false")]
         cache: bool,
     },
+    /// Read a single prefix file from OUTSIDE the project root, named relative
+    /// to the project's canonical host root with `..` permitted. Mirrors
+    /// `File` (one file, not a glob). Absolute `path` is rejected so
+    /// committed assemblies stay portable across side-by-side checkouts.
+    /// Requires a host-anchored project (`Project::open`); `open_memory` /
+    /// `from_root` projects error at resolve time.
+    External {
+        path: String,
+        #[serde(default, skip_serializing_if = "is_false")]
+        cache: bool,
+    },
 }
 
 /// Parse and emit errors for [`Assembly`].
@@ -91,6 +102,20 @@ pub enum RenderError {
     UnknownVar { name: String, in_path: String },
     #[error("unterminated `{{{{` in `{in_path}`")]
     UnterminatedPlaceholder { in_path: String },
+    /// An `external` prefix `path` was absolute. External paths are
+    /// repo-relative with `..` permitted; an absolute path is
+    /// machine-specific and defeats the portable sibling-repo use case. The
+    /// file is never read.
+    #[error(
+        "external path `{path}` is absolute; external paths must be repo-relative (`..` permitted)"
+    )]
+    ExternalAbsolute { path: String },
+    /// An `external` prefix block was used in a project with no host root
+    /// (`open_memory` / `from_root`). `external` needs a real on-disk anchor to
+    /// resolve `..` against; without one it errors instead of reading the host
+    /// FS.
+    #[error("external path `{path}` requires a host-anchored project (opened via Project::open)")]
+    ExternalNoHostRoot { path: String },
     #[error(transparent)]
     Repository(#[from] RepositoryError),
 }
@@ -245,6 +270,16 @@ fn resolve_prefix_block(
             let resolved = project.resolve(&pattern, binding)?;
             Ok(context.glob_concat(&resolved, *count)?.body)
         }
+        PrefixBlock::External { path, .. } => {
+            let resolved = project.resolve_external(path, binding)?;
+            resolved
+                .read_to_string()
+                .map_err(|source| RepositoryError::Vfs {
+                    path: resolved.as_str().to_string(),
+                    source,
+                })
+                .map_err(RenderError::from)
+        }
     }
 }
 
@@ -336,7 +371,8 @@ pub fn prefix_cache(block: &PrefixBlock) -> bool {
         | PrefixBlock::System { cache, .. }
         | PrefixBlock::Tools { cache, .. }
         | PrefixBlock::Examples { cache, .. }
-        | PrefixBlock::Context { cache, .. } => cache,
+        | PrefixBlock::Context { cache, .. }
+        | PrefixBlock::External { cache, .. } => cache,
     }
 }
 
@@ -564,6 +600,38 @@ matrix:
                 panic!("expected MatrixMapMissingName, got {other:?}")
             }
         }
+    }
+
+    #[test]
+    fn external_prefix_block_round_trips_and_omits_default_cache() {
+        // The new External variant round-trips through YAML unchanged, and its
+        // `cache` flag honours the same `skip_serializing_if` the sibling
+        // variants do: `cache: true` survives, `cache: false` is omitted on
+        // emit. Guards Metric 5 (no regression) for the new variant's serde shape.
+        let yaml = "\
+name: x
+model: m
+prefix:
+  - { kind: external, path: ../sib/SKILL.md, cache: true }
+  - { kind: external, path: ../other/NOTES.md }
+";
+        let assembly = Assembly::from_yaml_str(yaml).expect("parses");
+        assert!(matches!(
+            assembly.prefix[0],
+            PrefixBlock::External { ref path, cache: true } if path == "../sib/SKILL.md"
+        ));
+        assert!(matches!(
+            assembly.prefix[1],
+            PrefixBlock::External { cache: false, .. }
+        ));
+
+        let emitted = assembly.to_yaml_string().expect("emit");
+        let reparsed = Assembly::from_yaml_str(&emitted).expect("emitted re-parses");
+        assert_eq!(reparsed, assembly, "External round-trips as a fixed point");
+        assert!(
+            !emitted.contains("cache: false"),
+            "default cache: false is omitted on serialize, got:\n{emitted}",
+        );
     }
 
     #[test]

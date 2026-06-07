@@ -378,6 +378,56 @@ impl Project {
         }
     }
 
+    /// Resolve a `PrefixBlock::External` `template` to an absolute, host-rooted
+    /// [`vfs::VfsPath`] for reading. This is the ONE place `..` is permitted to
+    /// escape the project root.
+    ///
+    /// Substitutes `{{ var }}` placeholders against `binding` before anchoring,
+    /// so a matrix axis can bind the external path per binding (mirroring
+    /// [`Project::resolve`]). Then anchors the substituted relative path onto
+    /// the project's canonical host root, canonicalizes (resolving `..`,
+    /// following symlinks, and verifying the file exists), and feeds the
+    /// resulting absolute host path through
+    /// [`Project::resolve_host_path`]'s absolute branch (`PhysicalFS::new("
+    /// /")`). The read machinery is reused unchanged; the only new logic is
+    /// host-root anchoring and absolute-input rejection.
+    ///
+    /// Invariant: an absolute substituted path is rejected *before* any
+    /// filesystem access, so a leading `/` never reads a file.
+    ///
+    /// # Errors
+    ///
+    /// - [`RenderError::UnknownVar`] / [`RenderError::UnterminatedPlaceholder`]
+    ///   from template substitution.
+    /// - [`RenderError::ExternalAbsolute`] when the substituted path begins
+    ///   with `/`. The file is never touched.
+    /// - [`RenderError::ExternalNoHostRoot`] when the project has no host root.
+    /// - [`RenderError::Repository`] when the host-root join, canonicalization
+    ///   (nonexistent / unreadable target), or VFS mount fails.
+    pub fn resolve_external(
+        &self,
+        template: &str,
+        binding: &Binding,
+    ) -> Result<vfs::VfsPath, RenderError> {
+        let path = substitute_template(template, binding)?;
+        if path.starts_with('/') {
+            return Err(RenderError::ExternalAbsolute { path });
+        }
+        let host_root = self
+            .host_root
+            .as_deref()
+            .ok_or_else(|| RenderError::ExternalNoHostRoot { path: path.clone() })?;
+        let canonical =
+            host_root
+                .join(&path)
+                .canonicalize()
+                .map_err(|source| RepositoryError::Vfs {
+                    path: path.clone(),
+                    source: vfs::VfsError::from(source),
+                })?;
+        Ok(self.resolve_host_path(&canonical)?)
+    }
+
     /// Open a [`RunTx`].
     #[must_use]
     pub fn begin_run(&self) -> RunTx<'_> {
@@ -658,6 +708,56 @@ mod tests {
         match err {
             RenderError::UnknownVar { name, .. } => assert_eq!(name, "missing"),
             other => panic!("expected UnknownVar, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn resolve_external_rejects_an_absolute_path() {
+        // Metric 2: an absolute external path is rejected before any read.
+        let project = Project::open_memory();
+        let err = project
+            .resolve_external("/etc/passwd", &Binding::default())
+            .expect_err("absolute external path");
+        match err {
+            RenderError::ExternalAbsolute { path } => assert_eq!(path, "/etc/passwd"),
+            other => panic!("expected ExternalAbsolute, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn resolve_external_requires_a_host_root() {
+        // Metric 3: a project with no host root (open_memory / from_root) errors
+        // at resolve time rather than reading the host filesystem.
+        let project = Project::open_memory();
+        let err = project
+            .resolve_external("../sib/x.md", &Binding::default())
+            .expect_err("no host root");
+        match err {
+            RenderError::ExternalNoHostRoot { path } => assert_eq!(path, "../sib/x.md"),
+            other => panic!("expected ExternalNoHostRoot, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn resolve_external_substitutes_template_before_the_absolute_check() {
+        // Substitution must run first: a template `/{{ skill }}` with `skill=x`
+        // becomes `/x`, which then trips the absolute-path rejection. The error
+        // carries the *substituted* path, proving the order. (Forces the real
+        // generalization over Step 2's literal-path fake — patterns:triangulate.)
+        let project = Project::open_memory();
+        let mut binding = Binding::default();
+        binding
+            .values
+            .insert(String::from("skill"), serde_yaml_ng::Value::from("x"));
+        let err = project
+            .resolve_external("/{{ skill }}", &binding)
+            .expect_err("substituted absolute path");
+        match err {
+            RenderError::ExternalAbsolute { path } => assert_eq!(
+                path, "/x",
+                "the rejected path is the substituted form, not the template",
+            ),
+            other => panic!("expected ExternalAbsolute on the substituted path, got {other:?}"),
         }
     }
 
