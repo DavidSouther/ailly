@@ -272,6 +272,78 @@ pub enum ContentBlock {
 #[serde(transparent)]
 pub struct ImageSource(serde_yaml_ng::Value);
 
+/// Normalize a text body so the YAML emitter renders it as a literal block
+/// scalar instead of an escaped single-line double-quoted scalar.
+///
+/// libyaml (under `serde_yaml_ng`) already emits clean multiline strings as
+/// `|` blocks; it falls back to double-quoting only for content carrying a
+/// carriage return or a space/tab immediately before a line break, neither of
+/// which a literal block scalar can round-trip (YAML rule `l-empty` trims a
+/// whitespace-only line). This converts CRLF and lone CR to LF and strips
+/// trailing spaces and tabs before each line break, the lossy step `ailly run`
+/// accepts on write so multiline responses read as blocks. Leading and interior
+/// tabs are preserved verbatim; a body that still contains a tab stays quoted,
+/// losslessly.
+fn normalize_block_text(text: &str) -> String {
+    let unix = text.replace("\r\n", "\n").replace('\r', "\n");
+    let mut normalized = String::with_capacity(unix.len());
+    for (index, line) in unix.split('\n').enumerate() {
+        if index > 0 {
+            normalized.push('\n');
+        }
+        normalized.push_str(line.trim_end_matches([' ', '\t']));
+    }
+    normalized
+}
+
+impl Content {
+    /// Return this body with every text leaf normalized for block-scalar
+    /// emission. See [`normalize_block_text`].
+    #[must_use]
+    fn into_block_normalized(self) -> Self {
+        match self {
+            Content::Text(text) => Content::Text(normalize_block_text(&text)),
+            Content::Blocks(blocks) => Content::Blocks(
+                blocks
+                    .into_iter()
+                    .map(ContentBlock::into_block_normalized)
+                    .collect(),
+            ),
+        }
+    }
+}
+
+impl ContentBlock {
+    /// Return this block with its human-readable text normalized for
+    /// block-scalar emission. Opaque fields (`tool_use` input, image source,
+    /// thinking `signature`) are left untouched. See [`normalize_block_text`].
+    #[must_use]
+    fn into_block_normalized(self) -> Self {
+        match self {
+            ContentBlock::Text { text } => ContentBlock::Text {
+                text: normalize_block_text(&text),
+            },
+            ContentBlock::Thinking {
+                thinking,
+                signature,
+            } => ContentBlock::Thinking {
+                thinking: normalize_block_text(&thinking),
+                signature,
+            },
+            ContentBlock::ToolResult {
+                tool_use_id,
+                content,
+                is_error,
+            } => ContentBlock::ToolResult {
+                tool_use_id,
+                content: content.into_block_normalized(),
+                is_error,
+            },
+            other @ (ContentBlock::ToolUse { .. } | ContentBlock::Image { .. }) => other,
+        }
+    }
+}
+
 /// Inline per-message trace populated by `ailly run`.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Trace {
@@ -404,6 +476,11 @@ impl Conversation {
 
     /// Fill the blank assistant slot at `index` with content and trace.
     ///
+    /// `content` is normalized for block-scalar emission on write (CRLF to LF,
+    /// trailing spaces and tabs stripped before each line break) so multiline
+    /// responses serialize as readable `|` blocks rather than escaped
+    /// single-line scalars. See [`normalize_block_text`].
+    ///
     /// # Errors
     ///
     /// Returns [`ConversationError::IndexOutOfRange`] when `index` is past the
@@ -423,7 +500,7 @@ impl Conversation {
         if !matches!(message.role, Role::Assistant) || message.body.is_some() {
             return Err(ConversationError::NotBlankAssistant { index });
         }
-        message.body = Some(content);
+        message.body = Some(content.into_block_normalized());
         message.trace = Some(trace);
         Ok(())
     }
@@ -722,6 +799,67 @@ role: not-a-role
             session[1]["content"],
             serde_json::json!("hello"),
             "session[1].content is the text body verbatim",
+        );
+    }
+
+    #[test]
+    fn normalize_block_text_strips_trailing_whitespace_and_crlf() {
+        let input = "alpha \r\nbeta\t\ngamma  ";
+        assert_eq!(normalize_block_text(input), "alpha\nbeta\ngamma");
+    }
+
+    #[test]
+    fn normalize_block_text_normalizes_lone_carriage_return() {
+        assert_eq!(normalize_block_text("a\rb"), "a\nb");
+    }
+
+    #[test]
+    fn normalize_block_text_preserves_leading_and_interior_tabs() {
+        let input = "intro\n\tindented\nmid\tword\n";
+        assert_eq!(
+            normalize_block_text(input),
+            "intro\n\tindented\nmid\tword\n"
+        );
+    }
+
+    #[test]
+    fn normalize_block_text_preserves_blank_lines_and_final_newline() {
+        let input = "one\n\ntwo\n";
+        assert_eq!(normalize_block_text(input), "one\n\ntwo\n");
+    }
+
+    #[test]
+    fn normalize_block_text_is_idempotent() {
+        let once = normalize_block_text("ends in space \r\nand tab\t\n");
+        assert_eq!(normalize_block_text(&once), once);
+    }
+
+    #[test]
+    fn filled_multiline_assistant_emits_literal_block_scalar() {
+        let mut conv = Conversation {
+            meta: meta(),
+            session: vec![message(Role::Assistant, None)],
+        };
+        conv.fill_blank_assistant(
+            0,
+            Content::from(String::from("first line\r\nsecond line \nthird line\n")),
+            sample_trace(),
+        )
+        .expect("fills blank assistant");
+
+        let emitted = conv.to_yaml_string().expect("emits");
+        assert!(
+            emitted.contains("content: |"),
+            "expected a literal block scalar, got:\n{emitted}"
+        );
+        assert!(
+            !emitted.contains("\\n"),
+            "expected no escaped newline sequences, got:\n{emitted}"
+        );
+        assert_eq!(
+            Conversation::from_yaml_str(&emitted).expect("re-parses"),
+            conv,
+            "block emission round-trips",
         );
     }
 
