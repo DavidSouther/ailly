@@ -64,6 +64,10 @@ pub enum ReportCmdError {
 )]
 pub async fn run(args: ReportCmdArgs) -> Result<ReportCmdOutcome, ReportCmdError> {
     let reports_dir = args.project.join("evals").join("reports");
+    // Ensure the output directory exists before any single- or comparison-mode
+    // write; `eval` may not have created it (e.g. reporting over hand-authored
+    // report JSON) and `fs::write` does not create parents.
+    fs::create_dir_all(&reports_dir)?;
 
     match args.mode {
         ReportMode::Single { run_id } => {
