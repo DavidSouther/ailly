@@ -11,9 +11,13 @@
 //! This test drives the orchestrator-and-CLI seam end-to-end. Per-variant
 //! pass/fail coverage already lives in `tests/eval_assertions.rs` and the
 //! unit tests inside `src/knowledge/assertions.rs` per the design doc; the
-//! suite below exercises four of the five outcome buckets (pass, fail,
-//! deferred, malformed) once each, plus the two matching modes (`name:` exact
-//! match and `when:` subset filter), which is what the orchestrator owns.
+//! suite below exercises three outcome buckets (pass, fail, malformed) plus
+//! the two matching modes (`name:` exact match and `when:` subset filter),
+//! which is what the orchestrator owns. The judge assertion lands in the
+//! `malformed` bucket here, not `deferred`: `model: noop` always opens a Noop
+//! engine, so the judge call runs and its `noop-N` reply (no `GRADE:` line)
+//! parses to Malformed. Deferral is covered elsewhere (it requires no engine,
+//! e.g. a `claude-*` model with no API key).
 
 use std::fs;
 
@@ -145,15 +149,19 @@ async fn eval_writes_report_and_reports_failure_counts_across_match_modes() {
 
     // Assert: outcome counts cover all three conversations once (missing-fields
     // matched by name; over-limit and missing-fields matched by the `when:`
-    // case; default is filtered out). Per-assertion totals span the four
-    // outcome buckets exactly once each from the name-targeted case, plus two
-    // passes from the when-filtered case running its one structural assertion
-    // twice.
+    // case; default is filtered out). The name-targeted case's four assertions
+    // resolve to pass / fail / malformed / malformed: `text_contains` passes,
+    // `text_equals` fails, the bad-regex `text_matches` is malformed, and the
+    // judge is also malformed — `model: noop` always opens a Noop engine, so
+    // the judge call runs and returns a `noop-N` reply with no `GRADE:` line,
+    // which parses to Malformed rather than Deferred (deferral happens only
+    // when no engine opens, e.g. a `claude-*` model with no API key). The
+    // when-filtered case adds two passes from its one structural assertion.
     assert_eq!(outcome.conversations_matched, 3);
     assert_eq!(outcome.assertions_passed, 3); // 1 from name case + 2 from when case
     assert_eq!(outcome.assertions_failed, 1);
-    assert_eq!(outcome.assertions_deferred, 1);
-    assert_eq!(outcome.assertions_malformed, 1);
+    assert_eq!(outcome.assertions_deferred, 0);
+    assert_eq!(outcome.assertions_malformed, 2);
     assert!(
         outcome.assertions_failed + outcome.assertions_malformed > 0,
         "binary will exit non-zero",
@@ -182,18 +190,19 @@ async fn eval_writes_report_and_reports_failure_counts_across_match_modes() {
     assert_eq!(totals["conversations_matched"], 3);
     assert_eq!(totals["assertions"]["passed"], 3);
     assert_eq!(totals["assertions"]["failed"], 1);
-    assert_eq!(totals["assertions"]["deferred"], 1);
-    assert_eq!(totals["assertions"]["malformed"], 1);
+    assert_eq!(totals["assertions"]["deferred"], 0);
+    assert_eq!(totals["assertions"]["malformed"], 2);
 
     // Per-class rollup: each variant's lowercase serde tag is its own key.
     // text_contains passes (one conversation), text_equals fails (one), the
-    // bad regex on text_matches is malformed (one), judge defers (one), and
-    // response_field passes twice (the when-filter matched two conversations).
+    // bad regex on text_matches is malformed (one), the judge is malformed
+    // (one: the Noop engine reply carries no GRADE line), and response_field
+    // passes twice (the when-filter matched two conversations).
     let per_class = &report["per_class"];
     assert_eq!(per_class["text_contains"]["passed"], 1);
     assert_eq!(per_class["text_equals"]["failed"], 1);
     assert_eq!(per_class["text_matches"]["malformed"], 1);
-    assert_eq!(per_class["judge"]["deferred"], 1);
+    assert_eq!(per_class["judge"]["malformed"], 1);
     assert_eq!(per_class["response_field"]["passed"], 2);
 
     // Cases preserve in-suite order; the name-targeted case's matches list
@@ -218,7 +227,7 @@ async fn eval_writes_report_and_reports_failure_counts_across_match_modes() {
     assert_eq!(assertions[2]["class"], "text_matches");
     assert_eq!(assertions[2]["outcome"], "malformed");
     assert_eq!(assertions[3]["class"], "judge");
-    assert_eq!(assertions[3]["outcome"], "deferred");
+    assert_eq!(assertions[3]["outcome"], "malformed");
 
     // The when-filtered case matched two conversations; both must appear in
     // its matches list, each carrying one passing assertion.

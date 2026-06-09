@@ -96,8 +96,16 @@ pub async fn run(args: EvalCmdArgs) -> Result<EvalCmdOutcome, EvalCmdError> {
     let suite = project.evals().get(&args.suite)?;
 
     let conversations_repository = project.conversations();
-    let run_id = super::project_relative(&project, &args.over);
-    let keys = conversations_repository.list(&run_id)?;
+    // The listing key is the project-relative path of `over` (e.g.
+    // `runs/<id>`): `ConversationRepository::list` joins it onto the project
+    // root to find the run directory on disk.
+    let list_key = super::project_relative(&project, &args.over);
+    // The report id is the run-dir basename (or single-file stem) — the
+    // per-run identity `report` reads (`evals/reports/<report_id>.json`) and
+    // the e2e scripts pass on the command line. Keeping it distinct from
+    // `list_key` is what makes `eval` and `report` agree on the report path.
+    let report_id = report_id_for(&args.over);
+    let keys = conversations_repository.list(&list_key)?;
     let mut conversations: Vec<(PathBuf, _)> = Vec::with_capacity(keys.len());
     for key in &keys {
         let conv = conversations_repository.load(key)?;
@@ -122,11 +130,7 @@ pub async fn run(args: EvalCmdArgs) -> Result<EvalCmdOutcome, EvalCmdError> {
         None => None,
     };
 
-    let judge_dir = args
-        .project
-        .join("evals")
-        .join("judges")
-        .join(run_id.as_str());
+    let judge_dir = args.project.join("evals").join("judges").join(&report_id);
     let script_runner = TokioScriptRunner;
     let report = evaluate(EvalArgs {
         suite: &suite,
@@ -137,17 +141,21 @@ pub async fn run(args: EvalCmdArgs) -> Result<EvalCmdOutcome, EvalCmdError> {
             project_root: Some(args.project.as_path()),
         },
         suite_name: &args.suite,
-        run_id: run_id.as_str(),
+        run_id: &report_id,
         judge_output_dir: Some(&judge_dir),
     })
     .await;
 
     let report_dir = args.project.join("evals").join("reports");
-    fs::create_dir_all(&report_dir).map_err(|source| EvalCmdError::Report {
-        path: report_dir.clone(),
-        source,
-    })?;
-    let report_path = report_dir.join(format!("{run_id}.json"));
+    let report_path = report_dir.join(format!("{report_id}.json"));
+    // Create the report file's actual parent so a key with separators (or a
+    // missing `evals/reports/`) does not fail the write with NotFound.
+    if let Some(parent) = report_path.parent() {
+        fs::create_dir_all(parent).map_err(|source| EvalCmdError::Report {
+            path: parent.to_path_buf(),
+            source,
+        })?;
+    }
     let writer = fs::File::create(&report_path).map_err(|source| EvalCmdError::Report {
         path: report_path.clone(),
         source,
@@ -167,6 +175,29 @@ pub async fn run(args: EvalCmdArgs) -> Result<EvalCmdOutcome, EvalCmdError> {
         assertions_deferred_executable: executable_deferred_count(&report.per_class),
         report_path,
     })
+}
+
+/// Derive the per-run report id from the `--over` target: the directory
+/// basename when `over` is a directory, or the file stem when it is a single
+/// conversation file. This is the identity `report` reads
+/// (`evals/reports/<report_id>.json`) and the e2e scripts pass on the command
+/// line — deliberately distinct from the project-relative listing key, which
+/// carries the `runs/` segment so the repository can resolve the run dir.
+///
+/// Falls back to the whole path string for the (CLI-unreachable) empty-path
+/// case so a `report_id` is always produced.
+fn report_id_for(over: &std::path::Path) -> String {
+    // Directory: the full basename (run-dir names like
+    // `<ts>-<uuid6>-<name>` carry no extension to strip). Single file: the
+    // stem, so `missing-fields.yaml` keys the report as `missing-fields`.
+    let component = if over.is_dir() {
+        over.file_name()
+    } else {
+        over.file_stem().or_else(|| over.file_name())
+    };
+    component
+        .and_then(|s| s.to_str())
+        .map_or_else(|| over.to_string_lossy().into_owned(), str::to_string)
 }
 
 /// Stable `PathBuf` identity for a conversation key, used as the per-row

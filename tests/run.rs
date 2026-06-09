@@ -12,6 +12,13 @@
 //! single-file form, the no-op case, the engine-failure case, the
 //! missing-target case, and the non-claude `ModelNotFound` case are
 //! covered by the unit tests inside `src/cli/run.rs` per the design doc.
+//!
+//! The insurance-claim assembly pins `model: claude-sonnet-4-6`. To keep
+//! this test hermetic and deterministic, each assembled conversation's
+//! `meta.model` is rewritten to `"noop"` before the run, so that
+//! `open_engine_for_model` routes to `NoopEngine::auto()` rather than a
+//! live provider. `run` builds one engine per conversation, so each file's
+//! single blank fills with the first auto reply, `"noop-0"`.
 
 use std::fs;
 use std::path::PathBuf;
@@ -19,19 +26,11 @@ use std::path::PathBuf;
 use ailly_two::cli::assemble::AssembleArgs;
 use ailly_two::cli::assemble::run as assemble_run;
 use ailly_two::cli::run::RunArgs;
-use ailly_two::cli::run::run_with_engine;
+use ailly_two::cli::run::run;
 use ailly_two::content::conversation::Content;
 use ailly_two::content::conversation::Conversation;
 use ailly_two::content::conversation::ModelId;
 use ailly_two::content::conversation::Role;
-use ailly_two::engine::engine::NoopEngine;
-
-const REPLY_AMBIGUOUS: &str = "human-review: claim narrative is internally inconsistent.";
-const REPLY_DEFAULT: &str =
-    "auto-approve: claim is within policy threshold and required fields are present.";
-const REPLY_MISSING_FIELDS: &str =
-    "Could you share the date of loss and the policy number on file?";
-const REPLY_OVER_LIMIT: &str = "human-review: claim amount exceeds auto-approval ceiling.";
 
 #[tokio::test]
 async fn run_fills_every_blank_assistant_across_the_assembled_run_dir() {
@@ -57,34 +56,39 @@ async fn run_fills_every_blank_assistant_across_the_assembled_run_dir() {
         "the claim-handler matrix expands to four bindings"
     );
 
-    // Filename-ascending order maps to the matrix cases:
-    //   ambiguous.yaml, default.yaml, missing-fields.yaml, over-limit.yaml.
-    let scripted_replies = [
-        REPLY_AMBIGUOUS,
-        REPLY_DEFAULT,
-        REPLY_MISSING_FIELDS,
-        REPLY_OVER_LIMIT,
-    ];
-    let engine = NoopEngine::from_replies(scripted_replies);
+    // Rewrite each binding's model to `"noop"` so the run routes to
+    // `NoopEngine::auto()` and stays hermetic (see module docs). Only engine
+    // routing changes; the assembled prefix and user turns are untouched.
+    for path in &file_paths {
+        let yaml = fs::read_to_string(path).unwrap_or_else(|err| panic!("read {path:?}: {err}"));
+        let mut conv = Conversation::from_yaml_str(&yaml)
+            .unwrap_or_else(|err| panic!("parse {path:?}: {err}"));
+        conv.meta.model = ModelId::from("noop");
+        fs::write(
+            path,
+            conv.to_yaml_string()
+                .unwrap_or_else(|err| panic!("emit {path:?}: {err}")),
+        )
+        .unwrap_or_else(|err| panic!("write {path:?}: {err}"));
+    }
 
     // Act: invoke the handler over the directory form of the target.
-    let outcome = run_with_engine(
-        RunArgs {
-            project,
-            target: run_dir.clone(),
-        },
-        Box::new(engine),
-    )
+    let outcome = run(RunArgs {
+        project,
+        target: run_dir.clone(),
+    })
     .await
-    .expect("run_with_engine succeeds against the assembled run dir");
+    .expect("run succeeds against the assembled run dir");
 
     // Assert: outcome counts.
     assert_eq!(outcome.conversations_processed, 4);
     assert_eq!(outcome.blank_assistants_filled, 4);
 
-    // Assert: every file on disk has had its blank assistant filled with
-    // the scripted reply for that binding, and carries an inline trace.
-    for (path, expected_reply) in file_paths.iter().zip(scripted_replies) {
+    // Assert: every file on disk has had its blank assistant filled. Each
+    // conversation gets its own `NoopEngine::auto()`, so the single blank in
+    // each fills with the first auto reply, `"noop-0"`, and carries an inline
+    // trace stamped with the `"noop"` model id.
+    for path in &file_paths {
         let yaml =
             fs::read_to_string(path).unwrap_or_else(|err| panic!("read back {path:?}: {err}"));
         let conv = Conversation::from_yaml_str(&yaml)
@@ -106,9 +110,9 @@ async fn run_fills_every_blank_assistant_across_the_assembled_run_dir() {
             .as_ref()
             .unwrap_or_else(|| panic!("{path:?} assistant body is filled"))
         {
-            Content::Text(text) => assert_eq!(text, expected_reply, "reply for {path:?}"),
+            Content::Text(text) => assert_eq!(text, "noop-0", "reply for {path:?}"),
             Content::Blocks(_) => {
-                panic!("NoopEngine::from_replies should produce Content::Text in {path:?}")
+                panic!("NoopEngine::auto should produce Content::Text in {path:?}")
             }
         }
 
