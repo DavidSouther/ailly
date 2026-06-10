@@ -1,0 +1,16 @@
+name: baseline
+model: claude-sonnet-4-6
+
+matrix:
+  skill:
+    - clean-comments-review
+
+# Identical to invocation.yaml minus the external skill-body prefix, so the only
+# difference between the arms is the loaded skill. Both answer the same prompt.
+prefix:
+  - { kind: file, path: ./AGENTS.md,         cache: true }
+  - { kind: file, path: ./context/AGENTS.md, cache: true }
+
+conversation:
+  - { role: user, path: "prompts/invocation/{{ skill }}.md" }
+  - { role: assistant }
