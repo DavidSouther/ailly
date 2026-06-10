@@ -11,6 +11,7 @@ use std::io;
 use std::path::PathBuf;
 
 use crate::cli::env;
+use crate::content::conversation::Conversation;
 use crate::content::evaluation::EvaluationError;
 use crate::content::project::Project;
 use crate::content::repository::ConversationKey;
@@ -19,6 +20,7 @@ use crate::content::repository::EvaluationRepository;
 use crate::content::repository::RepositoryError;
 use crate::content::repository::RunId;
 use crate::content::repository::VfsConversationRepository;
+use crate::engine::engine::EngineProvider;
 use crate::engine::engine::is_noop_model;
 use crate::engine::engine::open_engine_for_model;
 use crate::knowledge::assertions::EvaluationContext;
@@ -131,31 +133,7 @@ pub async fn run(args: EvalCmdArgs) -> Result<EvalCmdOutcome, EvalCmdError> {
         conversations.push((key_path(key), conv));
     }
 
-    // Resolve the judge engine once, from the first conversation's model. A
-    // failed open (no API key, unserviceable model) is not fatal: log it and
-    // proceed with `engine: None`, which makes judge assertions defer. The
-    // "engine present but call fails mid-evaluation" path is the only one that
-    // produces `Errored`. Heterogeneous run dirs bind to the first model; per-
-    // conversation dispatch is deferred
-    // (docs/developer/TASK-NOTES-eval-judge-deferred.md).
-    //
-    // A `model: noop` run resolves to no judge engine: an auto Noop adapter
-    // cannot produce a `GRADE:` line, so using it as a grader would malform
-    // rather than defer. Declining it makes judge assertions defer, which is
-    // the meaningful verdict offline (see `is_noop_model`; a scriptable Noop
-    // judge engine is tracked in TASKS.md).
-    let engine = match conversations.first() {
-        Some((_, conv)) if !is_noop_model(&conv.meta.model) => {
-            match open_engine_for_model(&conv.meta.model) {
-                Ok(engine) => Some(engine),
-                Err(err) => {
-                    tracing::warn!("judge engine unavailable: {err}; judge assertions will defer");
-                    None
-                }
-            }
-        }
-        _ => None,
-    };
+    let engine = resolve_judge_engine(conversations.first().map(|(_, conv)| conv));
 
     let judge_dir = args.project.join("evals").join("judges").join(&report_id);
     let script_runner = TokioScriptRunner;
@@ -225,6 +203,35 @@ fn report_id_for(over: &std::path::Path) -> String {
     component
         .and_then(|s| s.to_str())
         .map_or_else(|| over.to_string_lossy().into_owned(), str::to_string)
+}
+
+/// Resolve the judge grader for a run from its first conversation's model,
+/// returning `None` — so judge assertions defer — in every case where no
+/// meaningful offline grade is available:
+///
+/// - no conversation matched;
+/// - the model is `noop` (an auto Noop adapter cannot produce a `GRADE:` line,
+///   so it would malform rather than defer; a scriptable Noop judge engine is
+///   tracked in TASKS.md);
+/// - the grader fails to open (no API key, unserviceable model) — logged, not
+///   fatal.
+///
+/// The "engine present but call fails mid-evaluation" path is the only one that
+/// produces `Errored`. Heterogeneous run dirs bind to the first model; per-
+/// conversation dispatch is deferred
+/// (docs/developer/TASK-NOTES-eval-judge-deferred.md).
+fn resolve_judge_engine(first_conv: Option<&Conversation>) -> Option<Box<dyn EngineProvider>> {
+    let conv = first_conv?;
+    if is_noop_model(&conv.meta.model) {
+        return None;
+    }
+    match open_engine_for_model(&conv.meta.model) {
+        Ok(engine) => Some(engine),
+        Err(err) => {
+            tracing::warn!("judge engine unavailable: {err}; judge assertions will defer");
+            None
+        }
+    }
 }
 
 /// Stable `PathBuf` identity for a conversation key, used as the per-row
