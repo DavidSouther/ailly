@@ -29,23 +29,23 @@ Two audiences, two standards:
 
 ## When to Use
 
-- A public DocBlock lists every current caller, or describes how the symbol is
-  used today, and that detail will drift as soon as usage changes.
+- A public DocBlock lists current callers, or describes how the symbol is
+  used today; that detail drifts as soon as usage changes.
 - A comment documents how a symbol is used rather than why it exists.
 - A comment's audience is unclear: it sits on a public symbol but reads like an
   internal note, or sits inline but restates a public contract.
 - A reviewer asks whether over-documentation should be reduced to intent.
 
 **When NOT to use:** judging whether the code is correct, fast, or
-well-structured. This is a comment review, not a code review. It changes no
-code.
+well-structured. This is a comment review, not a code review. It doesn't
+critique implementations, but it may critique examples in a docblock.
 
 ## The Audience Model
 
 A comment should capture what the code cannot (Ousterhout, *A Philosophy of
-Software Design*). A comment is, in part, a failure to express intent in the
-code itself (Martin, *Clean Code*). Knuth-style literate programming, where
-prose and code interleave as equals, is the explicit far end this review does
+Software Design*). Comments can be described as a failure to express intent in
+the code itself (Martin, *Clean Code*). Knuth-style literate programming, where
+prose and code interleave as equals, is an extreme end which this review does
 not pursue. The goal is the minimum comment that carries intent the code cannot.
 
 For a **public DocBlock**, ask: could an external reader who never opens the

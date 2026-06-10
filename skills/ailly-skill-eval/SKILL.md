@@ -109,6 +109,12 @@ gate yourself. Only `assemble` runs without a model; gate `run`, `eval`, and
 
 ## Pointers
 
+- [skill-forge](../skill-forge/SKILL.md) — the paired loop that *builds and drives*
+  this harness. This skill is the within-harness reference (anatomy, axes,
+  assertions, gate); `skill-forge` is the rare, idempotent loop that scaffolds a
+  harness from intent and refines a `SKILL.md` against the gate. Reach for it to
+  author or iterate a skill end-to-end; reach for this one to understand or tune
+  the machinery it drives.
 - [e2e/patterns-eval/](../../e2e/patterns-eval/) — the worked example this skill
   generalizes: discovery and invocation assemblies, the baseline arm, vendored
   skills, the disclosure table, and the script + judge + token assertion mix.
