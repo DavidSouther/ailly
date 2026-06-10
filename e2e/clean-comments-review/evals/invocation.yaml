@@ -1,0 +1,17 @@
+name: invocation
+cases:
+  - name: clean-comments-review
+    assertions:
+      - { type: script, runtime: python, script: { path: evals/scripts/check_clean_comments_review.py } }
+      - type: judge
+        prompt: |
+          The review is a critique document, not edits to the code. It
+          classifies the comment on `className` as a public DocBlock addressed
+          to an external reader, flags that the DocBlock encodes current usage
+          and call sites that will rot, and recommends cutting the comment back
+          to its intent (or removing it). It does not conclude that the comments
+          are fine as they are.
+      # Budget headroom above both arms' totals (good critique 2170, baseline
+      # 1620). Kept equal across arms so a size difference is never an
+      # Improved/Regressed signal; the script flip is the improvement.
+      - { type: tokens, metric: total, op: "<", value: 6000 }

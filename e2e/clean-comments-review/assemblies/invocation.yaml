@@ -1,0 +1,18 @@
+name: invocation
+model: claude-sonnet-4-6
+
+matrix:
+  skill:
+    - clean-comments-review
+
+prefix:
+  - { kind: file,     path: ./AGENTS.md,                                 cache: true }
+  - { kind: file,     path: ./context/AGENTS.md,                         cache: true }
+  # The skill body is referenced in place, never vendored: this `external`
+  # block climbs e2e/clean-comments-review -> e2e -> repo root to the sibling
+  # skills/ tree. A later SKILL.md edit is picked up at the next assemble.
+  - { kind: external, path: ../../skills/clean-comments-review/SKILL.md, cache: true }
+
+conversation:
+  - { role: user, path: "prompts/invocation/{{ skill }}.md" }
+  - { role: assistant }
