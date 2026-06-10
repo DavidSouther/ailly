@@ -17,6 +17,9 @@ use crate::content::repository::ConversationKey;
 use crate::content::repository::ConversationRepository;
 use crate::content::repository::EvaluationRepository;
 use crate::content::repository::RepositoryError;
+use crate::content::repository::RunId;
+use crate::content::repository::VfsConversationRepository;
+use crate::engine::engine::is_noop_model;
 use crate::engine::engine::open_engine_for_model;
 use crate::knowledge::assertions::EvaluationContext;
 use crate::knowledge::eval::ClassTotals;
@@ -81,6 +84,12 @@ pub enum EvalCmdError {
     },
     #[error("over path {path:?} is not valid UTF-8")]
     NonUtf8Path { path: PathBuf },
+    #[error("resolving --over path {path:?}: {source}")]
+    Over {
+        path: PathBuf,
+        #[source]
+        source: io::Error,
+    },
 }
 
 /// End-to-end CLI handler. Loads the suite, loads every conversation under
@@ -95,17 +104,27 @@ pub async fn run(args: EvalCmdArgs) -> Result<EvalCmdOutcome, EvalCmdError> {
     env::load_project_env(&args.project);
     let suite = project.evals().get(&args.suite)?;
 
-    let conversations_repository = project.conversations();
-    // The listing key is the project-relative path of `over` (e.g.
-    // `runs/<id>`): `ConversationRepository::list` joins it onto the project
-    // root to find the run directory on disk.
-    let list_key = super::project_relative(&project, &args.over);
+    // Root a conversations repository at `over` itself, not at the project
+    // root: `--over` may point anywhere on disk, including outside the project
+    // tree. Canonicalize first so a symlinked tempdir (macOS `/var` ->
+    // `/private/var`) resolves to real files, then list with the empty `RunId`,
+    // which `VfsConversationRepository::dir_for` maps to the repository root.
+    let over_root = args
+        .over
+        .canonicalize()
+        .map_err(|source| EvalCmdError::Over {
+            path: args.over.clone(),
+            source,
+        })?;
+    let conversations_repository =
+        VfsConversationRepository::new(vfs::VfsPath::new(vfs::PhysicalFS::new(over_root)));
     // The report id is the run-dir basename (or single-file stem) — the
     // per-run identity `report` reads (`evals/reports/<report_id>.json`) and
-    // the e2e scripts pass on the command line. Keeping it distinct from
-    // `list_key` is what makes `eval` and `report` agree on the report path.
+    // the e2e scripts pass on the command line. It is independent of the
+    // listing root: the root locates the conversation files (anywhere on
+    // disk), the report id names the per-run report under the project.
     let report_id = report_id_for(&args.over);
-    let keys = conversations_repository.list(&list_key)?;
+    let keys = conversations_repository.list(&RunId::default())?;
     let mut conversations: Vec<(PathBuf, _)> = Vec::with_capacity(keys.len());
     for key in &keys {
         let conv = conversations_repository.load(key)?;
@@ -119,15 +138,23 @@ pub async fn run(args: EvalCmdArgs) -> Result<EvalCmdOutcome, EvalCmdError> {
     // produces `Errored`. Heterogeneous run dirs bind to the first model; per-
     // conversation dispatch is deferred
     // (docs/developer/TASK-NOTES-eval-judge-deferred.md).
+    //
+    // A `model: noop` run resolves to no judge engine: an auto Noop adapter
+    // cannot produce a `GRADE:` line, so using it as a grader would malform
+    // rather than defer. Declining it makes judge assertions defer, which is
+    // the meaningful verdict offline (see `is_noop_model`; a scriptable Noop
+    // judge engine is tracked in TASKS.md).
     let engine = match conversations.first() {
-        Some((_, conv)) => match open_engine_for_model(&conv.meta.model) {
-            Ok(engine) => Some(engine),
-            Err(err) => {
-                tracing::warn!("judge engine unavailable: {err}; judge assertions will defer");
-                None
+        Some((_, conv)) if !is_noop_model(&conv.meta.model) => {
+            match open_engine_for_model(&conv.meta.model) {
+                Ok(engine) => Some(engine),
+                Err(err) => {
+                    tracing::warn!("judge engine unavailable: {err}; judge assertions will defer");
+                    None
+                }
             }
-        },
-        None => None,
+        }
+        _ => None,
     };
 
     let judge_dir = args.project.join("evals").join("judges").join(&report_id);

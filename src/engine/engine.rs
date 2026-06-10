@@ -139,6 +139,20 @@ pub fn open_engine_for_model(model: &ModelId) -> Result<Box<dyn EngineProvider>,
     })
 }
 
+/// `true` when `model` names the deterministic Noop adapter.
+///
+/// The eval handler uses this to decline a Noop *grader*: an
+/// [`NoopEngine::auto`] cannot produce a `GRADE:` line, so a judge assertion
+/// run against it would malform rather than report a meaningful verdict. A
+/// `noop` run therefore resolves to no judge engine and judge assertions defer,
+/// matching every synthetic e2e suite. A scriptable Noop judge engine — feeding
+/// `from_scripts` grades so a judge can pass deterministically offline — would
+/// lift this and is tracked in `TASKS.md`.
+#[must_use]
+pub fn is_noop_model(model: &ModelId) -> bool {
+    model.as_ref() == NOOP_MODEL
+}
+
 /// Distinguishes scripts whose `Trace` is owned by the caller from scripts
 /// that the engine fills with its default trace at completion time.
 enum ScriptEntry {
@@ -427,6 +441,13 @@ mod tests {
             Err(other) => panic!("expected Auth, got {other:?}"),
             Ok(_) => panic!("expected Auth with no key in environment"),
         }
+    }
+
+    #[test]
+    fn is_noop_model_matches_only_the_noop_literal() {
+        assert!(is_noop_model(&ModelId::from("noop")));
+        assert!(!is_noop_model(&ModelId::from("claude-opus-4-7")));
+        assert!(!is_noop_model(&ModelId::from("noop-extra")));
     }
 
     #[test]
