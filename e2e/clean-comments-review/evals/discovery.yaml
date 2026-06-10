@@ -1,0 +1,11 @@
+name: discovery
+cases:
+  - name: verbose-docblock
+    assertions:
+      - { type: text_contains, value: "clean-comments-review" }
+      - { type: text_not_contains, value: "code-review" }
+
+  - name: comment-audience-mismatch
+    assertions:
+      - { type: text_contains, value: "clean-comments-review" }
+      - { type: text_not_contains, value: "code-review" }

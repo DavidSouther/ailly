@@ -1,0 +1,15 @@
+name: discovery
+model: claude-sonnet-4-6
+
+matrix:
+  case:
+    - verbose-docblock
+    - comment-audience-mismatch
+
+prefix:
+  - { kind: file,   path: ./AGENTS.md,                     cache: true }
+  - { kind: system, path: ./context/skills/disclosure.md,  cache: true }
+
+conversation:
+  - { role: user, path: "prompts/discovery/{{ case }}.md" }
+  - { role: assistant }
