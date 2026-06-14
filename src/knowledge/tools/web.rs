@@ -12,6 +12,16 @@
 
 use async_trait::async_trait;
 
+use crate::content::conversation::Content;
+use crate::content::conversation::ContentBlock;
+use crate::content::conversation::ToolUseId;
+use crate::knowledge::tools::ToolError;
+use crate::knowledge::tools::ToolExecutor;
+
+/// Default cap on results requested when a `web_search` call omits `count`.
+/// Matches the `default` in `web_search.json` (Feature 2, step 3).
+const DEFAULT_RESULT_COUNT: u8 = 5;
+
 /// One web search request. The complete call description; the provider only
 /// executes it. Mirrors `ScriptSpec`'s "executor builds it, runner runs it"
 /// split.
@@ -158,6 +168,91 @@ impl SearchProvider for BraveSearchProvider {
     }
 }
 
+/// Build an `is_error: None` `tool_result` echoing the call `id`. The success
+/// constructor over `ContentBlock::ToolResult`; pairs with [`error_result`].
+fn ok_result(id: &ToolUseId, text: String) -> ContentBlock {
+    ContentBlock::ToolResult {
+        tool_use_id: id.clone(),
+        content: Content::from(text),
+        is_error: None,
+    }
+}
+
+/// Build an `is_error: Some(true)` `tool_result` echoing the call `id`. The
+/// model-recoverable failure constructor: a bad argument or a provider error
+/// rides back to the model as a `tool_result`, not a run-aborting `ToolError`.
+fn error_result(id: &ToolUseId, text: &str) -> ContentBlock {
+    ContentBlock::ToolResult {
+        tool_use_id: id.clone(),
+        content: Content::from(text.to_owned()),
+        is_error: Some(true),
+    }
+}
+
+/// Format `SearchResults` into a compact, model-readable text block: one
+/// `title — url` line plus the snippet per hit. Zero hits renders an explicit
+/// "no results" line so the model can tell an empty search from a failed one.
+fn render_hits(results: &SearchResults) -> String {
+    if results.hits.is_empty() {
+        return String::from("No results.");
+    }
+    results
+        .hits
+        .iter()
+        .map(|hit| format!("{} — {}\n{}", hit.title, hit.url, hit.snippet))
+        .collect::<Vec<_>>()
+        .join("\n\n")
+}
+
+/// The `web_search` tool: reads a `query` argument, runs it through the
+/// injected [`SearchProvider`], and shapes the hits into a `tool_result`. The
+/// provider is the sole network seam — production wires
+/// [`BraveSearchProvider`]; the unit tests wire a hand-rolled fake.
+pub struct WebSearch {
+    provider: Box<dyn SearchProvider>,
+}
+
+impl WebSearch {
+    /// Construct over an injected [`SearchProvider`]. Production passes
+    /// [`BraveSearchProvider`]; tests pass a fake.
+    #[must_use]
+    pub fn new(provider: Box<dyn SearchProvider>) -> Self {
+        Self { provider }
+    }
+}
+
+#[async_trait]
+impl ToolExecutor for WebSearch {
+    async fn execute(&self, call: &ContentBlock) -> Result<ContentBlock, ToolError> {
+        // Destructure — identical to NoopToolExecutor (mod.rs:96). A non-tool_use
+        // block is a structural harness violation, never model-recoverable.
+        let ContentBlock::ToolUse { id, name: _, input } = call else {
+            return Err(ToolError::NotAToolUse);
+        };
+        // A missing/non-string `query` is the model's mistake: surface it as an
+        // is_error result it can retry, not a run-aborting ToolError.
+        let Some(query) = input.get("query").and_then(serde_yaml_ng::Value::as_str) else {
+            return Ok(error_result(id, "web_search requires a string `query`"));
+        };
+        let count = input
+            .get("count")
+            .and_then(serde_yaml_ng::Value::as_u64)
+            .and_then(|n| u8::try_from(n).ok())
+            .unwrap_or(DEFAULT_RESULT_COUNT);
+        match self
+            .provider
+            .search(SearchQuery {
+                query: query.to_owned(),
+                count,
+            })
+            .await
+        {
+            Ok(results) => Ok(ok_result(id, render_hits(&results))),
+            Err(err) => Ok(error_result(id, &err.to_string())),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::collections::VecDeque;
@@ -168,6 +263,11 @@ mod tests {
     use super::SearchProvider;
     use super::SearchQuery;
     use super::SearchResults;
+    use super::WebSearch;
+    use crate::content::conversation::Content;
+    use crate::content::conversation::ContentBlock;
+    use crate::content::conversation::ToolUseId;
+    use crate::knowledge::tools::ToolExecutor;
 
     /// Hand-rolled search fake (the `FakeScriptRunner` precedent): returns
     /// canned results in order and records every [`SearchQuery`] it was handed,
@@ -198,6 +298,16 @@ mod tests {
         }
     }
 
+    /// Lets a test keep an `Arc` handle to inspect `calls` after the fake is
+    /// boxed into the tool — needed by the missing-query test, which asserts
+    /// the provider was never reached.
+    #[async_trait::async_trait]
+    impl SearchProvider for std::sync::Arc<FakeSearchProvider> {
+        async fn search(&self, query: SearchQuery) -> Result<SearchResults, SearchError> {
+            (**self).search(query).await
+        }
+    }
+
     #[tokio::test]
     async fn fake_search_provider_drives_through_the_port() {
         let provider = FakeSearchProvider::new(vec![Ok(SearchResults {
@@ -224,6 +334,118 @@ mod tests {
         assert_eq!(
             provider.calls.lock().expect("calls lock")[0].query,
             "rust lang"
+        );
+    }
+
+    /// Build a `web_search` `tool_use` block carrying `input`. A YAML mapping
+    /// keyed by `&str` so a test sets or omits `query`/`count` directly.
+    fn tool_use(id: &str, input: serde_yaml_ng::Value) -> ContentBlock {
+        ContentBlock::ToolUse {
+            id: ToolUseId::from(id),
+            name: String::from("web_search"),
+            input,
+        }
+    }
+
+    /// Pull the text out of a `ToolResult`, asserting the result echoes `id`
+    /// and carries `is_error`. Centralises the shape check the three tests
+    /// share.
+    fn assert_tool_result(
+        block: &ContentBlock,
+        expected_id: &str,
+        expected_is_error: Option<bool>,
+    ) -> String {
+        let ContentBlock::ToolResult {
+            tool_use_id,
+            content,
+            is_error,
+        } = block
+        else {
+            panic!("expected a ToolResult block, got {block:?}");
+        };
+        assert_eq!(*tool_use_id, ToolUseId::from(expected_id));
+        assert_eq!(*is_error, expected_is_error);
+        match content {
+            Content::Text(text) => text.clone(),
+            Content::Blocks(_) => panic!("expected text content, got blocks"),
+        }
+    }
+
+    #[tokio::test]
+    async fn web_search_shapes_hits_into_tool_result() {
+        let provider = FakeSearchProvider::new(vec![Ok(SearchResults {
+            hits: vec![
+                SearchHit {
+                    title: String::from("Rust"),
+                    url: String::from("https://www.rust-lang.org"),
+                    snippet: String::from("A language empowering everyone."),
+                },
+                SearchHit {
+                    title: String::from("The Rust Book"),
+                    url: String::from("https://doc.rust-lang.org/book/"),
+                    snippet: String::from("The official guide."),
+                },
+            ],
+        })]);
+        let tool = WebSearch::new(Box::new(provider));
+
+        let input = serde_yaml_ng::from_str("query: rust lang").expect("valid yaml input");
+        let result = tool
+            .execute(&tool_use("toolu_search_1", input))
+            .await
+            .expect("a search tool call always yields a ToolResult, never a ToolError");
+
+        let text = assert_tool_result(&result, "toolu_search_1", None);
+        // Exact projection of a known hit (one-character-bug check): the
+        // `title — url` line must match byte-for-byte, not merely be non-empty.
+        assert!(
+            text.contains("Rust — https://www.rust-lang.org"),
+            "first hit projection missing: {text}"
+        );
+        assert!(
+            text.contains("The Rust Book — https://doc.rust-lang.org/book/"),
+            "second hit projection missing: {text}"
+        );
+    }
+
+    #[tokio::test]
+    async fn web_search_missing_query_is_error_result() {
+        let provider = FakeSearchProvider::new(vec![]);
+        // Record the calls vec by handle before the provider is boxed into the
+        // tool, so the test can assert the provider was never reached.
+        let calls = std::sync::Arc::new(provider);
+        let tool = WebSearch::new(Box::new(std::sync::Arc::clone(&calls)));
+
+        // `input` carries `count` but no `query`.
+        let input = serde_yaml_ng::from_str("count: 3").expect("valid yaml input");
+        let result = tool
+            .execute(&tool_use("toolu_search_2", input))
+            .await
+            .expect("a bad argument yields an is_error ToolResult, not a ToolError");
+
+        assert_tool_result(&result, "toolu_search_2", Some(true));
+        assert!(
+            calls.calls.lock().expect("calls lock").is_empty(),
+            "the provider must not be called when `query` is missing"
+        );
+    }
+
+    #[tokio::test]
+    async fn web_search_provider_error_is_error_result() {
+        let provider =
+            FakeSearchProvider::new(vec![Err(SearchError::Request(String::from("brave 503")))]);
+        let tool = WebSearch::new(Box::new(provider));
+
+        let input = serde_yaml_ng::from_str("query: rust lang").expect("valid yaml input");
+        let result = tool
+            .execute(&tool_use("toolu_search_3", input))
+            .await
+            .expect("a provider error rides through as an is_error ToolResult");
+
+        let text = assert_tool_result(&result, "toolu_search_3", Some(true));
+        assert!(
+            text.contains("503"),
+            "the provider error message must ride through: {text}"
         );
     }
 }
