@@ -19,6 +19,7 @@ use ailly_two::content::conversation::Content;
 use ailly_two::content::conversation::Conversation;
 use ailly_two::content::conversation::ModelId;
 use ailly_two::engine::engine::NoopEngine;
+use ailly_two::knowledge::tools::NoopToolExecutor;
 
 const ASSEMBLED_YAML: &str = "\
 ---
@@ -56,10 +57,12 @@ async fn conversation_run_fills_every_blank_assistant_via_scripted_engine() {
     assert_eq!(conversation.session.len(), 5);
     assert!(conversation.next_blank_assistant().is_some());
     let engine = NoopEngine::from_replies([CLARIFY_REPLY, DECISION_REPLY]);
+    // No-tools conversation: pass the empty executor default (open #2).
+    let executor = NoopToolExecutor::default();
 
     // Act
     conversation
-        .run(&engine)
+        .run(&engine, &executor)
         .await
         .expect("aggregate fills every blank assistant slot");
 

@@ -342,6 +342,8 @@ pub enum RunError {
     Engine(#[from] crate::engine::engine::EngineError),
     #[error("conversation aggregate rejected fill: {0}")]
     Conversation(#[from] ConversationError),
+    #[error("tool execution failed: {0}")]
+    Tool(#[from] crate::knowledge::tools::ToolError),
 }
 
 impl Conversation {
@@ -436,15 +438,29 @@ impl Conversation {
     }
 
     /// Fill every blank assistant slot in call order by delegating each
-    /// completion to `engine`.
+    /// completion to `engine`. After a slot is filled, any `tool_use` blocks it
+    /// carries are dispatched through `executor`, their `tool_result`s appended
+    /// as a `Role::Tool` message, and a fresh blank assistant slot is appended
+    /// so the loop continues — mirroring the Anthropic agentic loop.
+    ///
+    /// A no-tools conversation passes an empty
+    /// [`crate::knowledge::tools::NoopToolExecutor::default`]; it is never
+    /// called because no `tool_use` block appears.
     ///
     /// # Errors
-    /// Returns [`RunError::Engine`] when the engine cannot serve a slot, or
-    /// [`RunError::Conversation`] if a fill is rejected by the aggregate.
+    /// Returns [`RunError::Engine`] when the engine cannot serve a slot,
+    /// [`RunError::Conversation`] if a fill is rejected by the aggregate, or
+    /// [`RunError::Tool`] when `executor` cannot serve a tool call.
     pub async fn run(
         &mut self,
         engine: &dyn crate::engine::engine::EngineProvider,
+        executor: &dyn crate::knowledge::tools::ToolExecutor,
     ) -> Result<(), RunError> {
+        // Type-first stub: the executor is threaded through but the tool-turn
+        // protocol (Feature 1 step 6) is not yet implemented, so a conversation
+        // whose first reply is a `tool_use` block stops short of the
+        // `tool → assistant(text)` shape the feature test asserts.
+        let _ = executor;
         while let Some(index) = self.next_blank_assistant() {
             let request = crate::engine::engine::CompletionRequest {
                 model: self.meta.model.clone(),
