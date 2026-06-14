@@ -366,6 +366,67 @@ impl ToolExecutor for WebSearch {
     }
 }
 
+/// Format a [`FetchResponse`] into a model-readable text block: a status line
+/// (with the content-type annotated when present) followed by the body, so a
+/// downstream model can tell HTML from JSON from plain text and read what the
+/// server actually returned.
+fn render_response(response: &FetchResponse) -> String {
+    let header = match &response.content_type {
+        Some(content_type) => format!("HTTP {} ({content_type})", response.status),
+        None => format!("HTTP {}", response.status),
+    };
+    format!("{header}\n\n{}", response.body)
+}
+
+/// The `web_fetch` tool: reads a `url` argument, fetches it through the
+/// injected [`Fetcher`], and shapes the response into a `tool_result`. The
+/// fetcher is the sole network seam — production wires [`ReqwestFetcher`]; the
+/// unit tests wire a hand-rolled fake.
+pub struct WebFetch {
+    fetcher: Box<dyn Fetcher>,
+}
+
+impl WebFetch {
+    /// Construct over an injected [`Fetcher`]. Production passes
+    /// [`ReqwestFetcher`]; tests pass a fake.
+    #[must_use]
+    pub fn new(fetcher: Box<dyn Fetcher>) -> Self {
+        Self { fetcher }
+    }
+}
+
+#[async_trait]
+impl ToolExecutor for WebFetch {
+    async fn execute(&self, call: &ContentBlock) -> Result<ContentBlock, ToolError> {
+        // Destructure — identical to NoopToolExecutor (mod.rs:96) and WebSearch.
+        // A non-tool_use block is a structural harness violation, never
+        // model-recoverable.
+        let ContentBlock::ToolUse { id, name: _, input } = call else {
+            return Err(ToolError::NotAToolUse);
+        };
+        // A missing/non-string `url` is the model's mistake: surface it as an
+        // is_error result it can retry, not a run-aborting ToolError.
+        let Some(url) = input.get("url").and_then(serde_yaml_ng::Value::as_str) else {
+            return Ok(error_result(id, "web_fetch requires a string `url`"));
+        };
+        match self
+            .fetcher
+            .fetch(FetchRequest {
+                url: url.to_owned(),
+            })
+            .await
+        {
+            // A 2xx status is a success; any other status is data the model can
+            // act on, surfaced as an is_error result with the status reported.
+            Ok(response) if (200..300).contains(&response.status) => {
+                Ok(ok_result(id, render_response(&response)))
+            }
+            Ok(response) => Ok(error_result(id, &render_response(&response))),
+            Err(err) => Ok(error_result(id, &err.to_string())),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::collections::VecDeque;
@@ -380,6 +441,7 @@ mod tests {
     use super::SearchProvider;
     use super::SearchQuery;
     use super::SearchResults;
+    use super::WebFetch;
     use super::WebSearch;
     use crate::content::conversation::Content;
     use crate::content::conversation::ContentBlock;
@@ -643,6 +705,100 @@ mod tests {
         assert_eq!(
             fetcher.calls.lock().expect("calls lock")[0].url,
             "https://example.com/"
+        );
+    }
+
+    /// Lets a test keep an `Arc` handle to inspect `calls` after the fake is
+    /// boxed into the tool — needed by the missing-url test, which asserts the
+    /// fetcher was never reached.
+    #[async_trait::async_trait]
+    impl Fetcher for std::sync::Arc<FakeFetcher> {
+        async fn fetch(&self, request: FetchRequest) -> Result<FetchResponse, FetchError> {
+            (**self).fetch(request).await
+        }
+    }
+
+    /// Build a `web_fetch` `tool_use` block carrying `input`. A YAML mapping
+    /// keyed by `&str` so a test sets or omits `url` directly. The executor
+    /// ignores `name`, so this mirrors [`tool_use`] for the fetch tool.
+    fn fetch_tool_use(id: &str, input: serde_yaml_ng::Value) -> ContentBlock {
+        ContentBlock::ToolUse {
+            id: ToolUseId::from(id),
+            name: String::from("web_fetch"),
+            input,
+        }
+    }
+
+    #[tokio::test]
+    async fn web_fetch_shapes_body_into_tool_result() {
+        let fetcher = FakeFetcher::new(vec![Ok(FetchResponse {
+            status: 200,
+            body: String::from("<page>hello</page>"),
+            content_type: Some(String::from("text/html")),
+        })]);
+        let tool = WebFetch::new(Box::new(fetcher));
+
+        let input = serde_yaml_ng::from_str("url: https://example.com/").expect("valid yaml input");
+        let result = tool
+            .execute(&fetch_tool_use("toolu_fetch_1", input))
+            .await
+            .expect("a fetch tool call always yields a ToolResult, never a ToolError");
+
+        let text = assert_tool_result(&result, "toolu_fetch_1", None);
+        // The result must carry both the body and the status so a downstream
+        // model can read what the server returned.
+        assert!(
+            text.contains("<page>hello</page>"),
+            "fetched body missing from result: {text}"
+        );
+        assert!(
+            text.contains("200"),
+            "fetch status missing from result: {text}"
+        );
+    }
+
+    #[tokio::test]
+    async fn web_fetch_non_2xx_is_error_result() {
+        let fetcher = FakeFetcher::new(vec![Ok(FetchResponse {
+            status: 404,
+            body: String::from("Not Found"),
+            content_type: Some(String::from("text/plain")),
+        })]);
+        let tool = WebFetch::new(Box::new(fetcher));
+
+        let input =
+            serde_yaml_ng::from_str("url: https://example.com/missing").expect("valid yaml input");
+        let result = tool
+            .execute(&fetch_tool_use("toolu_fetch_2", input))
+            .await
+            .expect("a non-2xx status rides through as an is_error ToolResult");
+
+        let text = assert_tool_result(&result, "toolu_fetch_2", Some(true));
+        assert!(
+            text.contains("404"),
+            "the non-2xx status must be reported in the result: {text}"
+        );
+    }
+
+    #[tokio::test]
+    async fn web_fetch_missing_url_is_error_result() {
+        let fetcher = FakeFetcher::new(vec![]);
+        // Record the calls vec by handle before the fetcher is boxed into the
+        // tool, so the test can assert the fetcher was never reached.
+        let calls = std::sync::Arc::new(fetcher);
+        let tool = WebFetch::new(Box::new(std::sync::Arc::clone(&calls)));
+
+        // `input` is a mapping with no `url`.
+        let input = serde_yaml_ng::from_str("count: 3").expect("valid yaml input");
+        let result = tool
+            .execute(&fetch_tool_use("toolu_fetch_3", input))
+            .await
+            .expect("a bad argument yields an is_error ToolResult, not a ToolError");
+
+        assert_tool_result(&result, "toolu_fetch_3", Some(true));
+        assert!(
+            calls.calls.lock().expect("calls lock").is_empty(),
+            "the fetcher must not be called when `url` is missing"
         );
     }
 }
