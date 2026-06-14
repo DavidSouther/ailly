@@ -1,0 +1,14 @@
+name: research
+model: claude-sonnet-4-6
+
+matrix:
+  case: [web-research]
+
+prefix:
+  - { kind: file,   path: ./AGENTS.md,             cache: true }
+  - { kind: system, path: context/system/*.md,     cache: true }
+  - { kind: tools,  path: context/tools/*.json,     cache: true }
+
+conversation:
+  - { role: user, path: "prompts/{{ case }}.md" }
+  - { role: assistant }
