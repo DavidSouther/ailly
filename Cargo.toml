@@ -11,6 +11,7 @@ clap = { version = "4", features = ["derive"] }
 dotenvy = "0.15"
 glob = "0.3"
 regex = "1"
+reqwest = { version = "0.13", default-features = false, features = ["rustls", "json"] }
 rig = { version = "0.37", package = "rig-core" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

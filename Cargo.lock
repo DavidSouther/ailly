@@ -22,6 +22,7 @@ dependencies = [
  "glob",
  "http 1.4.0",
  "regex",
+ "reqwest",
  "rig-bedrock",
  "rig-core",
  "serde",

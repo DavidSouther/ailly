@@ -18,6 +18,8 @@ use std::sync::Mutex;
 use crate::content::conversation::Content;
 use crate::content::conversation::ContentBlock;
 
+pub mod web;
+
 /// Failure modes for tool execution, surfaced into `RunError::Tool`.
 #[derive(Debug, thiserror::Error)]
 pub enum ToolError {
