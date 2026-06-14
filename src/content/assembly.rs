@@ -18,6 +18,7 @@ use crate::content::conversation::ModelId;
 use crate::content::conversation::Rendered;
 use crate::content::conversation::Role;
 use crate::content::conversation::Template;
+use crate::content::conversation::ToolDefinition;
 use crate::content::conversation::TurnBody;
 use crate::content::repository::RepositoryError;
 
@@ -116,6 +117,15 @@ pub enum RenderError {
     /// FS.
     #[error("external path `{path}` requires a host-anchored project (opened via Project::open)")]
     ExternalNoHostRoot { path: String },
+    /// A `kind: tools` prefix file did not parse into a [`ToolDefinition`].
+    /// Surfaced at assemble time so a malformed tool fixture fails loud rather
+    /// than silently dropping the tool.
+    #[error("tool definition `{path}` failed to parse: {source}")]
+    ToolParse {
+        path: String,
+        #[source]
+        source: serde_yaml_ng::Error,
+    },
     #[error(transparent)]
     Repository(#[from] RepositoryError),
 }
@@ -215,7 +225,15 @@ impl Assembly {
         binding: &Binding,
     ) -> Result<Conversation, RenderError> {
         let mut session: Vec<Message<Rendered>> = Vec::new();
+        let mut tools: Vec<ToolDefinition> = Vec::new();
         for block in &self.prefix {
+            // `kind: tools` is the one prefix-block kind that resolves to
+            // structured `ToolDefinition`s on `meta.tools` rather than a
+            // concatenated `Role::System` text message.
+            if let PrefixBlock::Tools { path, .. } = block {
+                tools.extend(resolve_tool_defs(project, path, binding)?);
+                continue;
+            }
             let body = resolve_prefix_block(project, block, binding)?;
             session.push(Message {
                 role: Role::System,
@@ -234,7 +252,7 @@ impl Assembly {
                 debug: false,
                 assembly: Some(self.name.clone()),
                 binding: binding.values.clone(),
-                tools: Vec::new(),
+                tools,
             },
             session,
         })
@@ -252,12 +270,13 @@ fn resolve_prefix_block(
             let resolved = project.resolve(path, binding)?;
             Ok(context.read_file(&resolved)?)
         }
-        PrefixBlock::System { path, .. }
-        | PrefixBlock::Tools { path, .. }
-        | PrefixBlock::Examples { path, .. } => {
+        PrefixBlock::System { path, .. } | PrefixBlock::Examples { path, .. } => {
             let resolved = project.resolve(path, binding)?;
             Ok(context.glob_concat(&resolved, None)?.body)
         }
+        PrefixBlock::Tools { .. } => unreachable!(
+            "PrefixBlock::Tools is resolved to meta.tools in Assembly::render, never as text"
+        ),
         PrefixBlock::Context {
             source,
             glob,
@@ -282,6 +301,36 @@ fn resolve_prefix_block(
                 .map_err(RenderError::from)
         }
     }
+}
+
+/// Resolve a `kind: tools` prefix block's glob into structured
+/// [`ToolDefinition`]s. Each matched JSON file is parsed individually (JSON is
+/// a YAML subset, so `serde_yaml_ng` reads the `.json` body unchanged); a file
+/// that does not parse into a [`ToolDefinition`] surfaces
+/// [`RenderError::ToolParse`] so a malformed tool fixture fails loud at
+/// assemble time.
+fn resolve_tool_defs(
+    project: &crate::content::project::Project,
+    path: &str,
+    binding: &Binding,
+) -> Result<Vec<ToolDefinition>, RenderError> {
+    let context = project.context();
+    let pattern = project.resolve(path, binding)?;
+    let matched = context.glob_concat(&pattern, None)?.paths;
+    let mut defs = Vec::with_capacity(matched.len());
+    for file in &matched {
+        let rel = file.to_string_lossy();
+        let rel = rel.trim_start_matches('/');
+        let resolved = project.resolve(rel, binding)?;
+        let body = context.read_file(&resolved)?;
+        let def: ToolDefinition =
+            serde_yaml_ng::from_str(&body).map_err(|source| RenderError::ToolParse {
+                path: rel.to_string(),
+                source,
+            })?;
+        defs.push(def);
+    }
+    Ok(defs)
 }
 
 /// Project one raw matrix axis value into a candidate [`Binding`].
@@ -721,6 +770,81 @@ prefix:
                 assert_eq!(in_path, "prompts/{{ unbound }}.md");
             }
             other => panic!("expected RenderError::UnknownVar, got {other:?}"),
+        }
+    }
+
+    const LOOKUP_POLICY_TOOL_JSON: &str = "\
+{
+  \"name\": \"lookup_policy\",
+  \"description\": \"Look up coverage and limits for a policy number.\",
+  \"input_schema\": {
+    \"type\": \"object\",
+    \"properties\": {
+      \"policy_number\": { \"type\": \"string\" }
+    },
+    \"required\": [\"policy_number\"]
+  }
+}";
+
+    fn assembly_with_tools_prefix() -> Assembly {
+        Assembly {
+            name: String::from("tools-only"),
+            model: ModelId::from("m"),
+            matrix: BTreeMap::new(),
+            prefix: vec![PrefixBlock::Tools {
+                path: String::from("context/tools/*.json"),
+                cache: false,
+            }],
+            conversation: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn tools_prefix_resolves_to_meta_tools_and_emits_no_system_message() {
+        // A `kind: tools` block lands structured `ToolDefinition`s on
+        // `meta.tools` and produces NO `Role::System` text message — the one
+        // prefix-block kind that stops being concatenated system text.
+        let project = crate::content::project::Project::open_memory();
+        seed_prompt(
+            &project,
+            "context/tools/lookup_policy.json",
+            LOOKUP_POLICY_TOOL_JSON,
+        );
+
+        let conversation = assembly_with_tools_prefix()
+            .render(&project, &Binding::default())
+            .expect("render with a tools prefix");
+
+        assert_eq!(conversation.meta.tools.len(), 1, "one tool definition");
+        assert_eq!(conversation.meta.tools[0].name, "lookup_policy");
+        assert!(
+            !conversation
+                .session
+                .iter()
+                .any(|m| matches!(m.role, Role::System)),
+            "a tools block emits no Role::System message",
+        );
+    }
+
+    #[test]
+    fn malformed_tool_json_surfaces_tool_parse_error() {
+        // A tools file that does not parse into a ToolDefinition fails loud at
+        // assemble time rather than silently dropping the tool.
+        let project = crate::content::project::Project::open_memory();
+        seed_prompt(
+            &project,
+            "context/tools/broken.json",
+            "{ \"name\": \"x\", \"description\": 42 }",
+        );
+
+        let err = assembly_with_tools_prefix()
+            .render(&project, &Binding::default())
+            .expect_err("malformed tool json must error");
+        match err {
+            RenderError::ToolParse { path, .. } => {
+                assert!(path.contains("broken.json"), "got path {path}");
+            }
+            other => panic!("expected RenderError::ToolParse, got {other:?}"),
         }
     }
 

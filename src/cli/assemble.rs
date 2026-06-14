@@ -215,11 +215,25 @@ model: claude-opus-4-7
             .iter()
             .filter(|m| matches!(m.role, Role::System))
             .collect();
-        assert_eq!(systems.len(), 5, "one System message per prefix block");
-        match &systems[4].body {
+        // Four of the five prefix blocks render to System text; the `kind:
+        // tools` block resolves to structured defs on `meta.tools` and emits
+        // no System message.
+        assert_eq!(
+            systems.len(),
+            4,
+            "one System message per non-tools prefix block",
+        );
+        assert_eq!(
+            conv.meta.tools.len(),
+            3,
+            "the tools prefix block populates meta.tools",
+        );
+        // The fourth (knowledge/context) System message is the last prefix
+        // block; its body is empty against the placeholder corpus.
+        match &systems[3].body {
             Some(Content::Text(t)) => assert!(
                 t.is_empty(),
-                "fifth (knowledge) prefix block body should be empty against the placeholder corpus, got {t:?}",
+                "fourth (knowledge) prefix block body should be empty against the placeholder corpus, got {t:?}",
             ),
             other => {
                 panic!("expected Some(Content::Text(\"\")) for knowledge block, got {other:?}")
@@ -260,18 +274,19 @@ model: claude-opus-4-7
             .iter()
             .filter(|m| matches!(m.role, Role::System))
             .collect();
+        // The `kind: tools` block resolves to `meta.tools`, not a System
+        // message, so four of the five prefix blocks become System messages.
         assert_eq!(
             systems.len(),
-            5,
-            "five prefix blocks → five System messages"
+            4,
+            "four non-tools prefix blocks → four System messages",
         );
-        // Prefix block declaration order: file, system, tools, examples, context.
-        // Cache assignments from the fixture: true, true, true, false, false.
+        // Non-tools prefix block declaration order: file, system, examples,
+        // context. Cache assignments from the fixture: true, true, false, false.
         assert!(systems[0].cache, "file block: cache true");
         assert!(systems[1].cache, "system block: cache true");
-        assert!(systems[2].cache, "tools block: cache true");
-        assert!(!systems[3].cache, "examples block: cache false");
-        assert!(!systems[4].cache, "context (knowledge) block: cache false");
+        assert!(!systems[2].cache, "examples block: cache false");
+        assert!(!systems[3].cache, "context (knowledge) block: cache false");
     }
 
     #[test]
