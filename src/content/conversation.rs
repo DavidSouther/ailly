@@ -60,6 +60,16 @@ pub struct Meta {
     pub binding: BindingMap,
 }
 
+/// A tool the model may call, declared by an assembly's `kind: tools` prefix
+/// block and carried on `meta.tools`. Mirrors the JSON in
+/// `e2e/insurance-claim/context/tools/*.json` and Anthropic's tool shape.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ToolDefinition {
+    pub name: String,
+    pub description: String,
+    pub input_schema: serde_yaml_ng::Value,
+}
+
 /// Sender role for a single message.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -747,6 +757,32 @@ role: not-a-role
         let emitted = conv.to_yaml_string().expect("emits");
         let reparsed = Conversation::from_yaml_str(&emitted).expect("emitted re-parses");
         assert_eq!(reparsed, conv);
+    }
+
+    #[test]
+    fn tool_definition_round_trips_lookup_policy_fixture() {
+        // The real byte shape an assembly's `kind: tools` block parses. JSON is
+        // a YAML subset, so the project's `serde_yaml_ng` parser reads it — the
+        // same treatment `ContentBlock::ToolUse.input` already gets.
+        let fixture =
+            include_str!("../../e2e/insurance-claim/context/tools/lookup_policy.json");
+
+        let tool: ToolDefinition =
+            serde_yaml_ng::from_str(fixture).expect("lookup_policy.json parses");
+
+        assert_eq!(tool.name, "lookup_policy");
+        assert_eq!(
+            tool.description,
+            "Look up coverage and limits for a policy number."
+        );
+        assert_eq!(tool.input_schema["type"], serde_yaml_ng::Value::from("object"));
+        assert!(tool.input_schema["properties"]["policy_number"].is_mapping());
+
+        let reparsed: ToolDefinition = serde_yaml_ng::from_str(
+            &serde_yaml_ng::to_string(&tool).expect("tool emits"),
+        )
+        .expect("emitted tool re-parses");
+        assert_eq!(reparsed, tool);
     }
 
     #[test]
