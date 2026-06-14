@@ -99,15 +99,16 @@ impl ToolExecutor for NoopToolExecutor {
             .lock()
             .expect("NoopToolExecutor mutex poisoned");
         let queue = scripts.get_mut(name);
-        let reply = queue
-            .and_then(VecDeque::pop_front)
-            .ok_or_else(|| ToolError::NoopExhausted {
-                name: name.clone(),
-                // The named queue is empty (or absent) at this call. With no
-                // per-name counter on the struct, the honest reportable value
-                // is the depth remaining at exhaustion, which is zero.
-                call_index: 0,
-            })?;
+        let reply =
+            queue
+                .and_then(VecDeque::pop_front)
+                .ok_or_else(|| ToolError::NoopExhausted {
+                    name: name.clone(),
+                    // The named queue is empty (or absent) at this call. With no
+                    // per-name counter on the struct, the honest reportable value
+                    // is the depth remaining at exhaustion, which is zero.
+                    call_index: 0,
+                })?;
         Ok(ContentBlock::ToolResult {
             tool_use_id: id.clone(),
             content: Content::from(reply),
@@ -118,13 +119,12 @@ impl ToolExecutor for NoopToolExecutor {
 
 #[cfg(test)]
 mod tests {
-    use crate::content::conversation::Content;
-    use crate::content::conversation::ToolUseId;
-
     use super::ContentBlock;
     use super::NoopToolExecutor;
     use super::ToolError;
     use super::ToolExecutor;
+    use crate::content::conversation::Content;
+    use crate::content::conversation::ToolUseId;
 
     fn tool_use(id: &str, name: &str) -> ContentBlock {
         ContentBlock::ToolUse {
@@ -136,8 +136,10 @@ mod tests {
 
     #[tokio::test]
     async fn execute_returns_scripted_result_echoing_call_id() {
-        let executor =
-            NoopToolExecutor::from_scripts([("lookup_policy", vec![String::from("status: in_force")])]);
+        let executor = NoopToolExecutor::from_scripts([(
+            "lookup_policy",
+            vec![String::from("status: in_force")],
+        )]);
 
         let result = executor
             .execute(&tool_use("toolu_001", "lookup_policy"))
@@ -156,8 +158,10 @@ mod tests {
 
     #[tokio::test]
     async fn execute_errors_when_script_exhausted() {
-        let executor =
-            NoopToolExecutor::from_scripts([("lookup_policy", vec![String::from("status: in_force")])]);
+        let executor = NoopToolExecutor::from_scripts([(
+            "lookup_policy",
+            vec![String::from("status: in_force")],
+        )]);
 
         executor
             .execute(&tool_use("toolu_001", "lookup_policy"))
