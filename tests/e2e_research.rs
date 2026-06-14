@@ -139,7 +139,10 @@ async fn research_suite_scores_tool_call_conversation_end_to_end() {
     //   must_call_tool: web_fetch    -> Pass
     //   tool_call_order: [web_search, web_fetch] -> Pass
     assert_eq!(outcome.conversations_matched, 1, "in-tree fixture matched");
-    assert_eq!(outcome.assertions_passed, 3, "three tool-call assertions pass");
+    assert_eq!(
+        outcome.assertions_passed, 3,
+        "three tool-call assertions pass"
+    );
     assert_eq!(outcome.assertions_failed, 0);
     assert_eq!(outcome.assertions_deferred, 0);
     assert_eq!(outcome.assertions_malformed, 0);
