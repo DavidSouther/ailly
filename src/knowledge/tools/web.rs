@@ -801,4 +801,27 @@ mod tests {
             "the fetcher must not be called when `url` is missing"
         );
     }
+
+    #[test]
+    fn web_fetch_json_round_trips_into_tool_definition() {
+        // The real byte shape Feature 3's `kind: tools` block parses, mirroring
+        // `web_search_json_round_trips_into_tool_definition`. JSON is a YAML
+        // subset, so the assembly resolver's `serde_yaml_ng` parser reads it.
+        // `name` is the contract Feature 3's evals assert on
+        // (`must_call_tool: web_fetch`); `required` must list the `url`
+        // argument `execute` reads.
+        let fixture = include_str!("../../../e2e/research/context/tools/web_fetch.json");
+
+        let tool: crate::content::conversation::ToolDefinition =
+            serde_yaml_ng::from_str(fixture).expect("web_fetch.json parses");
+
+        assert_eq!(tool.name, "web_fetch");
+        let required = tool.input_schema["required"]
+            .as_sequence()
+            .expect("input_schema.required is a sequence");
+        assert!(
+            required.contains(&serde_yaml_ng::Value::from("url")),
+            "web_fetch input_schema.required must list `url`: {required:?}"
+        );
+    }
 }
