@@ -448,4 +448,27 @@ mod tests {
             "the provider error message must ride through: {text}"
         );
     }
+
+    #[test]
+    fn web_search_json_round_trips_into_tool_definition() {
+        // The real byte shape Feature 3's `kind: tools` block parses. JSON is a
+        // YAML subset, so the assembly resolver's `serde_yaml_ng` parser reads
+        // it — the exact path `tool_definition_round_trips_lookup_policy_fixture`
+        // (conversation.rs) proves for the insurance-claim fixtures. `name` is
+        // the contract Feature 3's evals assert on (`must_call_tool: web_search`);
+        // `required` must list the `query` argument `execute` reads.
+        let fixture = include_str!("../../../e2e/research/context/tools/web_search.json");
+
+        let tool: crate::content::conversation::ToolDefinition =
+            serde_yaml_ng::from_str(fixture).expect("web_search.json parses");
+
+        assert_eq!(tool.name, "web_search");
+        let required = tool.input_schema["required"]
+            .as_sequence()
+            .expect("input_schema.required is a sequence");
+        assert!(
+            required.contains(&serde_yaml_ng::Value::from("query")),
+            "web_search input_schema.required must list `query`: {required:?}"
+        );
+    }
 }
