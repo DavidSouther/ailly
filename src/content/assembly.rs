@@ -215,10 +215,11 @@ impl Assembly {
     ///
     /// # Errors
     ///
-    /// Returns [`RenderError::Repository`] when a prefix block read fails or
+    /// Returns [`RenderError::Repository`] when a prefix block read fails,
     /// [`RenderError::UnknownVar`] / [`RenderError::UnterminatedPlaceholder`]
     /// when a template references an unknown variable or has a malformed
-    /// placeholder.
+    /// placeholder, or [`RenderError::ToolParse`] when a `kind: tools` block's
+    /// JSON file does not parse into a [`ToolDefinition`].
     pub fn render(
         &self,
         project: &crate::content::project::Project,

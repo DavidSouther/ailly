@@ -10,6 +10,7 @@ use crate::content::conversation::Message;
 use crate::content::conversation::ModelId;
 use crate::content::conversation::Role;
 use crate::content::conversation::ToolDefinition;
+use crate::content::conversation::yaml_value_to_json;
 use crate::engine::engine::CompletionRequest;
 use crate::engine::engine::CompletionResponse;
 use crate::engine::engine::EngineError;
@@ -96,18 +97,6 @@ fn tools_to_rig(tools: &[ToolDefinition]) -> Vec<rig::completion::ToolDefinition
             parameters: yaml_value_to_json(&tool.input_schema),
         })
         .collect()
-}
-
-/// Convert a `serde_yaml_ng::Value` to a `serde_json::Value` by round-tripping
-/// through a JSON string. JSON is a subset of YAML, so a tool's `input_schema`
-/// parsed from a `*.json` file body lowers to the equivalent JSON value. This
-/// mirrors the `yaml_to_json` seam in `knowledge::assertions`; a shared helper
-/// across modules is a refactor-phase candidate, not a feature requirement.
-fn yaml_value_to_json(value: &serde_yaml_ng::Value) -> serde_json::Value {
-    let json_text = serde_json::to_string(value)
-        .expect("serde_yaml_ng::Value serializes to JSON via its serde::Serialize impl");
-    serde_json::from_str(&json_text)
-        .expect("a JSON string emitted by serde_json round-trips to a serde_json::Value")
 }
 
 /// Translate an Ailly message slice into the `Vec<rig::completion::Message>`
@@ -957,18 +946,17 @@ mod tests {
         let tools = [ToolDefinition {
             name: String::from("lookup_policy"),
             description: String::from("Look up a policy by id."),
-            input_schema: input_schema.clone(),
+            input_schema,
         }];
 
         // Act
         let lowered = tools_to_rig(&tools);
 
         // Assert — one rig tool with matching name/description and parameters
-        // equal to the yaml->json of the input schema.
+        // equal to the independently-derived JSON of the input schema.
         assert_eq!(lowered.len(), 1);
         assert_eq!(lowered[0].name, "lookup_policy");
         assert_eq!(lowered[0].description, "Look up a policy by id.");
-        assert_eq!(lowered[0].parameters, yaml_value_to_json(&input_schema));
         assert_eq!(
             lowered[0].parameters,
             serde_json::json!({

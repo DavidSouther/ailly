@@ -72,6 +72,26 @@ pub struct ToolDefinition {
     pub input_schema: serde_yaml_ng::Value,
 }
 
+/// Convert a `serde_yaml_ng::Value` to a `serde_json::Value` by round-tripping
+/// through a JSON string. JSON is a subset of YAML, so a value parsed from a
+/// `*.json` body (a tool's `input_schema`, an assertion's expected literal)
+/// lowers to the equivalent JSON. Lives in `content` because both `engine`
+/// (rig tool lowering) and `knowledge` (assertion comparison) consume it and
+/// neither may depend on the other.
+#[must_use]
+#[expect(
+    clippy::missing_panics_doc,
+    reason = "both expects are unreachable: any serde_yaml_ng::Value serializes to a \
+              JSON string via its Serialize impl, and that string round-trips to a \
+              serde_json::Value — there is no reachable panic to document"
+)]
+pub fn yaml_value_to_json(value: &serde_yaml_ng::Value) -> serde_json::Value {
+    let json_text = serde_json::to_string(value)
+        .expect("serde_yaml_ng::Value serializes to JSON via its serde::Serialize impl");
+    serde_json::from_str(&json_text)
+        .expect("a JSON string emitted by serde_json round-trips to a serde_json::Value")
+}
+
 /// Sender role for a single message.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]

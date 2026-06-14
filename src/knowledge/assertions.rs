@@ -16,6 +16,7 @@ use crate::content::conversation::Message;
 use crate::content::conversation::Meta;
 use crate::content::conversation::Role;
 use crate::content::conversation::Trace;
+use crate::content::conversation::yaml_value_to_json as yaml_to_json;
 use crate::content::evaluation::Assertion;
 use crate::content::evaluation::Op;
 use crate::content::evaluation::ScriptBody;
@@ -1141,17 +1142,6 @@ fn check_tool_call_count(
             ),
         }
     }
-}
-
-/// Convert a `serde_yaml_ng::Value` to a `serde_json::Value` by round-tripping
-/// through a JSON string. The YAML value comes from a parsed assertion field,
-/// so the resulting JSON shape is the suite author's literal — strings,
-/// numbers, bools, null, and homogeneous containers all flow through.
-fn yaml_to_json(value: &serde_yaml_ng::Value) -> serde_json::Value {
-    let json_text = serde_json::to_string(value)
-        .expect("serde_yaml_ng::Value serializes to JSON via its serde::Serialize impl");
-    serde_json::from_str(&json_text)
-        .expect("a JSON string emitted by serde_json round-trips to a serde_json::Value")
 }
 
 /// First-result of a `JSONPath` query against `conversation` rendered as JSON.
