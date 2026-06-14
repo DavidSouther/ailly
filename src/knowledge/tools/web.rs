@@ -18,6 +18,21 @@ use crate::content::conversation::ToolUseId;
 use crate::knowledge::tools::ToolError;
 use crate::knowledge::tools::ToolExecutor;
 
+/// Borrow the `id` and `input` of a `tool_use` block, or reject a non-tool_use
+/// block as a structural harness violation. The guard both `web_search` and
+/// `web_fetch` open `execute` with; mirrors the destructure in
+/// `NoopToolExecutor::execute` (mod.rs), which also binds `name`.
+///
+/// # Errors
+/// Returns [`ToolError::NotAToolUse`] when `call` is not a
+/// [`ContentBlock::ToolUse`].
+fn tool_use_parts(call: &ContentBlock) -> Result<(&ToolUseId, &serde_yaml_ng::Value), ToolError> {
+    let ContentBlock::ToolUse { id, name: _, input } = call else {
+        return Err(ToolError::NotAToolUse);
+    };
+    Ok((id, input))
+}
+
 /// Default cap on results requested when a `web_search` call omits `count`.
 /// Matches the `default` in `web_search.json` (Feature 2, step 3).
 const DEFAULT_RESULT_COUNT: u8 = 5;
@@ -337,11 +352,7 @@ impl WebSearch {
 #[async_trait]
 impl ToolExecutor for WebSearch {
     async fn execute(&self, call: &ContentBlock) -> Result<ContentBlock, ToolError> {
-        // Destructure — identical to NoopToolExecutor (mod.rs:96). A non-tool_use
-        // block is a structural harness violation, never model-recoverable.
-        let ContentBlock::ToolUse { id, name: _, input } = call else {
-            return Err(ToolError::NotAToolUse);
-        };
+        let (id, input) = tool_use_parts(call)?;
         // A missing/non-string `query` is the model's mistake: surface it as an
         // is_error result it can retry, not a run-aborting ToolError.
         let Some(query) = input.get("query").and_then(serde_yaml_ng::Value::as_str) else {
@@ -398,12 +409,7 @@ impl WebFetch {
 #[async_trait]
 impl ToolExecutor for WebFetch {
     async fn execute(&self, call: &ContentBlock) -> Result<ContentBlock, ToolError> {
-        // Destructure — identical to NoopToolExecutor (mod.rs:96) and WebSearch.
-        // A non-tool_use block is a structural harness violation, never
-        // model-recoverable.
-        let ContentBlock::ToolUse { id, name: _, input } = call else {
-            return Err(ToolError::NotAToolUse);
-        };
+        let (id, input) = tool_use_parts(call)?;
         // A missing/non-string `url` is the model's mistake: surface it as an
         // is_error result it can retry, not a run-aborting ToolError.
         let Some(url) = input.get("url").and_then(serde_yaml_ng::Value::as_str) else {
