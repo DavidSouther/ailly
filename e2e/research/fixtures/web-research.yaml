@@ -1,0 +1,42 @@
+---
+model: noop
+assembly: research
+binding:
+  case: web-research
+---
+role: user
+content: "Find the official Rust homepage and fetch its tagline."
+---
+role: assistant
+content:
+  - type: tool_use
+    id: tu-1
+    name: web_search
+    input: { query: "rust language official site" }
+---
+role: tool
+content:
+  - type: tool_result
+    tool_use_id: tu-1
+    content: "Rust — https://www.rust-lang.org\nA language empowering everyone."
+---
+role: assistant
+content:
+  - type: tool_use
+    id: tu-2
+    name: web_fetch
+    input: { url: "https://www.rust-lang.org" }
+---
+role: tool
+content:
+  - type: tool_result
+    tool_use_id: tu-2
+    content: "HTTP 200 (text/html)\n\nA language empowering everyone to build reliable and efficient software."
+---
+role: assistant
+content: "The Rust homepage tagline is: A language empowering everyone to build reliable and efficient software."
+trace:
+  span_id: span-research
+  model: noop
+  tokens: { input: 1200, output: 60 }
+  latency_ms: 400
