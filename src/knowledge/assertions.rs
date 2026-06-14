@@ -367,6 +367,7 @@ pub(crate) async fn check_judge(
         .complete(CompletionRequest {
             model: conversation.meta.model.clone(),
             messages: &judge_msgs,
+            tools: &[],
             debug: false,
         })
         .await

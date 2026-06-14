@@ -477,6 +477,7 @@ impl Conversation {
             let request = crate::engine::engine::CompletionRequest {
                 model: self.meta.model.clone(),
                 messages: self.messages_up_to(index),
+                tools: &self.meta.tools,
                 debug: self.meta.debug,
             };
             let response = engine.complete(request).await?;
