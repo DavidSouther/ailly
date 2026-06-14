@@ -168,6 +168,119 @@ impl SearchProvider for BraveSearchProvider {
     }
 }
 
+/// One web fetch request. The complete call description; the fetcher only
+/// executes it. Mirrors [`SearchQuery`]'s "executor builds it, port runs it"
+/// split.
+pub struct FetchRequest {
+    pub url: String,
+}
+
+/// One fetched response, port-normalised. A flat shape so the production
+/// adapter maps a `reqwest::Response` into it and the tool never sees
+/// reqwest-specific types.
+pub struct FetchResponse {
+    /// HTTP status code. A non-2xx status is reported, not an error — the tool
+    /// decides `is_error` from it (step 5), mirroring how `ScriptRunner` treats
+    /// a non-zero exit as data.
+    pub status: u16,
+    /// Decoded body text. v1 returns the raw response body; HTML→text
+    /// extraction is deferred.
+    pub body: String,
+    /// `Content-Type` header, lower-cased, if present. Lets the tool note
+    /// "(html)" in the result without parsing it.
+    pub content_type: Option<String>,
+}
+
+/// Structural failure of the fetch itself (malformed URL, transport), distinct
+/// from a fetch that ran and returned a non-2xx status. Carries a `String`, not
+/// a wrapped `reqwest::Error`, so the port signature and the fake stay
+/// reqwest-free — exactly as [`SearchError`] and `ScriptError` do.
+#[derive(Debug, thiserror::Error)]
+pub enum FetchError {
+    #[error("fetch request failed: {0}")]
+    Request(String),
+    #[error("invalid url {url:?}: {reason}")]
+    InvalidUrl { url: String, reason: String },
+}
+
+/// The sole seam between `WebFetch::execute` and the network, so the unit test
+/// drives the tool against a hand-rolled fake. Mirrors [`SearchProvider`] and
+/// `ScriptRunner`.
+#[async_trait]
+pub trait Fetcher: Send + Sync {
+    /// Fetch `request.url` and return its response.
+    ///
+    /// # Errors
+    /// Returns [`FetchError`] on a malformed URL or a transport failure. A
+    /// non-2xx HTTP status is **not** an error — it is an `Ok(FetchResponse)`
+    /// whose `status` the tool reports, mirroring how `ScriptRunner` treats a
+    /// non-zero exit as data, not an error.
+    async fn fetch(&self, request: FetchRequest) -> Result<FetchResponse, FetchError>;
+}
+
+/// Production adapter over `reqwest::Client`: validate the URL, issue a single
+/// `GET`, and lower the response into [`FetchResponse`]. The sole real impl;
+/// unit tests use a hand-rolled `FakeFetcher` instead, the documented
+/// `TokioScriptRunner` posture — a network adapter has no seam below it to
+/// mock, so its realness is proven only by a future gated integration test, not
+/// the unit suite.
+pub struct ReqwestFetcher {
+    client: reqwest::Client,
+}
+
+impl ReqwestFetcher {
+    /// Construct over a default `reqwest::Client`.
+    #[must_use]
+    pub fn new() -> Self {
+        Self {
+            client: reqwest::Client::new(),
+        }
+    }
+}
+
+impl Default for ReqwestFetcher {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[async_trait]
+impl Fetcher for ReqwestFetcher {
+    async fn fetch(&self, request: FetchRequest) -> Result<FetchResponse, FetchError> {
+        // Validate the URL up front so a malformed input is a structural
+        // FetchError rather than a transport failure deep in reqwest.
+        let url = reqwest::Url::parse(&request.url).map_err(|err| FetchError::InvalidUrl {
+            url: request.url.clone(),
+            reason: err.to_string(),
+        })?;
+        let response = self
+            .client
+            .get(url)
+            .send()
+            .await
+            .map_err(|err| FetchError::Request(err.to_string()))?;
+        let status = response.status().as_u16();
+        // Read the Content-Type before consuming the body; lower-cased so the
+        // tool can match on it without case juggling.
+        let content_type = response
+            .headers()
+            .get(reqwest::header::CONTENT_TYPE)
+            .and_then(|value| value.to_str().ok())
+            .map(str::to_lowercase);
+        // A non-2xx status is data, not an error: the body still rides through
+        // so the tool can report what the server said.
+        let body = response
+            .text()
+            .await
+            .map_err(|err| FetchError::Request(err.to_string()))?;
+        Ok(FetchResponse {
+            status,
+            body,
+            content_type,
+        })
+    }
+}
+
 /// Build an `is_error: None` `tool_result` echoing the call `id`. The success
 /// constructor over `ContentBlock::ToolResult`; pairs with [`error_result`].
 fn ok_result(id: &ToolUseId, text: String) -> ContentBlock {
@@ -258,6 +371,10 @@ mod tests {
     use std::collections::VecDeque;
     use std::sync::Mutex;
 
+    use super::FetchError;
+    use super::FetchRequest;
+    use super::FetchResponse;
+    use super::Fetcher;
     use super::SearchError;
     use super::SearchHit;
     use super::SearchProvider;
@@ -469,6 +586,63 @@ mod tests {
         assert!(
             required.contains(&serde_yaml_ng::Value::from("query")),
             "web_search input_schema.required must list `query`: {required:?}"
+        );
+    }
+
+    /// Hand-rolled fetch fake (the `FakeScriptRunner` precedent): returns
+    /// canned responses in order and records every [`FetchRequest`] it was
+    /// handed, so a test drives the port deterministically and inspects the
+    /// wiring.
+    struct FakeFetcher {
+        canned: Mutex<VecDeque<Result<FetchResponse, FetchError>>>,
+        calls: Mutex<Vec<FetchRequest>>,
+    }
+
+    impl FakeFetcher {
+        fn new(outcomes: Vec<Result<FetchResponse, FetchError>>) -> Self {
+            Self {
+                canned: Mutex::new(outcomes.into()),
+                calls: Mutex::new(Vec::new()),
+            }
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl Fetcher for FakeFetcher {
+        async fn fetch(&self, request: FetchRequest) -> Result<FetchResponse, FetchError> {
+            self.calls.lock().expect("calls lock").push(request);
+            self.canned
+                .lock()
+                .expect("canned lock")
+                .pop_front()
+                .expect("FakeFetcher: a canned response is available")
+        }
+    }
+
+    #[tokio::test]
+    async fn fake_fetcher_drives_through_the_port() {
+        let fetcher = FakeFetcher::new(vec![Ok(FetchResponse {
+            status: 200,
+            body: String::from("<page>hello</page>"),
+            content_type: Some(String::from("text/html")),
+        })]);
+
+        // Drive the port through `&dyn Fetcher` to prove it is object-safe and
+        // the fake is drivable. A non-2xx status would be `Ok` data too; this
+        // round-trip only proves the seam, the executor (step 5) reads `status`.
+        let port: &dyn Fetcher = &fetcher;
+        let response = port
+            .fetch(FetchRequest {
+                url: String::from("https://example.com/"),
+            })
+            .await
+            .expect("the canned Ok response is served");
+
+        assert_eq!(response.status, 200);
+        assert_eq!(response.body, "<page>hello</page>");
+        assert_eq!(
+            fetcher.calls.lock().expect("calls lock")[0].url,
+            "https://example.com/"
         );
     }
 }
