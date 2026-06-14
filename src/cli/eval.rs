@@ -118,7 +118,7 @@ pub async fn run(args: EvalCmdArgs) -> Result<EvalCmdOutcome, EvalCmdError> {
     // "engine present but call fails mid-evaluation" path is the only one that
     // produces `Errored`. Heterogeneous run dirs bind to the first model; per-
     // conversation dispatch is deferred
-    // (docs/developer/TASK-NOTES-eval-judge-deferred.md).
+    // (.ailly/developer/TASK-NOTES-eval-judge-deferred.md).
     let engine = match conversations.first() {
         Some((_, conv)) => match open_engine_for_model(&conv.meta.model) {
             Ok(engine) => Some(engine),

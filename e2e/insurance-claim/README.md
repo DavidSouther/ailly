@@ -183,7 +183,7 @@ A contributor may drop a `e2e/insurance-claim/.env` with `ANTHROPIC_API_KEY` ins
 The project demonstrates the assemble -> run -> eval pipeline end to
 end, with two intentionally deferred capabilities that affect what
 the regression suite can prove today. Each item is tracked separately
-in [docs/developer/TASKS.md](../../docs/developer/TASKS.md):
+in [.ailly/developer/TASKS.md](../../.ailly/developer/TASKS.md):
 
 - **Tool definitions are rendered into a system message rather than
   registered as tools on the engine request.** The `kind: tools`

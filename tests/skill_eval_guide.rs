@@ -14,7 +14,7 @@
 //!
 //! This test asserts the user-story outcome structurally over the produced
 //! artifacts. Each block maps to a metric from
-//! `docs/developer/2026-06-01-A-skill-testing-docs/design.md`:
+//! `.ailly/developer/2026-06-01-A-skill-testing-docs/design.md`:
 //!
 //!   M1  self-contained directory that names the project anatomy and the
 //!       four-verb workflow (an agent can scaffold from the skill alone).
