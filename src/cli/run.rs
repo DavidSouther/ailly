@@ -201,6 +201,7 @@ mod tests {
                 debug: false,
                 assembly: None,
                 binding: BindingMap::new(),
+                tools: Vec::new(),
             },
             session,
         };
@@ -357,6 +358,7 @@ mod tests {
                 debug: false,
                 assembly: None,
                 binding: BindingMap::new(),
+                tools: Vec::new(),
             },
             session: vec![
                 Message {

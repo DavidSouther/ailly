@@ -221,6 +221,7 @@ fn conversation_with(session: Vec<Message>) -> Conversation {
             debug: false,
             assembly: None,
             binding: BindingMap::new(),
+            tools: Vec::new(),
         },
         session,
     }

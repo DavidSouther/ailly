@@ -234,6 +234,7 @@ impl Assembly {
                 debug: false,
                 assembly: Some(self.name.clone()),
                 binding: binding.values.clone(),
+                tools: Vec::new(),
             },
             session,
         })

@@ -22,6 +22,7 @@
 
 use std::marker::PhantomData;
 
+use ailly_two::content::conversation::BindingMap;
 use ailly_two::content::conversation::Content;
 use ailly_two::content::conversation::ContentBlock;
 use ailly_two::content::conversation::Conversation;
@@ -66,7 +67,8 @@ async fn run_drives_tool_use_then_tool_result_then_text() {
             model: ModelId::from("noop"),
             debug: false,
             assembly: None,
-            binding: Default::default(),
+            binding: BindingMap::new(),
+            tools: Vec::new(),
         },
         session: vec![
             Message {

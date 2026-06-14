@@ -397,6 +397,7 @@ pub(crate) async fn check_judge(
             debug: false,
             assembly: Some(String::from("judge")),
             binding: conversation.meta.binding.clone(),
+            tools: Vec::new(),
         },
         session: vec![system_message, user_message, assistant_message],
     };
@@ -1351,6 +1352,7 @@ mod tests {
                 debug: false,
                 assembly: None,
                 binding: BindingMap::new(),
+                tools: Vec::new(),
             },
             session,
         }

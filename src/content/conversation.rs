@@ -58,6 +58,8 @@ pub struct Meta {
     pub assembly: Option<String>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub binding: BindingMap,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tools: Vec<ToolDefinition>,
 }
 
 /// A tool the model may call, declared by an assembly's `kind: tools` prefix
@@ -560,6 +562,7 @@ role: not-a-role
             debug: false,
             assembly: None,
             binding: BindingMap::new(),
+            tools: Vec::new(),
         }
     }
 
@@ -764,8 +767,7 @@ role: not-a-role
         // The real byte shape an assembly's `kind: tools` block parses. JSON is
         // a YAML subset, so the project's `serde_yaml_ng` parser reads it — the
         // same treatment `ContentBlock::ToolUse.input` already gets.
-        let fixture =
-            include_str!("../../e2e/insurance-claim/context/tools/lookup_policy.json");
+        let fixture = include_str!("../../e2e/insurance-claim/context/tools/lookup_policy.json");
 
         let tool: ToolDefinition =
             serde_yaml_ng::from_str(fixture).expect("lookup_policy.json parses");
@@ -775,13 +777,15 @@ role: not-a-role
             tool.description,
             "Look up coverage and limits for a policy number."
         );
-        assert_eq!(tool.input_schema["type"], serde_yaml_ng::Value::from("object"));
+        assert_eq!(
+            tool.input_schema["type"],
+            serde_yaml_ng::Value::from("object")
+        );
         assert!(tool.input_schema["properties"]["policy_number"].is_mapping());
 
-        let reparsed: ToolDefinition = serde_yaml_ng::from_str(
-            &serde_yaml_ng::to_string(&tool).expect("tool emits"),
-        )
-        .expect("emitted tool re-parses");
+        let reparsed: ToolDefinition =
+            serde_yaml_ng::from_str(&serde_yaml_ng::to_string(&tool).expect("tool emits"))
+                .expect("emitted tool re-parses");
         assert_eq!(reparsed, tool);
     }
 
