@@ -15,6 +15,7 @@ use std::collections::BTreeMap;
 use std::collections::VecDeque;
 use std::sync::Mutex;
 
+use crate::content::conversation::Content;
 use crate::content::conversation::ContentBlock;
 
 /// Failure modes for tool execution, surfaced into `RunError::Tool`.
@@ -49,10 +50,6 @@ pub trait ToolExecutor: Send + Sync {
 /// conversation that never emits a `tool_use`.
 pub struct NoopToolExecutor {
     /// tool name -> queued result strings, popped front-to-back per call.
-    #[expect(
-        dead_code,
-        reason = "type-first stub; consumed when the executor body is implemented"
-    )]
     scripts: Mutex<BTreeMap<String, VecDeque<String>>>,
 }
 
@@ -93,9 +90,102 @@ impl Default for NoopToolExecutor {
 
 #[async_trait::async_trait]
 impl ToolExecutor for NoopToolExecutor {
-    async fn execute(&self, _call: &ContentBlock) -> Result<ContentBlock, ToolError> {
-        todo!(
-            "Feature 1 step 4/6: pop the named tool's scripted result and wrap it in a ToolResult"
-        )
+    async fn execute(&self, call: &ContentBlock) -> Result<ContentBlock, ToolError> {
+        let ContentBlock::ToolUse { id, name, input: _ } = call else {
+            return Err(ToolError::NotAToolUse);
+        };
+        let mut scripts = self
+            .scripts
+            .lock()
+            .expect("NoopToolExecutor mutex poisoned");
+        let queue = scripts.get_mut(name);
+        let reply = queue
+            .and_then(VecDeque::pop_front)
+            .ok_or_else(|| ToolError::NoopExhausted {
+                name: name.clone(),
+                // The named queue is empty (or absent) at this call. With no
+                // per-name counter on the struct, the honest reportable value
+                // is the depth remaining at exhaustion, which is zero.
+                call_index: 0,
+            })?;
+        Ok(ContentBlock::ToolResult {
+            tool_use_id: id.clone(),
+            content: Content::from(reply),
+            is_error: None,
+        })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::content::conversation::Content;
+    use crate::content::conversation::ToolUseId;
+
+    use super::ContentBlock;
+    use super::NoopToolExecutor;
+    use super::ToolError;
+    use super::ToolExecutor;
+
+    fn tool_use(id: &str, name: &str) -> ContentBlock {
+        ContentBlock::ToolUse {
+            id: ToolUseId::from(id),
+            name: String::from(name),
+            input: serde_yaml_ng::Value::Null,
+        }
+    }
+
+    #[tokio::test]
+    async fn execute_returns_scripted_result_echoing_call_id() {
+        let executor =
+            NoopToolExecutor::from_scripts([("lookup_policy", vec![String::from("status: in_force")])]);
+
+        let result = executor
+            .execute(&tool_use("toolu_001", "lookup_policy"))
+            .await
+            .expect("scripted result is served");
+
+        assert_eq!(
+            result,
+            ContentBlock::ToolResult {
+                tool_use_id: ToolUseId::from("toolu_001"),
+                content: Content::Text(String::from("status: in_force")),
+                is_error: None,
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn execute_errors_when_script_exhausted() {
+        let executor =
+            NoopToolExecutor::from_scripts([("lookup_policy", vec![String::from("status: in_force")])]);
+
+        executor
+            .execute(&tool_use("toolu_001", "lookup_policy"))
+            .await
+            .expect("first call is served");
+
+        let err = executor
+            .execute(&tool_use("toolu_002", "lookup_policy"))
+            .await
+            .expect_err("second call exhausts the script");
+
+        assert!(matches!(
+            err,
+            ToolError::NoopExhausted { ref name, .. } if name == "lookup_policy"
+        ));
+    }
+
+    #[tokio::test]
+    async fn execute_errors_on_non_tool_use_block() {
+        let executor = NoopToolExecutor::default();
+
+        let err = executor
+            .execute(&ContentBlock::Text {
+                text: String::from("not a tool call"),
+            })
+            .await
+            .expect_err("a non-tool_use block is rejected");
+
+        assert!(matches!(err, ToolError::NotAToolUse));
     }
 }
