@@ -468,11 +468,6 @@ impl Conversation {
         engine: &dyn crate::engine::engine::EngineProvider,
         executor: &dyn crate::knowledge::tools::ToolExecutor,
     ) -> Result<(), RunError> {
-        // Type-first stub: the executor is threaded through but the tool-turn
-        // protocol (Feature 1 step 6) is not yet implemented, so a conversation
-        // whose first reply is a `tool_use` block stops short of the
-        // `tool → assistant(text)` shape the feature test asserts.
-        let _ = executor;
         while let Some(index) = self.next_blank_assistant() {
             let request = crate::engine::engine::CompletionRequest {
                 model: self.meta.model.clone(),
@@ -482,6 +477,44 @@ impl Conversation {
             };
             let response = engine.complete(request).await?;
             self.fill_blank_assistant(index, response.content, response.trace)?;
+
+            // Clone out the `tool_use` blocks the just-filled slot carries —
+            // in (block order) — before mutating `self.session`, so the
+            // executor calls and the appends below do not overlap a borrow.
+            let calls: Vec<ContentBlock> = match self.session[index].body.as_ref() {
+                Some(Content::Blocks(blocks)) => blocks
+                    .iter()
+                    .filter(|block| matches!(block, ContentBlock::ToolUse { .. }))
+                    .cloned()
+                    .collect(),
+                Some(Content::Text(_)) | None => Vec::new(),
+            };
+            if calls.is_empty() {
+                continue;
+            }
+
+            // Dispatch each call in order, collecting its `tool_result`.
+            let mut results = Vec::with_capacity(calls.len());
+            for call in &calls {
+                results.push(executor.execute(call).await?);
+            }
+
+            // Append the tool turn, then a fresh blank assistant slot so the
+            // loop fills the model's follow-up reply on the next iteration.
+            self.session.push(Message {
+                role: Role::Tool,
+                body: Some(Content::Blocks(results)),
+                cache: false,
+                trace: None,
+                _phase: PhantomData,
+            });
+            self.session.push(Message {
+                role: Role::Assistant,
+                body: None,
+                cache: false,
+                trace: None,
+                _phase: PhantomData,
+            });
         }
         Ok(())
     }
