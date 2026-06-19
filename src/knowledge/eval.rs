@@ -706,6 +706,7 @@ mod tests {
                     debug: false,
                     assembly: None,
                     binding: map,
+                    tools: Vec::new(),
                 },
                 session: vec![Message {
                     role: Role::Assistant,

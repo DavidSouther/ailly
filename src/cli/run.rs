@@ -45,6 +45,8 @@ pub enum RunCmdError {
     Engine(#[from] EngineError),
     #[error("conversation error: {0}")]
     Conversation(#[from] ConversationError),
+    #[error("tool error: {0}")]
+    Tool(#[from] crate::knowledge::tools::ToolError),
     #[error("target {path:?} is neither a file nor a directory")]
     TargetNotFound { path: PathBuf },
     #[error("target path {path:?} is not valid UTF-8")]
@@ -56,6 +58,7 @@ impl From<RunError> for RunCmdError {
         match err {
             RunError::Engine(inner) => Self::Engine(inner),
             RunError::Conversation(inner) => Self::Conversation(inner),
+            RunError::Tool(inner) => Self::Tool(inner),
         }
     }
 }
@@ -91,7 +94,8 @@ async fn fill_and_save(
     outcome: &mut RunOutcome,
 ) -> Result<(), RunCmdError> {
     let blanks_before = count_blank_assistants(conv);
-    let engine_result = conv.run(engine).await;
+    let executor = crate::knowledge::tools::NoopToolExecutor::default();
+    let engine_result = conv.run(engine, &executor).await;
     let blanks_after = count_blank_assistants(conv);
     repo.save(key, conv)?;
     engine_result?; // Save first, then surface engine errors.
@@ -197,6 +201,7 @@ mod tests {
                 debug: false,
                 assembly: None,
                 binding: BindingMap::new(),
+                tools: Vec::new(),
             },
             session,
         };
@@ -353,6 +358,7 @@ mod tests {
                 debug: false,
                 assembly: None,
                 binding: BindingMap::new(),
+                tools: Vec::new(),
             },
             session: vec![
                 Message {

@@ -6,7 +6,7 @@
 //! carries that sibling file's text, with no vendored copy living inside the
 //! project.
 //!
-//! Design: docs/developer/2026-06-07-B-external-prefix-block/design.md
+//! Design: .ailly/developer/2026-06-07-B-external-prefix-block/design.md
 //! (Metric 1, "Sibling read works", and Metric 4, "Replay stays hermetic" — the
 //! resolved text is pinned inline in the committed run artifact, which this
 //! test reads back from disk.)

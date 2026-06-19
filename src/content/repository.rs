@@ -799,6 +799,7 @@ cases:
                 debug: false,
                 assembly: None,
                 binding: BindingMap::new(),
+                tools: Vec::new(),
             },
             session: vec![Message {
                 role: Role::Assistant,

@@ -58,6 +58,38 @@ pub struct Meta {
     pub assembly: Option<String>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub binding: BindingMap,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tools: Vec<ToolDefinition>,
+}
+
+/// A tool the model may call, declared by an assembly's `kind: tools` prefix
+/// block and carried on `meta.tools`. Mirrors the JSON in
+/// `e2e/insurance-claim/context/tools/*.json` and Anthropic's tool shape.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ToolDefinition {
+    pub name: String,
+    pub description: String,
+    pub input_schema: serde_yaml_ng::Value,
+}
+
+/// Convert a `serde_yaml_ng::Value` to a `serde_json::Value` by round-tripping
+/// through a JSON string. JSON is a subset of YAML, so a value parsed from a
+/// `*.json` body (a tool's `input_schema`, an assertion's expected literal)
+/// lowers to the equivalent JSON. Lives in `content` because both `engine`
+/// (rig tool lowering) and `knowledge` (assertion comparison) consume it and
+/// neither may depend on the other.
+#[must_use]
+#[expect(
+    clippy::missing_panics_doc,
+    reason = "both expects are unreachable: any serde_yaml_ng::Value serializes to a \
+              JSON string via its Serialize impl, and that string round-trips to a \
+              serde_json::Value — there is no reachable panic to document"
+)]
+pub fn yaml_value_to_json(value: &serde_yaml_ng::Value) -> serde_json::Value {
+    let json_text = serde_json::to_string(value)
+        .expect("serde_yaml_ng::Value serializes to JSON via its serde::Serialize impl");
+    serde_json::from_str(&json_text)
+        .expect("a JSON string emitted by serde_json round-trips to a serde_json::Value")
 }
 
 /// Sender role for a single message.
@@ -342,6 +374,8 @@ pub enum RunError {
     Engine(#[from] crate::engine::engine::EngineError),
     #[error("conversation aggregate rejected fill: {0}")]
     Conversation(#[from] ConversationError),
+    #[error("tool execution failed: {0}")]
+    Tool(#[from] crate::knowledge::tools::ToolError),
 }
 
 impl Conversation {
@@ -436,23 +470,71 @@ impl Conversation {
     }
 
     /// Fill every blank assistant slot in call order by delegating each
-    /// completion to `engine`.
+    /// completion to `engine`. After a slot is filled, any `tool_use` blocks it
+    /// carries are dispatched through `executor`, their `tool_result`s appended
+    /// as a `Role::Tool` message, and a fresh blank assistant slot is appended
+    /// so the loop continues — mirroring the Anthropic agentic loop.
+    ///
+    /// A no-tools conversation passes an empty
+    /// [`crate::knowledge::tools::NoopToolExecutor::default`]; it is never
+    /// called because no `tool_use` block appears.
     ///
     /// # Errors
-    /// Returns [`RunError::Engine`] when the engine cannot serve a slot, or
-    /// [`RunError::Conversation`] if a fill is rejected by the aggregate.
+    /// Returns [`RunError::Engine`] when the engine cannot serve a slot,
+    /// [`RunError::Conversation`] if a fill is rejected by the aggregate, or
+    /// [`RunError::Tool`] when `executor` cannot serve a tool call.
     pub async fn run(
         &mut self,
         engine: &dyn crate::engine::engine::EngineProvider,
+        executor: &dyn crate::knowledge::tools::ToolExecutor,
     ) -> Result<(), RunError> {
         while let Some(index) = self.next_blank_assistant() {
             let request = crate::engine::engine::CompletionRequest {
                 model: self.meta.model.clone(),
                 messages: self.messages_up_to(index),
+                tools: &self.meta.tools,
                 debug: self.meta.debug,
             };
             let response = engine.complete(request).await?;
             self.fill_blank_assistant(index, response.content, response.trace)?;
+
+            // Clone out the `tool_use` blocks the just-filled slot carries —
+            // in (block order) — before mutating `self.session`, so the
+            // executor calls and the appends below do not overlap a borrow.
+            let calls: Vec<ContentBlock> = match self.session[index].body.as_ref() {
+                Some(Content::Blocks(blocks)) => blocks
+                    .iter()
+                    .filter(|block| matches!(block, ContentBlock::ToolUse { .. }))
+                    .cloned()
+                    .collect(),
+                Some(Content::Text(_)) | None => Vec::new(),
+            };
+            if calls.is_empty() {
+                continue;
+            }
+
+            // Dispatch each call in order, collecting its `tool_result`.
+            let mut results = Vec::with_capacity(calls.len());
+            for call in &calls {
+                results.push(executor.execute(call).await?);
+            }
+
+            // Append the tool turn, then a fresh blank assistant slot so the
+            // loop fills the model's follow-up reply on the next iteration.
+            self.session.push(Message {
+                role: Role::Tool,
+                body: Some(Content::Blocks(results)),
+                cache: false,
+                trace: None,
+                _phase: PhantomData,
+            });
+            self.session.push(Message {
+                role: Role::Assistant,
+                body: None,
+                cache: false,
+                trace: None,
+                _phase: PhantomData,
+            });
         }
         Ok(())
     }
@@ -534,6 +616,7 @@ role: not-a-role
             debug: false,
             assembly: None,
             binding: BindingMap::new(),
+            tools: Vec::new(),
         }
     }
 
@@ -731,6 +814,33 @@ role: not-a-role
         let emitted = conv.to_yaml_string().expect("emits");
         let reparsed = Conversation::from_yaml_str(&emitted).expect("emitted re-parses");
         assert_eq!(reparsed, conv);
+    }
+
+    #[test]
+    fn tool_definition_round_trips_lookup_policy_fixture() {
+        // The real byte shape an assembly's `kind: tools` block parses. JSON is
+        // a YAML subset, so the project's `serde_yaml_ng` parser reads it — the
+        // same treatment `ContentBlock::ToolUse.input` already gets.
+        let fixture = include_str!("../../e2e/insurance-claim/context/tools/lookup_policy.json");
+
+        let tool: ToolDefinition =
+            serde_yaml_ng::from_str(fixture).expect("lookup_policy.json parses");
+
+        assert_eq!(tool.name, "lookup_policy");
+        assert_eq!(
+            tool.description,
+            "Look up coverage and limits for a policy number."
+        );
+        assert_eq!(
+            tool.input_schema["type"],
+            serde_yaml_ng::Value::from("object")
+        );
+        assert!(tool.input_schema["properties"]["policy_number"].is_mapping());
+
+        let reparsed: ToolDefinition =
+            serde_yaml_ng::from_str(&serde_yaml_ng::to_string(&tool).expect("tool emits"))
+                .expect("emitted tool re-parses");
+        assert_eq!(reparsed, tool);
     }
 
     #[test]

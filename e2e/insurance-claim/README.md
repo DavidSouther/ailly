@@ -181,19 +181,22 @@ A contributor may drop a `e2e/insurance-claim/.env` with `ANTHROPIC_API_KEY` ins
 ## Current limitations
 
 The project demonstrates the assemble -> run -> eval pipeline end to
-end, with two intentionally deferred capabilities that affect what
-the regression suite can prove today. Each item is tracked separately
-in [docs/developer/TASKS.md](../../docs/developer/TASKS.md):
+end. Tool-call assertions are now live; one capability remains
+intentionally deferred, tracked in
+[.ailly/developer/TASKS.md](../../.ailly/developer/TASKS.md):
 
-- **Tool definitions are rendered into a system message rather than
-  registered as tools on the engine request.** The `kind: tools`
-  prefix block produces a system turn whose body is the concatenated
-  JSON of `context/tools/*.json`; the rig adapter sends `tools:
-  Vec::new()` unconditionally. Consequence: in a live run, the model
-  cannot emit `ToolUse` blocks, so `must_call_tool` and
-  `tool_call_order` assertions fail and `must_not_call_tool` passes
-  vacuously. Tracked under "engine deferred decisions" (tool-definition
-  wiring on requests) in TASKS.md.
+- **Tool definitions are registered as tools on the engine request
+  (now live).** The `kind: tools` prefix block resolves its
+  `context/tools/*.json` glob to structured `ToolDefinition`s on
+  `meta.tools` (it produces no system message), and the rig adapter
+  forwards them on the completion request. Consequence: the model can
+  emit `ToolUse` blocks, so `must_call_tool`, `tool_call_order`, and
+  `must_not_call_tool` score against real tool calls. The `ci.sh`
+  structural gate proves this without a live API: it scores the
+  pre-filled `fixtures/{missing-fields,over-limit}.yaml` multi-turn
+  tool conversations and asserts `must_call_tool: lookup_policy`,
+  `tool_call_order: [lookup_policy, lookup_claim_history]`, and
+  `must_not_call_tool: auto_approve` all pass.
 - **The `judge` assertion is deferred.** `Assertion::Judge` returns
   `AssertionOutcome::Deferred` in [src/knowledge/assertions.rs](../../src/knowledge/assertions.rs);
   the eval report records the case as `deferred`, which does not fail

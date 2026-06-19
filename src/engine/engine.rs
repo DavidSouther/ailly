@@ -10,6 +10,7 @@ use crate::content::conversation::Message;
 use crate::content::conversation::ModelId;
 use crate::content::conversation::SpanId;
 use crate::content::conversation::TokenCounts;
+use crate::content::conversation::ToolDefinition;
 use crate::content::conversation::Trace;
 
 /// Identity literal stamped on every `NoopEngine` response: appears in
@@ -24,6 +25,7 @@ const NOOP_MODEL: &str = "noop";
 pub struct CompletionRequest<'a> {
     pub model: ModelId,
     pub messages: &'a [Message],
+    pub tools: &'a [ToolDefinition],
     pub debug: bool,
 }
 
@@ -284,6 +286,7 @@ mod tests {
         CompletionRequest {
             model: ModelId::from("claude-opus-4-7"),
             messages: &[],
+            tools: &[],
             debug: false,
         }
     }

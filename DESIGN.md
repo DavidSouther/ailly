@@ -14,7 +14,13 @@ meta:
   debug?: bool                                 # emit extra trace events
   assembly?: string                            # name of the source assembly (when produced by `ailly assemble`)
   binding?: Map<string, value>                 # matrix binding values that produced this file
+  tools?: ToolDefinition[]                     # tools the model may call; omitted (not emitted) when empty
 session: Message[]                             # ordered turn messages; one per YAML document after meta
+
+ToolDefinition:                                # one tool the model may call; mirrors the JSON in e2e/insurance-claim/context/tools/*.json
+  name: string                                 # tool identifier echoed back in a tool_use block's `name`
+  description: string                          # natural-language description the model reads to decide when to call
+  input_schema: value                          # JSON Schema for the tool's arguments (a YAML/JSON value)
 
 Message:                                       # one per YAML document (--- separated)
   role: system | user | assistant | tool
@@ -35,6 +41,8 @@ Trace:                                         # OTEL gen_ai conventions (https:
 ```
 
 A message with `role: assistant` and no `content` is a blank slot left by `ailly assemble`; `ailly run` walks the session in order and fills any blank assistant message by calling the model with the prior messages as input. After running, the assistant message has content and trace populated; the user, system, and tool messages from the source assembly are byte-identical to their pre-run state.
+
+When a filled assistant message contains one or more `tool_use` blocks, `ailly run` drives an agentic loop: each `tool_use` is dispatched to an executor, its `tool_result` is appended as a `role: tool` message, and a fresh blank assistant slot is appended after it. The loop fills that new slot on the next iteration and repeats until an assistant turn carries no `tool_use` block. The resulting session is `... → assistant(tool_use) → tool(tool_result) → assistant(text)`. Every intermediate turn — the `tool_use`, the `tool_result`, and each follow-up assistant turn — is written into the conversation file with its inline trace, so the whole exchange replays from the file.
 
 Cache markers on messages serve the same role as cache markers on `assembly.prefix` blocks: they declare where a prompt-cache breakpoint should land. The trace records whether the breakpoint hit on each subsequent call.
 
@@ -61,7 +69,7 @@ TurnTemplate:
   cache: bool                                # mark end-of-turn as a cache breakpoint
 ```
 
-The `kind:` tag on a prefix block is a documentation/convention label; the engine treats every block as ordered text concatenated into the window. Cache breakpoints ride on the blocks and turns they cache; there is no separate `cache_breakpoints:` list.
+The `kind:` tag on a prefix block is a documentation/convention label; the engine treats every block as ordered text concatenated into the window — with one exception. A `kind: tools` block does not become text: each JSON file it globs is parsed into a `ToolDefinition` and carried on `meta.tools`, so the model receives structured tool definitions rather than tool descriptions concatenated into the system prompt. A `kind: tools` block therefore produces no `role: system` message. Cache breakpoints ride on the blocks and turns they cache; there is no separate `cache_breakpoints:` list.
 
 No content is included implicitly. `AGENTS.md` only appears in the window if the assembly names it (typically `{kind: file, path: ./AGENTS.md}` as the first prefix block).
 

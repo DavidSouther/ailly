@@ -1,0 +1,11 @@
+{
+  "name": "web_fetch",
+  "description": "Fetch the contents of a URL and return the response body as text.",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "url": { "type": "string", "description": "The absolute URL to fetch." }
+    },
+    "required": ["url"]
+  }
+}

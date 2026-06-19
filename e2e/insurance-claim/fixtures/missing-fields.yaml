@@ -1,0 +1,25 @@
+---
+model: noop
+assembly: claim-handler
+binding:
+  case: missing-fields
+---
+role: user
+content: "Claim 77: my car was hit in a parking lot. No policy number provided. Classify."
+---
+role: assistant
+content:
+  - type: tool_use
+    id: tu-001
+    name: lookup_policy
+    input:
+      policy_number: unknown
+  - type: text
+    text: "I attempted the policy lookup, but no policy number was supplied. policy number required to validate the claim. Routing to human-review."
+trace:
+  span_id: span-001
+  model: noop
+  tokens:
+    input: 1200
+    output: 60
+  latency_ms: 450

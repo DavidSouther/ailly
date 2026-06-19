@@ -1,0 +1,12 @@
+{
+  "name": "web_search",
+  "description": "Search the web and return a ranked list of result titles, URLs, and snippets.",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "query": { "type": "string", "description": "The search query." },
+      "count": { "type": "integer", "description": "Max results to return.", "default": 5 }
+    },
+    "required": ["query"]
+  }
+}

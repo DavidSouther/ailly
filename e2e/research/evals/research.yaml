@@ -1,0 +1,7 @@
+name: research
+cases:
+  - name: web-research
+    assertions:
+      - { type: must_call_tool, tool: web_search }
+      - { type: must_call_tool, tool: web_fetch }
+      - { type: tool_call_order, sequence: [web_search, web_fetch] }

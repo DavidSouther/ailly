@@ -79,6 +79,7 @@ async fn rig_engine_complete_against_live_anthropic_populates_content_and_trace(
     let request = CompletionRequest {
         model: ModelId::from(MODEL),
         messages: &messages,
+        tools: &[],
         debug: false,
     };
 
