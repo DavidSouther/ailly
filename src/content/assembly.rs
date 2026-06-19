@@ -851,19 +851,16 @@ prefix:
 
     #[test]
     fn context_block_count_truncates_glob_after_sort() {
-        use std::fs;
-
-        let tmp = tempfile::tempdir().expect("tempdir");
-        let ctx_dir = tmp.path().join("ctx");
-        fs::create_dir_all(&ctx_dir).expect("mkdir ctx");
+        // Uses the in-memory FS seam (not an on-disk temp dir): src/content/ must
+        // stay filesystem-implementation-agnostic, enforced by a CI gate over this dir.
+        let project = crate::content::project::Project::open_memory();
         for (i, name) in ["01.md", "02.md", "03.md", "04.md", "05.md"]
             .iter()
             .enumerate()
         {
-            fs::write(ctx_dir.join(name), format!("body{i}")).expect("write context file");
+            seed_prompt(&project, &format!("ctx/{name}"), &format!("body{i}"));
         }
 
-        let project = crate::content::project::Project::open(tmp.path()).expect("open project");
         let block = PrefixBlock::Context {
             source: String::from("ctx"),
             glob: Some(String::from("*.md")),
