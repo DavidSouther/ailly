@@ -126,6 +126,9 @@ pub fn compute_calibration(
                 count: assertion_count,
             });
         }
+        if !labels.contains_key(&case_name) {
+            return Err(CalibrationError::MissingLabel { case: case_name });
+        }
     }
     todo!()
 }
@@ -211,6 +214,30 @@ mod tests {
                 Err(CalibrationError::MultipleMatches { case, count: 2 }) if case == "example-01"
             ),
             "expected MultipleMatches {{ count: 2 }}, got {result:?}"
+        );
+    }
+
+    #[test]
+    fn case_name_absent_from_labels_is_rejected_with_missing_label() {
+        let report = report_with(vec![
+            case(
+                "example-01",
+                vec![match_report("a.yaml", vec![assertion("pass")])],
+            ),
+            case(
+                "example-02",
+                vec![match_report("b.yaml", vec![assertion("fail")])],
+            ),
+        ]);
+        let mut labels = BTreeMap::new();
+        labels.insert(String::from("example-01"), HumanVerdict::Pass);
+        // example-02 deliberately has no label entry.
+
+        let result = compute_calibration(&report, &labels);
+
+        assert!(
+            matches!(&result, Err(CalibrationError::MissingLabel { case }) if case == "example-02"),
+            "expected MissingLabel {{ case: \"example-02\" }}, got {result:?}"
         );
     }
 
