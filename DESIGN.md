@@ -67,7 +67,7 @@ No content is included implicitly. `AGENTS.md` only appears in the window if the
 
 `matrix:` expands into the cross-product of its axes. `ailly assemble` writes one conversation file per binding into `runs/<id>/`, named by the binding values. Single-axis matrices produce flat filenames; multi-axis matrices join with `-`.
 
-The CLI flag `--var <axis>=<value>` overrides one matrix axis at assembly time. A comma-separated value list (`--var domain=prose-bio,code-sql`) restricts that axis to the listed values; the remaining axes expand normally. A single value pins the axis to one binding. Passing `--var` for an axis the assembly does not declare adds it as a new single-value axis.
+The CLI flag `--case <name>` restricts `assemble`, `run`, and `eval` to the named case(s) after matrix expansion, rather than the whole matrix or run directory. It is repeatable (`--case a --case b` selects both) and matches by exact string against the case/conversation name — the binding's derived filename stem for `assemble`, the conversation key's name for `run`, and both the conversation key and any suite case's `name:` for `eval`. Omitted (the default) means no filter: every binding, every resolved conversation, and every suite case is processed, identical to today's behavior. A `--case` value matching nothing in the target is a hard error naming the value(s) that failed to match and the case names that were actually available; this fires per-value, so one correct name mixed with one typo still errors rather than silently running a smaller, unintended set.
 
 ### `evaluation`
 
