@@ -299,6 +299,72 @@ def narrow_codex_excerpt(cand: dict[str, Any], matched_tag: str, log: mc.MiningL
     }
 
 
+def _yaml_kv_line(pad: str, key: str, value: Any, block_indent: int) -> list[str]:
+    """One `key: value` YAML mapping line at `pad`, plus any following block
+    lines. Multi-line strings become literal (`|`) block scalars — the real
+    diff/content text is never truncated, paraphrased, or single-lined."""
+    if value is None:
+        return [f"{pad}{key}: null"]
+    if isinstance(value, bool):
+        return [f"{pad}{key}: {'true' if value else 'false'}"]
+    if isinstance(value, str):
+        if "\n" in value:
+            return [f"{pad}{key}: |", mc._yaml_block_literal(value, block_indent)]
+        return [f"{pad}{key}: {mc._yaml_double_quoted(value)}"]
+    # Unexpected shape (shouldn't normally hit for known tool fields): a
+    # JSON flow scalar is still valid YAML and keeps the real value intact.
+    return [f"{pad}{key}: {json.dumps(value, ensure_ascii=False)}"]
+
+
+def _render_text_block(text: str, indent: int) -> list[str]:
+    pad = " " * indent
+    lines = [f"{pad}- type: text", f"{pad}  text: |"]
+    lines.append(mc._yaml_block_literal(text, indent + 4))
+    return lines
+
+
+def _render_multiedit_edits(edits: Any, indent: int) -> list[str]:
+    pad = " " * indent
+    lines = [f"{pad}edits:"]
+    if not isinstance(edits, list):
+        lines.append(f"{pad}  - {json.dumps(edits, ensure_ascii=False)}")
+        return lines
+    for edit in edits:
+        if not isinstance(edit, dict):
+            lines.append(f"{pad}  - {json.dumps(edit, ensure_ascii=False)}")
+            continue
+        keys = list(edit.keys())
+        for i, key in enumerate(keys):
+            kv = _yaml_kv_line(f"{pad}  - " if i == 0 else f"{pad}    ", key, edit[key], indent + 6)
+            lines.extend(kv)
+    return lines
+
+
+def _render_tool_use_block(tc: dict[str, Any], indent: int) -> list[str]:
+    """Render one captured Edit/Write/MultiEdit/NotebookEdit call as a
+    `type: tool_use` ContentBlock (DESIGN.md), with its real `file_path` and
+    diff/content copied verbatim into `input` — this is the fix's whole
+    point: a human reviewing the draft sees the actual code change, not just
+    the assistant's prose narration about it."""
+    pad = " " * indent
+    lines = [f"{pad}- type: tool_use"]
+    tool_use_id = tc.get("tool_use_id")
+    if tool_use_id:
+        lines.append(f"{pad}  id: {mc._yaml_double_quoted(tool_use_id)}")
+    lines.append(f"{pad}  name: {mc._yaml_double_quoted(tc.get('tool', ''))}")
+    lines.append(f"{pad}  input:")
+    input_indent = indent + 4
+    input_pad = " " * input_indent
+    for key, value in tc.items():
+        if key in ("tool", "tool_use_id"):
+            continue
+        if key == "edits":
+            lines.extend(_render_multiedit_edits(value, input_indent))
+            continue
+        lines.extend(_yaml_kv_line(input_pad, key, value, input_indent + 2))
+    return lines
+
+
 def write_narrow_conversation(excerpt: dict[str, Any], cand: dict[str, Any], path: Path) -> None:
     model = cand.get("model") or "unknown"
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -311,9 +377,23 @@ def write_narrow_conversation(excerpt: dict[str, Any], cand: dict[str, Any], pat
         f"{mc._yaml_block_literal(excerpt['preceding_content'])}\n"
         f"---\n"
         f"role: assistant\n"
-        f"content: |\n"
-        f"{mc._yaml_block_literal(excerpt['assistant_content'])}\n"
     )
+    tool_calls = cand.get("tool_calls") or []
+    if tool_calls:
+        # Real Edit/Write/MultiEdit/NotebookEdit calls were captured for this
+        # turn (see mine_calibration_candidates.Candidate.tool_calls) — render
+        # a proper ContentBlock array (DESIGN.md) instead of flattening to
+        # prose-only text, so the draft shows both the narration AND the
+        # exact diff a coding-pattern judge actually needs to grade.
+        content_lines = ["content:"]
+        assistant_text = (excerpt.get("assistant_content") or "").strip()
+        if assistant_text:
+            content_lines.extend(_render_text_block(assistant_text, 2))
+        for tc in tool_calls:
+            content_lines.extend(_render_tool_use_block(tc, 2))
+        header += "\n".join(content_lines) + "\n"
+    else:
+        header += f"content: |\n" f"{mc._yaml_block_literal(excerpt['assistant_content'])}\n"
     path.write_text(header)
 
 
@@ -333,6 +413,8 @@ def build(
     matrix_lines: list[str] = []
     judges_with_matches = 0
     matched_candidate_ids: set[str] = set()
+    matched_candidate_ids_with_tool_calls: set[str] = set()
+    cells_with_tool_calls = 0
     unmatched_judges: list[str] = []
 
     for judge in judges:
@@ -346,6 +428,9 @@ def build(
         safe = judge_id_safe(judge["judge_id"])
         for cand, matched_keyword, matched_tag in pairs:
             matched_candidate_ids.add(cand["id"])
+            if cand.get("tool_calls"):
+                matched_candidate_ids_with_tool_calls.add(cand["id"])
+                cells_with_tool_calls += 1
             if cand["source"] == "claude-code":
                 excerpt = narrow_claude_excerpt(cand, matched_tag, log)
             else:
@@ -378,6 +463,8 @@ def build(
         "total_judges": len(judges),
         "judges_with_matches": judges_with_matches,
         "candidates_matched": len(matched_candidate_ids),
+        "candidates_matched_with_tool_calls": len(matched_candidate_ids_with_tool_calls),
+        "cells_with_tool_calls": cells_with_tool_calls,
         "total_cells": len(matrix_lines),
         "unmatched_judges": unmatched_judges,
         "matrix_path": matrix_path,
@@ -418,6 +505,13 @@ def main(argv: Optional[list[str]] = None) -> int:
         "candidates matched >=1 judge"
     )
     print(f"[build_relevance_matrix] {summary['total_cells']} total matrix cells")
+    print(
+        f"[build_relevance_matrix] {summary['candidates_matched_with_tool_calls']}/"
+        f"{summary['candidates_matched']} matched candidates have real Edit/Write/"
+        "MultiEdit/NotebookEdit tool calls captured "
+        f"({summary['cells_with_tool_calls']}/{summary['total_cells']} matrix cells "
+        "render a ContentBlock array instead of plain text)"
+    )
     if summary["unmatched_judges"]:
         print(f"[build_relevance_matrix] {len(summary['unmatched_judges'])} judges need human review (no keywords):")
         for jid in summary["unmatched_judges"]:

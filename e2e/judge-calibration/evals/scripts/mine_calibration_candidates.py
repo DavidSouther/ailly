@@ -274,6 +274,18 @@ class Candidate:
     # inside a tool_use block or a nested AskUserQuestion is still caught.
     # Empty list is normal and common — most turns invoke no named skill.
     skill_tags: list[str] = field(default_factory=list)
+    # Real code-editing tool calls (Edit/Write/MultiEdit/NotebookEdit) made by
+    # the assistant *during this same turn* (Claude Code only — see
+    # `_claude_assistant_tool_calls`). `response` is prose commentary only
+    # ("I've applied the five-layer pipeline"); for an agentic coding turn the
+    # actual change lives here, verbatim from the transcript's tool_use
+    # `input` (never fabricated/summarized). Each entry is
+    # `{tool, tool_use_id, file_path, ...tool-specific diff fields}`:
+    # Edit -> old_string/new_string(/replace_all); Write -> content;
+    # MultiEdit -> edits (the raw list of {old_string, new_string,...});
+    # NotebookEdit -> notebook cell fields. Empty list is normal for
+    # non-coding turns (or a turn whose only assistant output was prose).
+    tool_calls: list[dict[str, Any]] = field(default_factory=list)
 
 
 def slugify(text: Optional[str], maxlen: int = 24) -> str:
@@ -421,6 +433,57 @@ def _claude_assistant_text_blocks(obj: dict[str, Any]) -> list[str]:
     return [b.get("text", "") for b in content if isinstance(b, dict) and b.get("type") == "text" and b.get("text")]
 
 
+# Tool names whose `input` *is* the real code change (as opposed to Read,
+# Bash, Grep, etc., which don't produce a diff worth capturing here).
+_EDIT_LIKE_TOOL_NAMES = {"Edit", "Write", "MultiEdit", "NotebookEdit"}
+
+
+def _claude_assistant_tool_calls(obj: dict[str, Any]) -> list[dict[str, Any]]:
+    """Pull every Edit/Write/MultiEdit/NotebookEdit `tool_use` block's real
+    arguments out of one assistant transcript object.
+
+    Copies `file_path` and the actual diff/content fields verbatim out of the
+    transcript's `input` — never fabricated or summarized — so a downstream
+    consumer (the relevance-matrix narrow excerpt, or any future one) can
+    show a human the exact code change, not just the assistant's prose
+    narration about it (see module-level Candidate.tool_calls docstring).
+    """
+    content = obj.get("message", {}).get("content")
+    if not isinstance(content, list):
+        return []
+    out: list[dict[str, Any]] = []
+    for block in content:
+        if not (isinstance(block, dict) and block.get("type") == "tool_use"):
+            continue
+        name = block.get("name")
+        if name not in _EDIT_LIKE_TOOL_NAMES:
+            continue
+        input_ = block.get("input")
+        if not isinstance(input_, dict):
+            continue
+        record: dict[str, Any] = {"tool": name, "tool_use_id": block.get("id")}
+        if name == "Edit":
+            record["file_path"] = input_.get("file_path")
+            record["old_string"] = input_.get("old_string")
+            record["new_string"] = input_.get("new_string")
+            if "replace_all" in input_:
+                record["replace_all"] = input_.get("replace_all")
+        elif name == "Write":
+            record["file_path"] = input_.get("file_path")
+            record["content"] = input_.get("content")
+        elif name == "MultiEdit":
+            record["file_path"] = input_.get("file_path")
+            record["edits"] = input_.get("edits")
+        elif name == "NotebookEdit":
+            record["file_path"] = input_.get("notebook_path")
+            record["cell_id"] = input_.get("cell_id")
+            record["cell_type"] = input_.get("cell_type")
+            record["edit_mode"] = input_.get("edit_mode")
+            record["new_source"] = input_.get("new_source")
+        out.append(record)
+    return out
+
+
 def mine_claude_session_file(path: Path, log: MiningLog) -> list[Candidate]:
     # Claude Code stores each Task/Agent-tool sub-invocation's own transcript
     # as its own file under `<project>/<session-uuid>/subagents/agent-*.jsonl`
@@ -451,6 +514,11 @@ def mine_claude_session_file(path: Path, log: MiningLog) -> list[Candidate]:
     # inside a tool_use block (e.g. a `Skill` call's `input.skill`) that the
     # text-only extraction above never looks at. See `skill_signals.py`.
     collected_raw_objs: list[dict[str, Any]] = []
+    # Real Edit/Write/MultiEdit/NotebookEdit tool calls made anywhere in this
+    # same turn — see `_claude_assistant_tool_calls` and
+    # `Candidate.tool_calls`. Reset alongside `collected_texts` at each new
+    # user turn, so this only ever spans the turn already being captured.
+    collected_tool_calls: list[dict[str, Any]] = []
     seq = 0
 
     def flush(next_human_text: Optional[str]) -> None:
@@ -479,6 +547,7 @@ def mine_claude_session_file(path: Path, log: MiningLog) -> list[Candidate]:
             response=response_text,
             agent_id=agent_id,
             skill_tags=sorted(extract_skill_tags_from_objs(collected_raw_objs)),
+            tool_calls=list(collected_tool_calls),
         )
         cand.candidate_label_human_implied = detect_implied_verdict(next_human_text)
         candidates.append(cand)
@@ -501,10 +570,12 @@ def mine_claude_session_file(path: Path, log: MiningLog) -> list[Candidate]:
             collected_signal = _claude_user_signal(text)
             collected_models = set()
             collected_raw_objs = [obj]
+            collected_tool_calls = []
             continue
 
         if obj.get("type") == "assistant" and (is_subagent_file or not obj.get("isSidechain")) and pending is not None:
             collected_texts.extend(_claude_assistant_text_blocks(obj))
+            collected_tool_calls.extend(_claude_assistant_tool_calls(obj))
             collected_raw_objs.append(obj)
             sig = _claude_attribution_signal(obj)
             if sig and collected_signal is None:
@@ -772,6 +843,7 @@ def write_outputs(candidates: list[Candidate], output_dir: Path, log: MiningLog)
     with_model = 0
     with_implied = 0
     with_skill_tags = 0
+    with_tool_calls = 0
     for cand in candidates:
         by_source[cand.source] = by_source.get(cand.source, 0) + 1
         if cand.model:
@@ -780,6 +852,8 @@ def write_outputs(candidates: list[Candidate], output_dir: Path, log: MiningLog)
             with_implied += 1
         if cand.skill_tags:
             with_skill_tags += 1
+        if cand.tool_calls:
+            with_tool_calls += 1
 
     summary_lines = [
         "Judge-calibration candidate mining run summary",
@@ -792,6 +866,8 @@ def write_outputs(candidates: list[Candidate], output_dir: Path, log: MiningLog)
         f"Model metadata present: {with_model}/{len(candidates)}",
         f"Low-confidence human-implied verdict hints: {with_implied}/{len(candidates)}",
         f"Candidates with >=1 skill/reference tag: {with_skill_tags}/{len(candidates)}",
+        f"Candidates with >=1 real Edit/Write/MultiEdit/NotebookEdit tool call captured: "
+        f"{with_tool_calls}/{len(candidates)}",
         f"Files scanned: {log.files_scanned}",
         f"Files skipped (unreadable): {log.files_skipped}",
         f"Lines skipped (malformed JSON): {log.lines_skipped}",
