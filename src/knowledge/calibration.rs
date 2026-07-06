@@ -106,6 +106,133 @@ pub fn compute_calibration(
     report: &EvalReport,
     labels: &BTreeMap<String, HumanVerdict>,
 ) -> Result<CalibrationReport, CalibrationError> {
-    let _ = (report, labels);
+    let _ = labels;
+    for (index, case) in report.cases.iter().enumerate() {
+        let case_name = case_identifier(case, index);
+        match case.matches.len() {
+            1 => {}
+            0 => return Err(CalibrationError::NoMatch { case: case_name }),
+            count => {
+                return Err(CalibrationError::MultipleMatches {
+                    case: case_name,
+                    count,
+                });
+            }
+        }
+        let assertion_count = case.matches[0].assertions.len();
+        if assertion_count != 1 {
+            return Err(CalibrationError::MultipleAssertions {
+                case: case_name,
+                count: assertion_count,
+            });
+        }
+    }
     todo!()
+}
+
+/// The case's `name:`, falling back to a positional identifier for the
+/// (not-expected-in-a-well-formed calibration suite) unnamed case, mirroring
+/// `eval.rs::case_tag`'s same fallback convention.
+fn case_identifier(case: &crate::knowledge::eval::CaseReport, index: usize) -> String {
+    case.name.clone().unwrap_or_else(|| format!("case-{index}"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::knowledge::eval::AssertionReport;
+    use crate::knowledge::eval::CaseReport;
+    use crate::knowledge::eval::MatchReport;
+
+    fn assertion(outcome: &str) -> AssertionReport {
+        AssertionReport {
+            class: String::from("judge"),
+            outcome: String::from(outcome),
+            reason: None,
+        }
+    }
+
+    fn match_report(conversation: &str, assertions: Vec<AssertionReport>) -> MatchReport {
+        MatchReport {
+            conversation: String::from(conversation),
+            assertions,
+        }
+    }
+
+    fn case(name: &str, matches: Vec<MatchReport>) -> CaseReport {
+        CaseReport {
+            name: Some(String::from(name)),
+            matches,
+        }
+    }
+
+    fn report_with(cases: Vec<CaseReport>) -> EvalReport {
+        EvalReport {
+            suite: String::from("judge-calibration"),
+            run_id: String::from("test-run"),
+            timestamp: chrono::DateTime::<chrono::Utc>::UNIX_EPOCH,
+            model: None,
+            metrics: None,
+            totals: crate::knowledge::eval::ReportTotals::default(),
+            per_class: BTreeMap::new(),
+            cases,
+        }
+    }
+
+    #[test]
+    fn zero_matches_is_rejected_with_no_match() {
+        let report = report_with(vec![case("example-01", vec![])]);
+        let labels = BTreeMap::new();
+
+        let result = compute_calibration(&report, &labels);
+
+        assert!(
+            matches!(&result, Err(CalibrationError::NoMatch { case }) if case == "example-01"),
+            "expected NoMatch, got {result:?}"
+        );
+    }
+
+    #[test]
+    fn two_matches_is_rejected_with_multiple_matches() {
+        let report = report_with(vec![case(
+            "example-01",
+            vec![
+                match_report("a.yaml", vec![assertion("pass")]),
+                match_report("b.yaml", vec![assertion("pass")]),
+            ],
+        )]);
+        let labels = BTreeMap::new();
+
+        let result = compute_calibration(&report, &labels);
+
+        assert!(
+            matches!(
+                &result,
+                Err(CalibrationError::MultipleMatches { case, count: 2 }) if case == "example-01"
+            ),
+            "expected MultipleMatches {{ count: 2 }}, got {result:?}"
+        );
+    }
+
+    #[test]
+    fn two_assertions_on_one_match_is_rejected_with_multiple_assertions() {
+        let report = report_with(vec![case(
+            "example-01",
+            vec![match_report(
+                "a.yaml",
+                vec![assertion("pass"), assertion("fail")],
+            )],
+        )]);
+        let labels = BTreeMap::new();
+
+        let result = compute_calibration(&report, &labels);
+
+        assert!(
+            matches!(
+                &result,
+                Err(CalibrationError::MultipleAssertions { case, count: 2 }) if case == "example-01"
+            ),
+            "expected MultipleAssertions {{ count: 2 }}, got {result:?}"
+        );
+    }
 }
