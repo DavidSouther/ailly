@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Judge Calibration Grader</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<header id="topbar">
+  <div id="brand">Judge Calibration Grader</div>
+  <div id="progress" aria-live="polite">loading…</div>
+  <div id="topbar-actions">
+    <button id="export-btn" title="Curate graded+marked candidates into evals/labels.yaml">Export calibration set</button>
+  </div>
+</header>
+
+<div id="layout">
+  <aside id="sidebar">
+    <div id="filters">
+      <label>Source
+        <select id="filter-source">
+          <option value="">All</option>
+          <option value="claude-code">claude-code</option>
+          <option value="codex">codex</option>
+        </select>
+      </label>
+      <label>Status
+        <select id="filter-status">
+          <option value="">All</option>
+          <option value="ungraded" selected>Ungraded</option>
+          <option value="graded">Graded</option>
+        </select>
+      </label>
+      <form id="jump-form">
+        <input id="jump-input" type="text" placeholder="jump to id…" autocomplete="off">
+        <button type="submit">Go</button>
+      </form>
+    </div>
+    <ul id="candidate-list" aria-label="Candidates"></ul>
+  </aside>
+
+  <main id="detail">
+    <div id="empty-state" hidden>
+      <h2>Nothing matches the current filters</h2>
+      <p>Try a different filter, or jump to a specific id.</p>
+    </div>
+
+    <article id="candidate-card" hidden>
+      <div id="badges"></div>
+
+      <section id="meta">
+        <dl>
+          <dt>id</dt><dd id="meta-id"></dd>
+          <dt>source</dt><dd id="meta-source"></dd>
+          <dt>model</dt><dd id="meta-model"></dd>
+          <dt>project</dt><dd id="meta-project"></dd>
+          <dt>turn started</dt><dd id="meta-turn"></dd>
+          <dt>invocation</dt><dd id="meta-invocation"></dd>
+        </dl>
+      </section>
+
+      <section id="question-section">
+        <h3>Question / invocation</h3>
+        <div id="question-body" class="rendered"></div>
+      </section>
+
+      <section id="response-section">
+        <h3>Response</h3>
+        <div id="response-body" class="rendered"></div>
+      </section>
+
+      <details id="conversation-details">
+        <summary>Full conversation-schema draft (provenance)</summary>
+        <pre id="conversation-body"></pre>
+      </details>
+    </article>
+
+    <div id="controls">
+      <div id="grade-buttons">
+        <button id="btn-pass" class="grade-btn pass" title="Pass (key: p)">Pass <kbd>p</kbd></button>
+        <button id="btn-fail" class="grade-btn fail" title="Fail (key: f)">Fail <kbd>f</kbd></button>
+        <button id="btn-skip" class="grade-btn skip" title="Skip for now (key: s)">Skip <kbd>s</kbd></button>
+      </div>
+      <label id="include-toggle" title="Mark this graded candidate for inclusion in the curated calibration export">
+        <input type="checkbox" id="include-checkbox" disabled>
+        Include in calibration export <kbd>i</kbd>
+      </label>
+    </div>
+  </main>
+</div>
+
+<div id="toast" role="status" aria-live="polite" hidden></div>
+
+<script src="/app.js"></script>
+</body>
+</html>
