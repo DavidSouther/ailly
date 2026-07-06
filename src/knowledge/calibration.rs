@@ -162,6 +162,17 @@ pub fn compute_calibration(
         });
     }
     let considered = total_examples - excluded;
+    #[expect(
+        clippy::cast_precision_loss,
+        reason = "a calibration suite's example count is nowhere near f64's 2^52 exact-integer \
+                  range; precision loss is not a real concern for this ratio"
+    )]
+    let agreement_rate = if considered == 0 {
+        0.0
+    } else {
+        agreements as f64 / considered as f64
+    };
+    let meets_bar = considered > 0 && agreement_rate >= JUDGE_CALIBRATION_BAR;
 
     Ok(CalibrationReport {
         suite: report.suite.clone(),
@@ -170,10 +181,8 @@ pub fn compute_calibration(
         excluded,
         considered,
         agreements,
-        // TODO(plan Step 5): agreements as f64 / considered as f64, and the
-        // >= JUDGE_CALIBRATION_BAR comparison.
-        agreement_rate: 0.0,
-        meets_bar: false,
+        agreement_rate,
+        meets_bar,
         examples,
     })
 }
@@ -417,6 +426,74 @@ mod tests {
         assert_eq!(example_01.agreement, Agreement::Agree);
         assert_eq!(example_02.agreement, Agreement::Disagree);
         assert_eq!(calibration.agreements, 1);
+    }
+
+    #[test]
+    fn nine_considered_eight_agree_is_just_under_the_bar() {
+        // 8/9 ≈ 0.888..., below the inclusive 0.90 bar -- proves meets_bar's
+        // boundary is a real >= comparison, not "close to 90%" by
+        // construction of the one fixture the feature test happens to use.
+        let mut cases = Vec::new();
+        let mut labels = BTreeMap::new();
+        for n in 1..=8 {
+            let name = format!("example-{n:02}");
+            cases.push(case(
+                &name,
+                vec![match_report("a.yaml", vec![assertion("pass")])],
+            ));
+            labels.insert(name, HumanVerdict::Pass);
+        }
+        // The ninth example disagrees.
+        cases.push(case(
+            "example-09",
+            vec![match_report("a.yaml", vec![assertion("pass")])],
+        ));
+        labels.insert(String::from("example-09"), HumanVerdict::Fail);
+
+        let report = report_with(cases);
+        let calibration = compute_calibration(&report, &labels).expect("all nine well-formed");
+
+        assert_eq!(calibration.considered, 9);
+        assert_eq!(calibration.agreements, 8);
+        assert!(
+            (calibration.agreement_rate - 8.0 / 9.0).abs() < 1e-9,
+            "expected 8/9, got {}",
+            calibration.agreement_rate
+        );
+        assert!(
+            !calibration.meets_bar,
+            "8/9 must not clear the inclusive >= 0.90 bar"
+        );
+    }
+
+    #[test]
+    fn ten_considered_nine_agree_lands_exactly_on_the_bar() {
+        let mut cases = Vec::new();
+        let mut labels = BTreeMap::new();
+        for n in 1..=9 {
+            let name = format!("example-{n:02}");
+            cases.push(case(
+                &name,
+                vec![match_report("a.yaml", vec![assertion("pass")])],
+            ));
+            labels.insert(name, HumanVerdict::Pass);
+        }
+        cases.push(case(
+            "example-10",
+            vec![match_report("a.yaml", vec![assertion("pass")])],
+        ));
+        labels.insert(String::from("example-10"), HumanVerdict::Fail);
+
+        let report = report_with(cases);
+        let calibration = compute_calibration(&report, &labels).expect("all ten well-formed");
+
+        assert_eq!(calibration.considered, 10);
+        assert_eq!(calibration.agreements, 9);
+        assert!((calibration.agreement_rate - 0.9).abs() < 1e-9);
+        assert!(
+            calibration.meets_bar,
+            "0.9 must clear the inclusive >= 0.90 bar"
+        );
     }
 
     #[test]
