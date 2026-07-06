@@ -319,13 +319,21 @@ fn paired_difference_p_value(t: f64, df: usize) -> f64 {
 /// Fold a slice of per-pair diffs (`+1.0`/`-1.0`/`0.0`) into a
 /// [`PairedDifferenceTest`].
 ///
-/// `n < 2` and the zero-variance edge cases are filled in by a later
-/// build step (design.md's fixed edge-case conventions); this general-case
-/// branch is correct for any sample with `n >= 2` and nonzero variance.
+/// Edge-case conventions, fixed by design.md's Specification (not
+/// reinvented here):
+/// - `n < 2` → [`PairedDifferenceTest::InsufficientPairs`]: a sample variance
+///   (and therefore a standard error and a t-statistic) cannot be estimated
+///   from 0 or 1 observations.
+/// - `n >= 2` and zero variance (every diff identical) → `t_statistic: None`
+///   (not `f64::INFINITY`/`NaN`, which `serde_json` cannot round-trip).
+///   `mean_difference == 0.0` is the vacuous "every pair unchanged" comparison
+///   (`p_value: 1.0, significant: false`); `mean_difference != 0.0` is a
+///   perfect unanimous shift, the strongest evidence a paired comparison can
+///   produce (`p_value: 0.0, significant: true`).
 fn compute_paired_difference(diffs: &[f64]) -> PairedDifferenceTest {
     let n = diffs.len();
     if n < 2 {
-        todo!("InsufficientPairs edge case, filled in by a later build step");
+        return PairedDifferenceTest::InsufficientPairs { n };
     }
 
     // `n` is a paired-assertion count (realistically single-to-low-double
@@ -340,7 +348,21 @@ fn compute_paired_difference(diffs: &[f64]) -> PairedDifferenceTest {
     let sample_std_dev = (sum_squared_deviation / (n_f64 - 1.0)).sqrt();
 
     if sample_std_dev.abs() < f64::EPSILON {
-        todo!("zero-variance edge case, filled in by a later build step");
+        let (p_value, significant) = if mean_difference.abs() < f64::EPSILON {
+            (1.0, false)
+        } else {
+            (0.0, true)
+        };
+        return PairedDifferenceTest::Computed {
+            n,
+            mean_difference,
+            sample_std_dev,
+            standard_error: 0.0,
+            degrees_of_freedom: n - 1,
+            t_statistic: None,
+            p_value,
+            significant,
+        };
     }
 
     let standard_error = sample_std_dev / n_f64.sqrt();
@@ -664,5 +686,65 @@ mod tests {
             p_large < p_small,
             "expected p(t=5) < p(t=1), got p(t=5)={p_large}, p(t=1)={p_small}"
         );
+    }
+
+    /// Fewer than 2 paired assertions exist: a sample variance (and
+    /// therefore a standard error and a t-statistic) cannot be estimated
+    /// from 0 or 1 observations.
+    #[test]
+    fn fewer_than_two_diffs_yields_insufficient_pairs() {
+        match compute_paired_difference(&[]) {
+            PairedDifferenceTest::InsufficientPairs { n } => assert_eq!(n, 0),
+            other => panic!("expected InsufficientPairs, got {other:?}"),
+        }
+        match compute_paired_difference(&[1.0]) {
+            PairedDifferenceTest::InsufficientPairs { n } => assert_eq!(n, 1),
+            other => panic!("expected InsufficientPairs, got {other:?}"),
+        }
+    }
+
+    /// Every pair unchanged (the "vacuous comparison" Feature G's design
+    /// independently named): zero variance, zero mean difference. No
+    /// evidence of a difference either way.
+    #[test]
+    fn all_zero_diffs_yields_p_one_not_significant() {
+        match compute_paired_difference(&[0.0, 0.0, 0.0]) {
+            PairedDifferenceTest::Computed {
+                mean_difference,
+                t_statistic,
+                p_value,
+                significant,
+                ..
+            } => {
+                assert!((mean_difference - 0.0).abs() < 1e-9);
+                assert_eq!(t_statistic, None);
+                assert!((p_value - 1.0).abs() < 1e-9);
+                assert!(!significant);
+            }
+            other => panic!("expected Computed, got {other:?}"),
+        }
+    }
+
+    /// Every pair moved by the same nonzero amount: zero variance, nonzero
+    /// mean difference. The strongest evidence a paired comparison can
+    /// produce (a perfect, unanimous shift with zero within-pair
+    /// variance).
+    #[test]
+    fn all_equal_nonzero_diffs_yields_p_zero_significant() {
+        match compute_paired_difference(&[1.0, 1.0, 1.0]) {
+            PairedDifferenceTest::Computed {
+                mean_difference,
+                t_statistic,
+                p_value,
+                significant,
+                ..
+            } => {
+                assert!((mean_difference - 1.0).abs() < 1e-9);
+                assert_eq!(t_statistic, None);
+                assert!((p_value - 0.0).abs() < 1e-9);
+                assert!(significant);
+            }
+            other => panic!("expected Computed, got {other:?}"),
+        }
     }
 }
