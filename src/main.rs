@@ -69,6 +69,7 @@ fn main() -> ExitCode {
             match assemble_run(AssembleArgs {
                 project: cli.project,
                 name,
+                cases: vec![],
             }) {
                 Ok(run_dir) => {
                     println!("{}", run_dir.display());
@@ -88,6 +89,7 @@ fn main() -> ExitCode {
             match rt.block_on(run_cmd(RunArgs {
                 project: cli.project,
                 target,
+                cases: vec![],
             })) {
                 Ok(_outcome) => ExitCode::SUCCESS,
                 Err(err) => {
@@ -105,6 +107,7 @@ fn main() -> ExitCode {
                 project: cli.project,
                 suite,
                 over,
+                cases: vec![],
             })) {
                 Ok(outcome) => {
                     println!("{}", outcome.report_path.display());

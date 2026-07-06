@@ -29,7 +29,7 @@ use crate::knowledge::eval::EvalArgs;
 use crate::knowledge::eval::evaluate;
 use crate::knowledge::script_runner::TokioScriptRunner;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct EvalCmdArgs {
     pub project: PathBuf,
     /// Suite name; resolves to `<project>/evals/<suite>.yaml`.
@@ -38,6 +38,10 @@ pub struct EvalCmdArgs {
     /// is the directory basename when `over` is a directory, or the file stem
     /// when `over` is a single file.
     pub over: PathBuf,
+    /// Repeatable `--case <name>` filter. Empty means no filter: every
+    /// conversation under `over` and every named suite case is scored,
+    /// exactly as before this field existed.
+    pub cases: Vec<String>,
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Eq)]
@@ -91,6 +95,11 @@ pub enum EvalCmdError {
         path: PathBuf,
         #[source]
         source: io::Error,
+    },
+    #[error("--case {requested:?} matched nothing; available cases: {available:?}")]
+    UnknownCase {
+        requested: Vec<String>,
+        available: Vec<String>,
     },
 }
 

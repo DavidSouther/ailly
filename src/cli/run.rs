@@ -21,10 +21,14 @@ use crate::engine::engine::open_engine_for_model;
 /// Arguments for the run handler. `project` is accepted for symmetry with
 /// `AssembleArgs` and forward compatibility; the handler resolves `target`
 /// against the current working directory.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct RunArgs {
     pub project: PathBuf,
     pub target: PathBuf,
+    /// Repeatable `--case <name>` filter. Empty means no filter: every
+    /// resolved conversation key is processed, exactly as before this
+    /// field existed.
+    pub cases: Vec<String>,
 }
 
 /// Outcome counters returned to the library caller. The CLI binary does not
@@ -49,6 +53,11 @@ pub enum RunCmdError {
     TargetNotFound { path: PathBuf },
     #[error("target path {path:?} is not valid UTF-8")]
     NonUtf8Path { path: PathBuf },
+    #[error("--case {requested:?} matched nothing; available cases: {available:?}")]
+    UnknownCase {
+        requested: Vec<String>,
+        available: Vec<String>,
+    },
 }
 
 impl From<RunError> for RunCmdError {
@@ -215,6 +224,7 @@ mod tests {
         RunArgs {
             project,
             target: target.to_path_buf(),
+            ..Default::default()
         }
     }
 

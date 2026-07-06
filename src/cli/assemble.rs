@@ -15,10 +15,13 @@ use crate::content::repository::RepositoryError;
 
 /// Arguments for the assemble handler. Public field list is fixed by the
 /// feature test's struct-literal call site.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct AssembleArgs {
     pub project: PathBuf,
     pub name: String,
+    /// Repeatable `--case <name>` filter. Empty means no filter: every
+    /// matrix binding is staged, exactly as before this field existed.
+    pub cases: Vec<String>,
 }
 
 /// Errors emitted by the assemble handler. Library-boundary error; the CLI
@@ -38,6 +41,11 @@ pub enum AssembleError {
         name: String,
         #[source]
         source: Box<AssembleError>,
+    },
+    #[error("--case {requested:?} matched nothing; available cases: {available:?}")]
+    UnknownCase {
+        requested: Vec<String>,
+        available: Vec<String>,
     },
 }
 
@@ -143,6 +151,7 @@ model: claude-opus-4-7
         let run_dir = run(AssembleArgs {
             project: tmp.path().to_path_buf(),
             name: String::from("claim-handler"),
+            ..Default::default()
         })
         .expect("run");
         let names = yaml_files(&run_dir);
@@ -155,6 +164,7 @@ model: claude-opus-4-7
         let run_dir = run(AssembleArgs {
             project: tmp.path().to_path_buf(),
             name: String::from("claim-handler"),
+            ..Default::default()
         })
         .expect("run");
         let names = yaml_files(&run_dir);
@@ -170,6 +180,7 @@ model: claude-opus-4-7
         let run_dir = run(AssembleArgs {
             project: tmp.path().to_path_buf(),
             name: String::from("claim-handler"),
+            ..Default::default()
         })
         .expect("run");
         let names = yaml_files(&run_dir);
@@ -182,6 +193,7 @@ model: claude-opus-4-7
         let run_dir = run(AssembleArgs {
             project: tmp.path().to_path_buf(),
             name: String::from("claim-handler"),
+            ..Default::default()
         })
         .expect("run");
 
@@ -203,6 +215,7 @@ model: claude-opus-4-7
         let run_dir = run(AssembleArgs {
             project,
             name: String::from("claim-handler"),
+            ..Default::default()
         })
         .expect("run");
 
@@ -248,6 +261,7 @@ model: claude-opus-4-7
         let run_dir = run(AssembleArgs {
             project,
             name: String::from("claim-handler"),
+            ..Default::default()
         })
         .expect("run");
 
@@ -297,6 +311,7 @@ prefix:
         let run_dir = run(AssembleArgs {
             project: tmp.path().to_path_buf(),
             name: String::from("two-blocks"),
+            ..Default::default()
         })
         .expect("run");
 
@@ -328,6 +343,7 @@ prefix:
         run(AssembleArgs {
             project,
             name: String::from(name),
+            ..Default::default()
         })
         .expect("assemble patterns-eval")
     }
@@ -403,6 +419,7 @@ prefix:
         let err = run(AssembleArgs {
             project: tmp.path().to_path_buf(),
             name: String::from("test-assembly"),
+            ..Default::default()
         })
         .expect_err("should fail on missing context dir");
 

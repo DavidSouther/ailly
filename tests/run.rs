@@ -40,6 +40,7 @@ async fn run_fills_every_blank_assistant_across_the_assembled_run_dir() {
     let run_dir = assemble_run(AssembleArgs {
         project: project.clone(),
         name: String::from("claim-handler"),
+        ..Default::default()
     })
     .expect("assemble succeeds against the insurance-claim project");
 
@@ -76,6 +77,7 @@ async fn run_fills_every_blank_assistant_across_the_assembled_run_dir() {
     let outcome = run(RunArgs {
         project,
         target: run_dir.clone(),
+        ..Default::default()
     })
     .await
     .expect("run succeeds against the assembled run dir");

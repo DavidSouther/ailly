@@ -30,12 +30,14 @@ fn assemble_against_insurance_claim_is_byte_identical_across_runs() {
     let first = assemble_run(AssembleArgs {
         project: project.clone(),
         name: String::from("claim-handler"),
+        ..Default::default()
     })
     .expect("first assemble against the insurance-claim project");
 
     let second = assemble_run(AssembleArgs {
         project,
         name: String::from("claim-handler"),
+        ..Default::default()
     })
     .expect("second assemble against the insurance-claim project");
 

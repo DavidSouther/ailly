@@ -273,6 +273,7 @@ async fn patterns_eval_slice_evaluates_both_suites_end_to_end() {
         project: project.clone(),
         suite: String::from("discovery"),
         over: discovery_dir.clone(),
+        ..Default::default()
     })
     .await
     .expect("discovery eval succeeds end-to-end");
@@ -322,6 +323,7 @@ async fn patterns_eval_slice_evaluates_both_suites_end_to_end() {
         project: project.clone(),
         suite: String::from("invocation"),
         over: invocation_dir.clone(),
+        ..Default::default()
     })
     .await
     .expect("invocation eval succeeds end-to-end");

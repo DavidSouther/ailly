@@ -14,8 +14,8 @@
 //! Then:
 //!   - the filtered assemble writes exactly one conversation file, not three;
 //!   - the unfiltered assemble is unchanged (regression guard): all three;
-//!   - the filtered, repeatable-flag run processes exactly the two named
-//!     cases and leaves the third file's blank assistant turn untouched;
+//!   - the filtered, repeatable-flag run processes exactly the two named cases
+//!     and leaves the third file's blank assistant turn untouched;
 //!   - the filtered eval matches and scores exactly one conversation, not
 //!     three, against only the suite case that names it.
 //!
