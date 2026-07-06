@@ -37,7 +37,7 @@ pub struct ComparisonTotals {
 
 impl ComparisonTotals {
     pub fn passes_falsification_gate(&self) -> bool {
-        self.improved > 0
+        self.improved > 0 && self.regressed == 0
     }
 }
 
@@ -309,5 +309,15 @@ mod tests {
             ..Default::default()
         };
         assert!(totals.passes_falsification_gate());
+    }
+
+    #[test]
+    fn passes_falsification_gate_fails_when_a_regression_is_present() {
+        let totals = ComparisonTotals {
+            improved: 1,
+            regressed: 1,
+            ..Default::default()
+        };
+        assert!(!totals.passes_falsification_gate());
     }
 }
