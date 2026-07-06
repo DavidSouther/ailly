@@ -4,6 +4,7 @@
 //! `Deferred` until the orchestrator wires their collaborator. The dispatch
 //! table is a total `match` over `Assertion`.
 
+use std::collections::BTreeMap;
 use std::marker::PhantomData;
 use std::path::Path;
 use std::path::PathBuf;
@@ -1331,8 +1332,40 @@ fn check_tool_call_order(conversation: &Conversation, sequence: &[String]) -> As
 /// Subset-of-multiset, not exact equality — extra calls (of any tool) are
 /// tolerated, and order carries no meaning.
 fn check_tool_call_collection(conversation: &Conversation, tools: &[String]) -> AssertionOutcome {
-    let _ = (conversation, tools);
-    todo!()
+    let mut required: BTreeMap<&str, usize> = BTreeMap::new();
+    for tool in tools {
+        *required.entry(tool.as_str()).or_insert(0) += 1;
+    }
+
+    let calls = extract_tool_uses(conversation);
+    let mut observed: BTreeMap<&str, usize> = BTreeMap::new();
+    for block in &calls {
+        *observed.entry(tool_use_name(block)).or_insert(0) += 1;
+    }
+
+    let shortfalls: Vec<(&str, usize, usize)> = required
+        .iter()
+        .filter_map(|(&name, &need)| {
+            let have = observed.get(name).copied().unwrap_or(0);
+            (have < need).then_some((name, need, have))
+        })
+        .collect();
+
+    if shortfalls.is_empty() {
+        AssertionOutcome::Pass
+    } else {
+        let detail = shortfalls
+            .iter()
+            .map(|(name, need, have)| format!("{name:?} (need {need}, got {have})"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        AssertionOutcome::Fail {
+            reason: format!(
+                "tool_call_collection: missing required call(s): {detail}; observed calls: {:?}",
+                calls.iter().map(|b| tool_use_name(b)).collect::<Vec<_>>(),
+            ),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -1751,6 +1784,13 @@ mod tests {
             }
             other => panic!("expected Fail, got {other:?}"),
         }
+    }
+
+    #[tokio::test]
+    async fn tool_call_collection_with_empty_tools_is_vacuously_satisfied() {
+        let conv = conversation_with(vec![assistant_blocks(vec![])]);
+        let assertion = Assertion::ToolCallCollection { tools: vec![] };
+        assert_eq!(assertion.check(&conv, &ctx()).await, AssertionOutcome::Pass);
     }
 
     #[tokio::test]
