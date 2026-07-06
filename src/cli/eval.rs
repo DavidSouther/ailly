@@ -10,8 +10,10 @@ use std::fs;
 use std::io;
 use std::path::PathBuf;
 
+use crate::cli::case_filter_matches;
 use crate::cli::env;
 use crate::content::conversation::Conversation;
+use crate::content::evaluation::Case;
 use crate::content::evaluation::EvaluationError;
 use crate::content::project::Project;
 use crate::content::repository::ConversationKey;
@@ -113,7 +115,8 @@ pub enum EvalCmdError {
 pub async fn run(args: EvalCmdArgs) -> Result<EvalCmdOutcome, EvalCmdError> {
     let project = Project::open(&args.project)?;
     env::load_project_env(&args.project);
-    let suite = project.evals().get(&args.suite)?;
+    let mut suite = project.evals().get(&args.suite)?;
+    suite.cases = retain_filtered_cases(suite.cases, &args.cases);
 
     // Root a conversations repository at `over` itself, not at the project
     // root: `--over` may point anywhere on disk, including outside the project
@@ -135,7 +138,11 @@ pub async fn run(args: EvalCmdArgs) -> Result<EvalCmdOutcome, EvalCmdError> {
     // listing root: the root locates the conversation files (anywhere on
     // disk), the report id names the per-run report under the project.
     let report_id = report_id_for(&args.over);
-    let keys = conversations_repository.list(&RunId::default())?;
+    let keys: Vec<ConversationKey> = conversations_repository
+        .list(&RunId::default())?
+        .into_iter()
+        .filter(|key| crate::cli::case_filter_matches(key.name.as_str(), &args.cases))
+        .collect();
     let mut conversations: Vec<(PathBuf, _)> = Vec::with_capacity(keys.len());
     for key in &keys {
         let conv = conversations_repository.load(key)?;
@@ -189,6 +196,24 @@ pub async fn run(args: EvalCmdArgs) -> Result<EvalCmdOutcome, EvalCmdError> {
         assertions_deferred_executable: executable_deferred_count(&report.per_class),
         report_path,
     })
+}
+
+/// Drop named suite cases the `--case` filter excludes, alongside the
+/// conversation-key filter applied in [`run`]. Filtering only the
+/// conversations would leave the excluded named cases in the suite, and
+/// `evaluate()` synthesizes a "no conversation found for case name"
+/// Malformed outcome for any named case with zero matches — exactly the
+/// false failure this feature must not introduce. Unnamed cases (`name:
+/// None`) have no per-name identity to filter on and are never dropped.
+/// Empty `cases` returns `cases` unchanged.
+fn retain_filtered_cases(cases: Vec<Case>, filter: &[String]) -> Vec<Case> {
+    cases
+        .into_iter()
+        .filter(|case| match &case.name {
+            Some(name) => case_filter_matches(name, filter),
+            None => true,
+        })
+        .collect()
 }
 
 /// Derive the per-run report id from the `--over` target: the directory
@@ -291,6 +316,45 @@ mod tests {
             },
         );
         assert_eq!(executable_deferred_count(&per_class), 3);
+    }
+
+    fn case_named(name: &str) -> Case {
+        Case {
+            name: Some(String::from(name)),
+            when: crate::content::conversation::BindingMap::new(),
+            assertions: vec![],
+        }
+    }
+
+    fn case_unnamed() -> Case {
+        Case {
+            name: None,
+            when: crate::content::conversation::BindingMap::new(),
+            assertions: vec![],
+        }
+    }
+
+    #[test]
+    fn retain_filtered_cases_keeps_everything_when_filter_is_empty() {
+        let cases = vec![case_named("a"), case_named("b"), case_unnamed()];
+        let filtered = retain_filtered_cases(cases.clone(), &[]);
+        assert_eq!(filtered, cases);
+    }
+
+    #[test]
+    fn retain_filtered_cases_drops_named_cases_not_in_the_filter() {
+        let cases = vec![case_named("a"), case_named("b"), case_named("c")];
+        let filtered = retain_filtered_cases(cases, &[String::from("b")]);
+        assert_eq!(filtered.len(), 1);
+        assert_eq!(filtered[0].name.as_deref(), Some("b"));
+    }
+
+    #[test]
+    fn retain_filtered_cases_never_drops_unnamed_cases() {
+        let cases = vec![case_named("a"), case_unnamed()];
+        let filtered = retain_filtered_cases(cases, &[String::from("nope")]);
+        assert_eq!(filtered.len(), 1);
+        assert_eq!(filtered[0].name, None);
     }
 
     #[test]
