@@ -1,0 +1,240 @@
+---
+model: claude-sonnet-4-6
+assembly: synthetic-newtype-invocation
+binding:
+  variant: '3'
+---
+role: system
+content: |
+  # Patterns skill eval
+
+  This project's constitution. Both assemblies name this file explicitly at
+  position zero of the prefix so it is always the first thing the model
+  reads.
+
+  This project is a regression harness for the `patterns:*` plugin from
+  [davidsouther/domain-driven-design](https://github.com/davidsouther/domain-driven-design).
+  Two axes are exercised: **discovery** asks the model to pick the right
+  skill from its `description:` frontmatter alone, and **invocation** asks
+  the model to produce code that structurally exhibits the named pattern
+  once the skill is loaded.
+
+  ## Reading the invocation comparison
+
+  The invocation axis is run as an A/B comparison: a **baseline** arm (no
+  skill) against an **invocation** arm (skill loaded), over identical
+  prompts. The falsification gate in `ci.sh` requires `improved > 0` and
+  `regressed == 0` — the skill must help on at least one assertion and harm
+  none.
+
+  Not every skill produces improvement, and that is a feature, not a bug:
+
+  - **emitting-logs** is the clear positive. Without the skill the model
+    interpolates values into the message body and skips `eventName`; with
+    it, the record is structured under semantic-convention keys. Both the
+    script checker and the judge flip from fail to pass.
+  - **configuring-logging** improves on the judge: the skill produces a
+    fuller five-layer pipeline than the baseline's partial attempt.
+  - **newtype** is a deliberate **null result**. A capable model already
+    reaches for brand types when asked for swap-proof ids, with or without
+    the skill, so both arms pass. newtype is retained precisely to show
+    what a skill that does *not* change a capable model's output looks like
+    in the report: `UnchangedPass`, contributing nothing to `improved`. The
+    gate does not depend on it.
+
+  The lesson the harness encodes: a skill earns its place by changing
+  behaviour a baseline model would otherwise get wrong. The eval reports
+  both the skills that clear that bar and the ones that do not.
+cache: true
+---
+role: system
+content: |
+  # Candidate project: Hello World server
+
+  This is the codebase you are editing. It is a small **TypeScript** HTTP
+  server — a "Hello World" service that greets callers and places orders.
+  It targets Node.js with `tsc` strict mode.
+
+  All code you write is **TypeScript**. Answer every coding task with
+  TypeScript source, never another language. Follow the idioms the loaded
+  skills demonstrate in their primary examples (brand types, the subscriber
+  registry, structured log records). Show the type or function definition
+  and, where the task asks for one, a single example call site.
+cache: true
+---
+role: system
+content: |
+  ---
+  name: using-patterns
+  description: Bootstrap skill for design patterns. Loaded at session start to establish when to invoke each pattern skill.
+  ---
+
+  # Design Patterns Workflow
+
+  You are working in a project that uses structured design patterns. During a plan phase, invoke an appropriate skill to ensure the plan includes reasonable design patterns.
+
+  | Situation | Invoke |
+  |-----------|--------|
+  | A primitive type (string, number, UUID) represents a distinct domain concept | `patterns:newtype` |
+  | Modeling domain objects — deciding what has identity, what is a value, what is a function | `patterns:entities-value-objects-services` |
+  | Constructing an object with many fields, required vs. optional distinction, or partial-init risk | `patterns:builder` |
+  | A domain object exposes public fields, leaks mutable collections, or allows state changes via assignment | `patterns:visibility` |
+  | Data arrives from an external boundary (HTTP, user input, file, message queue) | `patterns:parse-dont-validate` |
+  | Modeling a state machine, lifecycle stages, or finite set of mutually-exclusive states | `patterns:type-states` |
+  | Decoupling domain logic from a specific storage technology | `patterns:repository` |
+  | Defining an operation that must transition the domain from one legal state to another atomically | `patterns:aggregate` |
+  | Bridging an Aggregate with a Repository inside a single durable transaction | `patterns:unit-of-work` |
+  | Structuring the application layer, wiring concrete dependencies, or separating domain from HTTP/CLI | `patterns:bootstrap-and-service` |
+  | Writing or reviewing a test — ensuring setup, action, and assertions are clearly separated | `patterns:arrange-act-assert` |
+  | Fake implementation passes the first test and the correct generalization is not yet obvious | `patterns:triangulate` |
+  | Converting one domain type to another, especially when `as` casts, extract-and-rewrap, or duplicated `to_X`/`from_X` pairs appear | `patterns:type-conversion` |
+  | Bootstrapping a logging pipeline at process start — subscriber, formatter, filter, resource attributes, W3C trace propagator, exporter, sampling, redaction, graceful shutdown | `patterns:configuring-logging` |
+  | Writing a log call site — choosing a severity, attaching fields under OpenTelemetry semantic conventions, scoping spans to units of work, naming business events, logging an error chain once at the boundary | `patterns:emitting-logs` |
+
+  ## Pattern Composition
+
+  Patterns compose in predictable ways — recognise these combinations:
+
+  - **`parse-dont-validate` + `newtype`** — parse external input directly into domain types; the parsed type *is* the proof of validity.
+  - **`repository` + `aggregate`** — persistence-ignorant domain model with clean consistency boundaries. Add `unit-of-work` when the operation must be atomic and durable.
+  - **`bootstrap-and-service`** — the outer shell that wires `repository`, `unit-of-work`, and protocol adapters together at startup. Apply last.
+  - **`type-conversion` + `newtype`** — newtype constructors *are* the canonical conversions; total constructors implement `From`, partial constructors implement `TryFrom`/`parse`, and call sites stop reaching into `.0` to rewrap.
+  - **`configuring-logging` + `emitting-logs`** — the two halves of structured logging. Configuration sets the envelope and the exporter once; emission attaches the per-event fields under the semantic conventions the configuration enforces. Run them together; one without the other produces structured logs that aren't queryable, or queryable logs that aren't centralized.
+
+  Do not apply all patterns upfront. Start with the one that addresses the immediate design pressure.
+cache: true
+---
+role: system
+content: |
+  ---
+  name: newtype
+  description: Use when primitive types are part of a domain's API. These strings, numbers, or UUIDs represent distinct domain concepts that must not be mixed. Prevents accidental substitution of values that share the same underlying type but carry different meaning — such as passing a UserId where an OrderId is expected, or adding Kilometers to Miles without conversion.
+  ---
+
+  # NewType
+
+  ## Overview
+
+  Wrap primitive types in named domain types so the type system enforces correct usage. Scalar types describe what data *looks like*; domain types describe what data *means*. The compiler checks shape, not meaning, so two fields that are both floatint point numbers are indistinguishable without wrapping in a newtype. When implemented using brands, the brandd is erased at runtime, ensuring zero performance overhead.
+
+  ## When to Use
+
+  - Two or more domain identifiers share the same primitive type (e.g., `UserId`, `OrderId`, `ProductId` are all UUIDs).
+  - A numeric quantity has units whose mixing would be incorrect (e.g., `Meters` vs `Feet`, `Euros` vs `Dollars`).
+  - A string has a constrained format or security implications that should be validated once at construction (`EmailAddress`, `Slug`, `SqlQuery`), preventing injection by making unsanitized strings unacceptable to domain APIs.
+  - A value crosses a bounded context boundary and its meaning must be explicit.
+
+  **When NOT to use:** Purely internal scratch variables, loop counters, or values that have no domain meaning and are never passed between functions.
+
+  ## Core Pattern
+
+  **Before** — primitives leak domain intent; swapping `fromAccount` and `toAccount` (both `string`) compiles silently.
+
+  **After** — branded/wrapper types make the mistake unrepresentable. The constructor is the only sanctioned entry point; validation and coercion live there once.
+
+  ```
+  type AccountId = string & { readonly _brand: "AccountId" };
+  // Type error — plain string is not assignable to AccountId:
+  transfer("acc-123", "acc-456", 5000);
+  // Correct — construction is explicit:
+  transfer(makeAccountId("acc-123"), makeAccountId("acc-456"), makeCents(5000));
+  ```
+
+  For complete examples, see [`references/typescript.md`](references/typescript.md), [`references/python.md`](references/python.md), and [`references/rust.md`](references/rust.md).
+
+  ## Quick Reference
+
+  | Domain Concept   | Raw Type         | NewType                         |
+  |------------------|------------------|---------------------------------|
+  | User identity    | `string` (UUID)  | `UserId(UUID)`, `UserId(String)`|
+  | Monetary value   | `number`         | `Cents(u32)`, `Euros(u32)`      |
+  | Distance         | `number`         | `Kilometers(f64)`, `Miles(f32)` |
+  | Validated input  | `string`         | `EmailAddress(String)`, `Slug(String)`  |
+  | Timestamps       | `number`         | `UnixSeconds(Duration)`, `Milliseconds(u8)`|
+
+  ## Common Mistakes
+
+  - **Plain type alias instead of a brand** `type UserId = string` is fully transparent; the compiler treats it as identical to `string` and provides no safety.
+  - **Casting with `as` at call sites** writing `transfer(toId as AccountId, fromId as AccountId, ...)` defeats the pattern entirely. All `as` casts belong inside the constructor function, never at the call site.
+  - **Skipping the constructor or builder** directly casting raw values at every use site spreads unvalidated entry points across the codebase. Centralise construction so validation and coercion happen once.
+  - **Branding every incidental value** NewTypes belong on domain-meaningful concepts. Branding loop counters or local temporaries adds noise without benefit.
+
+  ## Composes With
+
+  - **`patterns:parse-dont-validate`** — constructor functions, builders, and `impl TryFrom` *are* parsers; `makeEmail(raw)` validates and brands in one step, producing the typed value domain code consumes.
+  - **`patterns:entities-value-objects-services`** — brand entity IDs (`UserId`, `OrderId`) and constrained value-object fields (`Cents`, `EmailAddress`) so the type system enforces correct usage across the model.
+cache: true
+---
+role: user
+content: |
+  Two ids flow through our billing code as raw strings: `invoiceId` and
+  `customerId`. We just shipped a refund that credited the wrong party
+  because someone passed `customerId` into a helper that expected
+  `invoiceId`, and TypeScript didn't complain because they're both just
+  `string`. Give me distinct types for these two ids so a mixup like that
+  fails to compile. Show the type declarations and the one call site that
+  looks up an invoice by its id. Don't reach for a full entity class or an
+  ORM model -- I only want the compile-time guard.
+---
+role: assistant
+content: |-
+  ```typescript
+  // ── Brand declarations ────────────────────────────────────────────────────────
+
+  type InvoiceId  = string & { readonly _brand: "InvoiceId" };
+  type CustomerId = string & { readonly _brand: "CustomerId" };
+
+  // ── Constructors (the only sanctioned entry points) ───────────────────────────
+
+  function makeInvoiceId(raw: string): InvoiceId {
+    if (!raw.trim()) throw new Error("InvoiceId must not be blank");
+    return raw as InvoiceId;
+  }
+
+  function makeCustomerId(raw: string): CustomerId {
+    if (!raw.trim()) throw new Error("CustomerId must not be blank");
+    return raw as CustomerId;
+  }
+
+  // ── A repository stub that demonstrates the compile-time guard ────────────────
+
+  interface InvoiceRepository {
+    findById(id: InvoiceId): Promise<{ id: InvoiceId; customerId: CustomerId; amountCents: number } | null>;
+  }
+
+  // ── Call site ─────────────────────────────────────────────────────────────────
+
+  async function lookupInvoice(repo: InvoiceRepository, rawId: string) {
+    const invoiceId = makeInvoiceId(rawId);
+    return repo.findById(invoiceId);
+
+    // The mistake that triggered the incident is now a compile error:
+    //   const customerId = makeCustomerId(rawId);
+    //   repo.findById(customerId);
+    //                 ^^^^^^^^^^ Argument of type 'CustomerId' is not
+    //                            assignable to parameter of type 'InvoiceId'.
+  }
+  ```
+
+  ### Why this works
+
+  | Concern | How it is addressed |
+  |---|---|
+  | `InvoiceId` and `CustomerId` are both `string` at runtime | The `_brand` phantom property makes them structurally incompatible to the **type checker** while adding zero runtime cost |
+  | Raw `string` is not assignable to either brand | Any call site that skips the constructor is a compile error, so validation is centralised |
+  | The `as` cast lives only in the constructors | Call sites never cast; the single entry point is the right place for any future format validation (UUID check, prefix check, etc.) |
+  | Plain `type InvoiceId = string` would not help | A transparent alias is identical to `string` for the compiler; the intersection with `{ readonly _brand: … }` is what creates the incompatibility |
+trace:
+  span_id: 019f38e9-79bc-7960-b973-ac113b4fe8c9
+  model: claude-sonnet-4-6
+  tokens:
+    input: 2652
+    output: 594
+  latency_ms: 11087
+  events:
+  - name: gen_ai.completion
+    attributes:
+      gen_ai.request.model: claude-sonnet-4-6
+      gen_ai.system: anthropic
+      gen_ai.usage.input_tokens: 2652
+      gen_ai.usage.output_tokens: 594

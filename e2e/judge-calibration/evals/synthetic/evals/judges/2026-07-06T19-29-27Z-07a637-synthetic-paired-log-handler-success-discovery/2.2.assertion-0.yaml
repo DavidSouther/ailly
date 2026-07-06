@@ -1,0 +1,74 @@
+---
+model: claude-sonnet-4-6
+assembly: judge
+binding:
+  variant: '2'
+---
+role: system
+content: |-
+  You are an evaluator. Read the rubric and the candidate response.
+  Reason step-by-step about whether the candidate response satisfies
+  the rubric, then end your reply with one line:
+    GRADE: P    (rubric satisfied)
+    GRADE: F    (rubric violated)
+    GRADE: I    (cannot decide)
+  The last GRADE line is binding. Do not print GRADE inside your reasoning.
+---
+role: user
+content: |-
+  RUBRIC:
+  The answer selects patterns:emitting-logs because the success
+  occurs inside an already-bootstrapped handler. It does not
+  recommend re-running patterns:configuring-logging.
+
+
+  USER QUESTION:
+  What's the right way to log a successful `ship_order` call from inside
+  the shipment handler we already have running? Logging is already
+  bootstrapped for the process. Which `patterns:*` skill should I reach
+  for?
+
+
+  CANDIDATE RESPONSE:
+  The right skill is **`patterns:emitting-logs`**.
+
+  Here's the reasoning against the table in the workflow:
+
+  | Signal in your situation | Matching row |
+  |---|---|
+  | You're writing a **log call site** inside existing domain/application code (`ship_order` handler) | *"Writing a log call site — choosing a severity, attaching fields under OpenTelemetry semantic conventions, scoping spans to units of work, naming business events, logging an error chain once at the boundary"* |
+  | Logging is **already bootstrapped** — you're not touching the pipeline | Rules out `patterns:configuring-logging` |
+
+  `patterns:emitting-logs` covers exactly what you need:
+
+  - Choosing the right **severity** (a successful call is probably `INFO`)
+  - Picking the correct **semantic-convention key** for the business event name (e.g. `event.name = "order.shipped"`)
+  - Attaching **structured fields** (order id, shipment id, destination, etc.) rather than interpolating them into the message string
+  - Keeping the call site inside the **handler boundary**, not leaking log concerns into domain objects
+
+  The companion skill `patterns:configuring-logging` is deliberately out of scope — you said the pipeline is already up, so there's nothing to configure.
+---
+role: assistant
+content: |-
+  The candidate response clearly recommends `patterns:emitting-logs` as the right skill to reach for, and explicitly rules out `patterns:configuring-logging` because logging is already bootstrapped. This directly satisfies both conditions of the rubric:
+
+  1. **Selects `patterns:emitting-logs`** ✓ — stated as "The right skill is `patterns:emitting-logs`" and explained because the success occurs inside an already-running handler.
+  2. **Does not recommend re-running `patterns:configuring-logging`** ✓ — explicitly excluded with the reasoning that the pipeline is already up and there's nothing to configure.
+
+  The response is thorough and well-structured, but the rubric only cares about these two points, both of which are satisfied.
+
+  GRADE: P
+trace:
+  span_id: 019f38ee-a705-7873-a217-cae00b674976
+  model: claude-sonnet-4-6
+  tokens:
+    input: 503
+    output: 181
+  latency_ms: 4237
+  events:
+  - name: gen_ai.completion
+    attributes:
+      gen_ai.request.model: claude-sonnet-4-6
+      gen_ai.system: anthropic
+      gen_ai.usage.input_tokens: 503
+      gen_ai.usage.output_tokens: 181

@@ -1,0 +1,182 @@
+---
+model: claude-sonnet-4-6
+assembly: judge
+binding:
+  variant: '2'
+---
+role: system
+content: |-
+  You are an evaluator. Read the rubric and the candidate response.
+  Reason step-by-step about whether the candidate response satisfies
+  the rubric, then end your reply with one line:
+    GRADE: P    (rubric satisfied)
+    GRADE: F    (rubric violated)
+    GRADE: I    (cannot decide)
+  The last GRADE line is binding. Do not print GRADE inside your reasoning.
+---
+role: user
+content: |-
+  RUBRIC:
+  The code introduces a UserId type that wraps a string, exposes
+  construction as the only sanctioned entry point, and makes a plain
+  string unassignable where UserId is required. There are no `as`
+  casts at call sites; validation lives once in the constructor.
+
+
+  USER QUESTION:
+  In our warehouse service, `sku` and `binLocation` are both represented
+  as plain strings, and a picker-app integration test just caught a call
+  that passed a bin location where a SKU was expected -- it compiled fine
+  and failed at runtime. I want the compiler to catch that instead. Add
+  `Sku` and `BinLocation` wrapper types and show the constructor for each
+  plus a single `moveStock(sku, from, to)` signature that uses them. Keep
+  it minimal -- just the types and validation, not a full inventory
+  aggregate.
+
+
+  CANDIDATE RESPONSE:
+  ```typescript
+  // domain/types.ts
+
+  // ---------------------------------------------------------------------------
+  // Branded primitives
+  // ---------------------------------------------------------------------------
+
+  /** A Stock-Keeping Unit identifier.  Format: 3–12 upper-case alphanumerics. */
+  type Sku = string & { readonly _brand: "Sku" };
+
+  /** A physical bin location in the warehouse.  Format: aisle-bay-level, e.g. "A1-03-2". */
+  type BinLocation = string & { readonly _brand: "BinLocation" };
+
+  // ---------------------------------------------------------------------------
+  // Constructors (the single sanctioned entry points for raw strings)
+  // ---------------------------------------------------------------------------
+
+  const SKU_RE = /^[A-Z0-9]{3,12}$/;
+
+  function makeSku(raw: string): Sku {
+    const trimmed = raw.trim().toUpperCase();
+    if (!SKU_RE.test(trimmed)) {
+      throw new Error(
+        `Invalid SKU "${raw}": must be 3-12 upper-case alphanumeric characters.`
+      );
+    }
+    return trimmed as Sku;
+  }
+
+  const BIN_RE = /^[A-Z]\d{1,2}-\d{2}-\d{1,2}$/;
+
+  function makeBinLocation(raw: string): BinLocation {
+    const trimmed = raw.trim().toUpperCase();
+    if (!BIN_RE.test(trimmed)) {
+      throw new Error(
+        `Invalid bin location "${raw}": expected format is aisle-bay-level, e.g. "A1-03-2".`
+      );
+    }
+    return trimmed as BinLocation;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Domain operation that is now swap-proof at compile time
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Move stock identified by `sku` from bin `from` to bin `to`.
+   *
+   * Because all three parameters carry distinct brands, passing a BinLocation
+   * where a Sku is expected — or swapping `from` and `to` with the wrong type —
+   * is a compile-time error, not a runtime surprise.
+   */
+  function moveStock(sku: Sku, from: BinLocation, to: BinLocation): void {
+    // implementation lives in the inventory aggregate; this signature is the
+    // compile-time contract we are establishing here
+    console.log(`Moving ${sku} from ${from} → ${to}`);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Example call site
+  // ---------------------------------------------------------------------------
+
+  const sku       = makeSku("WIDGET42");
+  const fromBin   = makeBinLocation("A1-03-2");
+  const toBin     = makeBinLocation("B2-07-1");
+
+  moveStock(sku, fromBin, toBin);
+
+  // The mistake the integration test caught — now rejected by the compiler:
+  //   moveStock(fromBin, sku, toBin);
+  //   ~~~~~~~~~~~~~~~~~~~~~~
+  //   Argument of type 'BinLocation' is not assignable to parameter of type 'Sku'.
+  ```
+
+  ### Why each decision was made
+
+  | Decision | Rationale |
+  |---|---|
+  | `string & { readonly _brand: "…" }` | The brand is erased at runtime (zero overhead); the intersection makes a plain `string` un-assignable without an explicit constructor call. |
+  | `as` cast lives **only inside the constructor** | Every call site is forced through validation. Spreading `as Sku` at call sites would defeat the pattern. |
+  | `trim().toUpperCase()` inside the constructor | Normalisation happens once, at the boundary, so domain code never sees mixed-case or whitespace variants. |
+  | Regex validated at construction | The constructor is the parser (`parse-dont-validate`); downstream code that holds a `Sku` value has an implicit proof it is well-formed. |
+  | `moveStock(sku: Sku, from: BinLocation, to: BinLocation)` | All three parameters are now distinct branded types, so the original `(binLocation, sku, …)` transposition becomes a compile-time error rather than a silent runtime fault. |
+---
+role: assistant
+content: |-
+  I need to evaluate this against the rubric, which requires:
+  1. A type that wraps a string
+  2. Construction as the only sanctioned entry point
+  3. Plain string unassignable where the type is required
+  4. No `as` casts at call sites
+  5. Validation lives once in the constructor
+
+  The rubric specifically mentions `UserId`, but the question asks for `Sku` and `BinLocation`. I'll evaluate the spirit of the rubric applied to the actual types requested.
+
+  **Checking each rubric point:**
+
+  **1. Types that wrap strings:**
+  ```typescript
+  type Sku = string & { readonly _brand: "Sku" };
+  type BinLocation = string & { readonly _brand: "BinLocation" };
+  ```
+  Yes — branded string types. A plain `string` cannot be assigned where `Sku` or `BinLocation` is required because the brand intersection isn't satisfied. ✓
+
+  **2. Construction as only sanctioned entry point:**
+  `makeSku()` and `makeBinLocation()` are the only ways to produce these types legitimately. ✓
+
+  **3. Plain string unassignable where the type is required:**
+  The branded intersection ensures `string` is not assignable to `Sku` or `BinLocation` without going through the constructor. ✓
+
+  **4. No `as` casts at call sites:**
+  The call site is:
+  ```typescript
+  moveStock(sku, fromBin, toBin);
+  ```
+  No `as` casts here. The only `as` casts appear inside `makeSku` and `makeBinLocation` — exactly where they belong. ✓
+
+  **5. Validation lives once in the constructor:**
+  Both `makeSku` and `makeBinLocation` contain regex validation. No validation scattered elsewhere. ✓
+
+  **6. `moveStock` signature uses the branded types:**
+  ```typescript
+  function moveStock(sku: Sku, from: BinLocation, to: BinLocation): void
+  ```
+  ✓
+
+  The rubric mentions `UserId` specifically, but that's the rubric's example framing — the question asks for `Sku` and `BinLocation`, and the candidate correctly applies the same pattern. The rubric's intent is clearly about the branded-type pattern, and the candidate satisfies all its structural requirements.
+
+  The response is clean, minimal, and directly addresses the warehouse domain problem. The `as` casts are confined to the constructors only, call sites are cast-free, and the compiler would catch the transposition bug described.
+
+  GRADE: P
+trace:
+  span_id: 019f38ed-ad81-7971-aff9-2a358c165acf
+  model: claude-sonnet-4-6
+  tokens:
+    input: 1279
+    output: 592
+  latency_ms: 10949
+  events:
+  - name: gen_ai.completion
+    attributes:
+      gen_ai.request.model: claude-sonnet-4-6
+      gen_ai.system: anthropic
+      gen_ai.usage.input_tokens: 1279
+      gen_ai.usage.output_tokens: 592

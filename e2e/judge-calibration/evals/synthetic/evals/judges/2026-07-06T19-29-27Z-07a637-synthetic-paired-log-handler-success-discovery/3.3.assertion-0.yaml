@@ -1,0 +1,59 @@
+---
+model: claude-sonnet-4-6
+assembly: judge
+binding:
+  variant: '3'
+---
+role: system
+content: |-
+  You are an evaluator. Read the rubric and the candidate response.
+  Reason step-by-step about whether the candidate response satisfies
+  the rubric, then end your reply with one line:
+    GRADE: P    (rubric satisfied)
+    GRADE: F    (rubric violated)
+    GRADE: I    (cannot decide)
+  The last GRADE line is binding. Do not print GRADE inside your reasoning.
+---
+role: user
+content: |-
+  RUBRIC:
+  The answer selects patterns:emitting-logs because the success
+  occurs inside an already-bootstrapped handler. It does not
+  recommend re-running patterns:configuring-logging.
+
+
+  USER QUESTION:
+  I need to record a successful `approve_signup` inside our existing
+  account-signup handler. The service's subscriber registry and exporters
+  are already wired up and running in production. Which `patterns:*` skill
+  tells me how to add this one log line?
+
+
+  CANDIDATE RESPONSE:
+  `patterns:emitting-logs`
+
+  That skill covers exactly this situation: writing a single log call site — choosing a severity, attaching structured fields under OpenTelemetry semantic convention keys, and naming a business event like `approve_signup`. The pipeline infrastructure is already in place, so `patterns:configuring-logging` doesn't apply here.
+---
+role: assistant
+content: |-
+  The candidate response selects `patterns:emitting-logs` as the recommended skill, explicitly stating it applies because the infrastructure is already in place. It also correctly excludes `patterns:configuring-logging`, explaining it doesn't apply in this context.
+
+  This directly satisfies both requirements of the rubric:
+  1. ✅ Selects `patterns:emitting-logs` because the success occurs inside an already-bootstrapped handler
+  2. ✅ Does not recommend re-running `patterns:configuring-logging`
+
+  GRADE: P
+trace:
+  span_id: 019f38ee-b260-78f3-b6cc-07a0aaebc45b
+  model: claude-sonnet-4-6
+  tokens:
+    input: 291
+    output: 122
+  latency_ms: 2904
+  events:
+  - name: gen_ai.completion
+    attributes:
+      gen_ai.request.model: claude-sonnet-4-6
+      gen_ai.system: anthropic
+      gen_ai.usage.input_tokens: 291
+      gen_ai.usage.output_tokens: 122

@@ -1,0 +1,99 @@
+---
+model: claude-sonnet-4-6
+assembly: judge
+binding:
+  variant: '2'
+---
+role: system
+content: |-
+  You are an evaluator. Read the rubric and the candidate response.
+  Reason step-by-step about whether the candidate response satisfies
+  the rubric, then end your reply with one line:
+    GRADE: P    (rubric satisfied)
+    GRADE: F    (rubric violated)
+    GRADE: I    (cannot decide)
+  The last GRADE line is binding. Do not print GRADE inside your reasoning.
+---
+role: user
+content: |-
+  RUBRIC:
+  The call site emits a structured log record with `EventName` set
+  to `order.placed` and attaches fields under OpenTelemetry
+  semantic-convention keys (`http.response.status_code`, `order.id`,
+  `user.id`). The message body is a stable string; no values are
+  interpolated into it.
+
+
+  USER QUESTION:
+  Add a log line to the shipment-created handler. On-call wants to be
+  able to grep by shipment id and immediately see which order it shipped,
+  which warehouse it came from, and the carrier's tracking status code we
+  got back. Write the single log call site for this.
+
+
+  CANDIDATE RESPONSE:
+  ```typescript
+  import { log } from "./logger";
+
+  function onShipmentCreated(event: ShipmentCreatedEvent): void {
+    // … handler logic …
+
+    log.emit({
+      eventName:       "shipment.created",
+      "shipment.id":   event.shipmentId,
+      "order.id":      event.orderId,
+      "warehouse.id":  event.warehouseId,
+      "carrier.tracking.statusCode": event.carrierStatusCode,
+    });
+  }
+  ```
+
+  Key decisions driven by the structured-logging skill:
+
+  | Choice | Reason |
+  |---|---|
+  | `eventName` field | Required discriminator — lets on-call filter to exactly this event class with `grep eventName=shipment.created` |
+  | Separate keyed fields instead of an interpolated string | Each dimension (`shipment.id`, `order.id`, `warehouse.id`, `carrier.tracking.statusCode`) is independently grep-able and indexable |
+  | Dotted namespaced keys | Follow semantic-convention style so log aggregators can correlate across services without collisions |
+  | No message template | Nothing is baked into a prose string where a value would be buried; every value lives in its own key |
+
+  PROGRAM_OUTPUTS:
+  [script] R3 semantic-convention keys: missing user.id, http.response.status_code; use the OpenTelemetry semantic-convention keys, not ad-hoc field names
+---
+role: assistant
+content: |-
+  I need to evaluate whether the candidate response satisfies the rubric.
+
+  **Rubric requirements:**
+  1. `EventName` set to `order.placed` ❌ (candidate uses `shipment.created`)
+  2. Fields under OpenTelemetry semantic-convention keys: `http.response.status_code`, `order.id`, `user.id` ❌
+  3. Message body is a stable string with no interpolated values — N/A (no message body used at all)
+
+  **Analysis:**
+
+  The rubric specifically requires:
+  - `EventName` = `order.placed` — The candidate uses `shipment.created` (wrong event name per rubric)
+  - OTel semantic-convention keys: `http.response.status_code`, `order.id`, `user.id` — The candidate uses `shipment.id`, `order.id`, `warehouse.id`, `carrier.tracking.statusCode`
+    - `order.id` ✅
+    - `http.response.status_code` ❌ (missing; candidate uses `carrier.tracking.statusCode` instead)
+    - `user.id` ❌ (missing entirely)
+
+  The candidate response uses ad-hoc field names rather than the specified OpenTelemetry semantic-convention keys. The PROGRAM_OUTPUTS script also confirms this: "missing user.id, http.response.status_code; use the OpenTelemetry semantic-convention keys, not ad-hoc field names."
+
+  The rubric is explicitly about `order.placed` event with specific OTel keys. The candidate's response is for a different event (`shipment.created`) with different field names — this misses the required `http.response.status_code` and `user.id` fields, and uses the wrong `EventName`.
+
+  GRADE: F
+trace:
+  span_id: 019f38ee-0a15-7b60-a83b-6237a9e45097
+  model: claude-sonnet-4-6
+  tokens:
+    input: 595
+    output: 415
+  latency_ms: 7359
+  events:
+  - name: gen_ai.completion
+    attributes:
+      gen_ai.request.model: claude-sonnet-4-6
+      gen_ai.system: anthropic
+      gen_ai.usage.input_tokens: 595
+      gen_ai.usage.output_tokens: 415

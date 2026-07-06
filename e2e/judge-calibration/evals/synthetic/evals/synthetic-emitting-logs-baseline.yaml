@@ -1,0 +1,37 @@
+name: synthetic-emitting-logs-baseline
+cases:
+  - name: "1"
+    assertions:
+      - { type: script, runtime: python, script: { path: evals/scripts/check_emitting_logs.py } }
+      - type: judge
+        prompt: |
+          The call site emits a structured log record with `EventName` set
+          to `order.placed` and attaches fields under OpenTelemetry
+          semantic-convention keys (`http.response.status_code`, `order.id`,
+          `user.id`). The message body is a stable string; no values are
+          interpolated into it.
+      - { type: tokens, metric: total, op: "<", value: 6000 }
+
+  - name: "2"
+    assertions:
+      - { type: script, runtime: python, script: { path: evals/scripts/check_emitting_logs.py } }
+      - type: judge
+        prompt: |
+          The call site emits a structured log record with `EventName` set
+          to `order.placed` and attaches fields under OpenTelemetry
+          semantic-convention keys (`http.response.status_code`, `order.id`,
+          `user.id`). The message body is a stable string; no values are
+          interpolated into it.
+      - { type: tokens, metric: total, op: "<", value: 6000 }
+
+  - name: "3"
+    assertions:
+      - { type: script, runtime: python, script: { path: evals/scripts/check_emitting_logs.py } }
+      - type: judge
+        prompt: |
+          The call site emits a structured log record with `EventName` set
+          to `order.placed` and attaches fields under OpenTelemetry
+          semantic-convention keys (`http.response.status_code`, `order.id`,
+          `user.id`). The message body is a stable string; no values are
+          interpolated into it.
+      - { type: tokens, metric: total, op: "<", value: 6000 }

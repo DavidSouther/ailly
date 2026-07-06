@@ -1,0 +1,113 @@
+---
+model: claude-sonnet-4-6
+assembly: judge
+binding:
+  variant: '2'
+---
+role: system
+content: |-
+  You are an evaluator. Read the rubric and the candidate response.
+  Reason step-by-step about whether the candidate response satisfies
+  the rubric, then end your reply with one line:
+    GRADE: P    (rubric satisfied)
+    GRADE: F    (rubric violated)
+    GRADE: I    (cannot decide)
+  The last GRADE line is binding. Do not print GRADE inside your reasoning.
+---
+role: user
+content: |-
+  RUBRIC:
+  The call site emits a structured log record with `EventName` set
+  to `order.placed` and attaches fields under OpenTelemetry
+  semantic-convention keys (`http.response.status_code`, `order.id`,
+  `user.id`). The message body is a stable string; no values are
+  interpolated into it.
+
+
+  USER QUESTION:
+  Add a log line to the shipment-created handler. On-call wants to be
+  able to grep by shipment id and immediately see which order it shipped,
+  which warehouse it came from, and the carrier's tracking status code we
+  got back. Write the single log call site for this.
+
+
+  CANDIDATE RESPONSE:
+  ```typescript
+  import { logger } from "./logger"; // your configured Pino / OTel logger
+
+  // Inside the shipment-created handler:
+  logger.info({
+    // ── Business event ──────────────────────────────────────────────
+    event_name:                    "shipment.created",
+
+    // ── Domain identifiers (newtype .toString() / Display) ──────────
+    "shipment.id":                 shipment.id.toString(),
+    "order.id":                    shipment.orderId.toString(),
+
+    // ── Warehouse source ─────────────────────────────────────────────
+    "warehouse.id":                shipment.warehouseId.toString(),
+
+    // ── Carrier response ─────────────────────────────────────────────
+    "carrier.tracking.status_code": carrierResponse.statusCode,
+
+    // ── HTTP semantic conventions (outbound carrier call) ────────────
+    "http.response.status_code":   carrierResponse.httpStatus,
+    "rpc.system":                  carrierResponse.system,   // e.g. "ups", "fedex"
+  }, "shipment created");
+  ```
+
+  A few decisions worth calling out:
+
+  | Choice | Reason |
+  |---|---|
+  | `event_name: "shipment.created"` | Stable business-event key the backend can count and alert on without parsing the message body. |
+  | Message body `"shipment created"` is a fixed string | All variable data lives in fields; the body never changes, so grep and log-volume dashboards stay clean. |
+  | `"shipment.id"`, `"order.id"`, `"warehouse.id"` are separate fields | On-call can filter on any single axis (`shipment.id = "…"`) without a regex; the three correlate automatically because they share the same log record (and the same `TraceId` from the active span). |
+  | `carrier.tracking.status_code` is read from `carrierResponse` directly | Hard-coding a literal would silently desync if the carrier ever returns a different code; reading it from the actual response is the OTel convention for `http.response.status_code` applied to the domain-specific carrier field. |
+  | No `console.log` / string interpolation | Moving `shipmentId`, `orderId`, etc. into the message string would flatten the event into unqueryable free text — the mistake the pattern explicitly prohibits. |
+
+  PROGRAM_OUTPUTS:
+  [script] R3 semantic-convention keys: missing user.id; use the OpenTelemetry semantic-convention keys, not ad-hoc field names
+---
+role: assistant
+content: |-
+  Let me evaluate the candidate response against the rubric.
+
+  **Rubric requirements:**
+  1. `EventName` set to `order.placed` — The candidate uses `event_name: "shipment.created"` (different event name, but the rubric says `order.placed`; however, the user question is about a *shipment-created* handler, so `shipment.created` is contextually appropriate — but the rubric specifically says `order.placed`)
+  2. Fields under OpenTelemetry semantic-convention keys: `http.response.status_code`, `order.id`, `user.id`
+  3. Message body is a stable string with no interpolated values
+
+  **Analysis:**
+
+  1. **EventName = `order.placed`**: The candidate uses `"shipment.created"` not `"order.placed"`. This violates the rubric's explicit requirement.
+
+  2. **`http.response.status_code`**: Present ✓
+
+  3. **`order.id`**: Present ✓
+
+  4. **`user.id`**: **Missing** ✗ — The program output also flags this: "missing user.id"
+
+  5. **Stable message body with no interpolation**: The message `"shipment created"` is a stable string with no interpolation ✓
+
+  The candidate response fails on two rubric points:
+  - Wrong `EventName` (`shipment.created` vs `order.placed`)
+  - Missing `user.id` field
+
+  The program output also confirms the `user.id` issue and notes the semantic-convention keys problem.
+
+  GRADE: F
+trace:
+  span_id: 019f38ee-60d9-7bf3-880c-55e4157c19c0
+  model: claude-sonnet-4-6
+  tokens:
+    input: 875
+    output: 362
+  latency_ms: 7152
+  events:
+  - name: gen_ai.completion
+    attributes:
+      gen_ai.request.model: claude-sonnet-4-6
+      gen_ai.system: anthropic
+      gen_ai.usage.input_tokens: 875
+      gen_ai.usage.output_tokens: 362

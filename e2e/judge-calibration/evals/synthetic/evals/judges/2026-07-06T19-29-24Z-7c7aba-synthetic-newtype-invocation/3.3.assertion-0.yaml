@@ -1,0 +1,113 @@
+---
+model: claude-sonnet-4-6
+assembly: judge
+binding:
+  variant: '3'
+---
+role: system
+content: |-
+  You are an evaluator. Read the rubric and the candidate response.
+  Reason step-by-step about whether the candidate response satisfies
+  the rubric, then end your reply with one line:
+    GRADE: P    (rubric satisfied)
+    GRADE: F    (rubric violated)
+    GRADE: I    (cannot decide)
+  The last GRADE line is binding. Do not print GRADE inside your reasoning.
+---
+role: user
+content: |-
+  RUBRIC:
+  The code introduces a UserId type that wraps a string, exposes
+  construction as the only sanctioned entry point, and makes a plain
+  string unassignable where UserId is required. There are no `as`
+  casts at call sites; validation lives once in the constructor.
+
+
+  USER QUESTION:
+  Two ids flow through our billing code as raw strings: `invoiceId` and
+  `customerId`. We just shipped a refund that credited the wrong party
+  because someone passed `customerId` into a helper that expected
+  `invoiceId`, and TypeScript didn't complain because they're both just
+  `string`. Give me distinct types for these two ids so a mixup like that
+  fails to compile. Show the type declarations and the one call site that
+  looks up an invoice by its id. Don't reach for a full entity class or an
+  ORM model -- I only want the compile-time guard.
+
+
+  CANDIDATE RESPONSE:
+  ```typescript
+  // ── Brand declarations ────────────────────────────────────────────────────────
+
+  type InvoiceId  = string & { readonly _brand: "InvoiceId" };
+  type CustomerId = string & { readonly _brand: "CustomerId" };
+
+  // ── Constructors (the only sanctioned entry points) ───────────────────────────
+
+  function makeInvoiceId(raw: string): InvoiceId {
+    if (!raw.trim()) throw new Error("InvoiceId must not be blank");
+    return raw as InvoiceId;
+  }
+
+  function makeCustomerId(raw: string): CustomerId {
+    if (!raw.trim()) throw new Error("CustomerId must not be blank");
+    return raw as CustomerId;
+  }
+
+  // ── A repository stub that demonstrates the compile-time guard ────────────────
+
+  interface InvoiceRepository {
+    findById(id: InvoiceId): Promise<{ id: InvoiceId; customerId: CustomerId; amountCents: number } | null>;
+  }
+
+  // ── Call site ─────────────────────────────────────────────────────────────────
+
+  async function lookupInvoice(repo: InvoiceRepository, rawId: string) {
+    const invoiceId = makeInvoiceId(rawId);
+    return repo.findById(invoiceId);
+
+    // The mistake that triggered the incident is now a compile error:
+    //   const customerId = makeCustomerId(rawId);
+    //   repo.findById(customerId);
+    //                 ^^^^^^^^^^ Argument of type 'CustomerId' is not
+    //                            assignable to parameter of type 'InvoiceId'.
+  }
+  ```
+
+  ### Why this works
+
+  | Concern | How it is addressed |
+  |---|---|
+  | `InvoiceId` and `CustomerId` are both `string` at runtime | The `_brand` phantom property makes them structurally incompatible to the **type checker** while adding zero runtime cost |
+  | Raw `string` is not assignable to either brand | Any call site that skips the constructor is a compile error, so validation is centralised |
+  | The `as` cast lives only in the constructors | Call sites never cast; the single entry point is the right place for any future format validation (UUID check, prefix check, etc.) |
+  | Plain `type InvoiceId = string` would not help | A transparent alias is identical to `string` for the compiler; the intersection with `{ readonly _brand: … }` is what creates the incompatibility |
+---
+role: assistant
+content: |-
+  The rubric has four criteria. Let me check each:
+
+  1. **Introduces a UserId type that wraps a string** – The rubric says "UserId type" but the question is about InvoiceId and CustomerId. The rubric appears to be a generalized description of the pattern; the candidate produces two branded types for the actual use case. This is reasonable and satisfies the spirit.
+
+  2. **Exposes construction as the only sanctioned entry point** – `makeInvoiceId` and `makeCustomerId` are the only constructioned entry points. ✓
+
+  3. **Makes a plain string unassignable where the branded type is required** – The intersection type `string & { readonly _brand: "InvoiceId" }` ensures a plain `string` cannot be assigned where `InvoiceId` is required. ✓
+
+  4. **No `as` casts at call sites; validation lives once in the constructor** – The call site in `lookupInvoice` uses `makeInvoiceId(rawId)` with no cast. The `as` casts are confined to inside `makeInvoiceId` and `makeCustomerId`. ✓
+
+  The rubric's mention of "UserId" is clearly a generalization of the pattern being asked for. The candidate correctly applies the branded-type pattern to `InvoiceId` and `CustomerId`, which is exactly what the question asked. All four criteria are met.
+
+  GRADE: P
+trace:
+  span_id: 019f38ed-c904-7eb1-a7ac-15a2c4611da9
+  model: claude-sonnet-4-6
+  tokens:
+    input: 904
+    output: 329
+  latency_ms: 6996
+  events:
+  - name: gen_ai.completion
+    attributes:
+      gen_ai.request.model: claude-sonnet-4-6
+      gen_ai.system: anthropic
+      gen_ai.usage.input_tokens: 904
+      gen_ai.usage.output_tokens: 329

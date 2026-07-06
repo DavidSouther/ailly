@@ -1,0 +1,102 @@
+---
+model: claude-sonnet-4-6
+assembly: judge
+binding:
+  variant: '1'
+---
+role: system
+content: |-
+  You are an evaluator. Read the rubric and the candidate response.
+  Reason step-by-step about whether the candidate response satisfies
+  the rubric, then end your reply with one line:
+    GRADE: P    (rubric satisfied)
+    GRADE: F    (rubric violated)
+    GRADE: I    (cannot decide)
+  The last GRADE line is binding. Do not print GRADE inside your reasoning.
+---
+role: user
+content: |-
+  RUBRIC:
+  The call site emits a structured log record with `EventName` set
+  to `order.placed` and attaches fields under OpenTelemetry
+  semantic-convention keys (`http.response.status_code`, `order.id`,
+  `user.id`). The message body is a stable string; no values are
+  interpolated into it.
+
+
+  USER QUESTION:
+  In the refund handler, add a log line for when a refund is issued.
+  Support needs to grep the logs for a specific refund and see which
+  order it was against, which customer got the money back, and what
+  amount was refunded. Write the one log call as you would for this
+  service.
+
+
+  CANDIDATE RESPONSE:
+  ```typescript
+  import { logger } from "./logger"; // the configured Pino / OTel logger for this service
+
+  logger.info({
+    // ── Business event ──────────────────────────────────────────────────
+    event_name:   "refund.issued",          // EventName — backend counts on this key
+
+    // ── Identity / domain IDs ───────────────────────────────────────────
+    "order.id":    refund.orderId,           // UserId / OrderId Display impls keep these
+    "user.id":     refund.customerId,        //   semantic-convention-shaped automatically
+
+    // ── Refund-specific payload ─────────────────────────────────────────
+    "refund.id":   refund.id,
+    "refund.amount.value":    refund.amount.value,
+    "refund.amount.currency": refund.amount.currency,
+  }, "refund issued");
+  ```
+
+  ### Why each field is here
+
+  | Field | Reason |
+  |---|---|
+  | `event_name: "refund.issued"` | Stable EventName in ubiquitous language — the backend pivots on this key to count, rate-alert, and build the SLO. Without it the record is grep-able but not queryable. |
+  | `"order.id"` | Support's ask: *which order was it against?* |
+  | `"user.id"` | Support's ask: *which customer got the money back?* Uses the `UserId` newtype's `Display` impl; never a raw string literal. |
+  | `"refund.id"` | Support's ask: *grep for a specific refund* — this is the lookup key. |
+  | `"refund.amount.value"` / `"refund.amount.currency"` | Support's ask: *what amount was refunded?* Split into value + currency so queries can aggregate across a currency without string-parsing `"42.00 USD"`. |
+  | message body `"refund issued"` | Stable human-readable string. Variable values live in fields above, never interpolated into the body. |
+
+  ### What is deliberately absent
+
+  - No `status: 200` literal — if the HTTP layer needs that it reads the actual response code, not a hard-coded number here.
+  - No second log call in a catch block — if this throws, the error is logged *once* at the boundary that owns the use case, not here *and* there.
+  - No `console.log` / string interpolation — `"refunded $42 for order #99"` would flatten everything Support needs into a free-text line that breaks `grep -F` the moment the format drifts.
+
+  PROGRAM_OUTPUTS:
+  [script] R3 semantic-convention keys: missing http.response.status_code; use the OpenTelemetry semantic-convention keys, not ad-hoc field names
+---
+role: assistant
+content: |-
+  The rubric requires three specific things:
+
+  1. **`EventName` set to `order.placed`** – The candidate uses `event_name: "refund.issued"`. The event name is wrong (the rubric says `order.placed`), and the key name is `event_name` rather than `EventName`.
+
+  2. **Fields under OpenTelemetry semantic-convention keys including `http.response.status_code`, `order.id`, `user.id`** – The candidate includes `order.id` and `user.id`, but omits `http.response.status_code` entirely. The program output also flags this missing field.
+
+  3. **Message body is a stable string with no interpolated values** – The candidate does satisfy this: `"refund issued"` is a stable string.
+
+  The candidate fails on two of the three rubric requirements:
+  - Wrong `EventName` value (`refund.issued` vs `order.placed`) and wrong key name.
+  - Missing `http.response.status_code` field.
+
+  GRADE: F
+trace:
+  span_id: 019f38ee-44b3-7f51-8098-ae573664e1e6
+  model: claude-sonnet-4-6
+  tokens:
+    input: 938
+    output: 241
+  latency_ms: 4996
+  events:
+  - name: gen_ai.completion
+    attributes:
+      gen_ai.request.model: claude-sonnet-4-6
+      gen_ai.system: anthropic
+      gen_ai.usage.input_tokens: 938
+      gen_ai.usage.output_tokens: 241
