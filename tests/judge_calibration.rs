@@ -144,8 +144,13 @@ async fn judge_calibration_harness_computes_agreement_rate_and_flags_bar() {
     })
     .await;
 
-    // Act 2: fold the report against the human labels.
-    let calibration = compute_calibration(&report, &labels);
+    // Act 2: fold the report against the human labels. This fixture is
+    // fully well-formed (one match, one assertion per case, every case
+    // labeled), so `compute_calibration` always returns `Ok` here;
+    // malformed-shape rejection is covered by calibration.rs's own unit
+    // tests, not this feature test.
+    let calibration = compute_calibration(&report, &labels)
+        .expect("judge-calibration fixture is well-formed and fully labeled");
 
     // Assert: exact counts and the exact agreement rate — a stubbed or
     // partially-correct implementation (e.g. one that always reports
