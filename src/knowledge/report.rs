@@ -320,4 +320,10 @@ mod tests {
         };
         assert!(!totals.passes_falsification_gate());
     }
+
+    #[test]
+    fn passes_falsification_gate_fails_when_vacuous() {
+        let totals = ComparisonTotals::default();
+        assert!(!totals.passes_falsification_gate());
+    }
 }
