@@ -138,10 +138,18 @@ pub async fn run(args: EvalCmdArgs) -> Result<EvalCmdOutcome, EvalCmdError> {
     // listing root: the root locates the conversation files (anywhere on
     // disk), the report id names the per-run report under the project.
     let report_id = report_id_for(&args.over);
-    let keys: Vec<ConversationKey> = conversations_repository
-        .list(&RunId::default())?
+    let all_keys = conversations_repository.list(&RunId::default())?;
+    let available: Vec<&str> = all_keys.iter().map(|k| k.name.as_str()).collect();
+    let missing = crate::cli::unmatched_cases(&args.cases, &available);
+    if !missing.is_empty() {
+        return Err(EvalCmdError::UnknownCase {
+            requested: missing,
+            available: available.iter().map(|s| (*s).to_string()).collect(),
+        });
+    }
+    let keys: Vec<ConversationKey> = all_keys
         .into_iter()
-        .filter(|key| crate::cli::case_filter_matches(key.name.as_str(), &args.cases))
+        .filter(|key| case_filter_matches(key.name.as_str(), &args.cases))
         .collect();
     let mut conversations: Vec<(PathBuf, _)> = Vec::with_capacity(keys.len());
     for key in &keys {
@@ -355,6 +363,59 @@ mod tests {
         let filtered = retain_filtered_cases(cases, &[String::from("nope")]);
         assert_eq!(filtered.len(), 1);
         assert_eq!(filtered[0].name, None);
+    }
+
+    const MINIMAL_SUITE_YAML: &str = "\
+name: minimal
+cases:
+  - name: a
+    assertions:
+      - { type: text_contains, value: \"noop\" }
+";
+
+    const MINIMAL_CONV: &str = "\
+---
+model: noop
+---
+role: user
+content: \"hi\"
+---
+role: assistant
+content: \"noop reply\"
+";
+
+    #[tokio::test]
+    async fn case_filter_with_a_typo_errors_with_requested_and_available_names() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let project = tmp.path().to_path_buf();
+        let evals_dir = project.join("evals");
+        fs::create_dir_all(&evals_dir).expect("mkdir evals");
+        fs::write(evals_dir.join("minimal.yaml"), MINIMAL_SUITE_YAML).expect("write suite");
+
+        let run_dir = project.join("runs").join("run-1");
+        fs::create_dir_all(&run_dir).expect("mkdir run dir");
+        fs::write(run_dir.join("a.yaml"), MINIMAL_CONV).expect("write conv a");
+        fs::write(run_dir.join("b.yaml"), MINIMAL_CONV).expect("write conv b");
+
+        let err = run(EvalCmdArgs {
+            project,
+            suite: String::from("minimal"),
+            over: run_dir,
+            cases: vec![String::from("a"), String::from("nope")],
+        })
+        .await
+        .expect_err("typo'd case name should hard-error");
+
+        match err {
+            EvalCmdError::UnknownCase {
+                requested,
+                available,
+            } => {
+                assert_eq!(requested, vec![String::from("nope")]);
+                assert_eq!(available, vec![String::from("a"), String::from("b")]);
+            }
+            other => panic!("expected UnknownCase, got {other:?}"),
+        }
     }
 
     #[test]

@@ -7,6 +7,7 @@
 use std::path::PathBuf;
 
 use crate::cli::case_filter_matches;
+use crate::cli::unmatched_cases;
 use crate::content::assembly::AssemblyError;
 use crate::content::assembly::RenderError;
 use crate::content::project::Project;
@@ -81,7 +82,11 @@ pub fn run(args: AssembleArgs) -> Result<PathBuf, AssembleError> {
 /// `cases` is the `--case` filter: empty stages every matrix binding
 /// (today's behavior, unchanged); non-empty stages only bindings whose
 /// derived case name (`filename_for(binding)`, stripped of `.yaml`) exactly
-/// matches one of the requested names.
+/// matches one of the requested names. Any requested name matching no
+/// binding is a hard [`AssembleError::UnknownCase`] naming the miss(es) and
+/// every binding name that was available — checked before any binding is
+/// staged, so a request mixing one real name and one typo does not
+/// partially assemble.
 ///
 /// # Errors
 ///
@@ -92,21 +97,33 @@ fn run_with_project(
     cases: &[String],
 ) -> Result<vfs::VfsPath, AssembleError> {
     let assembly = project.assemblies().get(assembly_name)?;
+    let bindings = assembly.expand_matrix()?;
+    let names: Vec<String> = bindings
+        .iter()
+        .map(|b| filename_for(b).trim_end_matches(".yaml").to_string())
+        .collect();
+    let available: Vec<&str> = names.iter().map(String::as_str).collect();
+    let missing = unmatched_cases(cases, &available);
+    if !missing.is_empty() {
+        return Err(AssembleError::UnknownCase {
+            requested: missing,
+            available: names,
+        });
+    }
+
     let mut tx = project.begin_run();
-    for binding in assembly.expand_matrix()? {
-        let name = filename_for(&binding);
-        let name = name.trim_end_matches(".yaml");
+    for (binding, name) in bindings.iter().zip(names.iter()) {
         if !case_filter_matches(name, cases) {
             continue;
         }
         let conversation =
             assembly
-                .render(project, &binding)
+                .render(project, binding)
                 .map_err(|e| AssembleError::Assembling {
                     name: assembly_name.to_string(),
                     source: Box::new(AssembleError::Render(e)),
                 })?;
-        tx.stage(&binding, &conversation)?;
+        tx.stage(binding, &conversation)?;
     }
     Ok(tx.commit(&assembly.name)?)
 }
@@ -201,6 +218,51 @@ model: claude-opus-4-7
         .expect("run");
         let names = yaml_files(&run_dir);
         assert_eq!(names, vec!["beta.yaml"]);
+    }
+
+    #[test]
+    fn case_filter_with_one_real_name_and_one_typo_errors_on_the_typo() {
+        let tmp = project_with_assembly(SINGLE_AXIS_ASSEMBLY);
+        let err = run(AssembleArgs {
+            project: tmp.path().to_path_buf(),
+            name: String::from("claim-handler"),
+            cases: vec![String::from("alpha"), String::from("alfa")],
+        })
+        .expect_err("typo'd case name should hard-error");
+        match err {
+            AssembleError::UnknownCase {
+                requested,
+                available,
+            } => {
+                assert_eq!(requested, vec![String::from("alfa")]);
+                assert_eq!(
+                    available,
+                    vec![
+                        String::from("alpha"),
+                        String::from("beta"),
+                        String::from("gamma")
+                    ]
+                );
+            }
+            other => panic!("expected UnknownCase, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn case_filter_where_every_requested_value_misses_lists_them_all() {
+        let tmp = project_with_assembly(SINGLE_AXIS_ASSEMBLY);
+        let err = run(AssembleArgs {
+            project: tmp.path().to_path_buf(),
+            name: String::from("claim-handler"),
+            cases: vec![String::from("nope"), String::from("nada")],
+        })
+        .expect_err("no requested case matches");
+        match err {
+            AssembleError::UnknownCase { requested, .. } => {
+                assert_eq!(requested, vec![String::from("nope"), String::from("nada")]);
+            }
+            other => panic!("expected UnknownCase, got {other:?}"),
+        }
     }
 
     #[test]

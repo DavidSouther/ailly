@@ -110,11 +110,13 @@ async fn fill_and_save(
 }
 
 /// Resolve `target` to one or more [`ConversationKey`]s. A file produces a
-/// single key; a directory lists all keys in that run, filtered by
-/// `cases` (empty means every key, unchanged from today). A file target is
-/// not filtered here: its single resolved key either matches downstream or
-/// becomes an `UnknownCase` error, so directory and file targets share one
-/// filtering point rather than branching. Providing neither returns
+/// single key; a directory lists all keys in that run, filtered by `cases`
+/// (empty means every key, unchanged from today). Either way, any requested
+/// `--case` value matching none of the names available in `target` (the
+/// single file's name, or every key in the directory) is a hard
+/// [`RunCmdError::UnknownCase`] naming the miss(es) and what was available —
+/// a file target combined with a non-matching filter errors rather than
+/// silently no-op-ing. Providing neither a file nor a directory returns
 /// [`RepositoryError::TargetNotFound`].
 fn resolve_keys(
     project: &crate::content::project::Project,
@@ -139,6 +141,14 @@ fn resolve_keys(
     if is_file {
         let name =
             ConversationName::from(target.file_stem().and_then(|s| s.to_str()).unwrap_or(""));
+        let available = vec![name.as_str()];
+        let missing = crate::cli::unmatched_cases(cases, &available);
+        if !missing.is_empty() {
+            return Err(RunCmdError::UnknownCase {
+                requested: missing,
+                available: available.iter().map(|s| (*s).to_string()).collect(),
+            });
+        }
         let run_id = super::project_relative(project, target.parent().unwrap_or(target));
         return Ok(vec![ConversationKey { run_id, name }]);
     }
@@ -151,6 +161,14 @@ fn resolve_keys(
     if is_dir {
         let run_id = super::project_relative(project, target);
         let keys = repo.list(&run_id).map_err(RunCmdError::Repository)?;
+        let available: Vec<&str> = keys.iter().map(|k| k.name.as_str()).collect();
+        let missing = crate::cli::unmatched_cases(cases, &available);
+        if !missing.is_empty() {
+            return Err(RunCmdError::UnknownCase {
+                requested: missing,
+                available: available.iter().map(|s| (*s).to_string()).collect(),
+            });
+        }
         return Ok(keys
             .into_iter()
             .filter(|key| crate::cli::case_filter_matches(key.name.as_str(), cases))
@@ -315,6 +333,55 @@ mod tests {
             assistant.body.is_none(),
             "b.yaml was not named by --case and must be left untouched"
         );
+    }
+
+    #[tokio::test]
+    async fn case_filter_with_one_real_name_and_one_typo_errors_on_the_typo() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        for name in ["a.yaml", "b.yaml"] {
+            write_conversation(&tmp.path().join(name), None, false);
+        }
+
+        let mut args = args_for(tmp.path());
+        args.cases = vec![String::from("a"), String::from("nope")];
+        let err = run(args)
+            .await
+            .expect_err("typo'd case name should hard-error");
+
+        match err {
+            RunCmdError::UnknownCase {
+                requested,
+                available,
+            } => {
+                assert_eq!(requested, vec![String::from("nope")]);
+                assert_eq!(available, vec![String::from("a"), String::from("b")]);
+            }
+            other => panic!("expected UnknownCase, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn case_filter_on_a_single_file_target_that_does_not_match_errors_instead_of_no_op() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let path = tmp.path().join("conv.yaml");
+        write_conversation(&path, None, false);
+
+        let mut args = args_for(&path);
+        args.cases = vec![String::from("nope")];
+        let err = run(args)
+            .await
+            .expect_err("a non-matching --case against a file target must error");
+
+        match err {
+            RunCmdError::UnknownCase {
+                requested,
+                available,
+            } => {
+                assert_eq!(requested, vec![String::from("nope")]);
+                assert_eq!(available, vec![String::from("conv")]);
+            }
+            other => panic!("expected UnknownCase, got {other:?}"),
+        }
     }
 
     #[tokio::test]
