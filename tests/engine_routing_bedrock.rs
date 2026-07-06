@@ -28,25 +28,23 @@
 //! `"bedrock:"` ids now resolve to `Ok`, where they used to resolve to
 //! `Err(ModelNotFound)`.
 //!
-//! Running today (before Feature B lands) this test is red for two
-//! independent reasons, exercised together:
-//!   1. `open_engine_for_model` has no `"bedrock:"` branch at all, so every
-//!      case below currently falls through to `ModelNotFound`.
-//!   2. `bedrock_from_env` (only reachable with the `bedrock` Cargo feature,
-//!      not yet on by default) unconditionally returns `EngineError::Provider {
-//!      message: "rig_engine: not yet implemented" }`.
-//!
-//! Verify with `cargo test --test engine_routing_bedrock --all-features`
-//! (matching `mise run test`'s existing `--all-features` convention) so the
-//! `bedrock`-gated block below compiles; without that flag the block is
-//! `cfg`'d out, but the router-level assertions above it still fail red on
-//! their own.
+//! `bedrock` is a default-on Cargo feature, so this file's assertions must
+//! hold under *both* build configurations, not just the `--all-features`
+//! convention `mise run test` happens to use: `cargo test` / `cargo test
+//! --all-features` exercise the feature-enabled path (the `"bedrock:"`
+//! prefix resolves to `Ok`), while `cargo test --no-default-features`
+//! exercises the feature-disabled path (the router has no `"bedrock:"`
+//! branch, so the prefix correctly falls through to `ModelNotFound`, exactly
+//! like any other unrecognised prefix). Each variant below is `cfg`-gated to
+//! the build configuration it actually holds under, so the file is green in
+//! both.
 
 use ailly_two::content::conversation::ModelId;
 use ailly_two::engine::engine::EngineError;
 use ailly_two::engine::engine::open_engine_for_model;
 
 #[test]
+#[cfg(feature = "bedrock")]
 fn open_engine_routes_bedrock_prefixed_models_to_a_real_constructor() {
     // Arrange / Act / Assert — a named issue-#29 Bedrock model, addressed
     // through the Ailly-side "bedrock:" prefix, must now resolve to a real
@@ -77,10 +75,54 @@ fn open_engine_routes_bedrock_prefixed_models_to_a_real_constructor() {
              with no format validation; got {other:?}"
         ),
     }
+}
 
-    // The same raw id *without* the Ailly "bedrock:" prefix must still be
-    // unrecognised: this is prefix dispatch, not a substring match, and the
-    // feature must not loosen routing for ids that were already unrecognised.
+#[test]
+#[cfg(not(feature = "bedrock"))]
+fn open_engine_falls_through_to_model_not_found_when_bedrock_feature_disabled() {
+    // With the bedrock feature disabled, the router has no "bedrock:" branch
+    // at all: both a named model id and an inference-profile ARN must fall
+    // through to today's pre-feature ModelNotFound, not panic, not resolve
+    // to Ok, and not fail to compile. This is the mirror image of the
+    // feature-enabled assertions above, gated so `cargo test
+    // --no-default-features` sees an internally consistent file instead of
+    // an Ok expectation that can only hold with the feature on.
+    let named = ModelId::from("bedrock:meta.llama3-3-70b-instruct-v1:0");
+    match open_engine_for_model(&named) {
+        Err(EngineError::ModelNotFound { model }) => assert_eq!(model, named),
+        Err(other) => panic!(
+            "with the bedrock feature disabled, a bedrock: prefix must fail with \
+             ModelNotFound; got {other:?}"
+        ),
+        Ok(_) => panic!(
+            "with the bedrock feature disabled, a bedrock: prefix must not resolve \
+             to an engine"
+        ),
+    }
+
+    let arn = ModelId::from(
+        "bedrock:arn:aws:bedrock:us-east-1:123456789012:inference-profile/us.meta.llama3-3-70b-instruct-v1:0",
+    );
+    match open_engine_for_model(&arn) {
+        Err(EngineError::ModelNotFound { model }) => assert_eq!(model, arn),
+        Err(other) => panic!(
+            "with the bedrock feature disabled, an inference-profile ARN must fail \
+             with ModelNotFound; got {other:?}"
+        ),
+        Ok(_) => panic!(
+            "with the bedrock feature disabled, an inference-profile ARN must not \
+             resolve to an engine"
+        ),
+    }
+}
+
+#[test]
+fn open_engine_bedrock_shaped_id_without_prefix_is_never_recognised() {
+    // The same raw id *without* the Ailly "bedrock:" prefix must always be
+    // unrecognised, regardless of whether the bedrock feature is compiled
+    // in: this is prefix dispatch, not a substring match, so this assertion
+    // holds under both `--all-features` and `--no-default-features` and is
+    // intentionally left ungated.
     let unprefixed = ModelId::from("meta.llama3-3-70b-instruct-v1:0");
     match open_engine_for_model(&unprefixed) {
         Err(EngineError::ModelNotFound { model }) => assert_eq!(model, unprefixed),
@@ -92,30 +134,34 @@ fn open_engine_routes_bedrock_prefixed_models_to_a_real_constructor() {
              (that would be a substring match, not prefix dispatch)"
         ),
     }
+}
 
-    // The constructor itself, one layer below the router: this is the
-    // load-bearing assertion that `bedrock_from_env` no longer unconditionally
-    // returns the "not yet implemented" stub. Gated on the `bedrock` feature,
-    // matching the function's own `#[cfg(feature = "bedrock")]`; run with
-    // `--all-features` (or, once this feature-step turns `bedrock` on by
-    // default, with no extra flag at all) to exercise it.
-    #[cfg(feature = "bedrock")]
-    {
-        use ailly_two::engine::rig_engine::bedrock_from_env;
+// The constructor itself, one layer below the router: this is the
+// load-bearing assertion that `bedrock_from_env` no longer unconditionally
+// returns the "not yet implemented" stub. Gated on the `bedrock` feature,
+// matching the function's own `#[cfg(feature = "bedrock")]`; run with
+// `--all-features` (or with no extra flag at all, since `bedrock` is
+// default-on) to exercise it.
+#[test]
+#[cfg(feature = "bedrock")]
+fn bedrock_from_env_constructs_successfully_offline() {
+    use ailly_two::engine::rig_engine::bedrock_from_env;
 
-        match bedrock_from_env("meta.llama3-3-70b-instruct-v1:0") {
-            Ok(_) => {}
-            Err(EngineError::Provider { message }) if message.contains("not yet implemented") => {
-                panic!(
-                    "bedrock_from_env must no longer return the unimplemented stub; \
-                     got the pre-feature placeholder error: {message}"
-                );
-            }
-            Err(other) => panic!(
-                "bedrock_from_env must construct successfully offline (AWS credential \
-                 resolution is deferred to the first live call, not the constructor); \
-                 got {other:?}"
-            ),
+    match bedrock_from_env(
+        "meta.llama3-3-70b-instruct-v1:0",
+        "bedrock:meta.llama3-3-70b-instruct-v1:0",
+    ) {
+        Ok(_) => {}
+        Err(EngineError::Provider { message }) if message.contains("not yet implemented") => {
+            panic!(
+                "bedrock_from_env must no longer return the unimplemented stub; \
+                 got the pre-feature placeholder error: {message}"
+            );
         }
+        Err(other) => panic!(
+            "bedrock_from_env must construct successfully offline (AWS credential \
+             resolution is deferred to the first live call, not the constructor); \
+             got {other:?}"
+        ),
     }
 }
