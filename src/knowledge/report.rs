@@ -113,6 +113,7 @@ pub fn compute_comparison(arm_a: &EvalReport, arm_b: &EvalReport) -> ComparisonR
     let a_index = index_assertions(arm_a);
 
     let mut totals = ComparisonTotals::default();
+    let mut diffs: Vec<f64> = Vec::new();
     let mut case_map: BTreeMap<String, Vec<AssertionComparison>> = BTreeMap::new();
 
     for case in &arm_b.cases {
@@ -144,10 +145,22 @@ pub fn compute_comparison(arm_a: &EvalReport, arm_b: &EvalReport) -> ComparisonR
                 };
 
                 match change {
-                    "Improved" => totals.improved += 1,
-                    "Regressed" => totals.regressed += 1,
-                    "UnchangedPass" => totals.unchanged_pass += 1,
-                    _ => totals.unchanged_fail += 1,
+                    "Improved" => {
+                        totals.improved += 1;
+                        diffs.push(1.0);
+                    }
+                    "Regressed" => {
+                        totals.regressed += 1;
+                        diffs.push(-1.0);
+                    }
+                    "UnchangedPass" => {
+                        totals.unchanged_pass += 1;
+                        diffs.push(0.0);
+                    }
+                    _ => {
+                        totals.unchanged_fail += 1;
+                        diffs.push(0.0);
+                    }
                 }
                 totals.total_assertions += 1;
 
@@ -179,7 +192,7 @@ pub fn compute_comparison(arm_a: &EvalReport, arm_b: &EvalReport) -> ComparisonR
         falsification_gate: totals.passes_falsification_gate(),
         totals,
         cases,
-        paired_difference: todo!(),
+        paired_difference: compute_paired_difference(&diffs),
     }
 }
 
@@ -305,9 +318,46 @@ fn paired_difference_p_value(t: f64, df: usize) -> f64 {
 
 /// Fold a slice of per-pair diffs (`+1.0`/`-1.0`/`0.0`) into a
 /// [`PairedDifferenceTest`].
+///
+/// `n < 2` and the zero-variance edge cases are filled in by a later
+/// build step (design.md's fixed edge-case conventions); this general-case
+/// branch is correct for any sample with `n >= 2` and nonzero variance.
 fn compute_paired_difference(diffs: &[f64]) -> PairedDifferenceTest {
-    let _ = diffs;
-    todo!()
+    let n = diffs.len();
+    if n < 2 {
+        todo!("InsufficientPairs edge case, filled in by a later build step");
+    }
+
+    // `n` is a paired-assertion count (realistically single-to-low-double
+    // digits per suite comparison), never near f64's 2^52 mantissa limit.
+    #[allow(clippy::cast_precision_loss)]
+    let n_f64 = n as f64;
+    let mean_difference = diffs.iter().sum::<f64>() / n_f64;
+    let sum_squared_deviation: f64 = diffs
+        .iter()
+        .map(|diff| (diff - mean_difference).powi(2))
+        .sum();
+    let sample_std_dev = (sum_squared_deviation / (n_f64 - 1.0)).sqrt();
+
+    if sample_std_dev.abs() < f64::EPSILON {
+        todo!("zero-variance edge case, filled in by a later build step");
+    }
+
+    let standard_error = sample_std_dev / n_f64.sqrt();
+    let degrees_of_freedom = n - 1;
+    let t_statistic = mean_difference / standard_error;
+    let p_value = paired_difference_p_value(t_statistic, degrees_of_freedom);
+
+    PairedDifferenceTest::Computed {
+        n,
+        mean_difference,
+        sample_std_dev,
+        standard_error,
+        degrees_of_freedom,
+        t_statistic: Some(t_statistic),
+        p_value,
+        significant: p_value < PAIRED_DIFFERENCE_ALPHA,
+    }
 }
 
 /// Render a single [`EvalReport`] as a markdown summary.
