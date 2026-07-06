@@ -128,8 +128,11 @@ Everything is written under `--output-dir` (gitignored):
 - `candidates.jsonl` — one JSON object per mined candidate: id, source,
   provenance (source file/session/project cwd), timestamp, which detection
   signal fired, model metadata (or `null` if the transcript never recorded
-  one), the question/response text, and an optional
-  `candidate_label_human_implied` hint.
+  one), the question/response text, an optional
+  `candidate_label_human_implied` hint, and `skill_tags` — the distinct
+  skill/reference identifiers (see `skill_signals.py`) found anywhere in the
+  turn's RAW transcript objects, feeding step 2 of the relevance-matrix
+  pipeline (`build_relevance_matrix.py`).
 - `labels.yaml` — a draft flat `{id: TODO}` map in exactly the shape
   `feature-e-judge-calibration/design.md` specifies for
   `e2e/judge-calibration/evals/labels.yaml`, one entry per candidate, value
@@ -154,9 +157,12 @@ import hashlib
 import json
 import re
 import sys
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Iterator, Optional
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from skill_signals import extract_skill_tags_from_objs  # noqa: E402
 
 
 # --------------------------------------------------------------------------
@@ -258,6 +264,16 @@ class Candidate:
     agent_id: Optional[str] = None
     candidate_label_human_implied: Optional[dict[str, str]] = None
     label: str = "TODO"
+    # Step 2 of the relevance-matrix pipeline (see build_relevance_matrix.py):
+    # every distinct skill/reference identifier this turn's RAW transcript
+    # mentions — Skill-tool invocations, <command-name> tags, explicit
+    # `plugin:name`-shaped tokens, and references/*.md or SKILL.md path
+    # mentions. Computed by `skill_signals.extract_skill_tags_from_objs` over
+    # every raw JSON object touched while accumulating this turn (not just
+    # the flattened `question`/`response` text), so a skill mentioned only
+    # inside a tool_use block or a nested AskUserQuestion is still caught.
+    # Empty list is normal and common — most turns invoke no named skill.
+    skill_tags: list[str] = field(default_factory=list)
 
 
 def slugify(text: Optional[str], maxlen: int = 24) -> str:
@@ -429,6 +445,12 @@ def mine_claude_session_file(path: Path, log: MiningLog) -> list[Candidate]:
     collected_texts: list[str] = []
     collected_signal: Optional[str] = None
     collected_models: set[str] = set()
+    # Every raw object touched during the current turn (the triggering user
+    # object plus each assistant object), for step 2's skill/reference
+    # tagging — kept separate from `collected_texts` because a tag can live
+    # inside a tool_use block (e.g. a `Skill` call's `input.skill`) that the
+    # text-only extraction above never looks at. See `skill_signals.py`.
+    collected_raw_objs: list[dict[str, Any]] = []
     seq = 0
 
     def flush(next_human_text: Optional[str]) -> None:
@@ -456,6 +478,7 @@ def mine_claude_session_file(path: Path, log: MiningLog) -> list[Candidate]:
             question=pending["text"],
             response=response_text,
             agent_id=agent_id,
+            skill_tags=sorted(extract_skill_tags_from_objs(collected_raw_objs)),
         )
         cand.candidate_label_human_implied = detect_implied_verdict(next_human_text)
         candidates.append(cand)
@@ -477,10 +500,12 @@ def mine_claude_session_file(path: Path, log: MiningLog) -> list[Candidate]:
             collected_texts = []
             collected_signal = _claude_user_signal(text)
             collected_models = set()
+            collected_raw_objs = [obj]
             continue
 
         if obj.get("type") == "assistant" and (is_subagent_file or not obj.get("isSidechain")) and pending is not None:
             collected_texts.extend(_claude_assistant_text_blocks(obj))
+            collected_raw_objs.append(obj)
             sig = _claude_attribution_signal(obj)
             if sig and collected_signal is None:
                 collected_signal = sig
@@ -565,6 +590,14 @@ def mine_codex_session_file(path: Path, log: MiningLog) -> list[Candidate]:
     pending: Optional[dict[str, Any]] = None
     collected_final: list[str] = []
     collected_commentary: list[str] = []
+    # Every raw object touched during the current turn — see the matching
+    # comment in `mine_claude_session_file`. Unlike Claude Code, Codex has no
+    # dedicated `Skill`-tool shape; this still catches `plugin:name` tokens
+    # and reference-file mentions anywhere in the turn's `event_msg` stream
+    # (tool-call `response_item` entries are intentionally not included here,
+    # matching this function's existing event_msg-only scope — see module
+    # docstring's Codex turn-segmentation note).
+    collected_raw_objs: list[dict[str, Any]] = []
     seq = 0
 
     def flush(next_human_text: Optional[str]) -> None:
@@ -598,6 +631,7 @@ def mine_codex_session_file(path: Path, log: MiningLog) -> list[Candidate]:
             model=pending.get("model"),
             question=pending["text"],
             response=response_text,
+            skill_tags=sorted(extract_skill_tags_from_objs(collected_raw_objs)),
         )
         cand.candidate_label_human_implied = detect_implied_verdict(next_human_text)
         candidates.append(cand)
@@ -631,7 +665,11 @@ def mine_codex_session_file(path: Path, log: MiningLog) -> list[Candidate]:
             pending = {"text": text, "timestamp": obj.get("timestamp"), "model": current_model}
             collected_final = []
             collected_commentary = []
+            collected_raw_objs = [obj]
             continue
+
+        if pending is not None:
+            collected_raw_objs.append(obj)
 
         if ptype == "agent_message" and pending is not None:
             text = payload.get("message", "") or ""
@@ -733,12 +771,15 @@ def write_outputs(candidates: list[Candidate], output_dir: Path, log: MiningLog)
     by_source: dict[str, int] = {}
     with_model = 0
     with_implied = 0
+    with_skill_tags = 0
     for cand in candidates:
         by_source[cand.source] = by_source.get(cand.source, 0) + 1
         if cand.model:
             with_model += 1
         if cand.candidate_label_human_implied:
             with_implied += 1
+        if cand.skill_tags:
+            with_skill_tags += 1
 
     summary_lines = [
         "Judge-calibration candidate mining run summary",
@@ -750,6 +791,7 @@ def write_outputs(candidates: list[Candidate], output_dir: Path, log: MiningLog)
     summary_lines += [
         f"Model metadata present: {with_model}/{len(candidates)}",
         f"Low-confidence human-implied verdict hints: {with_implied}/{len(candidates)}",
+        f"Candidates with >=1 skill/reference tag: {with_skill_tags}/{len(candidates)}",
         f"Files scanned: {log.files_scanned}",
         f"Files skipped (unreadable): {log.files_skipped}",
         f"Lines skipped (malformed JSON): {log.lines_skipped}",
