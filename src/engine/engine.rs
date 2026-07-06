@@ -102,6 +102,15 @@ pub trait EngineProvider: Send + Sync {
 ///   (`ANTHROPIC_API_KEY`).
 /// - `"gpt-"` resolves via `rig_engine::openai_from_env` (`OPENAI_API_KEY`).
 /// - `"gemini-"` resolves via `rig_engine::gemini_from_env` (`GEMINI_API_KEY`).
+/// - `"bedrock:"` (only when the `bedrock` Cargo feature is enabled, default
+///   on) resolves via `rig_engine::bedrock_from_env`, with the prefix stripped
+///   and the remainder forwarded verbatim as a raw AWS model id or
+///   inference-profile ARN. Unlike the other three, a recognised-but-
+///   credential-less Bedrock id resolves to `Ok`, not `Err(Auth)`: AWS
+///   credential resolution is deferred to the first live call, not checked at
+///   construction time. When the `bedrock` feature is disabled, a
+///   `"bedrock:"`-prefixed id falls through to `ModelNotFound` exactly like any
+///   other unrecognised prefix.
 /// - Any other id returns [`EngineError::ModelNotFound`]: an unrecognised
 ///   prefix is the only `ModelNotFound` path from routing. A provider's own 404
 ///   for a recognised family is a separate live concern mapped by
@@ -109,7 +118,8 @@ pub trait EngineProvider: Send + Sync {
 ///
 /// Recognition (prefix) and authorisation (key) are distinct failures: a
 /// recognised prefix with a missing key reaches its `*_from_env` constructor
-/// and fails with [`EngineError::Auth`], never `ModelNotFound`.
+/// and fails with [`EngineError::Auth`], never `ModelNotFound`. (Bedrock is
+/// the one exception to that pattern; see above.)
 ///
 /// Instantiated per conversation so a future heterogeneous run-dir
 /// (multiple models across bindings) needs no further refactoring.
