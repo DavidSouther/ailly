@@ -10,6 +10,7 @@ use serde::Deserialize;
 use serde::Serialize;
 
 use crate::knowledge::eval::EvalReport;
+use crate::knowledge::eval::MISSING_CONVERSATION_CLASS;
 
 /// Ground truth for one calibration example, authored by a human labeler.
 /// Binary by design: a labeler is expected to reach a decision, unlike the
@@ -76,7 +77,11 @@ pub struct CalibrationReport {
 /// instead of surfacing a precise diagnosis).
 #[derive(Debug, thiserror::Error)]
 pub enum CalibrationError {
-    /// A case matched zero conversations.
+    /// A case matched zero conversations. Also covers a named case whose
+    /// zero real matches `evaluate()` papered over with its own synthesized
+    /// `MISSING_CONVERSATION_CLASS` placeholder match/assertion — that
+    /// placeholder is detected and rejected here rather than folded in as a
+    /// real (dis)agreement.
     #[error("calibration case {case:?} matched no conversation")]
     NoMatch { case: String },
     /// A case matched more than one conversation (a calibration suite must
@@ -119,7 +124,25 @@ pub fn compute_calibration(
                 });
             }
         }
-        let assertion_count = case.matches[0].assertions.len();
+        let single_match = &case.matches[0];
+        if is_missing_conversation_placeholder(single_match) {
+            // `evaluate()` (eval.rs) never actually leaves `case.matches`
+            // empty for a named case: when a named case matches zero real
+            // conversations, it synthesizes exactly one `MatchReport` (an
+            // empty `conversation` string, carrying a single
+            // `AssertionReport` tagged `MISSING_CONVERSATION_CLASS` with
+            // outcome `"malformed"`) so the report still records that the
+            // case ran. That means `case.matches.len() == 1` above does not
+            // by itself prove a real conversation was matched. Detect the
+            // synthesized placeholder here and surface it as the same
+            // `NoMatch` an unnamed/`when:`-filtered case would get for the
+            // same underlying condition, instead of silently folding its
+            // synthesized `"malformed"` outcome in below as a counted
+            // (dis)agreement — the false-confidence failure mode this type
+            // exists to prevent.
+            return Err(CalibrationError::NoMatch { case: case_name });
+        }
+        let assertion_count = single_match.assertions.len();
         if assertion_count != 1 {
             return Err(CalibrationError::MultipleAssertions {
                 case: case_name,
@@ -129,7 +152,7 @@ pub fn compute_calibration(
         let Some(&human_verdict) = labels.get(&case_name) else {
             return Err(CalibrationError::MissingLabel { case: case_name });
         };
-        let assertion = &case.matches[0].assertions[0];
+        let assertion = &single_match.assertions[0];
         validated.push(ValidatedCase {
             case_name,
             outcome: assertion.outcome.clone(),
@@ -216,6 +239,18 @@ fn map_agreement(outcome: &str, human_verdict: HumanVerdict) -> Agreement {
         ("pass", HumanVerdict::Pass) | ("fail", HumanVerdict::Fail) => Agreement::Agree,
         _ => Agreement::Disagree,
     }
+}
+
+/// True when `match_report` is the single synthesized placeholder
+/// `evaluate()` emits for a named case that matched zero real conversations
+/// (see `eval.rs`'s `matched.is_empty() && case.name.is_some()` branch): one
+/// assertion tagged `MISSING_CONVERSATION_CLASS`. A real match's assertions
+/// always carry a genuine assertion class (`"judge"`, `"text_contains"`,
+/// etc.), never this reserved tag, so this check cannot false-positive on an
+/// actual one-assertion judge case.
+fn is_missing_conversation_placeholder(match_report: &crate::knowledge::eval::MatchReport) -> bool {
+    match_report.assertions.len() == 1
+        && match_report.assertions[0].class == MISSING_CONVERSATION_CLASS
 }
 
 /// The case's `name:`, falling back to a positional identifier for the
@@ -515,6 +550,42 @@ mod tests {
                 Err(CalibrationError::MultipleAssertions { case, count: 2 }) if case == "example-01"
             ),
             "expected MultipleAssertions {{ count: 2 }}, got {result:?}"
+        );
+    }
+
+    /// Regression test for the "unreachable `NoMatch`" bug: the real
+    /// `evaluate()` orchestrator never leaves `case.matches` empty for a
+    /// named case with zero real conversation matches -- it synthesizes
+    /// exactly one `MatchReport` carrying a single assertion tagged
+    /// `MISSING_CONVERSATION_CLASS` (see `eval.rs`). This unit test pins
+    /// that `compute_calibration` recognizes and rejects that synthesized
+    /// shape as `NoMatch`, at the `calibration.rs`-internal level; the
+    /// end-to-end version driving the real `evaluate()` lives in
+    /// `tests/judge_calibration.rs`.
+    #[test]
+    fn synthesized_missing_conversation_placeholder_is_rejected_with_no_match() {
+        let report = report_with(vec![case(
+            "example-01",
+            vec![MatchReport {
+                conversation: String::new(),
+                assertions: vec![AssertionReport {
+                    class: String::from(crate::knowledge::eval::MISSING_CONVERSATION_CLASS),
+                    outcome: String::from("malformed"),
+                    reason: Some(String::from(
+                        "no conversation found for case name \"example-01\"",
+                    )),
+                }],
+            }],
+        )]);
+        let mut labels = BTreeMap::new();
+        labels.insert(String::from("example-01"), HumanVerdict::Pass);
+
+        let result = compute_calibration(&report, &labels);
+
+        assert!(
+            matches!(&result, Err(CalibrationError::NoMatch { case }) if case == "example-01"),
+            "a synthesized missing-conversation placeholder must surface as NoMatch, not be \
+             folded in as a graded (dis)agreement, got {result:?}"
         );
     }
 }

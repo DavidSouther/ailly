@@ -22,7 +22,12 @@ use crate::knowledge::assertions::check_judge;
 use crate::knowledge::assertions::check_program;
 use crate::knowledge::assertions::check_script;
 
-const MISSING_CONVERSATION_CLASS: &str = "missing_conversation";
+/// Assertion `class` tag `evaluate()` synthesizes for a named case that
+/// matched zero conversations (see the `matched.is_empty() &&
+/// case.name.is_some()` branch below). `calibration.rs` matches on this exact
+/// tag to distinguish this placeholder from a genuine judge outcome — see
+/// `compute_calibration`'s doc comment.
+pub(crate) const MISSING_CONVERSATION_CLASS: &str = "missing_conversation";
 
 /// Full report serialized to `<project>/evals/reports/<run-id>.json`.
 /// Field names are the JSON keys; see DESIGN.md §evaluation for the contract.

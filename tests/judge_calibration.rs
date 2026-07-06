@@ -34,6 +34,7 @@ use ailly_two::content::evaluation::Evaluation;
 use ailly_two::engine::engine::NoopEngine;
 use ailly_two::knowledge::assertions::EvaluationContext;
 use ailly_two::knowledge::calibration::Agreement;
+use ailly_two::knowledge::calibration::CalibrationError;
 use ailly_two::knowledge::calibration::HumanVerdict;
 use ailly_two::knowledge::calibration::compute_calibration;
 use ailly_two::knowledge::eval::EvalArgs;
@@ -200,6 +201,82 @@ async fn judge_calibration_harness_computes_agreement_rate_and_flags_bar() {
         .filter(|e| e.agreement == Agreement::Agree)
         .count();
     assert_eq!(agree_count, 9);
+}
+
+/// Regression test: `evaluate()` (eval.rs) never leaves `case.matches` empty
+/// for a *named* case with zero real conversation matches -- it synthesizes
+/// exactly one `MatchReport` (empty `conversation`, one assertion tagged
+/// `missing_conversation` / outcome `"malformed"`) so the report still
+/// records the case ran. Before the fix, `compute_calibration` could not
+/// tell that placeholder apart from a genuine one-assertion match, so a
+/// typo'd/missing conversation filename silently became a counted
+/// `Disagree` instead of surfacing `CalibrationError::NoMatch` -- exactly
+/// the false-confidence failure mode the type exists to prevent. This test
+/// drives the real, unmodified `evaluate()` orchestrator (not a hand-built
+/// `EvalReport`) end to end, then asserts `compute_calibration` returns
+/// `Err(CalibrationError::NoMatch { .. })`, not `Ok(..)` with a folded-in
+/// `Disagree`.
+#[tokio::test]
+async fn named_case_with_no_matching_conversation_file_yields_no_match_error() {
+    const SUITE_WITH_TYPO_YAML: &str = "\
+name: judge-calibration
+cases:
+  - name: example-01
+    assertions:
+      - { type: judge, prompt: \"the candidate directly answers the user's question\" }
+  - name: example-02-typo-no-such-file
+    assertions:
+      - { type: judge, prompt: \"the candidate directly answers the user's question\" }
+";
+
+    // Only `example-01.yaml` exists; `example-02-typo-no-such-file` (the
+    // case's `name:`) has no matching conversation file on disk/in this
+    // fixture's conversation set at all.
+    let conversations: Vec<(std::path::PathBuf, Conversation)> = vec![(
+        std::path::PathBuf::from("example-01.yaml"),
+        conversation_with(vec![
+            user_text("Question 1: what does this candidate answer?"),
+            assistant_text("Candidate response body for example 1."),
+        ]),
+    )];
+
+    let engine = NoopEngine::from_replies(["The candidate answers directly.\nGRADE: P"]);
+
+    let mut labels: BTreeMap<String, HumanVerdict> = BTreeMap::new();
+    labels.insert(String::from("example-01"), HumanVerdict::Pass);
+    labels.insert(
+        String::from("example-02-typo-no-such-file"),
+        HumanVerdict::Pass,
+    );
+
+    let suite = Evaluation::from_yaml_str(SUITE_WITH_TYPO_YAML).expect("suite-with-typo parses");
+    let ctx = EvaluationContext {
+        engine: Some(&engine),
+        script_runner: None,
+        project_root: None,
+    };
+
+    let report = evaluate(EvalArgs {
+        suite: &suite,
+        conversations: &conversations,
+        ctx,
+        suite_name: "judge-calibration",
+        run_id: "2026-07-06T00-00-00Z-test-no-match-regression",
+        judge_output_dir: None,
+    })
+    .await;
+
+    let result = compute_calibration(&report, &labels);
+
+    assert!(
+        matches!(
+            &result,
+            Err(CalibrationError::NoMatch { case }) if case == "example-02-typo-no-such-file"
+        ),
+        "a named case with zero real conversation matches must surface as \
+         CalibrationError::NoMatch, not be silently folded in as a graded (dis)agreement, \
+         got {result:?}"
+    );
 }
 
 fn conversation_with(session: Vec<Message>) -> Conversation {
