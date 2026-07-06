@@ -28,3 +28,35 @@ pub(crate) fn project_relative(project: &Project, path: &std::path::Path) -> Run
     };
     RunId::from(s)
 }
+
+/// `true` when `cases` is empty (no `--case` filter requested) or contains
+/// `name` exactly. Shared by `assemble`/`run`/`eval` so all three commands
+/// apply the same exact-match rule at the point where they already iterate
+/// cases.
+pub(crate) fn case_filter_matches(name: &str, cases: &[String]) -> bool {
+    cases.is_empty() || cases.iter().any(|c| c == name)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::case_filter_matches;
+
+    #[test]
+    fn case_filter_matches_everything_when_cases_is_empty() {
+        assert!(case_filter_matches("anything", &[]));
+    }
+
+    #[test]
+    fn case_filter_matches_only_exact_names_in_cases() {
+        let cases = vec![String::from("newtype"), String::from("logging")];
+        assert!(case_filter_matches("newtype", &cases));
+        assert!(case_filter_matches("logging", &cases));
+        assert!(!case_filter_matches("tracing", &cases));
+    }
+
+    #[test]
+    fn case_filter_matches_is_exact_not_prefix_or_substring() {
+        let cases = vec![String::from("new")];
+        assert!(!case_filter_matches("newtype", &cases));
+    }
+}

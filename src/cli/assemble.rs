@@ -6,12 +6,14 @@
 
 use std::path::PathBuf;
 
+use crate::cli::case_filter_matches;
 use crate::content::assembly::AssemblyError;
 use crate::content::assembly::RenderError;
 use crate::content::project::Project;
 use crate::content::project::ProjectError;
 use crate::content::repository::AssemblyRepository;
 use crate::content::repository::RepositoryError;
+use crate::content::repository::filename_for;
 
 /// Arguments for the assemble handler. Public field list is fixed by the
 /// feature test's struct-literal call site.
@@ -63,7 +65,7 @@ pub enum AssembleError {
 )]
 pub fn run(args: AssembleArgs) -> Result<PathBuf, AssembleError> {
     let project = Project::open(&args.project)?;
-    let run_dir = run_with_project(&project, &args.name)?;
+    let run_dir = run_with_project(&project, &args.name, &args.cases)?;
     // VfsPath → PathBuf at the CLI boundary. The vfs::PhysicalFS root is
     // not exposed by VfsPath, so the as_str() form is a vfs-rooted path
     // ("/runs/<id>"); join it onto the host project root to produce the
@@ -76,13 +78,27 @@ pub fn run(args: AssembleArgs) -> Result<PathBuf, AssembleError> {
 /// host-path bookkeeping; tests use it directly to exercise the pipeline
 /// against an in-memory project without touching the disk.
 ///
+/// `cases` is the `--case` filter: empty stages every matrix binding
+/// (today's behavior, unchanged); non-empty stages only bindings whose
+/// derived case name (`filename_for(binding)`, stripped of `.yaml`) exactly
+/// matches one of the requested names.
+///
 /// # Errors
 ///
 /// See [`AssembleError`].
-fn run_with_project(project: &Project, assembly_name: &str) -> Result<vfs::VfsPath, AssembleError> {
+fn run_with_project(
+    project: &Project,
+    assembly_name: &str,
+    cases: &[String],
+) -> Result<vfs::VfsPath, AssembleError> {
     let assembly = project.assemblies().get(assembly_name)?;
     let mut tx = project.begin_run();
     for binding in assembly.expand_matrix()? {
+        let name = filename_for(&binding);
+        let name = name.trim_end_matches(".yaml");
+        if !case_filter_matches(name, cases) {
+            continue;
+        }
         let conversation =
             assembly
                 .render(project, &binding)
@@ -172,6 +188,45 @@ model: claude-opus-4-7
             names,
             vec!["a1-b1.yaml", "a1-b2.yaml", "a2-b1.yaml", "a2-b2.yaml"]
         );
+    }
+
+    #[test]
+    fn case_filter_selects_only_the_named_binding() {
+        let tmp = project_with_assembly(SINGLE_AXIS_ASSEMBLY);
+        let run_dir = run(AssembleArgs {
+            project: tmp.path().to_path_buf(),
+            name: String::from("claim-handler"),
+            cases: vec![String::from("beta")],
+        })
+        .expect("run");
+        let names = yaml_files(&run_dir);
+        assert_eq!(names, vec!["beta.yaml"]);
+    }
+
+    #[test]
+    fn case_filter_with_repeated_flag_selects_every_named_binding() {
+        let tmp = project_with_assembly(SINGLE_AXIS_ASSEMBLY);
+        let run_dir = run(AssembleArgs {
+            project: tmp.path().to_path_buf(),
+            name: String::from("claim-handler"),
+            cases: vec![String::from("alpha"), String::from("gamma")],
+        })
+        .expect("run");
+        let names = yaml_files(&run_dir);
+        assert_eq!(names, vec!["alpha.yaml", "gamma.yaml"]);
+    }
+
+    #[test]
+    fn case_filter_on_two_axis_matrix_matches_the_full_dash_joined_name() {
+        let tmp = project_with_assembly(TWO_AXIS_ASSEMBLY);
+        let run_dir = run(AssembleArgs {
+            project: tmp.path().to_path_buf(),
+            name: String::from("claim-handler"),
+            cases: vec![String::from("a1-b2")],
+        })
+        .expect("run");
+        let names = yaml_files(&run_dir);
+        assert_eq!(names, vec!["a1-b2.yaml"]);
     }
 
     #[test]
@@ -462,8 +517,8 @@ prefix:
         let project = Project::open_memory();
         seed_memory_assembly(&project, SINGLE_AXIS_ASSEMBLY);
 
-        let first = run_with_project(&project, "claim-handler").expect("first run");
-        let second = run_with_project(&project, "claim-handler").expect("second run");
+        let first = run_with_project(&project, "claim-handler", &[]).expect("first run");
+        let second = run_with_project(&project, "claim-handler", &[]).expect("second run");
 
         assert_ne!(
             first.as_str(),
