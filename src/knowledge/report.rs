@@ -37,7 +37,7 @@ pub struct ComparisonTotals {
 
 impl ComparisonTotals {
     pub fn passes_falsification_gate(&self) -> bool {
-        todo!()
+        self.improved > 0
     }
 }
 
@@ -295,4 +295,19 @@ fn index_assertions(report: &EvalReport) -> AssertionIndex {
         }
     }
     index
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn passes_falsification_gate_clears_when_improved_and_not_regressed() {
+        let totals = ComparisonTotals {
+            improved: 1,
+            regressed: 0,
+            ..Default::default()
+        };
+        assert!(totals.passes_falsification_gate());
+    }
 }
