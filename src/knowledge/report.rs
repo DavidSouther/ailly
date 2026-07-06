@@ -481,6 +481,37 @@ pub fn render_comparison_markdown(
     };
     let _ = write!(out, "**Falsification gate:** {gate}\n\n");
 
+    match &report.paired_difference {
+        PairedDifferenceTest::Computed {
+            n,
+            mean_difference,
+            standard_error,
+            degrees_of_freedom,
+            t_statistic,
+            p_value,
+            significant,
+            ..
+        } => {
+            let t_display =
+                t_statistic.map_or_else(|| "undefined".to_string(), |t| format!("{t:.2}"));
+            let verdict = if *significant {
+                format!("significant at α = {PAIRED_DIFFERENCE_ALPHA}")
+            } else {
+                format!("not significant at α = {PAIRED_DIFFERENCE_ALPHA}")
+            };
+            let _ = write!(
+                out,
+                "**Paired-difference test:** n={n}, mean Δ {mean_difference:.3} (SEM {standard_error:.3}), t({degrees_of_freedom}) = {t_display}, p = {p_value:.4} — {verdict}\n\n",
+            );
+        }
+        PairedDifferenceTest::InsufficientPairs { n } => {
+            let _ = write!(
+                out,
+                "**Paired-difference test:** insufficient paired assertions (n={n}) for a significance test\n\n",
+            );
+        }
+    }
+
     let _ = writeln!(out, "| Case | {label_a} | {label_b} |");
     out.push_str("|------|--------|--------|\n");
     for case in &report.cases {
@@ -746,5 +777,72 @@ mod tests {
             }
             other => panic!("expected Computed, got {other:?}"),
         }
+    }
+
+    fn comparison_report_with(paired_difference: PairedDifferenceTest) -> super::ComparisonReport {
+        super::ComparisonReport {
+            arm_a: super::ArmRef {
+                run_id: String::from("arm-a"),
+            },
+            arm_b: super::ArmRef {
+                run_id: String::from("arm-b"),
+            },
+            totals: super::ComparisonTotals::default(),
+            paired_difference,
+            cases: vec![],
+        }
+    }
+
+    /// Facts-present check (design.md's own resolved wording decision):
+    /// `n`, `mean_difference`, `standard_error`, `t_statistic`,
+    /// `degrees_of_freedom`, `p_value`, and a not-significant phrase
+    /// against α = 0.05 must all appear somewhere in the rendered output.
+    /// Sentence structure is not load-bearing.
+    #[test]
+    fn render_comparison_markdown_names_computed_paired_difference_facts() {
+        let report = comparison_report_with(PairedDifferenceTest::Computed {
+            n: 10,
+            mean_difference: 0.2,
+            sample_std_dev: 0.632_455_53,
+            standard_error: 0.2,
+            degrees_of_freedom: 9,
+            t_statistic: Some(1.0),
+            p_value: 0.3434,
+            significant: false,
+        });
+        let markdown = super::render_comparison_markdown(&report, "before", "after");
+
+        assert!(markdown.contains("10"), "should name n: {markdown}");
+        assert!(
+            markdown.contains("0.2"),
+            "should name mean_difference/standard_error: {markdown}"
+        );
+        assert!(markdown.contains('9'), "should name df: {markdown}");
+        assert!(
+            markdown.contains('1'),
+            "should name t_statistic: {markdown}"
+        );
+        assert!(
+            markdown.contains("0.3434") || markdown.contains("0.343"),
+            "should name p_value: {markdown}"
+        );
+        assert!(markdown.contains("0.05"), "should name α: {markdown}");
+        assert!(
+            markdown.to_lowercase().contains("not significant"),
+            "should say not significant: {markdown}"
+        );
+    }
+
+    /// `InsufficientPairs` names `n` and says "insufficient".
+    #[test]
+    fn render_comparison_markdown_names_insufficient_pairs() {
+        let report = comparison_report_with(PairedDifferenceTest::InsufficientPairs { n: 1 });
+        let markdown = super::render_comparison_markdown(&report, "before", "after");
+
+        assert!(markdown.contains('1'), "should name n: {markdown}");
+        assert!(
+            markdown.to_lowercase().contains("insufficient"),
+            "should say insufficient: {markdown}"
+        );
     }
 }
