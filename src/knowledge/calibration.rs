@@ -106,7 +106,7 @@ pub fn compute_calibration(
     report: &EvalReport,
     labels: &BTreeMap<String, HumanVerdict>,
 ) -> Result<CalibrationReport, CalibrationError> {
-    let _ = labels;
+    let mut validated: Vec<ValidatedCase> = Vec::with_capacity(report.cases.len());
     for (index, case) in report.cases.iter().enumerate() {
         let case_name = case_identifier(case, index);
         match case.matches.len() {
@@ -126,11 +126,72 @@ pub fn compute_calibration(
                 count: assertion_count,
             });
         }
-        if !labels.contains_key(&case_name) {
+        let Some(&human_verdict) = labels.get(&case_name) else {
             return Err(CalibrationError::MissingLabel { case: case_name });
-        }
+        };
+        let assertion = &case.matches[0].assertions[0];
+        validated.push(ValidatedCase {
+            case_name,
+            outcome: assertion.outcome.clone(),
+            reason: assertion.reason.clone(),
+            human_verdict,
+        });
     }
-    todo!()
+
+    let total_examples = validated.len();
+    let mut excluded = 0usize;
+    let mut agreements = 0usize;
+    let mut examples = Vec::with_capacity(total_examples);
+    for validated_case in validated {
+        let agreement = if is_excluded_outcome(&validated_case.outcome) {
+            excluded += 1;
+            Agreement::Excluded
+        } else {
+            // TODO(plan Step 4): compare `validated_case.outcome` against
+            // `validated_case.human_verdict` per the outcome-to-agreement
+            // mapping; every non-excluded outcome agrees for now.
+            agreements += 1;
+            Agreement::Agree
+        };
+        examples.push(ExampleAgreement {
+            id: validated_case.case_name,
+            human_verdict: validated_case.human_verdict,
+            judge_outcome: validated_case.outcome,
+            reason: validated_case.reason,
+            agreement,
+        });
+    }
+    let considered = total_examples - excluded;
+
+    Ok(CalibrationReport {
+        suite: report.suite.clone(),
+        run_id: report.run_id.clone(),
+        total_examples,
+        excluded,
+        considered,
+        agreements,
+        // TODO(plan Step 5): agreements as f64 / considered as f64, and the
+        // >= JUDGE_CALIBRATION_BAR comparison.
+        agreement_rate: 0.0,
+        meets_bar: false,
+        examples,
+    })
+}
+
+/// One case that cleared Step 1/2's shape-and-label validation, carrying
+/// exactly what the folding pass (Steps 3-5) needs.
+struct ValidatedCase {
+    case_name: String,
+    outcome: String,
+    reason: Option<String>,
+    human_verdict: HumanVerdict,
+}
+
+/// `"errored"` and `"deferred"` are transport/wiring failures excluded from
+/// both the numerator and denominator; every other outcome
+/// (`"pass"`/`"fail"`/`"malformed"`) is folded into the agreement rate.
+fn is_excluded_outcome(outcome: &str) -> bool {
+    matches!(outcome, "errored" | "deferred")
 }
 
 /// The case's `name:`, falling back to a positional identifier for the
@@ -239,6 +300,40 @@ mod tests {
             matches!(&result, Err(CalibrationError::MissingLabel { case }) if case == "example-02"),
             "expected MissingLabel {{ case: \"example-02\" }}, got {result:?}"
         );
+    }
+
+    #[test]
+    fn errored_or_deferred_outcomes_are_excluded_from_considered_and_agreements() {
+        let report = report_with(vec![
+            case(
+                "example-01",
+                vec![match_report("a.yaml", vec![assertion("pass")])],
+            ),
+            case(
+                "example-02",
+                vec![match_report("b.yaml", vec![assertion("deferred")])],
+            ),
+            case(
+                "example-03",
+                vec![match_report("c.yaml", vec![assertion("fail")])],
+            ),
+        ]);
+        let mut labels = BTreeMap::new();
+        labels.insert(String::from("example-01"), HumanVerdict::Pass);
+        labels.insert(String::from("example-02"), HumanVerdict::Pass);
+        labels.insert(String::from("example-03"), HumanVerdict::Fail);
+
+        let calibration =
+            compute_calibration(&report, &labels).expect("all three cases are well-formed");
+
+        assert_eq!(calibration.excluded, 1, "only example-02 is deferred");
+        assert_eq!(calibration.considered, 2);
+        let example_02 = calibration
+            .examples
+            .iter()
+            .find(|e| e.id == "example-02")
+            .expect("example-02 present in breakdown");
+        assert_eq!(example_02.agreement, Agreement::Excluded);
     }
 
     #[test]
