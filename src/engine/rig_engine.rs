@@ -629,16 +629,32 @@ pub fn gemini_from_env(
 /// Construct a `RigEngine` backed by `rig-bedrock`. Gated on the `bedrock`
 /// Cargo feature so the AWS SDK does not enter the default build graph.
 ///
+/// Unlike the other three constructors, this one never reads a single
+/// required env var up front: `rig_bedrock::client::Client::from_env()`
+/// always succeeds, deferring AWS credential resolution to the first live
+/// call. That resolution automatically prefers a Bedrock API key
+/// (`AWS_BEARER_TOKEN_BEDROCK`) over the standard `SigV4` credential chain
+/// (env vars, shared profile, SSO, IMDS role) whenever both are present --
+/// a property of the pinned `rig-bedrock`/AWS-SDK versions and the plain
+/// `aws_config::load_from_env()` call they make, not something this
+/// function implements itself.
+///
 /// # Errors
-/// Returns [`EngineError::Auth`] when AWS credentials cannot be resolved and
-/// [`EngineError::Provider`] when the Rig client cannot be constructed.
+/// Returns [`EngineError::Provider`] when the Rig client cannot be
+/// constructed. AWS credential failures surface later, at the first live
+/// call, not from this constructor.
 #[cfg(feature = "bedrock")]
 pub fn bedrock_from_env(
-    _model: &str,
+    model: &str,
 ) -> Result<RigEngine<rig_bedrock::completion::CompletionModel>, EngineError> {
-    Err(EngineError::Provider {
-        message: String::from("rig_engine: not yet implemented"),
-    })
+    use rig::client::CompletionClient;
+    use rig::client::ProviderClient;
+
+    let client = rig_bedrock::client::Client::from_env().map_err(|err| EngineError::Provider {
+        message: format!("bedrock client build failed: {err}"),
+    })?;
+    let completion_model = client.completion_model(model);
+    Ok(RigEngine::new(completion_model, "bedrock", model))
 }
 
 #[cfg(test)]
@@ -1518,6 +1534,24 @@ mod tests {
             Err(EngineError::Auth { .. }) => {}
             Err(other) => panic!("expected Auth, got {other:?}"),
             Ok(_) => panic!("expected Auth with no GEMINI_API_KEY in environment"),
+        }
+    }
+
+    #[test]
+    #[cfg(feature = "bedrock")]
+    fn bedrock_from_env_without_aws_credentials_still_constructs() {
+        // Unlike anthropic/openai/gemini, rig-bedrock's Client::from_env()
+        // never inspects AWS credentials -- it always succeeds, deferring
+        // resolution to the first live call. So construction must succeed
+        // here with no AWS environment variables required, no network call,
+        // and no async runtime.
+        let result = bedrock_from_env("meta.llama3-3-70b-instruct-v1:0");
+
+        match result {
+            Ok(_) => {}
+            Err(other) => {
+                panic!("expected Ok with no AWS credentials in environment, got {other:?}")
+            }
         }
     }
 }

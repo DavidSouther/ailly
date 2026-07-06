@@ -17,7 +17,7 @@
 //! client, so a missing key deterministically fails with `EngineError::Auth`
 //! offline. Bedrock resolves credentials through the AWS SDK's own chain
 //! (a Bedrock API key via `AWS_BEARER_TOKEN_BEDROCK`, preferred automatically
-//! when set, falling back to standard SigV4 credentials — env vars, shared
+//! when set, falling back to standard `SigV4` credentials — env vars, shared
 //! profile, SSO, IMDS — otherwise), and `rig_bedrock`'s `Client::from_env()`
 //! never inspects either mechanism at construction time — it always
 //! succeeds, deferring resolution to the first live call. So a
@@ -33,8 +33,9 @@
 //!   1. `open_engine_for_model` has no `"bedrock:"` branch at all, so every
 //!      case below currently falls through to `ModelNotFound`.
 //!   2. `bedrock_from_env` (only reachable with the `bedrock` Cargo feature,
-//!      not yet on by default) unconditionally returns
-//!      `EngineError::Provider { message: "rig_engine: not yet implemented" }`.
+//!      not yet on by default) unconditionally returns `EngineError::Provider {
+//!      message: "rig_engine: not yet implemented" }`.
+//!
 //! Verify with `cargo test --test engine_routing_bedrock --all-features`
 //! (matching `mise run test`'s existing `--all-features` convention) so the
 //! `bedrock`-gated block below compiles; without that flag the block is
