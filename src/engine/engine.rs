@@ -146,7 +146,7 @@ pub fn open_engine_for_model(model: &ModelId) -> Result<Box<dyn EngineProvider>,
     }
     #[cfg(feature = "bedrock")]
     if let Some(remainder) = id.strip_prefix("bedrock:") {
-        let engine = crate::engine::rig_engine::bedrock_from_env(remainder)?;
+        let engine = crate::engine::rig_engine::bedrock_from_env(remainder, id)?;
         return Ok(Box::new(engine));
     }
     Err(EngineError::ModelNotFound {
