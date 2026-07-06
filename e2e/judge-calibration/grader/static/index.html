@@ -9,83 +9,77 @@
 <body>
 <header id="topbar">
   <div id="brand">Judge Calibration Grader</div>
-  <div id="progress" aria-live="polite">loading…</div>
-  <div id="topbar-actions">
-    <button id="export-btn" title="Curate graded+marked candidates into evals/labels.yaml">Export calibration set</button>
-  </div>
+  <button id="back-btn" hidden>&larr; All judges</button>
+  <div id="progress" aria-live="polite">loading&hellip;</div>
 </header>
 
-<div id="layout">
+<!-- ============ Judge picker ============ -->
+<main id="judge-picker">
+  <section>
+    <h2>Pick a judge to calibrate</h2>
+    <p class="hint">Each judge below has at least one ungraded (judge, candidate) cell in
+      <code>mined/matrix.jsonl</code>. Grading writes straight into the real
+      <code>evals/labels.yaml</code> -- there is no draft/export step.</p>
+    <ul id="pickable-list" class="judge-list"></ul>
+  </section>
+  <section id="done-section" hidden>
+    <h3>Fully graded</h3>
+    <p class="hint">Every relevant cell for these judges already has a Pass/Fail verdict.</p>
+    <ul id="done-list" class="judge-list done"></ul>
+  </section>
+  <section id="no-data-state" hidden>
+    <p class="hint">No relevant matrix cells yet. <code>mined/matrix.jsonl</code> is empty or
+      every judge in it needs manual review (no auto-matched keywords).</p>
+  </section>
+</main>
+
+<!-- ============ Judge + cell review ============ -->
+<div id="layout" hidden>
   <aside id="sidebar">
-    <div id="filters">
-      <label>Source
-        <select id="filter-source">
-          <option value="">All</option>
-          <option value="claude-code">claude-code</option>
-          <option value="codex">codex</option>
-        </select>
-      </label>
-      <label>Status
-        <select id="filter-status">
-          <option value="">All</option>
-          <option value="ungraded" selected>Ungraded</option>
-          <option value="graded">Graded</option>
-        </select>
-      </label>
-      <form id="jump-form">
-        <input id="jump-input" type="text" placeholder="jump to id…" autocomplete="off">
-        <button type="submit">Go</button>
-      </form>
+    <div id="judge-meta">
+      <h2 id="judge-id"></h2>
+      <div id="judge-tags"></div>
     </div>
-    <ul id="candidate-list" aria-label="Candidates"></ul>
+    <section id="rubric">
+      <h3>Judge rubric / prompt</h3>
+      <div id="rubric-body" class="rendered"></div>
+    </section>
+    <ul id="cell-list" aria-label="Matrix cells for this judge"></ul>
   </aside>
 
   <main id="detail">
     <div id="empty-state" hidden>
-      <h2>Nothing matches the current filters</h2>
-      <p>Try a different filter, or jump to a specific id.</p>
+      <h2>Nothing left to grade for this judge</h2>
+      <p>Every cell is Pass/Fail, or was marked Inconclusive this round (revisit it from the list on the left).</p>
     </div>
 
-    <article id="candidate-card" hidden>
-      <div id="badges"></div>
-
+    <article id="cell-card" hidden>
       <section id="meta">
         <dl>
-          <dt>id</dt><dd id="meta-id"></dd>
+          <dt>candidate</dt><dd id="meta-candidate"></dd>
           <dt>source</dt><dd id="meta-source"></dd>
-          <dt>model</dt><dd id="meta-model"></dd>
           <dt>project</dt><dd id="meta-project"></dd>
-          <dt>turn started</dt><dd id="meta-turn"></dd>
-          <dt>invocation</dt><dd id="meta-invocation"></dd>
+          <dt>matched on</dt><dd id="meta-matched"></dd>
         </dl>
       </section>
 
-      <section id="question-section">
-        <h3>Question / invocation</h3>
-        <div id="question-body" class="rendered"></div>
+      <section id="user-section">
+        <h3>User stimulus</h3>
+        <div id="user-body" class="rendered"></div>
       </section>
 
-      <section id="response-section">
-        <h3>Response</h3>
-        <div id="response-body" class="rendered"></div>
+      <section id="assistant-section">
+        <h3>Assistant response</h3>
+        <div id="assistant-body" class="rendered"></div>
       </section>
-
-      <details id="conversation-details">
-        <summary>Full conversation-schema draft (provenance)</summary>
-        <pre id="conversation-body"></pre>
-      </details>
     </article>
 
     <div id="controls">
       <div id="grade-buttons">
-        <button id="btn-pass" class="grade-btn pass" title="Pass (key: p)">Pass <kbd>p</kbd></button>
-        <button id="btn-fail" class="grade-btn fail" title="Fail (key: f)">Fail <kbd>f</kbd></button>
-        <button id="btn-skip" class="grade-btn skip" title="Skip for now (key: s)">Skip <kbd>s</kbd></button>
+        <button id="btn-pass" class="grade-btn pass" title="Was the judge satisfied? Pass (key: p)">Pass <kbd>p</kbd></button>
+        <button id="btn-fail" class="grade-btn fail" title="Was the judge satisfied? Fail (key: f)">Fail <kbd>f</kbd></button>
+        <button id="btn-inconclusive" class="grade-btn inconclusive" title="Can't tell -- skip, no write (key: i)">Inconclusive <kbd>i</kbd></button>
       </div>
-      <label id="include-toggle" title="Mark this graded candidate for inclusion in the curated calibration export">
-        <input type="checkbox" id="include-checkbox" disabled>
-        Include in calibration export <kbd>i</kbd>
-      </label>
     </div>
   </main>
 </div>

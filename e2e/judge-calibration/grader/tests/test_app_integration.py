@@ -1,7 +1,7 @@
 """In-process integration tests: actually run the HTTP app (stdlib
 ThreadingHTTPServer bound to 127.0.0.1 on an ephemeral port) and exercise it
 over real HTTP via urllib, including the path-traversal / id-allowlist
-security requirement.
+security requirement (now covering BOTH judge_id and candidate_id).
 """
 import json
 import shutil
@@ -14,51 +14,43 @@ import urllib.request
 from pathlib import Path
 
 from backend.app import AppContext, build_server
-from backend.candidates import CandidateStore
+from backend.judges import JudgeRegistry
+from backend.matrix import MatrixStore
 from backend import labels_store
 
-FIXTURE_RECORDS = [
-    {
-        "id": "claude-code-fixture-aaa-001",
-        "source": "claude-code",
-        "source_file": "/tmp/x.jsonl",
-        "session_id": "s1",
-        "project_cwd": "/Users/x/proj",
-        "turn_started_at": "2026-01-01T00:00:00Z",
-        "invocation_signal": "test",
-        "model": "claude-opus-4-8",
-        "question": "Please refactor the auth middleware for clarity.",
-        "response": "Sure, I refactored the auth middleware for clarity and added tests.",
-        "agent_id": None,
-        "candidate_label_human_implied": None,
-        "label": "TODO",
-    },
-    {
-        "id": "codex-fixture-bbb-002",
-        "source": "codex",
-        "source_file": "/tmp/y.jsonl",
-        "session_id": "s2",
-        "project_cwd": "/Users/x/proj2",
-        "turn_started_at": "2026-01-02T00:00:00Z",
-        "invocation_signal": "test",
-        "model": "gpt-5-codex",
-        "question": "Looks good, ship it.",
-        "response": "Great, merging now.",
-        "agent_id": None,
-        "candidate_label_human_implied": {
-            "verdict": "pass",
-            "evidence_phrase": "looks good",
-            "confidence": "low",
-            "note": "heuristic hint, not confirmed",
-        },
-        "label": "TODO",
-    },
-]
+JUDGES_YAML = """\
+judges:
+- judge_id: patterns-eval/baseline/newtype
+  suite: patterns-eval
+  suite_file: e2e/patterns-eval/evals/baseline.yaml
+  case_name: newtype
+  case_when: null
+  prompt: 'The code introduces a UserId type that wraps a string.
 
-LABELS_YAML_TEXT = (
-    "# DRAFT — fixture labels\n\n"
-    "claude-code-fixture-aaa-001: TODO\n"
-    "codex-fixture-bbb-002: TODO\n"
+    '
+  keywords:
+  - value: patterns:newtype
+    polarity: include
+    source: sibling-suite-case-name(assembly+suite-convention)
+  needs_human_review: false
+- judge_id: delegate-52/corruption/case4
+  suite: delegate-52
+  suite_file: e2e/delegate-52/evals/corruption.yaml
+  case_name: null
+  case_when: null
+  prompt: 'Needs a human -- no keywords matched.
+
+    '
+  keywords: []
+  needs_human_review: true
+"""
+
+CONVERSATION_DRAFT = (
+    '---\nmodel: "claude-opus-4-8"  # mined narrow draft\n'
+    "---\nrole: user\ncontent: |\n"
+    "  Please add a UserId newtype.\n"
+    "---\nrole: assistant\ncontent: |\n"
+    "  Done -- UserId now wraps a String with validation in its constructor.\n"
 )
 
 
@@ -68,20 +60,37 @@ class AppIntegrationTest(unittest.TestCase):
         self.mined_dir = self.tmpdir / "mined"
         self.evals_dir = self.tmpdir / "evals"
         self.static_dir = Path(__file__).resolve().parent.parent / "static"
-        self.mined_dir.mkdir(parents=True)
-        (self.mined_dir / "conversations").mkdir()
+        matrix_dir = self.mined_dir / "matrix" / "patterns-eval__baseline__newtype"
+        matrix_dir.mkdir(parents=True)
+        self.evals_dir.mkdir(parents=True)
 
-        candidates_path = self.mined_dir / "candidates.jsonl"
-        with open(candidates_path, "w", encoding="utf-8") as f:
-            for r in FIXTURE_RECORDS:
-                f.write(json.dumps(r) + "\n")
-        (self.mined_dir / "labels.yaml").write_text(LABELS_YAML_TEXT, encoding="utf-8")
-        (self.mined_dir / "conversations" / "claude-code-fixture-aaa-001.yaml").write_text(
-            "---\nrole: user\ncontent: fixture\n", encoding="utf-8"
-        )
+        (matrix_dir / "cand-001.yaml").write_text(CONVERSATION_DRAFT, encoding="utf-8")
 
-        store = CandidateStore(candidates_path)
-        self.ctx = AppContext(store, mined_dir=self.mined_dir, evals_dir=self.evals_dir, static_dir=self.static_dir)
+        matrix_lines = [
+            {
+                "judge_id": "patterns-eval/baseline/newtype",
+                "candidate_id": "cand-001",
+                "matched_keyword": "patterns:newtype",
+                "matched_tag": "patterns:newtype",
+                "narrowing": "user-prompt",
+                "source": "claude-code",
+                "source_file": "/tmp/x.jsonl",
+                "project_cwd": "/tmp/proj",
+                "conversation_draft": "e2e/judge-calibration/mined/matrix/patterns-eval__baseline__newtype/cand-001.yaml",
+                "repaired": True,
+            }
+        ]
+        matrix_path = self.mined_dir / "matrix.jsonl"
+        with open(matrix_path, "w", encoding="utf-8") as f:
+            for rec in matrix_lines:
+                f.write(json.dumps(rec) + "\n")
+
+        judges_path = self.evals_dir / "judges.yaml"
+        judges_path.write_text(JUDGES_YAML, encoding="utf-8")
+
+        judges = JudgeRegistry(judges_path)
+        matrix = MatrixStore(matrix_path, mined_dir=self.mined_dir)
+        self.ctx = AppContext(judges, matrix, evals_dir=self.evals_dir, static_dir=self.static_dir)
         self.httpd = build_server(self.ctx, "127.0.0.1", 0)
         self.port = self.httpd.server_address[1]
         self.thread = threading.Thread(target=self.httpd.serve_forever, daemon=True)
@@ -106,39 +115,18 @@ class AppIntegrationTest(unittest.TestCase):
 
     def _post_json(self, path, payload):
         data = json.dumps(payload).encode("utf-8")
-        req = urllib.request.Request(self._url(path), data=data, method="POST", headers={"Content-Type": "application/json"})
+        req = urllib.request.Request(
+            self._url(path), data=data, method="POST", headers={"Content-Type": "application/json"}
+        )
         try:
             with urllib.request.urlopen(req) as resp:
                 return resp.status, json.loads(resp.read())
         except urllib.error.HTTPError as e:
             return e.code, json.loads(e.read())
 
-    # -- basic API shape --------------------------------------------------
+    # -- basic shape --------------------------------------------------
     def test_binds_loopback_only(self):
         self.assertEqual(self.httpd.server_address[0], "127.0.0.1")
-
-    def test_state_reflects_fixture(self):
-        status, state = self._get_json("/api/state")
-        self.assertEqual(status, 200)
-        self.assertEqual(state["total"], 2)
-        self.assertEqual(state["graded"], 0)
-        self.assertEqual(state["remaining"], 2)
-
-    def test_candidates_list_contains_both_fixtures(self):
-        status, body = self._get_json("/api/candidates")
-        self.assertEqual(status, 200)
-        ids = {c["id"] for c in body["candidates"]}
-        self.assertEqual(ids, {"claude-code-fixture-aaa-001", "codex-fixture-bbb-002"})
-
-    def test_candidates_list_source_filter(self):
-        _, body = self._get_json("/api/candidates?source=codex")
-        ids = {c["id"] for c in body["candidates"]}
-        self.assertEqual(ids, {"codex-fixture-bbb-002"})
-
-    def test_implied_hint_surfaces_in_detail(self):
-        status, detail = self._get_json("/api/candidate/codex-fixture-bbb-002")
-        self.assertEqual(status, 200)
-        self.assertEqual(detail["candidate_label_human_implied"]["verdict"], "pass")
 
     def test_static_index_served(self):
         with urllib.request.urlopen(self._url("/")) as resp:
@@ -146,21 +134,65 @@ class AppIntegrationTest(unittest.TestCase):
             self.assertEqual(resp.status, 200)
             self.assertIn("Judge Calibration Grader", body)
 
-    # -- security: id allowlist / no path traversal ------------------------
-    def test_unknown_candidate_id_is_404(self):
-        status, _ = self._get_json("/api/candidate/does-not-exist")
+    def test_judges_list_only_includes_judges_with_relevant_cells(self):
+        status, body = self._get_json("/api/judges")
+        self.assertEqual(status, 200)
+        ids = {j["judge_id"] for j in body["judges"]}
+        # delegate-52/corruption/case4 has zero matrix cells (no keywords
+        # matched anything) -- it must not appear at all.
+        self.assertEqual(ids, {"patterns-eval/baseline/newtype"})
+
+    def test_judge_starts_pickable_with_one_ungraded_cell(self):
+        status, body = self._get_json("/api/judges")
+        judge = body["judges"][0]
+        self.assertTrue(judge["pickable"])
+        self.assertEqual(judge["remaining_cells"], 1)
+        self.assertEqual(judge["graded_cells"], 0)
+
+    def test_judge_detail_includes_full_prompt_and_cells(self):
+        status, detail = self._get_json(
+            "/api/judge?judge_id=" + urllib.parse.quote("patterns-eval/baseline/newtype", safe="")
+        )
+        self.assertEqual(status, 200)
+        self.assertIn("UserId type that wraps a string", detail["prompt"])
+        self.assertEqual(len(detail["cells"]), 1)
+        self.assertIsNone(detail["cells"][0]["verdict"])
+
+    def test_cell_detail_surfaces_user_and_assistant_text(self):
+        status, detail = self._get_json(
+            "/api/cell?judge_id="
+            + urllib.parse.quote("patterns-eval/baseline/newtype", safe="")
+            + "&candidate_id=cand-001"
+        )
+        self.assertEqual(status, 200)
+        self.assertIn("UserId newtype", detail["user"])
+        self.assertIn("wraps a String", detail["assistant"])
+        self.assertIsNone(detail["verdict"])
+
+    # -- security: judge-id AND candidate-id allowlist ----------------------
+    def test_unknown_judge_id_is_404(self):
+        status, _ = self._get_json("/api/judge?judge_id=does-not-exist")
         self.assertEqual(status, 404)
 
-    def test_path_traversal_id_rejected_without_touching_filesystem(self):
+    def test_known_judge_id_with_unrelated_candidate_id_is_404(self):
+        # delegate-52/corruption/case4 is a real judge, cand-001 is a real
+        # candidate id -- but they are not a real matrix cell pair.
+        status, _ = self._get_json(
+            "/api/cell?judge_id="
+            + urllib.parse.quote("delegate-52/corruption/case4", safe="")
+            + "&candidate_id=cand-001"
+        )
+        self.assertEqual(status, 404)
+
+    def test_path_traversal_judge_id_rejected_without_touching_filesystem(self):
         traversal_ids = [
             "../../../../etc/passwd",
             "..%2F..%2Fetc%2Fpasswd",
             "....//....//etc/passwd",
-            "a/../../secrets",
         ]
         for tid in traversal_ids:
             with self.subTest(tid=tid):
-                url = self._url(f"/api/candidate/{urllib.parse.quote(tid, safe='')}/conversation")
+                url = self._url("/api/judge?judge_id=" + urllib.parse.quote(tid, safe=""))
                 try:
                     with urllib.request.urlopen(url) as resp:
                         status = resp.status
@@ -168,42 +200,97 @@ class AppIntegrationTest(unittest.TestCase):
                     status = e.code
                 self.assertEqual(status, 404)
 
-    def test_grade_unknown_id_rejected(self):
-        status, body = self._post_json("/api/grade", {"id": "nope", "label": "pass"})
+    def test_path_traversal_candidate_id_rejected_without_touching_filesystem(self):
+        traversal_ids = ["../../../../etc/passwd", "a/../../secrets"]
+        judge_qs = urllib.parse.quote("patterns-eval/baseline/newtype", safe="")
+        for tid in traversal_ids:
+            with self.subTest(tid=tid):
+                url = self._url(
+                    f"/api/cell?judge_id={judge_qs}&candidate_id="
+                    + urllib.parse.quote(tid, safe="")
+                )
+                try:
+                    with urllib.request.urlopen(url) as resp:
+                        status = resp.status
+                except urllib.error.HTTPError as e:
+                    status = e.code
+                self.assertEqual(status, 404)
+
+    def test_grade_unknown_pair_rejected(self):
+        status, body = self._post_json(
+            "/api/grade", {"judge_id": "nope", "candidate_id": "nope", "verdict": "pass"}
+        )
         self.assertEqual(status, 404)
 
-    def test_grade_invalid_label_rejected(self):
-        status, body = self._post_json("/api/grade", {"id": "claude-code-fixture-aaa-001", "label": "maybe"})
+    def test_grade_invalid_verdict_rejected(self):
+        status, body = self._post_json(
+            "/api/grade",
+            {
+                "judge_id": "patterns-eval/baseline/newtype",
+                "candidate_id": "cand-001",
+                "verdict": "maybe",
+            },
+        )
         self.assertEqual(status, 400)
 
-    # -- grading writes labels.yaml immediately ----------------------------
-    def test_grade_writes_labels_yaml(self):
-        status, body = self._post_json("/api/grade", {"id": "claude-code-fixture-aaa-001", "label": "pass"})
+    # -- grading writes the REAL evals/labels.yaml immediately ---------------
+    def test_grade_pass_writes_labels_yaml_with_composite_key_and_capitalized_value(self):
+        status, body = self._post_json(
+            "/api/grade",
+            {
+                "judge_id": "patterns-eval/baseline/newtype",
+                "candidate_id": "cand-001",
+                "verdict": "pass",
+            },
+        )
         self.assertEqual(status, 200)
-        on_disk = labels_store.read_labels(self.mined_dir / "labels.yaml")
-        self.assertEqual(on_disk["claude-code-fixture-aaa-001"], "pass")
+        self.assertEqual(body["verdict"], "Pass")
 
-        status, state = self._get_json("/api/state")
-        self.assertEqual(state["graded"], 1)
-        self.assertEqual(state["remaining"], 1)
+        on_disk = labels_store.read_labels(self.evals_dir / "labels.yaml")
+        self.assertEqual(
+            on_disk["patterns-eval__baseline__newtype__cand-001"], "Pass"
+        )
 
-    def test_include_toggle_persists(self):
-        self._post_json("/api/grade", {"id": "claude-code-fixture-aaa-001", "label": "pass"})
-        status, _ = self._post_json("/api/include", {"id": "claude-code-fixture-aaa-001", "included": True})
+        # The judge still appears in /api/judges (the UI groups pickable vs.
+        # done judges from this one list), but is no longer pickable: its
+        # only cell is now graded.
+        status, judges = self._get_json("/api/judges")
+        judge = judges["judges"][0]
+        self.assertFalse(judge["pickable"])
+        self.assertEqual(judge["remaining_cells"], 0)
+        self.assertEqual(judge["graded_cells"], 1)
+
+    def test_grade_fail_also_writes_immediately(self):
+        status, body = self._post_json(
+            "/api/grade",
+            {
+                "judge_id": "patterns-eval/baseline/newtype",
+                "candidate_id": "cand-001",
+                "verdict": "fail",
+            },
+        )
         self.assertEqual(status, 200)
-        included = json.loads((self.mined_dir / "included.json").read_text(encoding="utf-8"))
-        self.assertTrue(included["claude-code-fixture-aaa-001"])
+        on_disk = labels_store.read_labels(self.evals_dir / "labels.yaml")
+        self.assertEqual(
+            on_disk["patterns-eval__baseline__newtype__cand-001"], "Fail"
+        )
 
-    def test_export_only_writes_graded_and_included(self):
-        self._post_json("/api/grade", {"id": "claude-code-fixture-aaa-001", "label": "pass"})
-        self._post_json("/api/grade", {"id": "codex-fixture-bbb-002", "label": "fail"})
-        self._post_json("/api/include", {"id": "claude-code-fixture-aaa-001", "included": True})
-        # codex-fixture-bbb-002 graded but NOT marked included -> must be excluded.
-        status, result = self._post_json("/api/export", {})
-        self.assertEqual(status, 200)
-        self.assertEqual(result["exported_count"], 1)
-        exported = labels_store.read_labels(self.evals_dir / "labels.yaml")
-        self.assertEqual(exported, {"claude-code-fixture-aaa-001": "pass"})
+    def test_inconclusive_is_client_side_only_no_endpoint_needed(self):
+        # There is no server-side "inconclusive" verdict and no API call for
+        # it -- it is purely a client-side skip (see static/app.js). Confirm
+        # the server rejects it as an invalid verdict if a client ever sent
+        # one, so it can never accidentally get written as ground truth.
+        status, _ = self._post_json(
+            "/api/grade",
+            {
+                "judge_id": "patterns-eval/baseline/newtype",
+                "candidate_id": "cand-001",
+                "verdict": "inconclusive",
+            },
+        )
+        self.assertEqual(status, 400)
+        on_disk = labels_store.read_labels(self.evals_dir / "labels.yaml")
+        self.assertEqual(on_disk, {})
 
 
 if __name__ == "__main__":

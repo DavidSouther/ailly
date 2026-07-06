@@ -1,6 +1,6 @@
 "use strict";
 
-/* ---------- tiny dependency-free markdown-ish renderer ---------- */
+/* ---------- tiny dependency-free markdown-ish renderer (reused from v1) ---------- */
 function escapeHtml(s) {
   return s
     .replace(/&/g, "&amp;")
@@ -100,325 +100,264 @@ function renderMarkdownish(raw) {
 
 /* ---------------------------- API ---------------------------- */
 const api = {
-  async state() {
-    return (await fetch("/api/state")).json();
+  async judges() {
+    return (await fetch("/api/judges")).json();
   },
-  async list(filters) {
-    const params = new URLSearchParams();
-    if (filters.source) params.set("source", filters.source);
-    if (filters.status) params.set("status", filters.status);
-    if (filters.q) params.set("q", filters.q);
-    return (await fetch(`/api/candidates?${params}`)).json();
-  },
-  async candidate(id) {
-    const res = await fetch(`/api/candidate/${encodeURIComponent(id)}`);
+  async judge(judgeId) {
+    const res = await fetch(`/api/judge?judge_id=${encodeURIComponent(judgeId)}`);
     if (!res.ok) return null;
     return res.json();
   },
-  async conversation(id) {
-    const res = await fetch(`/api/candidate/${encodeURIComponent(id)}/conversation`);
-    if (!res.ok) return "";
-    return res.text();
+  async cell(judgeId, candidateId) {
+    const res = await fetch(
+      `/api/cell?judge_id=${encodeURIComponent(judgeId)}&candidate_id=${encodeURIComponent(candidateId)}`
+    );
+    if (!res.ok) return null;
+    return res.json();
   },
-  async grade(id, label) {
+  async grade(judgeId, candidateId, verdict) {
     const res = await fetch("/api/grade", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id, label }),
+      body: JSON.stringify({ judge_id: judgeId, candidate_id: candidateId, verdict }),
     });
-    return res.json();
-  },
-  async setIncluded(id, included) {
-    const res = await fetch("/api/include", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id, included }),
-    });
-    return res.json();
-  },
-  async exportSet() {
-    const res = await fetch("/api/export", { method: "POST" });
     return res.json();
   },
 };
 
-/* --------------------------- state --------------------------- */
+/* --------------------------- elements --------------------------- */
 const els = {
   progress: document.getElementById("progress"),
-  list: document.getElementById("candidate-list"),
-  filterSource: document.getElementById("filter-source"),
-  filterStatus: document.getElementById("filter-status"),
-  jumpForm: document.getElementById("jump-form"),
-  jumpInput: document.getElementById("jump-input"),
+  backBtn: document.getElementById("back-btn"),
+  judgePicker: document.getElementById("judge-picker"),
+  pickableList: document.getElementById("pickable-list"),
+  doneSection: document.getElementById("done-section"),
+  doneList: document.getElementById("done-list"),
+  noDataState: document.getElementById("no-data-state"),
+
+  layout: document.getElementById("layout"),
+  judgeId: document.getElementById("judge-id"),
+  judgeTags: document.getElementById("judge-tags"),
+  rubricBody: document.getElementById("rubric-body"),
+  cellList: document.getElementById("cell-list"),
+
   emptyState: document.getElementById("empty-state"),
-  card: document.getElementById("candidate-card"),
-  badges: document.getElementById("badges"),
-  metaId: document.getElementById("meta-id"),
+  cellCard: document.getElementById("cell-card"),
+  metaCandidate: document.getElementById("meta-candidate"),
   metaSource: document.getElementById("meta-source"),
-  metaModel: document.getElementById("meta-model"),
   metaProject: document.getElementById("meta-project"),
-  metaTurn: document.getElementById("meta-turn"),
-  metaInvocation: document.getElementById("meta-invocation"),
-  questionBody: document.getElementById("question-body"),
-  responseBody: document.getElementById("response-body"),
-  conversationBody: document.getElementById("conversation-body"),
+  metaMatched: document.getElementById("meta-matched"),
+  userBody: document.getElementById("user-body"),
+  assistantBody: document.getElementById("assistant-body"),
+
   btnPass: document.getElementById("btn-pass"),
   btnFail: document.getElementById("btn-fail"),
-  btnSkip: document.getElementById("btn-skip"),
-  includeCheckbox: document.getElementById("include-checkbox"),
-  exportBtn: document.getElementById("export-btn"),
+  btnInconclusive: document.getElementById("btn-inconclusive"),
   toast: document.getElementById("toast"),
 };
 
-let allCandidates = []; // last fetched summaries (unfiltered by status, filtered by source/q)
-let currentId = null;
-let currentDetail = null;
-const skippedThisRound = new Set();
+let currentJudgeId = null;
+let currentJudgeDetail = null; // {judge_id, prompt, cells: [...]}
+let currentCandidateId = null;
+const skippedThisRound = new Set(); // candidate ids marked Inconclusive this round, for the current judge
 let toastTimer = null;
 
-function showToast(msg, ms = 3200) {
+function showToast(msg, ms = 3000) {
   els.toast.textContent = msg;
   els.toast.hidden = false;
   if (toastTimer) clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => { els.toast.hidden = true; }, ms);
+  toastTimer = setTimeout(() => {
+    els.toast.hidden = true;
+  }, ms);
 }
 
-function currentFilters() {
-  return {
-    source: els.filterSource.value || null,
-    status: els.filterStatus.value || null,
-    q: null,
-  };
+/* --------------------------- judge picker --------------------------- */
+async function refreshJudgePicker() {
+  const { judges } = await api.judges();
+  const pickable = judges.filter((j) => j.pickable);
+  const done = judges.filter((j) => !j.pickable);
+
+  els.progress.textContent = `${judges.length} judge${judges.length === 1 ? "" : "s"} with relevant cells · ${pickable.length} ungraded`;
+
+  els.pickableList.innerHTML = "";
+  for (const j of pickable) {
+    els.pickableList.appendChild(judgeListItem(j));
+  }
+  els.doneList.innerHTML = "";
+  for (const j of done) {
+    els.doneList.appendChild(judgeListItem(j));
+  }
+  els.doneSection.hidden = done.length === 0;
+  els.noDataState.hidden = judges.length !== 0;
+  return judges;
 }
 
-async function refreshState() {
-  const s = await api.state();
-  els.progress.innerHTML =
-    `<strong>${s.graded}</strong> / ${s.total} graded &nbsp;·&nbsp; ` +
-    `<strong>${s.remaining}</strong> remaining &nbsp;·&nbsp; ` +
-    `${s.passed} pass / ${s.failed} fail &nbsp;·&nbsp; ` +
-    `${s.included_count} marked for export` +
-    (s.suggestions_count
-      ? ` &nbsp;·&nbsp; ${s.suggestions_count} heuristic suggestions (as of ${s.suggestions_computed_at_grade_count} grades)`
-      : ` &nbsp;·&nbsp; heuristic suggestions unlock at ${s.next_suggestion_recompute_at} grades`);
-  return s;
+function judgeListItem(j) {
+  const li = document.createElement("li");
+  li.className = "judge-card" + (j.pickable ? "" : " done");
+  li.innerHTML = `
+    <div class="judge-card-id">${j.judge_id}</div>
+    <div class="judge-card-meta">${j.suite}${j.case_name ? " · " + j.case_name : ""}</div>
+    <div class="judge-card-progress">${j.graded_cells} / ${j.total_cells} graded${j.pickable ? ` — ${j.remaining_cells} remaining` : " — done"}</div>
+  `;
+  li.addEventListener("click", () => openJudge(j.judge_id));
+  return li;
 }
 
-async function refreshList() {
-  const filters = currentFilters();
-  const { candidates } = await api.list(filters);
-  allCandidates = candidates;
-  renderList();
-  return candidates;
+function showPicker() {
+  currentJudgeId = null;
+  currentJudgeDetail = null;
+  currentCandidateId = null;
+  skippedThisRound.clear();
+  els.judgePicker.hidden = false;
+  els.layout.hidden = true;
+  els.backBtn.hidden = true;
+  refreshJudgePicker();
 }
 
-function renderList() {
-  els.list.innerHTML = "";
-  for (const c of allCandidates) {
+/* --------------------------- judge + cell review --------------------------- */
+async function openJudge(judgeId) {
+  const detail = await api.judge(judgeId);
+  if (!detail) {
+    showToast(`Unknown judge id: ${judgeId}`);
+    return;
+  }
+  currentJudgeId = judgeId;
+  currentJudgeDetail = detail;
+  skippedThisRound.clear();
+
+  els.judgePicker.hidden = true;
+  els.layout.hidden = false;
+  els.backBtn.hidden = false;
+
+  els.judgeId.textContent = detail.judge_id;
+  els.judgeTags.innerHTML = `
+    <span class="tag">${detail.suite}</span>
+    ${detail.case_name ? `<span class="tag">${detail.case_name}</span>` : ""}
+    ${detail.needs_human_review ? '<span class="tag warn">needs human review</span>' : ""}
+  `;
+  els.rubricBody.innerHTML = renderMarkdownish(detail.prompt || "");
+
+  renderCellList();
+  await showNextOrEmpty();
+}
+
+function renderCellList() {
+  els.cellList.innerHTML = "";
+  for (const c of currentJudgeDetail.cells) {
     const li = document.createElement("li");
-    li.dataset.id = c.id;
-    if (c.id === currentId) li.classList.add("active");
-    const chipClass = c.label === "pass" ? "pass" : c.label === "fail" ? "fail" : "todo";
+    li.dataset.id = c.candidate_id;
+    if (c.candidate_id === currentCandidateId) li.classList.add("active");
+    const chipClass = c.verdict === "Pass" ? "pass" : c.verdict === "Fail" ? "fail" : "todo";
+    const chipText = c.verdict || "TODO";
     li.innerHTML = `
       <div class="row1">
-        <span class="chip ${chipClass}">${c.label}</span>
-        <span>${c.source}${c.has_implied ? ' <span title="human-implied hint">💡</span>' : ""}${c.suggestion ? '<span class="dot-suggestion" title="heuristic suggestion available"></span>' : ""}${c.included ? " ⭐" : ""}</span>
+        <span class="chip ${chipClass}">${chipText}</span>
+        <span>${c.source || ""}</span>
       </div>
-      <div class="cid">${c.id}</div>
+      <div class="cid">${c.candidate_id}</div>
     `;
-    li.addEventListener("click", () => loadCandidate(c.id));
-    els.list.appendChild(li);
+    li.addEventListener("click", () => loadCell(c.candidate_id));
+    els.cellList.appendChild(li);
   }
 }
 
-function nextUngradedId() {
-  const pool = allCandidates.filter((c) => c.label === "TODO" && !skippedThisRound.has(c.id));
+function updateProgressLine() {
+  const total = currentJudgeDetail.cells.length;
+  const graded = currentJudgeDetail.cells.filter((c) => c.verdict).length;
+  els.progress.textContent = `${currentJudgeDetail.judge_id} · ${graded} / ${total} graded`;
+}
+
+function nextUngradedCandidateId() {
+  const pool = currentJudgeDetail.cells.filter(
+    (c) => !c.verdict && !skippedThisRound.has(c.candidate_id)
+  );
   if (pool.length === 0) {
     if (skippedThisRound.size > 0) {
-      // Everything left has been skipped this round; give skipped ones another lap.
+      // Everything left was marked Inconclusive this round; give it another lap.
       skippedThisRound.clear();
-      return nextUngradedId();
+      return nextUngradedCandidateId();
     }
     return null;
   }
-  return pool[0].id;
+  return pool[0].candidate_id;
 }
 
-function renderBadges(detail) {
-  els.badges.innerHTML = "";
-  const implied = detail.candidate_label_human_implied;
-  if (implied) {
-    const div = document.createElement("div");
-    div.className = "badge implied";
-    div.innerHTML = `
-      <span class="badge-title">Suggestion — weak signal from human's next message</span>
-      implied verdict: <strong>${implied.verdict}</strong>
-      (evidence: “${escapeHtml(implied.evidence_phrase || "")}”, confidence: ${implied.confidence || "low"}).
-      This is <em>not</em> a confirmed label — please review and grade explicitly.
-    `;
-    els.badges.appendChild(div);
-  }
-  const suggestion = detail.suggestion;
-  if (suggestion) {
-    const div = document.createElement("div");
-    div.className = "badge heuristic";
-    const neighborList = (suggestion.neighbors || [])
-      .map((n) => `${n.id} (${n.label}, sim ${n.similarity})`)
-      .join("; ");
-    div.innerHTML = `
-      <span class="badge-title">Suggestion — similarity heuristic</span>
-      suggested label: <strong>${suggestion.label}</strong>
-      (${Math.round(suggestion.confidence * 100)}% of top-${suggestion.k} neighbors agree,
-      closest match <code>${suggestion.neighbor_id}</code> [${suggestion.neighbor_label}] at similarity ${suggestion.top_similarity}).
-      <div class="neighbors">neighbors: ${neighborList}</div>
-    `;
-    els.badges.appendChild(div);
-  }
-}
-
-function highlightSuggestedButton(detail) {
-  els.btnPass.classList.remove("suggested-pass");
-  els.btnFail.classList.remove("suggested-fail");
-  const suggestedLabel =
-    (detail.suggestion && detail.suggestion.label) ||
-    (detail.candidate_label_human_implied && detail.candidate_label_human_implied.verdict);
-  if (suggestedLabel === "pass") els.btnPass.classList.add("suggested-pass");
-  if (suggestedLabel === "fail") els.btnFail.classList.add("suggested-fail");
-}
-
-async function loadCandidate(id) {
-  const detail = await api.candidate(id);
+async function loadCell(candidateId) {
+  const detail = await api.cell(currentJudgeId, candidateId);
   if (!detail) {
-    showToast(`Unknown candidate id: ${id}`);
+    showToast(`Unknown candidate id for this judge: ${candidateId}`);
     return;
   }
-  currentId = id;
-  currentDetail = detail;
+  currentCandidateId = candidateId;
   els.emptyState.hidden = true;
-  els.card.hidden = false;
+  els.cellCard.hidden = false;
 
-  renderBadges(detail);
-  highlightSuggestedButton(detail);
+  els.metaCandidate.textContent = detail.cell.candidate_id;
+  els.metaSource.textContent = `${detail.cell.source || ""} · ${detail.model || ""}`.trim();
+  els.metaProject.textContent = detail.cell.project_cwd || "";
+  els.metaMatched.textContent = `${detail.cell.matched_keyword || ""} (${detail.cell.matched_tag || ""})`;
 
-  els.metaId.textContent = detail.id;
-  els.metaSource.textContent = `${detail.source} · ${detail.agent_id || ""}`.trim();
-  els.metaModel.textContent = detail.model || "(unknown)";
-  els.metaProject.textContent = detail.project_cwd || "";
-  els.metaTurn.textContent = detail.turn_started_at || "";
-  els.metaInvocation.textContent = detail.invocation_signal || "";
+  els.userBody.innerHTML = renderMarkdownish(detail.user || "");
+  els.assistantBody.innerHTML = renderMarkdownish(detail.assistant || "");
 
-  els.questionBody.innerHTML = renderMarkdownish(detail.question || "");
-  els.responseBody.innerHTML = renderMarkdownish(detail.response || "");
-
-  els.conversationBody.textContent = "(loading…)";
-  api.conversation(id).then((text) => {
-    if (currentId === id) els.conversationBody.textContent = text || "(no conversation file)";
-  });
-
-  els.includeCheckbox.checked = !!detail.included;
-  els.includeCheckbox.disabled = detail.label === "TODO";
-
-  renderList();
+  renderCellList();
+  updateProgressLine();
 }
 
 async function showNextOrEmpty() {
-  await refreshList();
-  const nextId = nextUngradedId();
+  updateProgressLine();
+  const nextId = nextUngradedCandidateId();
   if (nextId) {
-    await loadCandidate(nextId);
+    await loadCell(nextId);
   } else {
-    currentId = null;
-    currentDetail = null;
-    els.card.hidden = true;
+    currentCandidateId = null;
+    els.cellCard.hidden = true;
     els.emptyState.hidden = false;
+    renderCellList();
   }
 }
 
-async function gradeCurrentCandidate(label) {
-  if (!currentId) return;
-  const id = currentId;
-  const result = await api.grade(id, label);
-  skippedThisRound.delete(id);
-  await refreshState();
-  if (result.suggestions_recomputed) {
-    showToast("Heuristic suggestions recomputed for remaining candidates.");
+async function gradeCurrentCell(verdict) {
+  if (!currentCandidateId) return;
+  const candidateId = currentCandidateId;
+  const result = await api.grade(currentJudgeId, candidateId, verdict);
+  if (result.error) {
+    showToast(result.error);
+    return;
   }
+  skippedThisRound.delete(candidateId);
+  const cell = currentJudgeDetail.cells.find((c) => c.candidate_id === candidateId);
+  if (cell) cell.verdict = result.verdict;
   await showNextOrEmpty();
 }
 
-function skipCurrentCandidate() {
-  if (!currentId) return;
-  skippedThisRound.add(currentId);
+function markInconclusive() {
+  // Skip with no write -- functionally identical to v1's Skip.
+  if (!currentCandidateId) return;
+  skippedThisRound.add(currentCandidateId);
   showNextOrEmpty();
 }
 
-async function toggleInclude() {
-  if (!currentId || els.includeCheckbox.disabled) return;
-  const included = els.includeCheckbox.checked;
-  await api.setIncluded(currentId, included);
-  await refreshState();
-  await refreshList();
-}
-
 /* ------------------------- wiring ------------------------- */
-els.btnPass.addEventListener("click", () => gradeCurrentCandidate("pass"));
-els.btnFail.addEventListener("click", () => gradeCurrentCandidate("fail"));
-els.btnSkip.addEventListener("click", () => skipCurrentCandidate());
-els.includeCheckbox.addEventListener("change", toggleInclude);
-
-els.filterSource.addEventListener("change", async () => {
-  skippedThisRound.clear();
-  await showNextOrEmpty();
-});
-els.filterStatus.addEventListener("change", async () => {
-  await refreshList();
-  // Status filter is for browsing; grading queue always targets ungraded regardless.
-  if (els.filterStatus.value && els.filterStatus.value !== "ungraded") return;
-  await showNextOrEmpty();
-});
-
-els.jumpForm.addEventListener("submit", async (e) => {
-  e.preventDefault();
-  const id = els.jumpInput.value.trim();
-  if (!id) return;
-  const detail = await api.candidate(id);
-  if (!detail) {
-    showToast(`No candidate with id "${id}"`);
-    return;
-  }
-  await loadCandidate(id);
-  els.jumpInput.value = "";
-});
-
-els.exportBtn.addEventListener("click", async () => {
-  const ok = window.confirm(
-    "Export the curated calibration set now?\n\nThis writes e2e/judge-calibration/evals/labels.yaml " +
-      "from every candidate that is BOTH graded AND marked for inclusion."
-  );
-  if (!ok) return;
-  const result = await api.exportSet();
-  showToast(`Exported ${result.exported_count} candidates to ${result.path}`, 5000);
-});
+els.backBtn.addEventListener("click", showPicker);
+els.btnPass.addEventListener("click", () => gradeCurrentCell("pass"));
+els.btnFail.addEventListener("click", () => gradeCurrentCell("fail"));
+els.btnInconclusive.addEventListener("click", markInconclusive);
 
 document.addEventListener("keydown", (e) => {
   const tag = (document.activeElement && document.activeElement.tagName) || "";
   if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+  if (els.layout.hidden) return; // shortcuts only apply while reviewing a judge's cells
   switch (e.key) {
     case "p":
-      gradeCurrentCandidate("pass");
+      gradeCurrentCell("pass");
       break;
     case "f":
-      gradeCurrentCandidate("fail");
-      break;
-    case "s":
-    case "n":
-      skipCurrentCandidate();
+      gradeCurrentCell("fail");
       break;
     case "i":
-      if (!els.includeCheckbox.disabled) {
-        els.includeCheckbox.checked = !els.includeCheckbox.checked;
-        toggleInclude();
-      }
+      markInconclusive();
       break;
     default:
       return;
@@ -428,7 +367,5 @@ document.addEventListener("keydown", (e) => {
 
 /* --------------------------- boot --------------------------- */
 (async function boot() {
-  await refreshState();
-  await showNextOrEmpty();
-  setInterval(refreshState, 15000);
+  showPicker();
 })();

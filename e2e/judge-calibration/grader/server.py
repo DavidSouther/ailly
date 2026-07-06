@@ -2,7 +2,7 @@
 """Judge-calibration grader app -- local-only, stdlib-only server.
 
 Usage:
-    python3 server.py [--port 8765] [--mined-dir PATH] [--evals-dir PATH]
+    python3 server.py [--port 8765] [--mined-dir PATH] [--evals-dir PATH] [--judges-path PATH]
 
 Binds to 127.0.0.1 ONLY. There is deliberately no --host flag: this data
 contains verbatim excerpts of the user's private/client codebases and must
@@ -20,7 +20,8 @@ if str(APP_DIR) not in sys.path:
     sys.path.insert(0, str(APP_DIR))
 
 from backend.app import AppContext, build_server  # noqa: E402
-from backend.candidates import CandidateStore  # noqa: E402
+from backend.judges import JudgeRegistry  # noqa: E402
+from backend.matrix import MatrixStore  # noqa: E402
 
 DEFAULT_PORT = 8765
 
@@ -32,31 +33,48 @@ def main(argv: list[str] | None = None) -> int:
         "--mined-dir",
         type=Path,
         default=APP_DIR.parent / "mined",
-        help="path to e2e/judge-calibration/mined (default: ../mined relative to this file)",
+        help="path to e2e/judge-calibration/mined, containing matrix.jsonl and matrix/ (default: ../mined)",
     )
     parser.add_argument(
         "--evals-dir",
         type=Path,
         default=APP_DIR.parent / "evals",
-        help="path to e2e/judge-calibration/evals -- export destination (default: ../evals)",
+        help="path to e2e/judge-calibration/evals -- labels.yaml lives here and is written to directly (default: ../evals)",
+    )
+    parser.add_argument(
+        "--judges-path",
+        type=Path,
+        default=None,
+        help="path to judges.yaml (default: <evals-dir>/judges.yaml)",
     )
     parser.add_argument("--no-browser", action="store_true", help="don't auto-open a browser tab")
     args = parser.parse_args(argv)
 
-    candidates_path = args.mined_dir / "candidates.jsonl"
-    if not candidates_path.exists():
-        print(f"error: {candidates_path} not found. Point --mined-dir at e2e/judge-calibration/mined.", file=sys.stderr)
+    judges_path = args.judges_path or (args.evals_dir / "judges.yaml")
+    matrix_path = args.mined_dir / "matrix.jsonl"
+
+    if not judges_path.exists():
+        print(f"error: {judges_path} not found. Point --judges-path at evals/judges.yaml.", file=sys.stderr)
+        return 1
+    if not matrix_path.exists():
+        print(f"error: {matrix_path} not found. Point --mined-dir at e2e/judge-calibration/mined.", file=sys.stderr)
         return 1
 
-    store = CandidateStore(candidates_path)
-    ctx = AppContext(store, mined_dir=args.mined_dir, evals_dir=args.evals_dir, static_dir=APP_DIR / "static")
+    judges = JudgeRegistry(judges_path)
+    matrix = MatrixStore(matrix_path, mined_dir=args.mined_dir)
+    ctx = AppContext(judges, matrix, evals_dir=args.evals_dir, static_dir=APP_DIR / "static")
 
     host = "127.0.0.1"
     httpd = build_server(ctx, host, args.port)
     url = f"http://{host}:{args.port}/"
-    print(f"Judge-calibration grader serving {len(store)} candidates at {url}")
-    print(f"  mined dir:  {args.mined_dir}")
-    print(f"  evals dir:  {args.evals_dir}")
+    pickable = sum(1 for j in ctx.list_judges() if j["pickable"])
+    print(
+        f"Judge-calibration grader serving {len(judges)} judges "
+        f"({len(matrix)} relevant matrix cells, {pickable} judges with ungraded cells) at {url}"
+    )
+    print(f"  judges:     {judges_path}")
+    print(f"  matrix:     {matrix_path}")
+    print(f"  labels.yaml (written to directly): {ctx.labels_path}")
     print("  bound to 127.0.0.1 only (not reachable off this machine)")
     print("Press Ctrl+C to stop.")
 

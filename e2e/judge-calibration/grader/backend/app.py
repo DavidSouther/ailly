@@ -1,16 +1,22 @@
-"""HTTP application for the judge-calibration grader.
+"""HTTP application for the judge-calibration grader (judge-first, v2).
 
 Stdlib-only (http.server), bound to 127.0.0.1 exclusively by the caller in
 server.py -- this app must never be reachable off the local machine, since
 the mined data contains verbatim excerpts of the user's private/client
 codebases.
 
-Security note (candidate-id allowlist): every route that takes a candidate
-id (``/api/candidate/<id>``, its ``/conversation`` sub-route, ``/api/grade``,
-``/api/include``) validates the id against ``CandidateStore.is_known_id``
--- built from the actual ids present in candidates.jsonl at load time --
-*before* it is ever used to build a filesystem path. An id that isn't in
-that allowlist is rejected with 404 and never touches the filesystem.
+Security note (judge-id AND candidate-id allowlist): every route that takes
+a judge id and/or candidate id (``/api/judge``, ``/api/cell``,
+``/api/grade``) validates the judge id against ``JudgeRegistry.is_known_id``
+(built from the real ``evals/judges.yaml``) and the (judge id, candidate id)
+pair against ``MatrixStore.is_known_pair`` (built from the real
+``mined/matrix.jsonl``) *before* any filesystem access. A conversation
+draft's path is only ever taken from the already-loaded, trusted matrix
+record (``MatrixStore.resolve_conversation_draft_path``) -- never
+reconstructed by concatenating raw request input into a path -- so a
+path-traversal-shaped id has nothing to traverse with; it is rejected with
+404 at the allowlist check, before ``resolve_conversation_draft_path`` (or
+any other file read) ever runs.
 """
 from __future__ import annotations
 
@@ -20,7 +26,9 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-from . import export, included_store, labels_store, suggestions_store
+from . import conversation_draft, labels_store
+from .judges import JudgeRegistry
+from .matrix import MatrixStore
 
 STATIC_FILES = {
     "/": ("index.html", "text/html; charset=utf-8"),
@@ -29,157 +37,135 @@ STATIC_FILES = {
     "/style.css": ("style.css", "text/css; charset=utf-8"),
 }
 
+VALID_VERDICT_INPUTS = ("pass", "fail")
+
 
 class AppContext:
     """Shared, lock-guarded application state for one running server."""
 
-    def __init__(self, candidate_store, mined_dir: Path, evals_dir: Path, static_dir: Path):
-        self.store = candidate_store
-        self.mined_dir = Path(mined_dir)
+    def __init__(self, judges: JudgeRegistry, matrix: MatrixStore, evals_dir: Path, static_dir: Path):
+        self.judges = judges
+        self.matrix = matrix
         self.evals_dir = Path(evals_dir)
         self.static_dir = Path(static_dir)
-        self.labels_path = self.mined_dir / "labels.yaml"
-        self.included_path = self.mined_dir / "included.json"
-        self.suggestions_path = self.mined_dir / "suggestions.json"
-        self.export_path = self.evals_dir / "labels.yaml"
+        self.labels_path = self.evals_dir / "labels.yaml"
         self.lock = threading.Lock()
 
     # -- read helpers -----------------------------------------------------
     def labels(self) -> dict[str, str]:
         return labels_store.read_labels(self.labels_path)
 
-    def included(self) -> dict[str, bool]:
-        return included_store.read_included(self.included_path)
-
-    def suggestions_cache(self) -> dict:
-        return suggestions_store.read_suggestions_cache(self.suggestions_path)
-
-    def texts_by_id(self) -> dict[str, str]:
+    # -- judge summaries ----------------------------------------------------
+    def judge_summary(self, judge_id: str, labels: dict[str, str] | None = None) -> dict:
+        judge = self.judges.get(judge_id)
+        cells = self.matrix.cells_for_judge(judge_id)
+        labels = self.labels() if labels is None else labels
+        graded = sum(
+            1 for c in cells if labels_store.composite_key(judge_id, c["candidate_id"]) in labels
+        )
+        total = len(cells)
         return {
-            cid: (self.store.get(cid) or {}).get("response", "")
-            for cid in self.store.order
+            "judge_id": judge_id,
+            "suite": judge["suite"],
+            "case_name": judge["case_name"],
+            "needs_human_review": judge["needs_human_review"],
+            "total_cells": total,
+            "graded_cells": graded,
+            "remaining_cells": total - graded,
+            "pickable": (total - graded) > 0,
         }
 
-    # -- aggregate state ----------------------------------------------------
-    def state(self) -> dict:
+    def list_judges(self) -> list[dict]:
+        """Every judge with at least one relevant cell in matrix.jsonl right
+        now, each annotated with its grading progress. The UI shows
+        ``pickable`` judges (>=1 ungraded cell) prominently and any
+        fully-graded judge in a clearly-labeled "done" section, rather than
+        having a judge silently vanish once its last cell is graded."""
         labels = self.labels()
-        total = len(self.store)
-        graded = sum(1 for v in labels.values() if v in ("pass", "fail"))
-        passed = sum(1 for v in labels.values() if v == "pass")
-        failed = sum(1 for v in labels.values() if v == "fail")
-        cache = self.suggestions_cache()
-        included = self.included()
-        by_source: dict[str, dict] = {}
-        for cid in self.store.order:
-            rec = self.store.get(cid)
-            src = rec.get("source")
-            bucket = by_source.setdefault(src, {"total": 0, "graded": 0})
-            bucket["total"] += 1
-            if labels.get(cid) in ("pass", "fail"):
-                bucket["graded"] += 1
+        return [self.judge_summary(jid, labels) for jid in sorted(self.matrix.judge_ids)]
+
+    # -- judge detail (prompt + its cells) ---------------------------------
+    def judge_detail(self, judge_id: str) -> dict | None:
+        if not self.judges.is_known_id(judge_id):
+            return None
+        judge = self.judges.get(judge_id)
+        labels = self.labels()
+        cells = []
+        for cell in self.matrix.cells_for_judge(judge_id):
+            key = labels_store.composite_key(judge_id, cell["candidate_id"])
+            cells.append(
+                {
+                    "candidate_id": cell["candidate_id"],
+                    "matched_keyword": cell.get("matched_keyword"),
+                    "matched_tag": cell.get("matched_tag"),
+                    "narrowing": cell.get("narrowing"),
+                    "source": cell.get("source"),
+                    "project_cwd": cell.get("project_cwd"),
+                    "repaired": cell.get("repaired"),
+                    "verdict": labels.get(key),
+                }
+            )
         return {
-            "total": total,
-            "graded": graded,
-            "remaining": total - graded,
-            "passed": passed,
-            "failed": failed,
-            "included_count": sum(1 for v in included.values() if v),
-            "by_source": by_source,
-            "suggestions_computed_at_grade_count": cache.get("computed_at_grade_count", 0),
-            "suggestions_generated_at": cache.get("generated_at"),
-            "suggestions_count": len(cache.get("suggestions", {})),
-            "next_suggestion_recompute_at": (
-                (cache.get("computed_at_grade_count", 0) + suggestions_store.CADENCE)
-                if graded >= suggestions_store.CADENCE or cache.get("computed_at_grade_count", 0) > 0
-                else suggestions_store.CADENCE
-            ),
+            "judge_id": judge_id,
+            "suite": judge["suite"],
+            "suite_file": judge["suite_file"],
+            "case_name": judge["case_name"],
+            "case_when": judge["case_when"],
+            "prompt": judge["prompt"],
+            "keywords": judge["keywords"],
+            "needs_human_review": judge["needs_human_review"],
+            "cells": cells,
         }
 
-    # -- listing --------------------------------------------------------
-    def list_candidates(self, source: str | None, status: str | None, q: str | None) -> list[dict]:
-        labels = self.labels()
-        included = self.included()
-        cache = self.suggestions_cache().get("suggestions", {})
-        out = []
-        for cid in self.store.order:
-            rec = self.store.get(cid)
-            label = labels.get(cid, "TODO")
-            if source and rec.get("source") != source:
-                continue
-            if status == "graded" and label not in ("pass", "fail"):
-                continue
-            if status == "ungraded" and label in ("pass", "fail"):
-                continue
-            if q and q.lower() not in cid.lower():
-                continue
-            out.append({
-                "id": cid,
-                "source": rec.get("source"),
-                "model": rec.get("model"),
-                "project_cwd": rec.get("project_cwd"),
-                "turn_started_at": rec.get("turn_started_at"),
-                "label": label,
-                "included": bool(included.get(cid)),
-                "has_implied": rec.get("candidate_label_human_implied") is not None,
-                "suggestion": cache.get(cid),
-            })
-        return out
-
-    def candidate_detail(self, cid: str) -> dict | None:
-        if not self.store.is_known_id(cid):
+    # -- one matrix cell (the (user, assistant) pair to grade) -------------
+    def cell_detail(self, judge_id: str, candidate_id: str) -> dict | None:
+        if not self.judges.is_known_id(judge_id):
             return None
-        rec = self.store.get(cid)
-        labels = self.labels()
-        included = self.included()
-        cache = self.suggestions_cache().get("suggestions", {})
-        detail = dict(rec)
-        detail["label"] = labels.get(cid, "TODO")
-        detail["included"] = bool(included.get(cid))
-        detail["suggestion"] = cache.get(cid)
-        return detail
-
-    def conversation_text(self, cid: str) -> str | None:
-        if not self.store.is_known_id(cid):
+        cell = self.matrix.cell(judge_id, candidate_id)
+        if cell is None:
             return None
-        # cid is now proven to be a member of the id allowlist derived from
-        # candidates.jsonl -- safe to use in a path join.
-        path = self.mined_dir / "conversations" / f"{cid}.yaml"
-        if not path.exists():
-            return ""
-        return path.read_text(encoding="utf-8")
+        judge = self.judges.get(judge_id)
+        draft_path = self.matrix.resolve_conversation_draft_path(cell)
+        parsed = conversation_draft.load_conversation_draft(draft_path)
+        user_text, assistant_text = conversation_draft.user_and_assistant_text(parsed)
+        labels = self.labels()
+        key = labels_store.composite_key(judge_id, candidate_id)
+        return {
+            "judge": {
+                "judge_id": judge_id,
+                "suite": judge["suite"],
+                "case_name": judge["case_name"],
+                "prompt": judge["prompt"],
+            },
+            "cell": {
+                "candidate_id": candidate_id,
+                "matched_keyword": cell.get("matched_keyword"),
+                "matched_tag": cell.get("matched_tag"),
+                "narrowing": cell.get("narrowing"),
+                "source": cell.get("source"),
+                "source_file": cell.get("source_file"),
+                "project_cwd": cell.get("project_cwd"),
+                "repaired": cell.get("repaired"),
+            },
+            "model": parsed.get("model"),
+            "user": user_text,
+            "assistant": assistant_text,
+            "verdict": labels.get(key),
+        }
 
-    # -- mutations (all lock-guarded + atomic file writes) -----------------
-    def grade(self, cid: str, label: str) -> dict:
-        if label not in ("pass", "fail"):
-            raise ValueError("label must be 'pass' or 'fail'")
-        if not self.store.is_known_id(cid):
-            raise KeyError(cid)
+    # -- mutation (lock-guarded + atomic file write) ------------------------
+    def grade(self, judge_id: str, candidate_id: str, verdict_input: str) -> dict:
+        if verdict_input not in VALID_VERDICT_INPUTS:
+            raise ValueError(f"verdict must be one of {VALID_VERDICT_INPUTS}")
+        if not self.judges.is_known_id(judge_id) or not self.matrix.is_known_pair(
+            judge_id, candidate_id
+        ):
+            raise KeyError((judge_id, candidate_id))
+        verdict = "Pass" if verdict_input == "pass" else "Fail"
         with self.lock:
-            labels_store.set_label(self.labels_path, self.store.order, cid, label)
-            new_labels = self.labels()
-            cache = suggestions_store.maybe_recompute(
-                self.texts_by_id(), new_labels, self.suggestions_path
-            )
-        return {"state": self.state(), "suggestions_recomputed": cache is not None}
-
-    def set_included(self, cid: str, included_flag: bool) -> dict:
-        if not self.store.is_known_id(cid):
-            raise KeyError(cid)
-        with self.lock:
-            included_store.set_included(self.included_path, cid, self.store.ids, included_flag)
-        return self.state()
-
-    def force_recompute(self) -> dict:
-        with self.lock:
-            cache = suggestions_store.recompute(self.texts_by_id(), self.labels(), self.suggestions_path)
-        return cache
-
-    def export(self) -> dict:
-        with self.lock:
-            curated = export.export_curated_labels(
-                self.store.order, self.labels(), self.included(), self.export_path
-            )
-        return {"exported_count": len(curated), "path": str(self.export_path), "ids": sorted(curated)}
+            labels_store.set_verdict(self.labels_path, judge_id, candidate_id, verdict)
+            summary = self.judge_summary(judge_id)
+        return {"judge": summary, "verdict": verdict}
 
 
 def _json_bytes(obj) -> bytes:
@@ -188,7 +174,7 @@ def _json_bytes(obj) -> bytes:
 
 def make_handler(ctx: AppContext):
     class Handler(BaseHTTPRequestHandler):
-        server_version = "JudgeCalibrationGrader/1.0"
+        server_version = "JudgeCalibrationGrader/2.0"
 
         def log_message(self, fmt, *args):  # quieter default logging
             pass
@@ -234,31 +220,29 @@ def make_handler(ctx: AppContext):
                 self._send_text(200, fpath.read_text(encoding="utf-8"), ctype)
                 return
 
-            if path == "/api/state":
-                self._send_json(200, ctx.state())
+            if path == "/api/judges":
+                self._send_json(200, {"judges": ctx.list_judges()})
                 return
 
-            if path == "/api/candidates":
-                source = (qs.get("source") or [None])[0]
-                status = (qs.get("status") or [None])[0]
-                q = (qs.get("q") or [None])[0]
-                self._send_json(200, {"candidates": ctx.list_candidates(source, status, q)})
-                return
-
-            if path.startswith("/api/candidate/"):
-                rest = path[len("/api/candidate/"):]
-                if rest.endswith("/conversation"):
-                    cid = rest[: -len("/conversation")]
-                    text = ctx.conversation_text(cid)
-                    if text is None:
-                        self._send_json(404, {"error": "unknown candidate id"})
-                        return
-                    self._send_text(200, text, "text/plain; charset=utf-8")
-                    return
-                cid = rest
-                detail = ctx.candidate_detail(cid)
+            if path == "/api/judge":
+                judge_id = (qs.get("judge_id") or [None])[0]
+                detail = ctx.judge_detail(judge_id) if judge_id else None
                 if detail is None:
-                    self._send_json(404, {"error": "unknown candidate id"})
+                    self._send_json(404, {"error": "unknown judge_id"})
+                    return
+                self._send_json(200, detail)
+                return
+
+            if path == "/api/cell":
+                judge_id = (qs.get("judge_id") or [None])[0]
+                candidate_id = (qs.get("candidate_id") or [None])[0]
+                detail = (
+                    ctx.cell_detail(judge_id, candidate_id)
+                    if judge_id and candidate_id
+                    else None
+                )
+                if detail is None:
+                    self._send_json(404, {"error": "unknown judge_id/candidate_id pair"})
                     return
                 self._send_json(200, detail)
                 return
@@ -271,36 +255,22 @@ def make_handler(ctx: AppContext):
             body = self._read_json_body()
 
             if path == "/api/grade":
-                cid = body.get("id")
-                label = body.get("label")
-                if not isinstance(cid, str) or not ctx.store.is_known_id(cid):
-                    self._send_json(404, {"error": "unknown candidate id"})
+                judge_id = body.get("judge_id")
+                candidate_id = body.get("candidate_id")
+                verdict = body.get("verdict")
+                if (
+                    not isinstance(judge_id, str)
+                    or not isinstance(candidate_id, str)
+                    or not ctx.judges.is_known_id(judge_id)
+                    or not ctx.matrix.is_known_pair(judge_id, candidate_id)
+                ):
+                    self._send_json(404, {"error": "unknown judge_id/candidate_id pair"})
                     return
                 try:
-                    result = ctx.grade(cid, label)
+                    result = ctx.grade(judge_id, candidate_id, verdict)
                 except ValueError as exc:
                     self._send_json(400, {"error": str(exc)})
                     return
-                self._send_json(200, result)
-                return
-
-            if path == "/api/include":
-                cid = body.get("id")
-                included_flag = bool(body.get("included"))
-                if not isinstance(cid, str) or not ctx.store.is_known_id(cid):
-                    self._send_json(404, {"error": "unknown candidate id"})
-                    return
-                state = ctx.set_included(cid, included_flag)
-                self._send_json(200, state)
-                return
-
-            if path == "/api/recompute-suggestions":
-                cache = ctx.force_recompute()
-                self._send_json(200, cache)
-                return
-
-            if path == "/api/export":
-                result = ctx.export()
                 self._send_json(200, result)
                 return
 

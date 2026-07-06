@@ -1,12 +1,31 @@
 # Judge Calibration Grader
 
-A local-only web app for a human to review and grade the mined
-judge-calibration candidates at `e2e/judge-calibration/mined/candidates.jsonl`,
-and to curate a final calibration set into `e2e/judge-calibration/evals/labels.yaml`.
+A local-only web app for a human to grade real judge-assertion rubrics
+against the mined (judge, candidate) relevance matrix at
+`e2e/judge-calibration/mined/matrix.jsonl`, writing verdicts **directly**
+into the real, checked-in `e2e/judge-calibration/evals/labels.yaml`.
 
-Stdlib-only: the backend is `http.server`/`wsgiref`-style plain Python (no
-Flask/FastAPI), and the frontend is plain HTML/CSS/vanilla JS (no npm build,
-no bundler). `python3 server.py` is the entire install step.
+Stdlib-only: the backend is `http.server` plain Python (no Flask/FastAPI,
+no PyYAML), and the frontend is plain HTML/CSS/vanilla JS (no npm build, no
+bundler). `python3 server.py` is the entire install step.
+
+## The grading unit: a (judge, candidate) matrix cell
+
+Earlier iterations of this tool graded a bare mined conversation
+("pass/fail this whole candidate"). That was the wrong shape: judges are
+graded against *their own* rubric, and the same candidate can be relevant
+to several different judges with different verdicts. The grading unit is
+now a single matrix cell -- one judge, one candidate, one narrow
+(user, assistant) excerpt -- and the question is **"was the judge
+satisfied?"**, not "is this candidate good?".
+
+The flow is judge-first:
+
+1. Pick a judge (its full rubric/prompt text, pulled straight from the eval
+   suite that defines it, is shown prominently).
+2. Review that judge's relevant matrix cells one at a time -- each cell
+   shows just the narrow (user, assistant) pair mined for it.
+3. Grade: **Pass**, **Fail**, or **Inconclusive**.
 
 ## Running it
 
@@ -22,98 +41,116 @@ flag. This tool reads verbatim excerpts of real agent-session transcripts
 from your (and possibly your clients') private codebases; it must never be
 reachable from anywhere but this machine.
 
-By default it looks for data at `../mined` and writes curated exports to
-`../evals`, relative to `server.py` (i.e. the standard
-`e2e/judge-calibration/{mined,evals}` layout). Override with `--mined-dir`
-and `--evals-dir` if needed.
+By default it reads judges from `../evals/judges.yaml`, matrix cells from
+`../mined/matrix.jsonl` (and their conversation drafts from
+`../mined/matrix/`), and writes verdicts to `../evals/labels.yaml`.
+Override with `--judges-path`, `--mined-dir`, and `--evals-dir` if needed.
 
 ## Keyboard shortcuts
 
-While reviewing a candidate (and not focused in a text field):
+While reviewing a judge's cell (and not focused in a text field):
 
 | Key | Action |
 | --- | --- |
-| `p` | Grade **Pass** and advance to the next ungraded candidate |
-| `f` | Grade **Fail** and advance to the next ungraded candidate |
-| `s` or `n` | **Skip** for now (no write) -- comes back around after the rest of the current queue |
-| `i` | Toggle **Include in calibration export** for the currently graded candidate |
+| `p` | **Pass** -- the judge would have been satisfied. Writes immediately, advances to the next ungraded cell. |
+| `f` | **Fail** -- the judge would not have been satisfied. Writes immediately, advances to the next ungraded cell. |
+| `i` | **Inconclusive** -- can't tell from this excerpt. Skips with **no write at all** (functionally identical to a prior "Skip" action); the cell resurfaces once every other ungraded cell for this judge has been through the queue. |
 
-Grading writes to `mined/labels.yaml` immediately -- there is no separate
-save step, and no undo. Skip never writes anything; the candidate stays
-`TODO` and resurfaces once every other ungraded candidate (in the current
-filter) has been through the queue.
+There is no undo. Pass/Fail is a direct read-modify-write of the real
+`evals/labels.yaml` the moment you press the key or click the button --
+there is no draft file, no "include in export" toggle, and no separate
+export step. If you mis-grade a cell, click it again from the sidebar list
+and re-grade it (the write overwrites the existing entry for that cell).
 
-## mined/labels.yaml vs evals/labels.yaml
+## evals/labels.yaml: one flat file, composite-keyed
 
-- **`mined/labels.yaml`** is the *draft* map covering all 663 mined
-  candidates (`id: pass|fail|TODO`). It is what this app reads and writes
-  as you grade. It is scratch/local-only -- see the next section.
-- **`e2e/judge-calibration/evals/labels.yaml`** is the *curated,
-  checked-in* file actually used for judge calibration. It only ever
-  contains candidates that are **both** graded (pass/fail) **and**
-  explicitly marked "Include in calibration export" (`i` key, or the
-  checkbox). It is written only when you click **Export calibration set**
-  in the top bar and confirm the dialog -- never automatically, and never
-  as a side effect of grading. The mined pool is 663 candidates; a
-  calibration set only needs on the order of 20-50, so exporting is a
-  deliberate curation step, not "export everything."
+Because a grading unit is now `(judge, candidate)` rather than a bare
+candidate, and a label set spans every judge in `judges.yaml` (11 judges
+across several different eval suites, not just one), `labels.yaml` is a
+single flat map keyed by a stable composite key:
 
-## Suggestions are never confirmed grades
+```
+<judge_id, with '/' replaced by '__'>__<candidate_id>: Pass|Fail
+```
 
-Two independent, clearly-labeled "Suggestion" badges may appear above a
-candidate:
+e.g.:
 
-- **Weak signal from the human's next message** -- for the 5 candidates
-  where mining found a low-confidence phrase in the human's following
-  message (e.g. "looks good", "perfect"). Shows the verdict, the evidence
-  phrase, and an explicit "not a confirmed label" disclaimer.
-- **Similarity heuristic** -- once ~20 real (pass/fail) grades have
-  accumulated, and again every ~20 grades after that, a dependency-free
-  cosine-similarity-over-term-frequency heuristic (`backend/similarity.py`)
-  compares each remaining ungraded candidate against every already-graded
-  one. If a clear majority of its top-K most similar graded neighbors agree
-  on a label above a similarity threshold, that's surfaced as a suggestion,
-  along with the neighbor id/label/score that justifies it.
+```yaml
+patterns-eval__baseline__configuring-logging__claude-code-ailly-two-66e52d4e02-001: Pass
+```
 
-Neither badge ever pre-fills or auto-writes a grade. Both are purely
-informational (plus a subtle highlight ring on the suggested Pass/Fail
-button) until you explicitly press `p`/`f` or click the button yourself.
-Suggestions are cached in `mined/suggestions.json` (also gitignored) so
-they survive a server restart; recompute cadence and thresholds live in
-`backend/suggestions_store.py`.
+A cell that has never been graded simply has **no entry** -- there is no
+`TODO` placeholder in this file (unlike the old mined-pool draft format).
+This matches `src/knowledge/calibration.rs`'s own `MissingLabel` error for
+an absent key: absence *is* "not graded yet."
 
-## Never commit mined/ data
+Values are exactly `Pass`/`Fail`, matching `calibration.rs`'s
+`HumanVerdict` enum's serde representation (`#[derive(Serialize,
+Deserialize)]`, no `rename_all` -- verified empirically against a live
+`serde_yaml_ng::to_string`, not assumed) -- capitalized, not lowercase.
 
-`e2e/judge-calibration/mined/` (including this app's own
-`included.json` and `suggestions.json` caches) is excluded by the
-repo-root `.gitignore` (`e2e/judge-calibration/mined/`). It contains
-verbatim excerpts of real session transcripts, some from other
-clients'/projects' codebases. Only the curated `evals/labels.yaml` is
-meant to be committed, and only after a human has actually reviewed and
-exported it.
+One flat file was chosen over one-file-per-suite: nothing in
+`compute_calibration`'s current API requires a per-suite split (it takes a
+plain `BTreeMap<String, HumanVerdict>` the *caller* assembles), and a
+label set this size doesn't yet justify the extra bookkeeping of a
+file-per-suite convention. A future CLI step can slice this flat map by
+judge_id/suite when wiring it into a per-suite `compute_calibration` call.
+
+## The mined data (judges.yaml, matrix.jsonl, matrix/, candidates.jsonl)
+
+This app reads data produced by a separate, already-run pipeline (a judge
+discovery step and a relevance-matrix build step, in
+`e2e/judge-calibration/evals/scripts/`):
+
+- **`evals/judges.yaml`** -- the judge registry (one entry per real `judge`
+  assertion found under `e2e/*/evals/*.yaml`: judge_id, suite, case_name,
+  full prompt/rubric text, keywords). This lives under `evals/`, is
+  **not** gitignored, and is committed like any other source eval data
+  (mirroring how `evals/labels.yaml` itself is committed).
+- **`mined/matrix.jsonl`** -- one line per relevant (judge, candidate)
+  cell (judge_id, candidate_id, matched_keyword/tag, source,
+  project_cwd, and a `conversation_draft` path). Read fresh at server
+  start; nothing here assumes a fixed row count, so this file growing
+  (e.g. a parallel synthetic-dataset effort landing more rows) needs no
+  code change to be picked up.
+- **`mined/matrix/<judge-id-safe>/<candidate-id>.yaml`** -- the narrow
+  (user, assistant) conversation-schema draft for each cell, already
+  trimmed down from the full mined conversation.
+- **`mined/candidates.jsonl`** -- the full mined-candidate pool, kept
+  alongside for id cross-referencing.
+
+`mined/` (all of it, including `matrix.jsonl` and `matrix/`) stays
+gitignored -- it contains verbatim excerpts of real agent-session
+transcripts (personal projects and client codebases alike) and must never
+be committed. This mirrors exactly how the mined pool's own
+`candidates.jsonl` was already excluded. Copy this data in the same way it
+was copied here originally: from the sibling worktree that ran the
+judge-discovery and relevance-matrix pipeline
+(`e2e/judge-calibration/evals/judges.yaml`, `mined/matrix.jsonl`,
+`mined/matrix/`, and `mined/candidates.jsonl`).
 
 ## Layout
 
 ```
 grader/
-  server.py            entry point (argparse: --port, --mined-dir, --evals-dir, --no-browser)
+  server.py            entry point (argparse: --port, --judges-path, --mined-dir, --evals-dir, --no-browser)
   backend/
-    app.py              HTTP routing + AppContext (state, mutations, locking)
-    candidates.py        loads candidates.jsonl; the id allowlist lives here
-    labels_store.py      mined/labels.yaml flat-map read/write (hand-rolled, stdlib-only)
-    included_store.py    mined/included.json (the "mark for export" flags)
-    suggestions_store.py cadence + cache for the heuristic pre-fill
-    similarity.py         the tokenize/cosine-similarity/suggest heuristic itself
-    export.py             curation logic -> evals/labels.yaml
+    app.py               HTTP routing + AppContext (state, mutations, locking)
+    judges.py            evals/judges.yaml loader; hand-rolled parser for its fixed
+                          (PyYAML-generated) block-sequence-of-mappings shape; the
+                          judge-id half of the security allowlist lives here
+    matrix.py            mined/matrix.jsonl loader; the candidate-id half of the
+                          security allowlist lives here; resolves conversation_draft
+                          paths from trusted, already-loaded records only
+    conversation_draft.py parses a narrow (user, assistant) draft yaml file
+    labels_store.py      the real evals/labels.yaml composite-key flat-map read/write
+                          (hand-rolled, stdlib-only, atomic write)
   static/
-    index.html, style.css, app.js    the single-page frontend
-  tests/                unittest suite (67 tests): stores, similarity, export,
-                         id allowlist, and a real in-process HTTP integration
-                         test (including path-traversal / unknown-id security cases)
-  scripts/
-    simulate_grading.py  grades ~20 real candidates via the live API, to
-                          exercise the suggestion-recompute cadence without
-                          20 rounds of manual clicking
+    index.html, style.css, app.js    the single-page frontend (judge picker -> judge + cell review)
+  tests/                unittest suite: parsers (judges.yaml, matrix.jsonl,
+                         conversation drafts), labels_store round-trip, and a real
+                         in-process HTTP integration test (including path-traversal /
+                         unknown-id security cases for BOTH judge_id and candidate_id)
 ```
 
 ## Tests
@@ -124,14 +161,36 @@ python3 -m unittest discover -s tests -t .
 ```
 
 No `pip install` required -- everything here is Python's standard library
-(`http.server`, `unittest`, `collections.Counter`, `json`, `urllib`).
+(`http.server`, `unittest`, `json`, `urllib`).
 
-## Security note: candidate-id allowlist
+## Security note: judge-id AND candidate-id allowlist
 
-Every endpoint that takes a candidate id (`/api/candidate/<id>`, its
-`/conversation` sub-route, `/api/grade`, `/api/include`) checks the id
-against `CandidateStore.is_known_id` -- built from the ids actually present
-in `candidates.jsonl` -- *before* it is used to build any filesystem path.
-An id outside that allowlist (including path-traversal attempts) is
-rejected with 404 and never touches the filesystem. See
-`tests/test_app_integration.py::test_path_traversal_id_rejected_without_touching_filesystem`.
+Every endpoint that takes a judge id and/or candidate id (`/api/judge`,
+`/api/cell`, `/api/grade`) validates the judge id against
+`JudgeRegistry.is_known_id` (built from `evals/judges.yaml`) and the
+`(judge_id, candidate_id)` pair against `MatrixStore.is_known_pair` (built
+from `mined/matrix.jsonl`) *before* any filesystem access. A conversation
+draft's path is only ever taken from the already-loaded, trusted matrix
+record -- never reconstructed by concatenating raw request input into a
+path -- so a path-traversal-shaped id is rejected at the allowlist check
+and never reaches a file read. See
+`tests/test_app_integration.py::test_path_traversal_judge_id_rejected_without_touching_filesystem`
+and its candidate-id counterpart.
+
+## Dropped from v1: manual include/export, and the similarity heuristic
+
+Two things from the earlier bare-candidate grader were deliberately not
+carried forward:
+
+- **The include/export ceremony.** Grading now writes directly to the
+  real `evals/labels.yaml` the moment you press Pass/Fail -- there is no
+  "mark for export" toggle, no separate draft file, and no export button.
+- **The cosine-similarity suggestion heuristic.** It doesn't naturally fit
+  the new narrow-excerpt-per-cell model: each judge today has only 1-3
+  relevant cells (the whole matrix is 5 cells across 4 judges as of this
+  writing), which is too few neighbors per judge to make a similarity
+  suggestion meaningful, and neighbors from a *different* judge's cells
+  aren't comparable at all (a "Pass" under one judge's rubric says nothing
+  about whether a different judge would be satisfied). If the matrix grows
+  large enough per-judge for this to make sense again, it would need to be
+  re-scoped to compare only within a single judge's own graded cells.
