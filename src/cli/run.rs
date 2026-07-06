@@ -82,7 +82,7 @@ pub async fn run(args: RunArgs) -> Result<RunOutcome, RunCmdError> {
     let project = crate::content::project::Project::open(&args.project)?;
     crate::cli::env::load_project_env(&args.project);
     let repo = project.conversations();
-    let keys = resolve_keys(&project, &repo, &args.target)?;
+    let keys = resolve_keys(&project, &repo, &args.target, &args.cases)?;
     let mut outcome = RunOutcome::default();
     for key in &keys {
         let mut conv = repo.load(key)?;
@@ -110,12 +110,17 @@ async fn fill_and_save(
 }
 
 /// Resolve `target` to one or more [`ConversationKey`]s. A file produces a
-/// single key; a directory lists all keys in that run. Providing neither
-/// returns [`RepositoryError::TargetNotFound`].
+/// single key; a directory lists all keys in that run, filtered by
+/// `cases` (empty means every key, unchanged from today). A file target is
+/// not filtered here: its single resolved key either matches downstream or
+/// becomes an `UnknownCase` error, so directory and file targets share one
+/// filtering point rather than branching. Providing neither returns
+/// [`RepositoryError::TargetNotFound`].
 fn resolve_keys(
     project: &crate::content::project::Project,
     repo: &impl ConversationRepository,
     target: &std::path::Path,
+    cases: &[String],
 ) -> Result<Vec<ConversationKey>, RunCmdError> {
     if target.to_str().is_none() {
         return Err(RunCmdError::NonUtf8Path {
@@ -145,7 +150,11 @@ fn resolve_keys(
     })?;
     if is_dir {
         let run_id = super::project_relative(project, target);
-        return repo.list(&run_id).map_err(RunCmdError::Repository);
+        let keys = repo.list(&run_id).map_err(RunCmdError::Repository)?;
+        return Ok(keys
+            .into_iter()
+            .filter(|key| crate::cli::case_filter_matches(key.name.as_str(), cases))
+            .collect());
     }
     Err(RunCmdError::Repository(RepositoryError::TargetNotFound {
         path: target.to_path_buf(),
@@ -276,6 +285,48 @@ mod tests {
                 "assistant in {name} should be filled"
             );
         }
+    }
+
+    #[tokio::test]
+    async fn case_filter_on_a_directory_target_processes_only_the_named_keys() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        for name in ["a.yaml", "b.yaml", "c.yaml"] {
+            write_conversation(&tmp.path().join(name), None, false);
+        }
+
+        let mut args = args_for(tmp.path());
+        args.cases = vec![String::from("a"), String::from("c")];
+        let outcome = run(args).await.expect("filtered run dir");
+
+        assert_eq!(outcome.conversations_processed, 2);
+        assert_eq!(outcome.blank_assistants_filled, 2);
+
+        for name in ["a.yaml", "c.yaml"] {
+            let body = fs::read_to_string(tmp.path().join(name)).expect("read back");
+            let conv = Conversation::from_yaml_str(&body).expect("parse");
+            let assistant = conv.session.last().expect("assistant");
+            assert!(assistant.body.is_some(), "{name} should be filled");
+        }
+
+        let untouched = fs::read_to_string(tmp.path().join("b.yaml")).expect("read back");
+        let conv = Conversation::from_yaml_str(&untouched).expect("parse");
+        let assistant = conv.session.last().expect("assistant");
+        assert!(
+            assistant.body.is_none(),
+            "b.yaml was not named by --case and must be left untouched"
+        );
+    }
+
+    #[tokio::test]
+    async fn empty_case_filter_on_a_directory_target_is_unchanged_from_today() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        for name in ["a.yaml", "b.yaml"] {
+            write_conversation(&tmp.path().join(name), None, false);
+        }
+
+        let outcome = run(args_for(tmp.path())).await.expect("unfiltered run dir");
+
+        assert_eq!(outcome.conversations_processed, 2);
     }
 
     #[tokio::test]
