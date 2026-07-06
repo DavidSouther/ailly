@@ -36,6 +36,11 @@ pub struct ComparisonTotals {
 }
 
 impl ComparisonTotals {
+    /// The falsification gate documented in `skills/ailly-skill-eval/SKILL.md`
+    /// ("Falsification as an optional layer") and `references/method.md` §6:
+    /// the skill under test must help on at least one assertion the baseline
+    /// arm failed, and must break nothing the baseline arm passed.
+    #[must_use]
     pub fn passes_falsification_gate(&self) -> bool {
         self.improved > 0 && self.regressed == 0
     }

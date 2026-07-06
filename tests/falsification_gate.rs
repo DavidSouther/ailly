@@ -16,8 +16,8 @@
 //! decision the docs, `e2e/patterns-eval/ci.sh`'s Python heredoc, and
 //! `tests/skill_forge_clean_comments_review.rs` each re-derive by hand from
 //! those buckets, has no single, tested, first-class Rust implementation.
-//! That is the gap this test drives: `ComparisonTotals::passes_falsification_gate`
-//! does not exist yet.
+//! That is the gap this test drives:
+//! `ComparisonTotals::passes_falsification_gate` does not exist yet.
 //!
 //! This test pins the gate's decision against three fixture pairs built with
 //! no live model calls, mirroring the three qualitatively distinct results a
@@ -30,10 +30,10 @@
 //!      pass.
 //!   3. **Fails as vacuous** -- the skill changes nothing (an unhelpfully
 //!      lenient checker that never fails baseline output). `references/
-//!      method.md` §6 calls a gate that never fails on this shape "the
-//!      point." This is also the exact bucket shape (`improved: 0, regressed:
-//!      0`) the one comparison artifact found on disk during this feature's
-//!      research showed -- see design.md's Prior Art.
+//!      method.md` §6 calls a gate that never fails on this shape "the point."
+//!      This is also the exact bucket shape (`improved: 0, regressed: 0`) the
+//!      one comparison artifact found on disk during this feature's research
+//!      showed -- see design.md's Prior Art.
 
 use std::collections::BTreeMap;
 
