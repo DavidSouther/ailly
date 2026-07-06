@@ -23,11 +23,11 @@ re-confirmation described in design.md's Specification step 2. See
 
 ## Steps checklist
 
-- [ ] Step 0 — API surface stub (signature only, no logic)
-- [ ] Step 1 — Unblock the "clears the gate" assertion (scenario 1); add `mod tests` + first unit test
-- [ ] Step 2 — Unblock the "fails on regression" assertion (scenario 2); add second unit test
-- [ ] Step 3 — Confirm the "fails as vacuous" assertion (scenario 3) needs no further generalization; add third unit test
-- [ ] Step 4 — Doc comment, formatting, and whole-workspace lint/test confirmation
+- [x] Step 0 — API surface stub (signature only, no logic)
+- [x] Step 1 — Unblock the "clears the gate" assertion (scenario 1); add `mod tests` + first unit test
+- [x] Step 2 — Unblock the "fails on regression" assertion (scenario 2); add second unit test
+- [x] Step 3 — Confirm the "fails as vacuous" assertion (scenario 3) needs no further generalization; add third unit test
+- [x] Step 4 — Doc comment, formatting, and whole-workspace lint/test confirmation
 
 ---
 
