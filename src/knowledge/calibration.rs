@@ -88,8 +88,12 @@ pub enum CalibrationError {
     /// be one case per example).
     #[error("calibration case {case:?} matched {count} conversations, expected exactly one")]
     MultipleMatches { case: String, count: usize },
-    /// A case's single match carried a number of assertions other than one
-    /// (a calibration case must carry exactly one `judge` assertion).
+    /// A case's single match carried zero assertions (a calibration case
+    /// must carry exactly one `judge` assertion).
+    #[error("calibration case {case:?} carried no assertions, expected exactly one")]
+    NoAssertions { case: String },
+    /// A case's single match carried more than one assertion (a calibration
+    /// case must carry exactly one `judge` assertion).
     #[error("calibration case {case:?} carried {count} assertions, expected exactly one")]
     MultipleAssertions { case: String, count: usize },
     /// A case name has no entry in the supplied `labels` map.
@@ -142,12 +146,15 @@ pub fn compute_calibration(
             // exists to prevent.
             return Err(CalibrationError::NoMatch { case: case_name });
         }
-        let assertion_count = single_match.assertions.len();
-        if assertion_count != 1 {
-            return Err(CalibrationError::MultipleAssertions {
-                case: case_name,
-                count: assertion_count,
-            });
+        match single_match.assertions.len() {
+            1 => {}
+            0 => return Err(CalibrationError::NoAssertions { case: case_name }),
+            count => {
+                return Err(CalibrationError::MultipleAssertions {
+                    case: case_name,
+                    count,
+                });
+            }
         }
         let Some(&human_verdict) = labels.get(&case_name) else {
             return Err(CalibrationError::MissingLabel { case: case_name });
@@ -550,6 +557,26 @@ mod tests {
                 Err(CalibrationError::MultipleAssertions { case, count: 2 }) if case == "example-01"
             ),
             "expected MultipleAssertions {{ count: 2 }}, got {result:?}"
+        );
+    }
+
+    #[test]
+    fn zero_assertions_on_one_match_is_rejected_with_no_assertions_not_multiple() {
+        let report = report_with(vec![case(
+            "example-01",
+            vec![match_report("a.yaml", vec![])],
+        )]);
+        let labels = BTreeMap::new();
+
+        let result = compute_calibration(&report, &labels);
+
+        assert!(
+            matches!(
+                &result,
+                Err(CalibrationError::NoAssertions { case }) if case == "example-01"
+            ),
+            "expected the distinct NoAssertions variant (not MultipleAssertions{{count: 0}}), \
+             got {result:?}"
         );
     }
 
