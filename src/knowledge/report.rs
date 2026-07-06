@@ -726,11 +726,15 @@ mod tests {
     fn fewer_than_two_diffs_yields_insufficient_pairs() {
         match compute_paired_difference(&[]) {
             PairedDifferenceTest::InsufficientPairs { n } => assert_eq!(n, 0),
-            other => panic!("expected InsufficientPairs, got {other:?}"),
+            computed @ PairedDifferenceTest::Computed { .. } => {
+                panic!("expected InsufficientPairs, got {computed:?}")
+            }
         }
         match compute_paired_difference(&[1.0]) {
             PairedDifferenceTest::InsufficientPairs { n } => assert_eq!(n, 1),
-            other => panic!("expected InsufficientPairs, got {other:?}"),
+            computed @ PairedDifferenceTest::Computed { .. } => {
+                panic!("expected InsufficientPairs, got {computed:?}")
+            }
         }
     }
 
@@ -752,7 +756,9 @@ mod tests {
                 assert!((p_value - 1.0).abs() < 1e-9);
                 assert!(!significant);
             }
-            other => panic!("expected Computed, got {other:?}"),
+            insufficient @ PairedDifferenceTest::InsufficientPairs { .. } => {
+                panic!("expected Computed, got {insufficient:?}")
+            }
         }
     }
 
@@ -775,7 +781,9 @@ mod tests {
                 assert!((p_value - 0.0).abs() < 1e-9);
                 assert!(significant);
             }
-            other => panic!("expected Computed, got {other:?}"),
+            insufficient @ PairedDifferenceTest::InsufficientPairs { .. } => {
+                panic!("expected Computed, got {insufficient:?}")
+            }
         }
     }
 

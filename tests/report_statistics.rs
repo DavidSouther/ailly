@@ -50,7 +50,7 @@ use ailly_two::knowledge::eval::EvalReport;
 use ailly_two::knowledge::report::PairedDifferenceTest;
 use ailly_two::knowledge::report::compute_comparison;
 
-/// Reuses `tests/report_cmd.rs`'s exact ARM_A/ARM_B assertion split (3
+/// Reuses `tests/report_cmd.rs`'s exact `ARM_A`/`ARM_B` assertion split (3
 /// improved, 1 regressed, 4 unchanged-pass, 2 unchanged-fail — 10 paired
 /// assertions total, already proven and green in that file) so the
 /// paired-difference numbers asserted below cross-check against an
@@ -106,7 +106,7 @@ const ARM_B_JSON: &str = r#"{
 
 /// Given two runs whose paired assertions already bucket into 3 improved,
 /// 1 regressed, 4 unchanged-pass, 2 unchanged-fail (10 pairs; diffs
-/// = [+1,+1,+1,-1,0,0,0,0,0,0] using the "arm_b relative to arm_a" sign
+/// = [+1,+1,+1,-1,0,0,0,0,0,0] using the "`arm_b` relative to `arm_a`" sign
 /// convention: pass=1, fail=0, diff = b - a):
 ///
 /// When `compute_comparison` runs,
@@ -184,7 +184,9 @@ fn compute_comparison_reports_paired_difference_test_with_standard_error() {
                 "p ~0.34 does not clear the α = 0.05 significance bar"
             );
         }
-        other => panic!("expected PairedDifferenceTest::Computed, got {other:?}"),
+        insufficient @ PairedDifferenceTest::InsufficientPairs { .. } => {
+            panic!("expected PairedDifferenceTest::Computed, got {insufficient:?}")
+        }
     }
 }
 
