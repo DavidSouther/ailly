@@ -35,6 +35,12 @@ pub struct ComparisonTotals {
     pub total_assertions: usize,
 }
 
+impl ComparisonTotals {
+    pub fn passes_falsification_gate(&self) -> bool {
+        todo!()
+    }
+}
+
 /// Per-case comparison data.
 #[derive(Serialize, Deserialize, Debug)]
 pub struct CaseComparison {
