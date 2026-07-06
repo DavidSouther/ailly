@@ -1,5 +1,6 @@
 //! Feature test for Feature F — `report`'s statistical-rigor upgrade.
-//! See `.ailly/developer/2026-07-06-A-ailly-evals/feature-f-report-stats/design.md`.
+//! See `.ailly/developer/2026-07-06-A-ailly-evals/feature-f-report-stats/
+//! design.md`.
 //!
 //! Two independent capabilities land together in this feature-step:
 //!
@@ -127,8 +128,14 @@ fn compute_comparison_reports_paired_difference_test_with_standard_error() {
     let comparison = compute_comparison(&arm_a, &arm_b);
 
     // Then: existing bucket counts are unchanged.
-    assert_eq!(comparison.totals.improved, 3, "3 improved (regression guard)");
-    assert_eq!(comparison.totals.regressed, 1, "1 regressed (regression guard)");
+    assert_eq!(
+        comparison.totals.improved, 3,
+        "3 improved (regression guard)"
+    );
+    assert_eq!(
+        comparison.totals.regressed, 1,
+        "1 regressed (regression guard)"
+    );
     assert_eq!(
         comparison.totals.unchanged_pass, 4,
         "4 unchanged pass (regression guard)"

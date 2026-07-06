@@ -10,6 +10,38 @@ use serde::Serialize;
 
 use crate::knowledge::eval::EvalReport;
 
+/// The α level used for the paired-difference test's significance verdict.
+/// See design.md Summary for why 0.05 (not a project-research-stated value)
+/// was chosen as the conservative default.
+pub const PAIRED_DIFFERENCE_ALPHA: f64 = 0.05;
+
+/// Two-tailed paired Student's t-test over every assertion pair
+/// `compute_comparison` already classifies as `Improved` (+1.0),
+/// `Regressed` (-1.0), or `Unchanged{Pass,Fail}` (0.0).
+#[derive(Serialize, Deserialize, Debug)]
+#[serde(tag = "status", rename_all = "snake_case")]
+pub enum PairedDifferenceTest {
+    /// Fewer than 2 paired assertions exist between the two arms. A sample
+    /// variance (and therefore a standard error and a t-statistic) cannot
+    /// be estimated from 0 or 1 observations.
+    InsufficientPairs { n: usize },
+    Computed {
+        n: usize,
+        mean_difference: f64,
+        sample_std_dev: f64,
+        /// Standard error of the mean: `sample_std_dev / sqrt(n)`.
+        standard_error: f64,
+        degrees_of_freedom: usize,
+        /// `None` iff `sample_std_dev == 0.0` — see the zero-variance
+        /// convention below. `p_value`/`significant` stay well-defined by
+        /// convention even when the t-statistic itself is not a real
+        /// number (a 0/0 or x/0 limit).
+        t_statistic: Option<f64>,
+        p_value: f64,
+        significant: bool,
+    },
+}
+
 /// Top-level comparison report serialized to JSON.
 #[derive(Serialize, Deserialize, Debug)]
 pub struct ComparisonReport {
@@ -23,6 +55,7 @@ pub struct ComparisonReport {
     /// `arm_b`, so this is the gate's verdict on the totals as given, not a
     /// claim that this comparison *is* a baseline falsification run.
     pub falsification_gate: bool,
+    pub paired_difference: PairedDifferenceTest,
     pub cases: Vec<CaseComparison>,
 }
 
@@ -146,7 +179,32 @@ pub fn compute_comparison(arm_a: &EvalReport, arm_b: &EvalReport) -> ComparisonR
         falsification_gate: totals.passes_falsification_gate(),
         totals,
         cases,
+        paired_difference: todo!(),
     }
+}
+
+/// Regularized incomplete beta function `I_x(a, b)`, computed via Lentz's
+/// continued-fraction method with a Lanczos log-gamma approximation for the
+/// beta normalization constant. Used by [`paired_difference_p_value`] to
+/// derive the Student's-t two-tailed survival-function p-value.
+fn regularized_incomplete_beta(x: f64, a: f64, b: f64) -> f64 {
+    let _ = (x, a, b);
+    todo!()
+}
+
+/// Two-tailed p-value for a Student's-t statistic via the closed-form
+/// relationship to the regularized incomplete beta function:
+/// `p = I_x(df/2, 1/2)`, `x = df / (df + t^2)`.
+fn paired_difference_p_value(t: f64, df: usize) -> f64 {
+    let _ = (t, df);
+    todo!()
+}
+
+/// Fold a slice of per-pair diffs (`+1.0`/`-1.0`/`0.0`) into a
+/// [`PairedDifferenceTest`].
+fn compute_paired_difference(diffs: &[f64]) -> PairedDifferenceTest {
+    let _ = diffs;
+    todo!()
 }
 
 /// Render a single [`EvalReport`] as a markdown summary.
@@ -380,6 +438,7 @@ mod tests {
                 ..Default::default()
             },
             falsification_gate: true,
+            paired_difference: PairedDifferenceTest::InsufficientPairs { n: 0 },
             cases: vec![],
         };
         assert!(render_comparison_markdown(&passing, "arm-a", "arm-b").contains("PASS"));

@@ -142,6 +142,9 @@ impl Assertion {
                 check_tool_call_count(conversation, tool.as_deref(), op, *value)
             }
             Assertion::ToolCallOrder { sequence } => check_tool_call_order(conversation, sequence),
+            Assertion::ToolCallCollection { tools } => {
+                check_tool_call_collection(conversation, tools)
+            }
 
             Assertion::JsonPath { path, op, value } => {
                 check_json_path(conversation, path, op, value)
@@ -1321,6 +1324,15 @@ fn check_tool_call_order(conversation: &Conversation, sequence: &[String]) -> As
             ),
         }
     }
+}
+
+/// Order-insensitive multiset check: every name in `tools` must appear in
+/// the observed tool-use calls at least as many times as it is listed.
+/// Subset-of-multiset, not exact equality — extra calls (of any tool) are
+/// tolerated, and order carries no meaning.
+fn check_tool_call_collection(conversation: &Conversation, tools: &[String]) -> AssertionOutcome {
+    let _ = (conversation, tools);
+    todo!()
 }
 
 #[cfg(test)]
