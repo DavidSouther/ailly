@@ -31,11 +31,19 @@ enum Command {
     Assemble {
         /// Assembly name (resolves to `<project>/assemblies/<name>.yaml`).
         name: String,
+        /// Restrict to the named case(s). Repeatable (`--case a --case b`).
+        /// Omitted means every matrix binding, unchanged from today.
+        #[arg(long = "case")]
+        cases: Vec<String>,
     },
     /// Fill blank assistant turns by calling the model.
     Run {
         /// Conversation file or run directory.
         target: PathBuf,
+        /// Restrict to the named case(s). Repeatable (`--case a --case b`).
+        /// Omitted means every resolved conversation, unchanged from today.
+        #[arg(long = "case")]
+        cases: Vec<String>,
     },
     /// Score conversations against an evaluation suite.
     Eval {
@@ -44,6 +52,11 @@ enum Command {
         /// Conversation file or run directory to evaluate.
         #[arg(long)]
         over: PathBuf,
+        /// Restrict to the named case(s). Repeatable (`--case a --case b`).
+        /// Omitted means every conversation and suite case, unchanged from
+        /// today.
+        #[arg(long = "case")]
+        cases: Vec<String>,
     },
     /// Summarise one eval run, or compare two runs side-by-side.
     Report {
@@ -65,11 +78,11 @@ enum Command {
 fn main() -> ExitCode {
     let cli = Cli::parse();
     match cli.command {
-        Command::Assemble { name } => {
+        Command::Assemble { name, cases } => {
             match assemble_run(AssembleArgs {
                 project: cli.project,
                 name,
-                cases: vec![],
+                cases,
             }) {
                 Ok(run_dir) => {
                     println!("{}", run_dir.display());
@@ -81,7 +94,7 @@ fn main() -> ExitCode {
                 }
             }
         }
-        Command::Run { target } => {
+        Command::Run { target, cases } => {
             let rt = tokio::runtime::Builder::new_current_thread()
                 .enable_all()
                 .build()
@@ -89,7 +102,7 @@ fn main() -> ExitCode {
             match rt.block_on(run_cmd(RunArgs {
                 project: cli.project,
                 target,
-                cases: vec![],
+                cases,
             })) {
                 Ok(_outcome) => ExitCode::SUCCESS,
                 Err(err) => {
@@ -98,7 +111,7 @@ fn main() -> ExitCode {
                 }
             }
         }
-        Command::Eval { suite, over } => {
+        Command::Eval { suite, over, cases } => {
             let rt = tokio::runtime::Builder::new_current_thread()
                 .enable_all()
                 .build()
@@ -107,7 +120,7 @@ fn main() -> ExitCode {
                 project: cli.project,
                 suite,
                 over,
-                cases: vec![],
+                cases,
             })) {
                 Ok(outcome) => {
                     println!("{}", outcome.report_path.display());
@@ -161,6 +174,90 @@ fn main() -> ExitCode {
                     ExitCode::FAILURE
                 }
             }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn repeated_case_flag_parses_into_a_vec_for_each_command() {
+        let assemble = Cli::parse_from([
+            "ailly",
+            "assemble",
+            "invocation",
+            "--case",
+            "a",
+            "--case",
+            "b",
+        ]);
+        match assemble.command {
+            Command::Assemble { name, cases } => {
+                assert_eq!(name, "invocation");
+                assert_eq!(cases, vec![String::from("a"), String::from("b")]);
+            }
+            other => panic!("expected Assemble, got {other:?}"),
+        }
+
+        let run = Cli::parse_from(["ailly", "run", "runs/id", "--case", "a", "--case", "b"]);
+        match run.command {
+            Command::Run { target, cases } => {
+                assert_eq!(target, PathBuf::from("runs/id"));
+                assert_eq!(cases, vec![String::from("a"), String::from("b")]);
+            }
+            other => panic!("expected Run, got {other:?}"),
+        }
+
+        let eval = Cli::parse_from([
+            "ailly",
+            "eval",
+            "invocation",
+            "--over",
+            "runs/id",
+            "--case",
+            "a",
+            "--case",
+            "b",
+        ]);
+        match eval.command {
+            Command::Eval { suite, over, cases } => {
+                assert_eq!(suite, "invocation");
+                assert_eq!(over, PathBuf::from("runs/id"));
+                assert_eq!(cases, vec![String::from("a"), String::from("b")]);
+            }
+            other => panic!("expected Eval, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn omitting_case_parses_to_an_empty_vec() {
+        let assemble = Cli::parse_from(["ailly", "assemble", "invocation"]);
+        match assemble.command {
+            Command::Assemble { cases, .. } => assert!(cases.is_empty()),
+            other => panic!("expected Assemble, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn case_flag_combined_with_other_flags_does_not_disturb_their_parsing() {
+        let eval = Cli::parse_from([
+            "ailly",
+            "eval",
+            "invocation",
+            "--case",
+            "x",
+            "--over",
+            "runs/id",
+        ]);
+        match eval.command {
+            Command::Eval { suite, over, cases } => {
+                assert_eq!(suite, "invocation");
+                assert_eq!(over, PathBuf::from("runs/id"));
+                assert_eq!(cases, vec![String::from("x")]);
+            }
+            other => panic!("expected Eval, got {other:?}"),
         }
     }
 }
