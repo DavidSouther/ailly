@@ -147,11 +147,11 @@ pub fn compute_calibration(
             excluded += 1;
             Agreement::Excluded
         } else {
-            // TODO(plan Step 4): compare `validated_case.outcome` against
-            // `validated_case.human_verdict` per the outcome-to-agreement
-            // mapping; every non-excluded outcome agrees for now.
-            agreements += 1;
-            Agreement::Agree
+            let agreement = map_agreement(&validated_case.outcome, validated_case.human_verdict);
+            if agreement == Agreement::Agree {
+                agreements += 1;
+            }
+            agreement
         };
         examples.push(ExampleAgreement {
             id: validated_case.case_name,
@@ -192,6 +192,21 @@ struct ValidatedCase {
 /// (`"pass"`/`"fail"`/`"malformed"`) is folded into the agreement rate.
 fn is_excluded_outcome(outcome: &str) -> bool {
     matches!(outcome, "errored" | "deferred")
+}
+
+/// Map a non-excluded judge outcome against its human label.
+///
+/// `"pass"` agrees with [`HumanVerdict::Pass`], disagrees with `Fail`;
+/// `"fail"` agrees with [`HumanVerdict::Fail`], disagrees with `Pass`;
+/// `"malformed"` (and any other unrecognized outcome string) always
+/// disagrees — a judge that cannot commit to a verdict, or that produced an
+/// outcome this closed set doesn't expect, is never "agreeing" with a human
+/// who did commit to one.
+fn map_agreement(outcome: &str, human_verdict: HumanVerdict) -> Agreement {
+    match (outcome, human_verdict) {
+        ("pass", HumanVerdict::Pass) | ("fail", HumanVerdict::Fail) => Agreement::Agree,
+        _ => Agreement::Disagree,
+    }
 }
 
 /// The case's `name:`, falling back to a positional identifier for the
@@ -334,6 +349,74 @@ mod tests {
             .find(|e| e.id == "example-02")
             .expect("example-02 present in breakdown");
         assert_eq!(example_02.agreement, Agreement::Excluded);
+    }
+
+    #[test]
+    fn malformed_outcome_always_disagrees_regardless_of_human_verdict() {
+        let report = report_with(vec![
+            case(
+                "example-01",
+                vec![match_report("a.yaml", vec![assertion("malformed")])],
+            ),
+            case(
+                "example-02",
+                vec![match_report("b.yaml", vec![assertion("malformed")])],
+            ),
+        ]);
+        let mut labels = BTreeMap::new();
+        labels.insert(String::from("example-01"), HumanVerdict::Pass);
+        labels.insert(String::from("example-02"), HumanVerdict::Fail);
+
+        let calibration =
+            compute_calibration(&report, &labels).expect("both cases are well-formed");
+
+        for id in ["example-01", "example-02"] {
+            let example = calibration
+                .examples
+                .iter()
+                .find(|e| e.id == id)
+                .unwrap_or_else(|| panic!("{id} present in breakdown"));
+            assert_eq!(
+                example.agreement,
+                Agreement::Disagree,
+                "malformed must disagree regardless of human_verdict, got {example:#?}"
+            );
+        }
+        assert_eq!(calibration.agreements, 0);
+    }
+
+    #[test]
+    fn pass_agrees_with_pass_label_and_disagrees_with_fail_label() {
+        let report = report_with(vec![
+            case(
+                "example-01",
+                vec![match_report("a.yaml", vec![assertion("pass")])],
+            ),
+            case(
+                "example-02",
+                vec![match_report("b.yaml", vec![assertion("pass")])],
+            ),
+        ]);
+        let mut labels = BTreeMap::new();
+        labels.insert(String::from("example-01"), HumanVerdict::Pass);
+        labels.insert(String::from("example-02"), HumanVerdict::Fail);
+
+        let calibration =
+            compute_calibration(&report, &labels).expect("both cases are well-formed");
+
+        let example_01 = calibration
+            .examples
+            .iter()
+            .find(|e| e.id == "example-01")
+            .expect("example-01 present");
+        let example_02 = calibration
+            .examples
+            .iter()
+            .find(|e| e.id == "example-02")
+            .expect("example-02 present");
+        assert_eq!(example_01.agreement, Agreement::Agree);
+        assert_eq!(example_02.agreement, Agreement::Disagree);
+        assert_eq!(calibration.agreements, 1);
     }
 
     #[test]
