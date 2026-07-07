@@ -98,7 +98,11 @@ pub enum EvalCmdError {
         #[source]
         source: io::Error,
     },
-    #[error("--case {requested:?} matched nothing; available cases: {available:?}")]
+    #[error(
+        "{} matched nothing; available cases: {}",
+        crate::cli::format_case_flags(requested),
+        available.join(", ")
+    )]
     UnknownCase {
         requested: Vec<String>,
         available: Vec<String>,
@@ -140,13 +144,12 @@ pub async fn run(args: EvalCmdArgs) -> Result<EvalCmdOutcome, EvalCmdError> {
     let report_id = report_id_for(&args.over);
     let all_keys = conversations_repository.list(&RunId::default())?;
     let available: Vec<&str> = all_keys.iter().map(|k| k.name.as_str()).collect();
-    let missing = crate::cli::unmatched_cases(&args.cases, &available);
-    if !missing.is_empty() {
-        return Err(EvalCmdError::UnknownCase {
-            requested: missing,
-            available: available.iter().map(|s| (*s).to_string()).collect(),
-        });
-    }
+    crate::cli::check_cases(&args.cases, &available, |requested, available| {
+        EvalCmdError::UnknownCase {
+            requested,
+            available,
+        }
+    })?;
     let keys: Vec<ConversationKey> = all_keys
         .into_iter()
         .filter(|key| case_filter_matches(key.name.as_str(), &args.cases))

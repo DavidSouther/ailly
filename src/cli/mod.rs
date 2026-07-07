@@ -49,9 +49,42 @@ pub(crate) fn unmatched_cases(cases: &[String], available: &[&str]) -> Vec<Strin
         .collect()
 }
 
+/// Validate `cases` against `available` once, at the point each command
+/// already has both lists, instead of re-deriving the missing/matched check
+/// per call site. `unknown_case` builds the caller's own error variant from
+/// the missing and available names; each of `assemble`/`run`/`eval` keeps
+/// its own `UnknownCase`-shaped variant, so this only shares the check
+/// itself, not the error type.
+pub(crate) fn check_cases<E>(
+    cases: &[String],
+    available: &[&str],
+    unknown_case: impl FnOnce(Vec<String>, Vec<String>) -> E,
+) -> Result<(), E> {
+    let missing = unmatched_cases(cases, available);
+    if missing.is_empty() {
+        Ok(())
+    } else {
+        let available = available.iter().map(|s| (*s).to_string()).collect();
+        Err(unknown_case(missing, available))
+    }
+}
+
+/// Render `names` as the repeatable `--case <name>` flags a user would type
+/// to request them again, so an `UnknownCase` message is copy-pastable
+/// rather than a bare `Debug`-printed list (`["a", "b"]`).
+pub(crate) fn format_case_flags(names: &[String]) -> String {
+    names
+        .iter()
+        .map(|n| format!("--case {n}"))
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
 #[cfg(test)]
 mod tests {
     use super::case_filter_matches;
+    use super::check_cases;
+    use super::format_case_flags;
     use super::unmatched_cases;
 
     #[test]
@@ -103,5 +136,37 @@ mod tests {
     #[test]
     fn unmatched_cases_is_empty_when_cases_is_empty() {
         assert_eq!(unmatched_cases(&[], &["a", "b"]), Vec::<String>::new());
+    }
+
+    #[test]
+    fn check_cases_is_ok_when_every_requested_value_matches() {
+        let cases = vec![String::from("a")];
+        let result: Result<(), String> =
+            check_cases(&cases, &["a", "b"], |requested, available| {
+                format!("{requested:?} {available:?}")
+            });
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn check_cases_builds_the_callers_error_from_missing_and_available() {
+        let cases = vec![String::from("a"), String::from("nope")];
+        let err = check_cases(&cases, &["a", "b"], |requested, available| {
+            (requested, available)
+        })
+        .expect_err("nope is not available");
+        assert_eq!(err.0, vec![String::from("nope")]);
+        assert_eq!(err.1, vec![String::from("a"), String::from("b")]);
+    }
+
+    #[test]
+    fn format_case_flags_joins_names_as_repeatable_flags() {
+        let names = vec![String::from("a"), String::from("b")];
+        assert_eq!(format_case_flags(&names), "--case a --case b");
+    }
+
+    #[test]
+    fn format_case_flags_is_empty_for_an_empty_list() {
+        assert_eq!(format_case_flags(&[]), "");
     }
 }

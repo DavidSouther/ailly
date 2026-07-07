@@ -53,7 +53,11 @@ pub enum RunCmdError {
     TargetNotFound { path: PathBuf },
     #[error("target path {path:?} is not valid UTF-8")]
     NonUtf8Path { path: PathBuf },
-    #[error("--case {requested:?} matched nothing; available cases: {available:?}")]
+    #[error(
+        "{} matched nothing; available cases: {}",
+        crate::cli::format_case_flags(requested),
+        available.join(", ")
+    )]
     UnknownCase {
         requested: Vec<String>,
         available: Vec<String>,
@@ -142,13 +146,12 @@ fn resolve_keys(
         let name =
             ConversationName::from(target.file_stem().and_then(|s| s.to_str()).unwrap_or(""));
         let available = vec![name.as_str()];
-        let missing = crate::cli::unmatched_cases(cases, &available);
-        if !missing.is_empty() {
-            return Err(RunCmdError::UnknownCase {
-                requested: missing,
-                available: available.iter().map(|s| (*s).to_string()).collect(),
-            });
-        }
+        crate::cli::check_cases(cases, &available, |requested, available| {
+            RunCmdError::UnknownCase {
+                requested,
+                available,
+            }
+        })?;
         let run_id = super::project_relative(project, target.parent().unwrap_or(target));
         return Ok(vec![ConversationKey { run_id, name }]);
     }
@@ -162,13 +165,12 @@ fn resolve_keys(
         let run_id = super::project_relative(project, target);
         let keys = repo.list(&run_id).map_err(RunCmdError::Repository)?;
         let available: Vec<&str> = keys.iter().map(|k| k.name.as_str()).collect();
-        let missing = crate::cli::unmatched_cases(cases, &available);
-        if !missing.is_empty() {
-            return Err(RunCmdError::UnknownCase {
-                requested: missing,
-                available: available.iter().map(|s| (*s).to_string()).collect(),
-            });
-        }
+        crate::cli::check_cases(cases, &available, |requested, available| {
+            RunCmdError::UnknownCase {
+                requested,
+                available,
+            }
+        })?;
         return Ok(keys
             .into_iter()
             .filter(|key| crate::cli::case_filter_matches(key.name.as_str(), cases))

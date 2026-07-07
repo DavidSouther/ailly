@@ -7,7 +7,8 @@
 use std::path::PathBuf;
 
 use crate::cli::case_filter_matches;
-use crate::cli::unmatched_cases;
+use crate::cli::check_cases;
+use crate::cli::format_case_flags;
 use crate::content::assembly::AssemblyError;
 use crate::content::assembly::RenderError;
 use crate::content::project::Project;
@@ -45,7 +46,11 @@ pub enum AssembleError {
         #[source]
         source: Box<AssembleError>,
     },
-    #[error("--case {requested:?} matched nothing; available cases: {available:?}")]
+    #[error(
+        "{} matched nothing; available cases: {}",
+        format_case_flags(requested),
+        available.join(", ")
+    )]
     UnknownCase {
         requested: Vec<String>,
         available: Vec<String>,
@@ -103,13 +108,12 @@ fn run_with_project(
         .map(|b| filename_for(b).trim_end_matches(".yaml").to_string())
         .collect();
     let available: Vec<&str> = names.iter().map(String::as_str).collect();
-    let missing = unmatched_cases(cases, &available);
-    if !missing.is_empty() {
-        return Err(AssembleError::UnknownCase {
-            requested: missing,
-            available: names,
-        });
-    }
+    check_cases(cases, &available, |requested, available| {
+        AssembleError::UnknownCase {
+            requested,
+            available,
+        }
+    })?;
 
     let mut tx = project.begin_run();
     for (binding, name) in bindings.iter().zip(names.iter()) {
