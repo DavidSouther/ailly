@@ -1,0 +1,20 @@
+# Judge-calibration ground truth: human verdicts for (judge, candidate)
+# matrix cells, one flat map across every judge in evals/judges.yaml.
+#
+# Key shape: "<judge_id, '/' -> '__'>__<candidate_id>", e.g.
+#   patterns-eval__baseline__configuring-logging__claude-code-ailly-two-66e52d4e02-001: Pass
+#
+# Written directly by the judge-calibration grader app (e2e/judge-calibration/grader)
+# the moment a human presses Pass or Fail while reviewing a cell -- there is
+# no separate draft/export step. A cell simply absent from this map has not
+# been graded yet ("Inconclusive" in the grader UI skips a cell with no
+# write, same as leaving it out entirely).
+#
+# Values are "Pass" or "Fail", matching src/knowledge/calibration.rs's
+# HumanVerdict serde representation exactly (capitalized, no rename_all).
+
+clean-comments-review__invocation__clean-comments-review__claude-code-resume-f6be232554-001: Pass
+patterns-eval__baseline__emitting-logs__synthetic-live-emitting-logs-baseline-11c4ed-001: Pass
+patterns-eval__baseline__emitting-logs__synthetic-live-emitting-logs-baseline-11c4ed-002: Pass
+patterns-eval__baseline__emitting-logs__synthetic-live-emitting-logs-baseline-11c4ed-003: Pass
+patterns-eval__discovery__paired-add-propagator__claude-code-domain-driven-design-e4cdc623a0-001: Pass

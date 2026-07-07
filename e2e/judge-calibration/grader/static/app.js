@@ -115,6 +115,13 @@ const api = {
     if (!res.ok) return null;
     return res.json();
   },
+  async precheck(judgeId, candidateId) {
+    const res = await fetch(
+      `/api/precheck?judge_id=${encodeURIComponent(judgeId)}&candidate_id=${encodeURIComponent(candidateId)}`
+    );
+    if (!res.ok) return null;
+    return res.json();
+  },
   async grade(judgeId, candidateId, verdict) {
     const res = await fetch("/api/grade", {
       method: "POST",
@@ -147,6 +154,8 @@ const els = {
   metaSource: document.getElementById("meta-source"),
   metaProject: document.getElementById("meta-project"),
   metaMatched: document.getElementById("meta-matched"),
+  precheckSection: document.getElementById("precheck-section"),
+  precheckBody: document.getElementById("precheck-body"),
   userBody: document.getElementById("user-body"),
   assistantBody: document.getElementById("assistant-body"),
 
@@ -283,6 +292,96 @@ function nextUngradedCandidateId() {
   return pool[0].candidate_id;
 }
 
+/* --------------------- deterministic pre-check panel --------------------- *
+ * Purely informational: a cached, real run of the judge's own deterministic
+ * sibling assertions (text_contains/text_not_contains/script) against this
+ * cell's candidate, shown as a second opinion alongside the judge's rubric.
+ * It NEVER pre-fills or auto-submits a Pass/Fail/Inconclusive grade -- see
+ * gradeCurrentCell()/markInconclusive(), which read only currentCandidateId
+ * and the grade buttons, never anything from this panel. */
+let precheckRequestSeq = 0;
+
+function precheckOutcomeLabel(outcome) {
+  switch (outcome) {
+    case "pass":
+      return "pass";
+    case "fail":
+      return "fail";
+    case "errored":
+      return "errored (checker broke, not a candidate failure)";
+    case "malformed":
+      return "malformed assertion";
+    case "skipped":
+      return "skipped";
+    default:
+      return outcome;
+  }
+}
+
+function renderPrecheck(data) {
+  if (!data || !data.available) {
+    els.precheckSection.hidden = true;
+    els.precheckBody.innerHTML = "";
+    return;
+  }
+  const pc = data.precheck;
+  const executed = pc.checks.filter((c) => c.outcome !== "skipped");
+  const passed = executed.filter((c) => c.outcome === "pass").length;
+
+  let summaryText;
+  let summaryClass;
+  if (executed.length === 0) {
+    summaryText =
+      "No deterministic sibling assertions on this case (only judge/tokens/latency) -- no hint available, this is NOT a pass.";
+    summaryClass = "none";
+  } else if (passed === executed.length) {
+    summaryText = `${passed}/${executed.length} deterministic check${executed.length === 1 ? "" : "s"} pass`;
+    summaryClass = "pass";
+  } else {
+    const failing = executed.filter((c) => c.outcome !== "pass");
+    const first = failing[0];
+    const detail = first.reason ? `: ${first.type} check found ${first.reason}` : `: ${first.type} check ${precheckOutcomeLabel(first.outcome)}`;
+    summaryText = `${failing.length}/${executed.length} fail${detail}`;
+    summaryClass = "fail";
+  }
+
+  const rows = pc.checks
+    .map((c) => {
+      const cls = c.outcome;
+      const reason = c.reason ? `<div class="precheck-reason">${escapeHtml(c.reason)}</div>` : "";
+      return `
+        <div class="precheck-row ${cls}">
+          <div class="precheck-row-head">
+            <span class="precheck-type">${escapeHtml(c.type)}</span>
+            <span class="precheck-outcome ${cls}">${escapeHtml(precheckOutcomeLabel(c.outcome))}</span>
+          </div>
+          ${reason}
+        </div>`;
+    })
+    .join("");
+
+  const flattenNote = pc.flattening_applied_for_script_checks
+    ? `<p class="precheck-caption">checked against code from this session's Edit/Write calls, rendered as a code block</p>`
+    : "";
+
+  els.precheckBody.innerHTML = `
+    <div class="precheck-summary ${summaryClass}">${escapeHtml(summaryText)}</div>
+    <div class="precheck-checks">${rows}</div>
+    ${flattenNote}
+    <p class="precheck-disclaimer">Informational only -- a real, deterministic re-run of this judge's own sibling
+      assertions, shown for your own judgment. It never pre-fills or auto-submits Pass/Fail/Inconclusive below, and
+      for mined cells it can be more generous than what the live judge assertion currently sees (see README).</p>
+  `;
+  els.precheckSection.hidden = false;
+}
+
+async function loadPrecheck(judgeId, candidateId) {
+  const seq = ++precheckRequestSeq;
+  const data = await api.precheck(judgeId, candidateId);
+  if (seq !== precheckRequestSeq) return; // a newer cell was opened meanwhile
+  renderPrecheck(data);
+}
+
 async function loadCell(candidateId) {
   const detail = await api.cell(currentJudgeId, candidateId);
   if (!detail) {
@@ -300,6 +399,10 @@ async function loadCell(candidateId) {
 
   els.userBody.innerHTML = renderMarkdownish(detail.user || "");
   els.assistantBody.innerHTML = renderMarkdownish(detail.assistant || "");
+
+  els.precheckSection.hidden = true;
+  els.precheckBody.innerHTML = "";
+  loadPrecheck(currentJudgeId, candidateId);
 
   renderCellList();
   updateProgressLine();

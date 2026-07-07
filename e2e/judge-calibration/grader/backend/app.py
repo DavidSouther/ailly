@@ -7,7 +7,8 @@ codebases.
 
 Security note (judge-id AND candidate-id allowlist): every route that takes
 a judge id and/or candidate id (``/api/judge``, ``/api/cell``,
-``/api/grade``) validates the judge id against ``JudgeRegistry.is_known_id``
+``/api/precheck``, ``/api/grade``) validates the judge id against
+``JudgeRegistry.is_known_id``
 (built from the real ``evals/judges.yaml``) and the (judge id, candidate id)
 pair against ``MatrixStore.is_known_pair`` (built from the real
 ``mined/matrix.jsonl``) *before* any filesystem access. A conversation
@@ -29,6 +30,7 @@ from urllib.parse import parse_qs, urlparse
 from . import conversation_draft, labels_store
 from .judges import JudgeRegistry
 from .matrix import MatrixStore
+from .precheck import PrecheckStore
 
 STATIC_FILES = {
     "/": ("index.html", "text/html; charset=utf-8"),
@@ -43,12 +45,24 @@ VALID_VERDICT_INPUTS = ("pass", "fail")
 class AppContext:
     """Shared, lock-guarded application state for one running server."""
 
-    def __init__(self, judges: JudgeRegistry, matrix: MatrixStore, evals_dir: Path, static_dir: Path):
+    def __init__(
+        self,
+        judges: JudgeRegistry,
+        matrix: MatrixStore,
+        evals_dir: Path,
+        static_dir: Path,
+        precheck: PrecheckStore | None = None,
+    ):
         self.judges = judges
         self.matrix = matrix
         self.evals_dir = Path(evals_dir)
         self.static_dir = Path(static_dir)
         self.labels_path = self.evals_dir / "labels.yaml"
+        # A cached batch pre-check run (see backend/precheck.py) -- purely
+        # informational, never required. A server started with no cache file
+        # (or none passed in tests) just serves "no pre-check data" for
+        # every cell, rather than failing to start.
+        self.precheck = precheck if precheck is not None else PrecheckStore(None)
         self.lock = threading.Lock()
 
     # -- read helpers -----------------------------------------------------
@@ -153,6 +167,24 @@ class AppContext:
             "verdict": labels.get(key),
         }
 
+    # -- deterministic pre-check hint (informational only) -----------------
+    def precheck_detail(self, judge_id: str, candidate_id: str) -> dict | None:
+        """``None`` means an unknown (judge_id, candidate_id) pair -- the
+        route turns that into a 404, same allowlist treatment as
+        ``/api/cell``. A *known* pair with no cached pre-check record yet
+        returns ``{"available": False}`` (not 404, not an empty-checks
+        record) so the frontend can tell "no hint exists here" apart from
+        "the hint says 0 checks" -- the latter must never be shown as if it
+        were a pass."""
+        if not self.judges.is_known_id(judge_id) or not self.matrix.is_known_pair(
+            judge_id, candidate_id
+        ):
+            return None
+        record = self.precheck.get(judge_id, candidate_id)
+        if record is None:
+            return {"available": False}
+        return {"available": True, "precheck": record}
+
     # -- mutation (lock-guarded + atomic file write) ------------------------
     def grade(self, judge_id: str, candidate_id: str, verdict_input: str) -> dict:
         if verdict_input not in VALID_VERDICT_INPUTS:
@@ -238,6 +270,20 @@ def make_handler(ctx: AppContext):
                 candidate_id = (qs.get("candidate_id") or [None])[0]
                 detail = (
                     ctx.cell_detail(judge_id, candidate_id)
+                    if judge_id and candidate_id
+                    else None
+                )
+                if detail is None:
+                    self._send_json(404, {"error": "unknown judge_id/candidate_id pair"})
+                    return
+                self._send_json(200, detail)
+                return
+
+            if path == "/api/precheck":
+                judge_id = (qs.get("judge_id") or [None])[0]
+                candidate_id = (qs.get("candidate_id") or [None])[0]
+                detail = (
+                    ctx.precheck_detail(judge_id, candidate_id)
                     if judge_id and candidate_id
                     else None
                 )

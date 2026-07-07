@@ -27,6 +27,58 @@ The flow is judge-first:
    shows just the narrow (user, assistant) pair mined for it.
 3. Grade: **Pass**, **Fail**, or **Inconclusive**.
 
+## Deterministic pre-check panel (informational only)
+
+Above the (user, assistant) excerpt, a cell view shows a **"Deterministic
+pre-check"** panel when one is available. Every judge's real eval-suite
+`Case` usually carries other, *deterministic* sibling assertions right next
+to the `judge` assertion -- `text_contains`/`text_not_contains` for the
+discovery cases, or a real Python `script` checker for the
+invocation/baseline/clean-comments-review cases. This panel is a cached,
+already-run, real execution of those sibling assertions (see
+`backend/precheck.py`) against the same candidate response the human is
+about to grade: each assertion's type, its real pass/fail/errored outcome,
+and its reason text (when the checker produced one), plus a one-line
+overall summary (`"2/2 deterministic checks pass"`, or `"1/2 fail: script
+check found <reason>"`).
+
+**This is a hint, not a grade.** It is rendered in a visually distinct,
+dashed/accent-bordered box above the rubric-adjacent content, labeled "hint,
+not a grade", and carries its own disclaimer -- it never pre-fills, never
+auto-submits, and has no click handler wired to Pass/Fail/Inconclusive.
+Those three buttons read only the human's own click/keypress; nothing about
+this panel's content is consulted when a grade is written to
+`evals/labels.yaml`. This mirrors how a judge's `needs_human_review` tag is
+already shown as a purely informational badge rather than a control. A cell
+with zero *executed* deterministic checks (only `judge`/`tokens`/`latency_ms`
+present) says so explicitly and is never rendered as if it were a pass --
+"no checks" and "checks passed" are visually and textually distinct. If a
+cell has no cached pre-check data at all, the panel simply doesn't render
+(no misleading placeholder).
+
+For the 4 **mined** (real agent-session) matrix cells whose assistant turn
+is structured content (prose plus `tool_use` blocks), a `script` check is
+run against the narration *plus* a fenced code block synthesized from that
+session's own Edit/Write/MultiEdit tool calls (see
+`conversation_draft.flatten_for_checker`) -- because a script checker
+otherwise sees no code at all in the prose-only projection. When this
+flattening was used, the panel says so plainly with a small caption:
+*"checked against code from this session's Edit/Write calls, rendered as a
+code block"*. **This pre-check is informational only, and deliberately more
+generous than what the real, production judge/script assertion currently
+sees for those same mined cells** -- production reads only the final
+assistant turn's *text*, so a mined cell's real tool-call content is
+invisible to it today. A pre-check "pass" here is not a claim about what the
+live evaluator currently does with that same conversation; treat it as a
+second, independent data point for your own judgment, not as ground truth.
+
+The panel is served by `GET /api/precheck?judge_id=...&candidate_id=...`,
+backed by a `PrecheckStore` that loads a cached batch run,
+`mined/precheck_results.json` (produced separately by `python3 -m
+backend.precheck`, or override its location with `--precheck-path`) --
+the server never re-runs a `script` assertion's subprocess itself on a
+page view.
+
 ## Running it
 
 ```sh
@@ -43,8 +95,11 @@ reachable from anywhere but this machine.
 
 By default it reads judges from `../evals/judges.yaml`, matrix cells from
 `../mined/matrix.jsonl` (and their conversation drafts from
-`../mined/matrix/`), and writes verdicts to `../evals/labels.yaml`.
-Override with `--judges-path`, `--mined-dir`, and `--evals-dir` if needed.
+`../mined/matrix/`), the deterministic pre-check cache from
+`../mined/precheck_results.json` (see above -- optional; grading works fine
+without it, the pre-check panel just doesn't render), and writes verdicts to
+`../evals/labels.yaml`. Override with `--judges-path`, `--mined-dir`,
+`--evals-dir`, and `--precheck-path` if needed.
 
 ## Keyboard shortcuts
 
@@ -118,6 +173,14 @@ discovery step and a relevance-matrix build step, in
   trimmed down from the full mined conversation.
 - **`mined/candidates.jsonl`** -- the full mined-candidate pool, kept
   alongside for id cross-referencing.
+- **`mined/precheck_results.json`** -- optional, the deterministic
+  pre-check panel's cache (see above): one record per matrix cell, produced
+  by a separate batch run of `python3 -m backend.precheck` (which itself
+  reads `judges.yaml` + `matrix.jsonl` and re-derives each judge's real
+  sibling assertions straight from its eval-suite file via
+  `backend/eval_case_yaml.py` -- nothing about the checks themselves is
+  hardcoded here). Missing this file just means the pre-check panel doesn't
+  render; it never blocks grading.
 
 `mined/` (all of it, including `matrix.jsonl` and `matrix/`) stays
 gitignored -- it contains verbatim excerpts of real agent-session
@@ -127,13 +190,15 @@ be committed. This mirrors exactly how the mined pool's own
 was copied here originally: from the sibling worktree that ran the
 judge-discovery and relevance-matrix pipeline
 (`e2e/judge-calibration/evals/judges.yaml`, `mined/matrix.jsonl`,
-`mined/matrix/`, and `mined/candidates.jsonl`).
+`mined/matrix/`, and `mined/candidates.jsonl`); regenerate
+`mined/precheck_results.json` locally with `python3 -m backend.precheck`.
 
 ## Layout
 
 ```
 grader/
-  server.py            entry point (argparse: --port, --judges-path, --mined-dir, --evals-dir, --no-browser)
+  server.py            entry point (argparse: --port, --judges-path, --mined-dir, --evals-dir,
+                        --precheck-path, --no-browser)
   backend/
     app.py               HTTP routing + AppContext (state, mutations, locking)
     judges.py            evals/judges.yaml loader; hand-rolled parser for its fixed
@@ -142,15 +207,27 @@ grader/
     matrix.py            mined/matrix.jsonl loader; the candidate-id half of the
                           security allowlist lives here; resolves conversation_draft
                           paths from trusted, already-loaded records only
-    conversation_draft.py parses a narrow (user, assistant) draft yaml file
+    conversation_draft.py parses a narrow (user, assistant) draft yaml file (scalar or
+                          ContentBlock-list content), plus flatten_for_checker's
+                          tool_use-to-fenced-code-block projection for script pre-checks
+    eval_case_yaml.py     loads one Case's real assertions straight out of an
+                          e2e/*/evals/*.yaml suite file, for backend/precheck.py
+    precheck.py           runs a judge's real deterministic sibling assertions
+                          (text_contains/text_not_contains/script) against a mined
+                          candidate; PrecheckStore loads the cached batch-run JSON
+                          for the GET /api/precheck route (informational only)
     labels_store.py      the real evals/labels.yaml composite-key flat-map read/write
                           (hand-rolled, stdlib-only, atomic write)
   static/
-    index.html, style.css, app.js    the single-page frontend (judge picker -> judge + cell review)
+    index.html, style.css, app.js    the single-page frontend (judge picker -> judge + cell
+                          review, including the informational-only "Deterministic
+                          pre-check" panel)
   tests/                unittest suite: parsers (judges.yaml, matrix.jsonl,
-                         conversation drafts), labels_store round-trip, and a real
-                         in-process HTTP integration test (including path-traversal /
-                         unknown-id security cases for BOTH judge_id and candidate_id)
+                         conversation drafts), precheck's assertion runners + PrecheckStore,
+                         labels_store round-trip, and a real in-process HTTP integration
+                         test (including path-traversal / unknown-id security cases for
+                         BOTH judge_id and candidate_id, and /api/precheck's availability
+                         states)
 ```
 
 ## Tests
@@ -166,7 +243,7 @@ No `pip install` required -- everything here is Python's standard library
 ## Security note: judge-id AND candidate-id allowlist
 
 Every endpoint that takes a judge id and/or candidate id (`/api/judge`,
-`/api/cell`, `/api/grade`) validates the judge id against
+`/api/cell`, `/api/precheck`, `/api/grade`) validates the judge id against
 `JudgeRegistry.is_known_id` (built from `evals/judges.yaml`) and the
 `(judge_id, candidate_id)` pair against `MatrixStore.is_known_pair` (built
 from `mined/matrix.jsonl`) *before* any filesystem access. A conversation

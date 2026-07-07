@@ -16,6 +16,7 @@ from pathlib import Path
 from backend.app import AppContext, build_server
 from backend.judges import JudgeRegistry
 from backend.matrix import MatrixStore
+from backend.precheck import PrecheckStore
 from backend import labels_store
 
 JUDGES_YAML = """\
@@ -88,9 +89,38 @@ class AppIntegrationTest(unittest.TestCase):
         judges_path = self.evals_dir / "judges.yaml"
         judges_path.write_text(JUDGES_YAML, encoding="utf-8")
 
+        precheck_path = self.mined_dir / "precheck_results.json"
+        precheck_path.write_text(
+            json.dumps(
+                [
+                    {
+                        "judge_id": "patterns-eval/baseline/newtype",
+                        "candidate_id": "cand-001",
+                        "suite_file": "e2e/patterns-eval/evals/baseline.yaml",
+                        "case_name": "newtype",
+                        "content_shape": "scalar",
+                        "flattening_applied_for_script_checks": False,
+                        "checks": [
+                            {
+                                "type": "text_contains",
+                                "outcome": "pass",
+                                "reason": None,
+                                "source": {"type": "text_contains", "value": "UserId"},
+                            }
+                        ],
+                        "overall": "all_pass",
+                    }
+                ]
+            ),
+            encoding="utf-8",
+        )
+
         judges = JudgeRegistry(judges_path)
         matrix = MatrixStore(matrix_path, mined_dir=self.mined_dir)
-        self.ctx = AppContext(judges, matrix, evals_dir=self.evals_dir, static_dir=self.static_dir)
+        precheck = PrecheckStore(precheck_path)
+        self.ctx = AppContext(
+            judges, matrix, evals_dir=self.evals_dir, static_dir=self.static_dir, precheck=precheck
+        )
         self.httpd = build_server(self.ctx, "127.0.0.1", 0)
         self.port = self.httpd.server_address[1]
         self.thread = threading.Thread(target=self.httpd.serve_forever, daemon=True)
@@ -168,6 +198,67 @@ class AppIntegrationTest(unittest.TestCase):
         self.assertIn("UserId newtype", detail["user"])
         self.assertIn("wraps a String", detail["assistant"])
         self.assertIsNone(detail["verdict"])
+
+    # -- deterministic pre-check hint (informational only) -------------------
+    def test_precheck_returns_cached_record_for_known_pair(self):
+        status, body = self._get_json(
+            "/api/precheck?judge_id="
+            + urllib.parse.quote("patterns-eval/baseline/newtype", safe="")
+            + "&candidate_id=cand-001"
+        )
+        self.assertEqual(status, 200)
+        self.assertTrue(body["available"])
+        self.assertEqual(body["precheck"]["overall"], "all_pass")
+        self.assertEqual(body["precheck"]["checks"][0]["type"], "text_contains")
+
+    def test_precheck_unknown_pair_is_404_same_as_cell(self):
+        status, _ = self._get_json(
+            "/api/precheck?judge_id="
+            + urllib.parse.quote("delegate-52/corruption/case4", safe="")
+            + "&candidate_id=cand-001"
+        )
+        self.assertEqual(status, 404)
+
+    def test_precheck_missing_params_is_404(self):
+        status, _ = self._get_json("/api/precheck?judge_id=patterns-eval%2Fbaseline%2Fnewtype")
+        self.assertEqual(status, 404)
+
+    def test_precheck_path_traversal_rejected_without_touching_filesystem(self):
+        judge_qs = urllib.parse.quote("patterns-eval/baseline/newtype", safe="")
+        url = self._url(
+            f"/api/precheck?judge_id={judge_qs}&candidate_id="
+            + urllib.parse.quote("../../../../etc/passwd", safe="")
+        )
+        try:
+            with urllib.request.urlopen(url) as resp:
+                status = resp.status
+        except urllib.error.HTTPError as e:
+            status = e.code
+        self.assertEqual(status, 404)
+
+    def test_grading_still_writes_labels_yaml_when_precheck_data_present(self):
+        # The pre-check panel must never interfere with the direct
+        # read-modify-write grading flow.
+        status, body = self._post_json(
+            "/api/grade",
+            {
+                "judge_id": "patterns-eval/baseline/newtype",
+                "candidate_id": "cand-001",
+                "verdict": "pass",
+            },
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual(body["verdict"], "Pass")
+        on_disk = labels_store.read_labels(self.evals_dir / "labels.yaml")
+        self.assertEqual(on_disk["patterns-eval__baseline__newtype__cand-001"], "Pass")
+        # And the pre-check hint is still independently available afterwards.
+        status, precheck_body = self._get_json(
+            "/api/precheck?judge_id="
+            + urllib.parse.quote("patterns-eval/baseline/newtype", safe="")
+            + "&candidate_id=cand-001"
+        )
+        self.assertEqual(status, 200)
+        self.assertTrue(precheck_body["available"])
 
     # -- security: judge-id AND candidate-id allowlist ----------------------
     def test_unknown_judge_id_is_404(self):
@@ -291,6 +382,62 @@ class AppIntegrationTest(unittest.TestCase):
         self.assertEqual(status, 400)
         on_disk = labels_store.read_labels(self.evals_dir / "labels.yaml")
         self.assertEqual(on_disk, {})
+
+
+class AppPrecheckUnavailableTest(unittest.TestCase):
+    """A known (judge, candidate) pair with NO cached pre-check data at all
+    (no --precheck-path given, matching how AppContext defaults it) must
+    read as "no hint available" -- never as a misleading "0 checks pass"."""
+
+    def setUp(self):
+        self.tmpdir = Path(tempfile.mkdtemp())
+        self.mined_dir = self.tmpdir / "mined"
+        self.evals_dir = self.tmpdir / "evals"
+        self.static_dir = Path(__file__).resolve().parent.parent / "static"
+        matrix_dir = self.mined_dir / "matrix" / "patterns-eval__baseline__newtype"
+        matrix_dir.mkdir(parents=True)
+        self.evals_dir.mkdir(parents=True)
+        (matrix_dir / "cand-001.yaml").write_text(CONVERSATION_DRAFT, encoding="utf-8")
+        matrix_path = self.mined_dir / "matrix.jsonl"
+        with open(matrix_path, "w", encoding="utf-8") as f:
+            f.write(
+                json.dumps(
+                    {
+                        "judge_id": "patterns-eval/baseline/newtype",
+                        "candidate_id": "cand-001",
+                        "conversation_draft": "e2e/judge-calibration/mined/matrix/patterns-eval__baseline__newtype/cand-001.yaml",
+                    }
+                )
+                + "\n"
+            )
+        judges_path = self.evals_dir / "judges.yaml"
+        judges_path.write_text(JUDGES_YAML, encoding="utf-8")
+
+        judges = JudgeRegistry(judges_path)
+        matrix = MatrixStore(matrix_path, mined_dir=self.mined_dir)
+        # No precheck kwarg at all -- AppContext must fall back gracefully.
+        self.ctx = AppContext(judges, matrix, evals_dir=self.evals_dir, static_dir=self.static_dir)
+        self.httpd = build_server(self.ctx, "127.0.0.1", 0)
+        self.port = self.httpd.server_address[1]
+        self.thread = threading.Thread(target=self.httpd.serve_forever, daemon=True)
+        self.thread.start()
+
+    def tearDown(self):
+        self.httpd.shutdown()
+        self.httpd.server_close()
+        self.thread.join(timeout=5)
+        shutil.rmtree(self.tmpdir, ignore_errors=True)
+
+    def test_known_pair_with_no_cache_reports_unavailable_not_404_not_pass(self):
+        url = f"http://127.0.0.1:{self.port}/api/precheck?judge_id=" + urllib.parse.quote(
+            "patterns-eval/baseline/newtype", safe=""
+        ) + "&candidate_id=cand-001"
+        with urllib.request.urlopen(url) as resp:
+            status = resp.status
+            body = json.loads(resp.read())
+        self.assertEqual(status, 200)
+        self.assertFalse(body["available"])
+        self.assertNotIn("precheck", body)
 
 
 if __name__ == "__main__":

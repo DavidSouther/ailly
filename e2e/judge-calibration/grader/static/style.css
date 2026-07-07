@@ -242,6 +242,87 @@ h3 { margin: 0 0 0.4rem; font-size: 0.95rem; color: var(--text-dim); text-transf
 .rendered h1, .rendered h2, .rendered h3, .rendered h4 { margin: 0.6rem 0 0.3rem; }
 .rendered ul, .rendered ol { margin: 0.3rem 0; padding-left: 1.4rem; }
 
+/* ---------------- deterministic pre-check panel (informational only) ---------------- */
+.hint-marker {
+  display: inline-block;
+  margin-left: 0.5rem;
+  padding: 0.05rem 0.45rem;
+  border-radius: 999px;
+  font-size: 0.65rem;
+  font-weight: 600;
+  text-transform: none;
+  letter-spacing: normal;
+  background: rgba(91,141,239,0.15);
+  color: var(--accent);
+  vertical-align: middle;
+}
+
+.precheck-panel {
+  border: 1px dashed var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: 8px;
+  background: var(--panel-2);
+  padding: 0.8rem 1rem;
+}
+
+.precheck-summary {
+  font-weight: 700;
+  font-size: 0.9rem;
+  margin-bottom: 0.6rem;
+}
+.precheck-summary.pass { color: var(--pass); }
+.precheck-summary.fail { color: var(--fail); }
+.precheck-summary.none { color: var(--text-dim); font-weight: 600; }
+
+.precheck-checks {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin-bottom: 0.5rem;
+}
+.precheck-row {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.4rem 0.6rem;
+  background: var(--panel);
+  font-size: 0.82rem;
+}
+.precheck-row-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.5rem;
+}
+.precheck-type {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: var(--text-dim);
+}
+.precheck-outcome {
+  font-weight: 700;
+  text-transform: uppercase;
+  font-size: 0.72rem;
+  letter-spacing: 0.02em;
+}
+.precheck-outcome.pass { color: var(--pass); }
+.precheck-outcome.fail { color: var(--fail); }
+.precheck-outcome.errored, .precheck-outcome.malformed { color: var(--warn); }
+.precheck-outcome.skipped { color: var(--skip); }
+.precheck-row.skipped { opacity: 0.6; }
+.precheck-reason {
+  margin-top: 0.3rem;
+  color: var(--text-dim);
+  font-size: 0.8rem;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.precheck-caption, .precheck-disclaimer {
+  color: var(--text-dim);
+  font-size: 0.75rem;
+  font-style: italic;
+  margin: 0.3rem 0 0;
+}
+.precheck-disclaimer { margin-top: 0.5rem; }
+
 #controls {
   position: sticky;
   bottom: 0;

@@ -83,6 +83,11 @@ class MatrixStore:
     def cells_for_judge(self, judge_id: str) -> list[dict[str, Any]]:
         return list(self._by_judge.get(judge_id, []))
 
+    def all_cells(self) -> list[dict[str, Any]]:
+        """Every cell, in matrix.jsonl line order (used by
+        ``backend/precheck.py`` to walk the whole matrix once)."""
+        return list(self._cells)
+
     def cell(self, judge_id: str, candidate_id: str) -> dict[str, Any] | None:
         return self._by_pair.get((judge_id, candidate_id))
 

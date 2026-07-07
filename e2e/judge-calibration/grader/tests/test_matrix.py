@@ -79,6 +79,12 @@ class TestMatrixStore(unittest.TestCase):
     def test_cells_for_unknown_judge_is_empty(self):
         self.assertEqual(self.store.cells_for_judge("no-such-judge"), [])
 
+    def test_all_cells_returns_every_cell_in_file_order(self):
+        self.assertEqual(
+            [c["candidate_id"] for c in self.store.all_cells()],
+            ["cand-001", "cand-002", "cand-003"],
+        )
+
     def test_cell_lookup_by_pair(self):
         cell = self.store.cell("patterns-eval/baseline/newtype", "cand-001")
         self.assertEqual(cell["matched_keyword"], "patterns:newtype")
