@@ -5,10 +5,35 @@ cases:
       - { type: script, runtime: python, script: { path: evals/scripts/check_newtype.py } }
       - type: judge
         prompt: |
-          The code introduces a UserId type that wraps a string, exposes
-          construction as the only sanctioned entry point, and makes a plain
-          string unassignable where UserId is required. There are no `as`
-          casts at call sites; validation lives once in the constructor.
+          Grade the STRUCTURAL properties below, applied to whichever
+          identifier type name(s) the user's question actually asks for (e.g.
+          `CartId`, `Sku`, `InvoiceId`). Any type name mentioned in this
+          rubric's prose is illustrative only -- the candidate does not need
+          to name anything `UserId` literally, and must NOT be penalized for
+          using a different, question-appropriate name.
+
+          Required structural properties, ALL of which must hold:
+          1. Each identifier is a branded/opaque wrapper over its primitive
+             (e.g. a `string & { readonly [brand]: never }` intersection, a
+             `Brand<...>`/`Branded<...>` helper, or an equivalent nominal
+             technique) -- not a transparent `type X = string` alias.
+          2. Construction is exposed through exactly one named constructor per
+             branded type, and every `as <Brand>` cast in the file lives
+             inside that constructor's body -- none appear at any call site.
+          3. A plain, unbranded primitive is not assignable where the branded
+             type is required (no implicit widening back to the primitive).
+          4. The constructor performs actual validating logic against the raw
+             input -- a non-empty check, a format/regex check, a length check,
+             or an equivalent runtime guard -- before returning the branded
+             value. A constructor that is ONLY an identity cast, e.g.
+             `(raw: string): X => raw as X` with no guard of any kind, does
+             NOT satisfy this property even though its cast is confined to the
+             constructor body: "validation lives once in the constructor"
+             means real validation runs there, not merely that the cast is
+             located there.
+
+          Fail the candidate if property 4 is unmet, even when properties
+          1-3 all hold.
       - { type: tokens, metric: total, op: "<", value: 6000 }
 
   - name: configuring-logging
@@ -32,9 +57,46 @@ cases:
       - { type: script, runtime: python, script: { path: evals/scripts/check_emitting_logs.py } }
       - type: judge
         prompt: |
-          The call site emits a structured log record with `EventName` set
-          to `order.placed` and attaches fields under OpenTelemetry
-          semantic-convention keys (`http.response.status_code`, `order.id`,
-          `user.id`). The message body is a stable string; no values are
-          interpolated into it.
+          Grade the GENERAL structural principle below, applied to the actual
+          domain event the user's question describes (a refund, a shipment,
+          a signup, an order, or anything else) -- do NOT require the literal
+          example values `order.placed`, `order.id`, `user.id`, or
+          `http.response.status_code` verbatim; those are illustrative only
+          for one canonical scenario (an order being placed with an HTTP
+          response) and must NOT be expected on a candidate answering a
+          different scenario (e.g. a refund has no `order.id`/`user.id`, and
+          a non-HTTP handler like a shipment or queue consumer has no
+          `http.response.status_code` at all).
+
+          Required properties, ALL of which must hold, evaluated against the
+          domain event actually asked about:
+          1. The call site sets an event-name field (`EventName`, `eventName`,
+             `event_name`, or the equivalent macro directive) to a stable,
+             domain-appropriate discriminator in the ubiquitous language for
+             THAT event (e.g. `refund.issued` for a refund handler,
+             `shipment.created` for a shipment handler) -- any correctly
+             domain-matched name satisfies this, not only `order.placed`.
+          2. Values the user asked to be greppable/queryable are attached as
+             separate structured fields, and at least two of those fields use
+             an OpenTelemetry-semantic-convention-*shaped* key: a dotted,
+             namespaced identifier appropriate to that field's domain (e.g.
+             `refund.id`, `customer.id`, `warehouse.id`,
+             `carrier.tracking.status_code`, `http.request.method`,
+             `feature_flag.key`) rather than an invented flat/camelCase name
+             (`refundId`, `httpStatusCode`). The exact key names do not need
+             to match any fixed list -- judge the SHAPE and domain-fit, not
+             literal equality to `order.id`/`user.id`/
+             `http.response.status_code`.
+          3. The message body is a stable string that never changes based on
+             the event's data; no value is interpolated into it (e.g. no
+             `` `refunded ${amount}` `` template literal or `printf`-style
+             substitution).
+
+          Fail the candidate if it hard-codes a value the framework/response
+          already supplies (e.g. a literal status code next to an in-scope
+          response object), if it skips the event-name field entirely, if it
+          interpolates any value into the message body, or if its fields are
+          ad-hoc/flat names with no semantic-convention-style namespacing at
+          all. Do NOT fail it merely for using domain-correct field/event
+          names that differ from the `order.placed` example.
       - { type: tokens, metric: total, op: "<", value: 6000 }
