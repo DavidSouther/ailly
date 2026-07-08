@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Judge Calibration Grader</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<header id="topbar">
+  <div id="brand">Judge Calibration Grader</div>
+  <button id="back-btn" hidden>&larr; All judges</button>
+  <div id="progress" aria-live="polite">loading&hellip;</div>
+</header>
+
+<!-- ============ Judge picker ============ -->
+<main id="judge-picker">
+  <section>
+    <h2>Pick a judge to calibrate</h2>
+    <p class="hint">Each judge below has at least one ungraded (judge, candidate) cell in
+      <code>mined/matrix.jsonl</code>. Grading writes straight into the real
+      <code>evals/labels.yaml</code> -- there is no draft/export step.</p>
+    <ul id="pickable-list" class="judge-list"></ul>
+  </section>
+  <section id="done-section" hidden>
+    <h3>Fully graded</h3>
+    <p class="hint">Every relevant cell for these judges already has a Pass/Fail verdict.</p>
+    <ul id="done-list" class="judge-list done"></ul>
+  </section>
+  <section id="no-data-state" hidden>
+    <p class="hint">No relevant matrix cells yet. <code>mined/matrix.jsonl</code> is empty or
+      every judge in it needs manual review (no auto-matched keywords).</p>
+  </section>
+</main>
+
+<!-- ============ Judge + cell review ============ -->
+<div id="layout" hidden>
+  <aside id="sidebar">
+    <div id="judge-meta">
+      <h2 id="judge-id"></h2>
+      <div id="judge-tags"></div>
+    </div>
+    <section id="rubric">
+      <h3>Judge rubric / prompt</h3>
+      <div id="rubric-body" class="rendered"></div>
+    </section>
+    <ul id="cell-list" aria-label="Matrix cells for this judge"></ul>
+  </aside>
+
+  <main id="detail">
+    <div id="empty-state" hidden>
+      <h2>Nothing left to grade for this judge</h2>
+      <p>Every cell is Pass/Fail, or was marked Inconclusive this round (revisit it from the list on the left).</p>
+    </div>
+
+    <article id="cell-card" hidden>
+      <section id="meta">
+        <dl>
+          <dt>candidate</dt><dd id="meta-candidate"></dd>
+          <dt>source</dt><dd id="meta-source"></dd>
+          <dt>project</dt><dd id="meta-project"></dd>
+          <dt>matched on</dt><dd id="meta-matched"></dd>
+        </dl>
+      </section>
+
+      <section id="precheck-section" hidden>
+        <h3>Deterministic pre-check <span class="hint-marker" title="Purely informational -- never pre-fills or auto-submits a grade">hint, not a grade</span></h3>
+        <div id="precheck-body" class="precheck-panel"></div>
+      </section>
+
+      <section id="user-section">
+        <h3>User stimulus</h3>
+        <div id="user-body" class="rendered"></div>
+      </section>
+
+      <section id="assistant-section">
+        <h3>Assistant response</h3>
+        <div id="assistant-body" class="rendered"></div>
+      </section>
+    </article>
+
+    <div id="controls">
+      <div id="grade-buttons">
+        <button id="btn-pass" class="grade-btn pass" title="Was the judge satisfied? Pass (key: p)">Pass <kbd>p</kbd></button>
+        <button id="btn-fail" class="grade-btn fail" title="Was the judge satisfied? Fail (key: f)">Fail <kbd>f</kbd></button>
+        <button id="btn-inconclusive" class="grade-btn inconclusive" title="Can't tell -- skip, no write (key: i)">Inconclusive <kbd>i</kbd></button>
+      </div>
+    </div>
+  </main>
+</div>
+
+<div id="toast" role="status" aria-live="polite" hidden></div>
+
+<script src="/app.js"></script>
+</body>
+</html>
