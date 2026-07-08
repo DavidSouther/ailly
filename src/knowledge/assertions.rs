@@ -4,6 +4,7 @@
 //! `Deferred` until the orchestrator wires their collaborator. The dispatch
 //! table is a total `match` over `Assertion`.
 
+use std::collections::BTreeMap;
 use std::marker::PhantomData;
 use std::path::Path;
 use std::path::PathBuf;
@@ -86,7 +87,7 @@ impl EvaluationContext<'_> {
 
 impl Assertion {
     /// Check this assertion against `conversation` in `ctx`. Total over every
-    /// variant. The 12 sync families ignore `ctx`; the 5 LLM/subprocess
+    /// variant. The 13 sync families ignore `ctx`; the 5 LLM/subprocess
     /// families return `Deferred` when their collaborator is `None`.
     ///
     /// Invariant: never panics, never performs I/O on its own, never
@@ -142,6 +143,9 @@ impl Assertion {
                 check_tool_call_count(conversation, tool.as_deref(), op, *value)
             }
             Assertion::ToolCallOrder { sequence } => check_tool_call_order(conversation, sequence),
+            Assertion::ToolCallCollection { tools } => {
+                check_tool_call_collection(conversation, tools)
+            }
 
             Assertion::JsonPath { path, op, value } => {
                 check_json_path(conversation, path, op, value)
@@ -1323,6 +1327,47 @@ fn check_tool_call_order(conversation: &Conversation, sequence: &[String]) -> As
     }
 }
 
+/// Order-insensitive multiset check: every name in `tools` must appear in
+/// the observed tool-use calls at least as many times as it is listed.
+/// Subset-of-multiset, not exact equality — extra calls (of any tool) are
+/// tolerated, and order carries no meaning.
+fn check_tool_call_collection(conversation: &Conversation, tools: &[String]) -> AssertionOutcome {
+    let mut required: BTreeMap<&str, usize> = BTreeMap::new();
+    for tool in tools {
+        *required.entry(tool.as_str()).or_insert(0) += 1;
+    }
+
+    let calls = extract_tool_uses(conversation);
+    let mut observed: BTreeMap<&str, usize> = BTreeMap::new();
+    for block in &calls {
+        *observed.entry(tool_use_name(block)).or_insert(0) += 1;
+    }
+
+    let shortfalls: Vec<(&str, usize, usize)> = required
+        .iter()
+        .filter_map(|(&name, &need)| {
+            let have = observed.get(name).copied().unwrap_or(0);
+            (have < need).then_some((name, need, have))
+        })
+        .collect();
+
+    if shortfalls.is_empty() {
+        AssertionOutcome::Pass
+    } else {
+        let detail = shortfalls
+            .iter()
+            .map(|(name, need, have)| format!("{name:?} (need {need}, got {have})"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        AssertionOutcome::Fail {
+            reason: format!(
+                "tool_call_collection: missing required call(s): {detail}; observed calls: {:?}",
+                calls.iter().map(|b| tool_use_name(b)).collect::<Vec<_>>(),
+            ),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::collections::VecDeque;
@@ -1739,6 +1784,13 @@ mod tests {
             }
             other => panic!("expected Fail, got {other:?}"),
         }
+    }
+
+    #[tokio::test]
+    async fn tool_call_collection_with_empty_tools_is_vacuously_satisfied() {
+        let conv = conversation_with(vec![assistant_blocks(vec![])]);
+        let assertion = Assertion::ToolCallCollection { tools: vec![] };
+        assert_eq!(assertion.check(&conv, &ctx()).await, AssertionOutcome::Pass);
     }
 
     #[tokio::test]

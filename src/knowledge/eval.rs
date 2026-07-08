@@ -126,6 +126,7 @@ pub(crate) fn class_tag(assertion: &Assertion) -> &'static str {
         Assertion::MustNotCallTool { .. } => "must_not_call_tool",
         Assertion::ToolCallCount { .. } => "tool_call_count",
         Assertion::ToolCallOrder { .. } => "tool_call_order",
+        Assertion::ToolCallCollection { .. } => "tool_call_collection",
         Assertion::TextContains { .. } => "text_contains",
         Assertion::TextNotContains { .. } => "text_not_contains",
         Assertion::TextMatches { .. } => "text_matches",
