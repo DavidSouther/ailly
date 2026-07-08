@@ -631,24 +631,13 @@ pub fn gemini_from_env(
 ///
 /// Unlike the other three constructors, this one never reads a single
 /// required env var up front: `rig_bedrock::client::Client::from_env()`
-/// always succeeds, deferring AWS credential resolution to the first live
-/// call. That resolution automatically prefers a Bedrock API key
-/// (`AWS_BEARER_TOKEN_BEDROCK`) over the standard `SigV4` credential chain
-/// (env vars, shared profile, SSO, IMDS role) whenever both are present --
-/// a property of the pinned `rig-bedrock`/AWS-SDK versions and the plain
-/// `aws_config::load_from_env()` call they make, not something this
-/// function implements itself.
+/// always succeeds, deferring credential resolution to AWS's SDK, which
+/// prefers a Bedrock API key (`AWS_BEARER_TOKEN_BEDROCK`) over the standard
+/// `SigV4` chain when both are present.
 ///
 /// `model` is the raw AWS-side id (or inference-profile ARN) with the Ailly
 /// `"bedrock:"` prefix already stripped -- it is forwarded verbatim to
-/// `rig_bedrock` to build the wire-level `CompletionModel`. `full_model_id`
-/// is the original, unstripped, user-facing id (e.g.
-/// `"bedrock:meta.llama3-3-70b-instruct-v1:0"`) and is what gets stored as
-/// `RigEngine`'s `model_id`, matching every other provider constructor
-/// (which all pass their full, unmodified id as both the wire-level model
-/// and `model_id`). Keeping these separate is what makes
-/// `EngineError::ModelNotFound { model }` on a Bedrock call report the same
-/// `"bedrock:..."` id the caller requested, not the stripped AWS remainder.
+/// `rig_bedrock`.
 ///
 /// # Errors
 /// Returns [`EngineError::Provider`] when the Rig client cannot be
