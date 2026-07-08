@@ -796,6 +796,7 @@ mod tests {
                 run_id: String::from("arm-b"),
             },
             totals: super::ComparisonTotals::default(),
+            falsification_gate: false,
             paired_difference,
             cases: vec![],
         }
