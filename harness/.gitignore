@@ -12,6 +12,11 @@
 !e2e
 !e2e/**
 e2e/**/.env
+# Mined judge-calibration candidates contain verbatim excerpts of real agent
+# session transcripts (personal projects and client codebases alike) — never
+# committed. See e2e/judge-calibration/evals/scripts/mine_calibration_candidates.py.
+e2e/judge-calibration/mined/
+e2e/**/__pycache__/
 !mise.toml
 !rust-toolchain.toml
 !skills
