@@ -3,6 +3,7 @@
 //! (LLM I/O).
 
 pub mod assertions;
+pub mod calibration;
 pub mod eval;
 pub mod report;
 pub mod script_runner;
