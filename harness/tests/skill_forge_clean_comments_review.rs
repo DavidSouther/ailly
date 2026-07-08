@@ -260,6 +260,7 @@ async fn skill_forge_forges_clean_comments_review_to_a_green_gate() {
         project: project.clone(),
         suite: String::from("discovery"),
         over: discovery_dir.clone(),
+        ..Default::default()
     })
     .await
     .expect("discovery eval runs end-to-end");
@@ -306,6 +307,7 @@ async fn skill_forge_forges_clean_comments_review_to_a_green_gate() {
         project: project.clone(),
         suite: String::from("invocation"),
         over: baseline_dir.clone(),
+        ..Default::default()
     })
     .await
     .expect("baseline eval runs end-to-end");
@@ -323,6 +325,7 @@ async fn skill_forge_forges_clean_comments_review_to_a_green_gate() {
         project: project.clone(),
         suite: String::from("invocation"),
         over: invocation_dir.clone(),
+        ..Default::default()
     })
     .await
     .expect("invocation eval runs end-to-end");

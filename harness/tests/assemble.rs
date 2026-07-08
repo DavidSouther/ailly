@@ -19,6 +19,7 @@ fn assemble_writes_a_conversation_file_per_matrix_binding() {
     let run_dir = assemble_run(AssembleArgs {
         project,
         name: String::from("claim-handler"),
+        ..Default::default()
     })
     .expect("assemble succeeds against the insurance-claim project");
 
@@ -83,6 +84,7 @@ fn map_valued_provider_axis_labels_by_name_and_overrides_model_per_binding() {
     let run_dir = assemble_run(AssembleArgs {
         project,
         name: String::from("delegated-workflow"),
+        ..Default::default()
     })
     .expect("assemble succeeds against the map-valued provider assembly");
 

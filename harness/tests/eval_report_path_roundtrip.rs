@@ -69,11 +69,13 @@ async fn eval_and_report_agree_on_per_run_report_path() {
     let run_a = assemble_run(AssembleArgs {
         project: project.clone(),
         name: String::from("baseline"),
+        ..Default::default()
     })
     .expect("assemble baseline");
     let run_b = assemble_run(AssembleArgs {
         project: project.clone(),
         name: String::from("invocation"),
+        ..Default::default()
     })
     .expect("assemble invocation");
 
@@ -86,6 +88,7 @@ async fn eval_and_report_agree_on_per_run_report_path() {
         project: project.clone(),
         suite: String::from("baseline"),
         over: run_a.clone(),
+        ..Default::default()
     })
     .await
     .expect("eval baseline succeeds end-to-end (no nested-dir write failure)");
@@ -93,6 +96,7 @@ async fn eval_and_report_agree_on_per_run_report_path() {
         project: project.clone(),
         suite: String::from("invocation"),
         over: run_b.clone(),
+        ..Default::default()
     })
     .await
     .expect("eval invocation succeeds end-to-end");

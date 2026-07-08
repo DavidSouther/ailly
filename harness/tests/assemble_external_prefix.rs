@@ -60,6 +60,7 @@ fn external_prefix_block_renders_sibling_file_text_into_the_system_prefix() {
     let run_dir = assemble_run(AssembleArgs {
         project: project.clone(),
         name: String::from("skill-harness"),
+        ..Default::default()
     })
     .expect("assemble succeeds with an external prefix block pointing at a sibling repo");
 

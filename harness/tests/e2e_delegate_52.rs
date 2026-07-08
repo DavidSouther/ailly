@@ -248,6 +248,7 @@ async fn delegate_52_slice_scores_corruption_suite_end_to_end() {
         project: project.clone(),
         suite: String::from("corruption"),
         over: run_dir.clone(),
+        ..Default::default()
     })
     .await
     .expect("corruption eval succeeds end-to-end");
