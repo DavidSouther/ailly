@@ -1,0 +1,25 @@
+name: live-confirmation
+model: claude-haiku-4-5
+
+matrix:
+  runner:
+    - { name: anthropic-haiku-4-5, provider: anthropic, display: "Haiku 4.5", model: claude-haiku-4-5 }
+    - { name: anthropic-sonnet-4-6, provider: anthropic, display: "Sonnet 4.6", model: claude-sonnet-4-6 }
+    - { name: anthropic-sonnet-5, provider: anthropic, display: "Sonnet 5", model: claude-sonnet-5 }
+    - { name: anthropic-opus-4-8, provider: anthropic, display: "Opus 4.8", model: claude-opus-4-8 }
+    - { name: anthropic-fable, provider: anthropic, display: "Fable", model: claude-fable-5 }
+    - { name: openai-gpt-5-5, provider: openai, display: "GPT-5.5", model: gpt-5.5 }
+    - { name: openai-gpt-5-4, provider: openai, display: "GPT-5.4", model: gpt-5.4 }
+    - { name: openai-gpt-5-4-mini, provider: openai, display: "GPT-5.4-mini", model: gpt-5.4-mini }
+    - { name: google-gemini-3-5-flash, provider: google, display: "Gemini 3.5 Flash", model: gemini-3.5-flash }
+    - { name: google-gemini-3-1-pro-preview, provider: google, display: "Gemini 3.1 Pro (Preview)", model: gemini-3.1-pro-preview }
+    - { name: google-gemini-3-1-flash-lite, provider: google, display: "Gemini 3.1 Flash-Lite", model: gemini-3.1-flash-lite }
+    - { name: google-gemini-2-5-pro, provider: google, display: "Gemini 2.5 Pro", model: gemini-2.5-pro }
+    - { name: bedrock-llama-3-3, provider: bedrock, display: "Llama 3.3", model: "bedrock:meta.llama3-3-70b-instruct-v1:0" }
+    - { name: bedrock-llama-4-scout, provider: bedrock, display: "Llama 4 Scout", model: "bedrock:meta.llama4-scout-17b-instruct-v1:0" }
+    - { name: bedrock-mistral-large-3, provider: bedrock, display: "Mistral Large 3", model: "bedrock:mistral.mistral-large-3-675b-instruct" }
+    - { name: bedrock-cohere-r-plus, provider: bedrock, display: "Cohere R+", model: "bedrock:cohere.command-r-plus-v1:0" }
+
+conversation:
+  - { role: user, path: prompts/live-confirmation.md }
+  - { role: assistant }

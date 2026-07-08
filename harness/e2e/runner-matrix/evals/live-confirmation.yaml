@@ -1,0 +1,50 @@
+name: live-confirmation
+cases:
+  - name: anthropic-haiku-4-5
+    assertions:
+      - { type: text_contains, value: "AILLY-RUNNER-MATRIX-LIVE" }
+  - name: anthropic-sonnet-4-6
+    assertions:
+      - { type: text_contains, value: "AILLY-RUNNER-MATRIX-LIVE" }
+  - name: anthropic-sonnet-5
+    assertions:
+      - { type: text_contains, value: "AILLY-RUNNER-MATRIX-LIVE" }
+  - name: anthropic-opus-4-8
+    assertions:
+      - { type: text_contains, value: "AILLY-RUNNER-MATRIX-LIVE" }
+  - name: anthropic-fable
+    assertions:
+      - { type: text_contains, value: "AILLY-RUNNER-MATRIX-LIVE" }
+  - name: openai-gpt-5-5
+    assertions:
+      - { type: text_contains, value: "AILLY-RUNNER-MATRIX-LIVE" }
+  - name: openai-gpt-5-4
+    assertions:
+      - { type: text_contains, value: "AILLY-RUNNER-MATRIX-LIVE" }
+  - name: openai-gpt-5-4-mini
+    assertions:
+      - { type: text_contains, value: "AILLY-RUNNER-MATRIX-LIVE" }
+  - name: google-gemini-3-5-flash
+    assertions:
+      - { type: text_contains, value: "AILLY-RUNNER-MATRIX-LIVE" }
+  - name: google-gemini-3-1-pro-preview
+    assertions:
+      - { type: text_contains, value: "AILLY-RUNNER-MATRIX-LIVE" }
+  - name: google-gemini-3-1-flash-lite
+    assertions:
+      - { type: text_contains, value: "AILLY-RUNNER-MATRIX-LIVE" }
+  - name: google-gemini-2-5-pro
+    assertions:
+      - { type: text_contains, value: "AILLY-RUNNER-MATRIX-LIVE" }
+  - name: bedrock-llama-3-3
+    assertions:
+      - { type: text_contains, value: "AILLY-RUNNER-MATRIX-LIVE" }
+  - name: bedrock-llama-4-scout
+    assertions:
+      - { type: text_contains, value: "AILLY-RUNNER-MATRIX-LIVE" }
+  - name: bedrock-mistral-large-3
+    assertions:
+      - { type: text_contains, value: "AILLY-RUNNER-MATRIX-LIVE" }
+  - name: bedrock-cohere-r-plus
+    assertions:
+      - { type: text_contains, value: "AILLY-RUNNER-MATRIX-LIVE" }
