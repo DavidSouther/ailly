@@ -16,6 +16,13 @@ pub struct ComparisonReport {
     pub arm_a: ArmRef,
     pub arm_b: ArmRef,
     pub totals: ComparisonTotals,
+    /// [`ComparisonTotals::passes_falsification_gate`], surfaced once here
+    /// rather than left for every consumer to re-derive from `totals`.
+    /// Meaningful for any two-arm comparison, not only a baseline-arm one --
+    /// the report doesn't know which comparison shape produced `arm_a`/
+    /// `arm_b`, so this is the gate's verdict on the totals as given, not a
+    /// claim that this comparison *is* a baseline falsification run.
+    pub falsification_gate: bool,
     pub cases: Vec<CaseComparison>,
 }
 
@@ -136,6 +143,7 @@ pub fn compute_comparison(arm_a: &EvalReport, arm_b: &EvalReport) -> ComparisonR
         arm_b: ArmRef {
             run_id: arm_b.run_id.clone(),
         },
+        falsification_gate: totals.passes_falsification_gate(),
         totals,
         cases,
     }
@@ -233,6 +241,13 @@ pub fn render_comparison_markdown(
         report.totals.unchanged_fail,
     );
 
+    let gate = if report.falsification_gate {
+        "PASS"
+    } else {
+        "FAIL"
+    };
+    let _ = write!(out, "**Falsification gate:** {gate}\n\n");
+
     let _ = writeln!(out, "| Case | {label_a} | {label_b} |");
     out.push_str("|------|--------|--------|\n");
     for case in &report.cases {
@@ -304,7 +319,77 @@ fn index_assertions(report: &EvalReport) -> AssertionIndex {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeMap;
+
     use super::*;
+    use crate::knowledge::eval::AssertionReport;
+    use crate::knowledge::eval::CaseReport;
+    use crate::knowledge::eval::MatchReport;
+    use crate::knowledge::eval::ReportTotals;
+
+    fn fixture_report(run_id: &str, assertions: &[(&str, &str)]) -> EvalReport {
+        EvalReport {
+            suite: String::from("report-fixture"),
+            run_id: run_id.to_string(),
+            timestamp: chrono::DateTime::<chrono::Utc>::UNIX_EPOCH,
+            model: None,
+            metrics: None,
+            totals: ReportTotals::default(),
+            per_class: BTreeMap::new(),
+            cases: vec![CaseReport {
+                name: Some(String::from("case")),
+                matches: vec![MatchReport {
+                    conversation: String::from("case.yaml"),
+                    assertions: assertions
+                        .iter()
+                        .map(|(class, outcome)| AssertionReport {
+                            class: (*class).to_string(),
+                            outcome: (*outcome).to_string(),
+                            reason: None,
+                        })
+                        .collect(),
+                }],
+            }],
+        }
+    }
+
+    #[test]
+    fn compute_comparison_sets_falsification_gate_from_totals() {
+        let baseline = fixture_report("baseline", &[("judge", "fail")]);
+        let clears = fixture_report("invocation", &[("judge", "pass")]);
+        let report = compute_comparison(&baseline, &clears);
+        assert!(report.falsification_gate, "improved > 0 && regressed == 0");
+
+        let regresses = fixture_report("invocation", &[("judge", "fail")]);
+        let baseline = fixture_report("baseline", &[("judge", "pass")]);
+        let report = compute_comparison(&baseline, &regresses);
+        assert!(!report.falsification_gate, "a regression must clear FAIL");
+    }
+
+    #[test]
+    fn render_comparison_markdown_shows_the_gate_verdict() {
+        let passing = ComparisonReport {
+            arm_a: ArmRef {
+                run_id: String::from("a"),
+            },
+            arm_b: ArmRef {
+                run_id: String::from("b"),
+            },
+            totals: ComparisonTotals {
+                improved: 1,
+                ..Default::default()
+            },
+            falsification_gate: true,
+            cases: vec![],
+        };
+        assert!(render_comparison_markdown(&passing, "arm-a", "arm-b").contains("PASS"));
+
+        let failing = ComparisonReport {
+            falsification_gate: false,
+            ..passing
+        };
+        assert!(render_comparison_markdown(&failing, "arm-a", "arm-b").contains("FAIL"));
+    }
 
     #[test]
     fn passes_falsification_gate_clears_when_improved_and_not_regressed() {
