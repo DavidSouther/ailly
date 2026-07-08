@@ -629,16 +629,33 @@ pub fn gemini_from_env(
 /// Construct a `RigEngine` backed by `rig-bedrock`. Gated on the `bedrock`
 /// Cargo feature so the AWS SDK does not enter the default build graph.
 ///
+/// Unlike the other three constructors, this one never reads a single
+/// required env var up front: `rig_bedrock::client::Client::from_env()`
+/// always succeeds, deferring credential resolution to AWS's SDK, which
+/// prefers a Bedrock API key (`AWS_BEARER_TOKEN_BEDROCK`) over the standard
+/// `SigV4` chain when both are present.
+///
+/// `model` is the raw AWS-side id (or inference-profile ARN) with the Ailly
+/// `"bedrock:"` prefix already stripped -- it is forwarded verbatim to
+/// `rig_bedrock`.
+///
 /// # Errors
-/// Returns [`EngineError::Auth`] when AWS credentials cannot be resolved and
-/// [`EngineError::Provider`] when the Rig client cannot be constructed.
+/// Returns [`EngineError::Provider`] when the Rig client cannot be
+/// constructed. AWS credential failures surface later, at the first live
+/// call, not from this constructor.
 #[cfg(feature = "bedrock")]
 pub fn bedrock_from_env(
-    _model: &str,
+    model: &str,
+    full_model_id: &str,
 ) -> Result<RigEngine<rig_bedrock::completion::CompletionModel>, EngineError> {
-    Err(EngineError::Provider {
-        message: String::from("rig_engine: not yet implemented"),
-    })
+    use rig::client::CompletionClient;
+    use rig::client::ProviderClient;
+
+    let client = rig_bedrock::client::Client::from_env().map_err(|err| EngineError::Provider {
+        message: format!("bedrock client build failed: {err}"),
+    })?;
+    let completion_model = client.completion_model(model);
+    Ok(RigEngine::new(completion_model, "bedrock", full_model_id))
 }
 
 #[cfg(test)]
@@ -1518,6 +1535,66 @@ mod tests {
             Err(EngineError::Auth { .. }) => {}
             Err(other) => panic!("expected Auth, got {other:?}"),
             Ok(_) => panic!("expected Auth with no GEMINI_API_KEY in environment"),
+        }
+    }
+
+    #[test]
+    #[cfg(feature = "bedrock")]
+    fn bedrock_from_env_without_aws_credentials_still_constructs() {
+        // Unlike anthropic/openai/gemini, rig-bedrock's Client::from_env()
+        // never inspects AWS credentials -- it always succeeds, deferring
+        // resolution to the first live call. So construction must succeed
+        // here with no AWS environment variables required, no network call,
+        // and no async runtime.
+        let result = bedrock_from_env(
+            "meta.llama3-3-70b-instruct-v1:0",
+            "bedrock:meta.llama3-3-70b-instruct-v1:0",
+        );
+
+        match result {
+            Ok(_) => {}
+            Err(other) => {
+                panic!("expected Ok with no AWS credentials in environment, got {other:?}")
+            }
+        }
+    }
+
+    #[test]
+    #[cfg(feature = "bedrock")]
+    fn bedrock_from_env_stores_the_full_prefixed_id_as_model_id_not_the_stripped_remainder() {
+        // bedrock_from_env receives two ids: the stripped AWS-side remainder
+        // (forwarded verbatim to rig_bedrock to build the wire-level
+        // CompletionModel) and the full, unstripped, user-facing
+        // "bedrock:"-prefixed id. Only the latter may end up in
+        // RigEngine::model_id -- every other provider constructor passes its
+        // full, unmodified id there, and EngineError::ModelNotFound's own doc
+        // comment promises it "carries the ModelId actually requested".
+        let remainder = "meta.llama3-3-70b-instruct-v1:0";
+        let full_id = "bedrock:meta.llama3-3-70b-instruct-v1:0";
+        let engine =
+            bedrock_from_env(remainder, full_id).expect("construction must succeed offline");
+
+        assert_eq!(
+            engine.model_id,
+            ModelId::from(full_id),
+            "RigEngine::model_id must be the full \"bedrock:\"-prefixed id, not the \
+             stripped AWS remainder used to build the wire-level CompletionModel"
+        );
+
+        // Prove this is exactly what a ModelNotFound-triggering call would
+        // report: engine_error_from_rig is the same mapping RigEngine::complete
+        // invokes on a live-call failure, keyed on &self.model_id.
+        let err = engine_error_from_rig(http_status(404), &engine.model_id);
+        match err {
+            EngineError::ModelNotFound { model } => {
+                assert_eq!(
+                    model,
+                    ModelId::from(full_id),
+                    "a Bedrock ModelNotFound error must carry the full \"bedrock:...\" id, \
+                     not the stripped AWS remainder"
+                );
+            }
+            other => panic!("expected ModelNotFound, got {other:?}"),
         }
     }
 }
