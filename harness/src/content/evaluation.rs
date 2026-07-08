@@ -75,6 +75,9 @@ pub enum Assertion {
     ToolCallOrder {
         sequence: Vec<String>,
     },
+    ToolCallCollection {
+        tools: Vec<String>,
+    },
 
     TextContains {
         value: String,

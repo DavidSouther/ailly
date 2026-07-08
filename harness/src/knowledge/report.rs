@@ -10,6 +10,38 @@ use serde::Serialize;
 
 use crate::knowledge::eval::EvalReport;
 
+/// The α level used for the paired-difference test's significance verdict.
+/// See design.md Summary for why 0.05 (not a project-research-stated value)
+/// was chosen as the conservative default.
+pub const PAIRED_DIFFERENCE_ALPHA: f64 = 0.05;
+
+/// Two-tailed paired Student's t-test over every assertion pair
+/// `compute_comparison` already classifies as `Improved` (+1.0),
+/// `Regressed` (-1.0), or `Unchanged{Pass,Fail}` (0.0).
+#[derive(Serialize, Deserialize, Debug)]
+#[serde(tag = "status", rename_all = "snake_case")]
+pub enum PairedDifferenceTest {
+    /// Fewer than 2 paired assertions exist between the two arms. A sample
+    /// variance (and therefore a standard error and a t-statistic) cannot
+    /// be estimated from 0 or 1 observations.
+    InsufficientPairs { n: usize },
+    Computed {
+        n: usize,
+        mean_difference: f64,
+        sample_std_dev: f64,
+        /// Standard error of the mean: `sample_std_dev / sqrt(n)`.
+        standard_error: f64,
+        degrees_of_freedom: usize,
+        /// `None` iff `sample_std_dev == 0.0` — see the zero-variance
+        /// convention below. `p_value`/`significant` stay well-defined by
+        /// convention even when the t-statistic itself is not a real
+        /// number (a 0/0 or x/0 limit).
+        t_statistic: Option<f64>,
+        p_value: f64,
+        significant: bool,
+    },
+}
+
 /// Top-level comparison report serialized to JSON.
 #[derive(Serialize, Deserialize, Debug)]
 pub struct ComparisonReport {
@@ -23,6 +55,7 @@ pub struct ComparisonReport {
     /// `arm_b`, so this is the gate's verdict on the totals as given, not a
     /// claim that this comparison *is* a baseline falsification run.
     pub falsification_gate: bool,
+    pub paired_difference: PairedDifferenceTest,
     pub cases: Vec<CaseComparison>,
 }
 
@@ -80,6 +113,7 @@ pub fn compute_comparison(arm_a: &EvalReport, arm_b: &EvalReport) -> ComparisonR
     let a_index = index_assertions(arm_a);
 
     let mut totals = ComparisonTotals::default();
+    let mut diffs: Vec<f64> = Vec::new();
     let mut case_map: BTreeMap<String, Vec<AssertionComparison>> = BTreeMap::new();
 
     for case in &arm_b.cases {
@@ -111,10 +145,22 @@ pub fn compute_comparison(arm_a: &EvalReport, arm_b: &EvalReport) -> ComparisonR
                 };
 
                 match change {
-                    "Improved" => totals.improved += 1,
-                    "Regressed" => totals.regressed += 1,
-                    "UnchangedPass" => totals.unchanged_pass += 1,
-                    _ => totals.unchanged_fail += 1,
+                    "Improved" => {
+                        totals.improved += 1;
+                        diffs.push(1.0);
+                    }
+                    "Regressed" => {
+                        totals.regressed += 1;
+                        diffs.push(-1.0);
+                    }
+                    "UnchangedPass" => {
+                        totals.unchanged_pass += 1;
+                        diffs.push(0.0);
+                    }
+                    _ => {
+                        totals.unchanged_fail += 1;
+                        diffs.push(0.0);
+                    }
                 }
                 totals.total_assertions += 1;
 
@@ -146,6 +192,193 @@ pub fn compute_comparison(arm_a: &EvalReport, arm_b: &EvalReport) -> ComparisonR
         falsification_gate: totals.passes_falsification_gate(),
         totals,
         cases,
+        paired_difference: compute_paired_difference(&diffs),
+    }
+}
+
+/// Lanczos approximation of the natural log of the gamma function, in the
+/// classic Numerical Recipes coefficient form. Used to build the beta
+/// normalization constant in [`regularized_incomplete_beta`].
+fn log_gamma(xx: f64) -> f64 {
+    const COF: [f64; 6] = [
+        76.180_091_729_471_46,
+        -86.505_320_329_416_77,
+        24.014_098_240_830_91,
+        -1.231_739_572_450_155,
+        0.120_865_097_386_617_9e-2,
+        -0.539_523_938_495_3e-5,
+    ];
+    let x = xx;
+    let mut y = xx;
+    let tmp = x + 5.5;
+    let tmp = tmp - (x + 0.5) * tmp.ln();
+    let mut ser = 1.000_000_000_190_015;
+    for c in COF {
+        y += 1.0;
+        ser += c / y;
+    }
+    -tmp + (2.506_628_274_631_000_5 * ser / x).ln()
+}
+
+/// Lentz's continued-fraction evaluation of the incomplete beta function,
+/// used only inside its valid convergence domain (`x < (a+1)/(a+b+2)`) by
+/// [`regularized_incomplete_beta`], which flips to the complementary
+/// identity outside that domain.
+///
+/// Variable names (`a`, `b`, `c`, `d`, `h`, `m`) intentionally mirror the
+/// textbook Numerical Recipes `betacf` routine this implements, so the code
+/// can be checked line-by-line against that reference.
+#[allow(clippy::many_single_char_names)]
+fn incomplete_beta_continued_fraction(a: f64, b: f64, x: f64) -> f64 {
+    const MAX_ITERATIONS: u32 = 200;
+    const EPSILON: f64 = 1e-14;
+    const FP_MIN: f64 = 1e-300;
+
+    let qab = a + b;
+    let qap = a + 1.0;
+    let qam = a - 1.0;
+    let mut c = 1.0;
+    let mut d = 1.0 - qab * x / qap;
+    if d.abs() < FP_MIN {
+        d = FP_MIN;
+    }
+    d = 1.0 / d;
+    let mut h = d;
+
+    for m in 1..=MAX_ITERATIONS {
+        let m_f = f64::from(m);
+        let m2 = 2.0 * m_f;
+
+        let aa = m_f * (b - m_f) * x / ((qam + m2) * (a + m2));
+        d = 1.0 + aa * d;
+        if d.abs() < FP_MIN {
+            d = FP_MIN;
+        }
+        c = 1.0 + aa / c;
+        if c.abs() < FP_MIN {
+            c = FP_MIN;
+        }
+        d = 1.0 / d;
+        h *= d * c;
+
+        let aa = -(a + m_f) * (qab + m_f) * x / ((a + m2) * (qap + m2));
+        d = 1.0 + aa * d;
+        if d.abs() < FP_MIN {
+            d = FP_MIN;
+        }
+        c = 1.0 + aa / c;
+        if c.abs() < FP_MIN {
+            c = FP_MIN;
+        }
+        d = 1.0 / d;
+        let del = d * c;
+        h *= del;
+
+        if (del - 1.0).abs() < EPSILON {
+            break;
+        }
+    }
+
+    h
+}
+
+/// Regularized incomplete beta function `I_x(a, b)`, computed via Lentz's
+/// continued-fraction method with a Lanczos log-gamma approximation for the
+/// beta normalization constant. Used by [`paired_difference_p_value`] to
+/// derive the Student's-t two-tailed survival-function p-value.
+fn regularized_incomplete_beta(x: f64, a: f64, b: f64) -> f64 {
+    if x <= 0.0 {
+        return 0.0;
+    }
+    if x >= 1.0 {
+        return 1.0;
+    }
+
+    let ln_beta_normalization = log_gamma(a + b) - log_gamma(a) - log_gamma(b);
+    let front = (ln_beta_normalization + a * x.ln() + b * (1.0 - x).ln()).exp();
+
+    if x < (a + 1.0) / (a + b + 2.0) {
+        front * incomplete_beta_continued_fraction(a, b, x) / a
+    } else {
+        1.0 - front * incomplete_beta_continued_fraction(b, a, 1.0 - x) / b
+    }
+}
+
+/// Two-tailed p-value for a Student's-t statistic via the closed-form
+/// relationship to the regularized incomplete beta function:
+/// `p = I_x(df/2, 1/2)`, `x = df / (df + t^2)`.
+fn paired_difference_p_value(t: f64, df: usize) -> f64 {
+    // `df` is a paired-assertion count (realistically single-to-low-double
+    // digits per suite comparison), never near f64's 2^52 mantissa limit.
+    #[allow(clippy::cast_precision_loss)]
+    let df = df as f64;
+    let x = df / (df + t * t);
+    regularized_incomplete_beta(x, df / 2.0, 0.5)
+}
+
+/// Fold a slice of per-pair diffs (`+1.0`/`-1.0`/`0.0`) into a
+/// [`PairedDifferenceTest`].
+///
+/// Edge-case conventions, fixed by design.md's Specification (not
+/// reinvented here):
+/// - `n < 2` → [`PairedDifferenceTest::InsufficientPairs`]: a sample variance
+///   (and therefore a standard error and a t-statistic) cannot be estimated
+///   from 0 or 1 observations.
+/// - `n >= 2` and zero variance (every diff identical) → `t_statistic: None`
+///   (not `f64::INFINITY`/`NaN`, which `serde_json` cannot round-trip).
+///   `mean_difference == 0.0` is the vacuous "every pair unchanged" comparison
+///   (`p_value: 1.0, significant: false`); `mean_difference != 0.0` is a
+///   perfect unanimous shift, the strongest evidence a paired comparison can
+///   produce (`p_value: 0.0, significant: true`).
+fn compute_paired_difference(diffs: &[f64]) -> PairedDifferenceTest {
+    let n = diffs.len();
+    if n < 2 {
+        return PairedDifferenceTest::InsufficientPairs { n };
+    }
+
+    // `n` is a paired-assertion count (realistically single-to-low-double
+    // digits per suite comparison), never near f64's 2^52 mantissa limit.
+    #[allow(clippy::cast_precision_loss)]
+    let n_f64 = n as f64;
+    let mean_difference = diffs.iter().sum::<f64>() / n_f64;
+    let sum_squared_deviation: f64 = diffs
+        .iter()
+        .map(|diff| (diff - mean_difference).powi(2))
+        .sum();
+    let sample_std_dev = (sum_squared_deviation / (n_f64 - 1.0)).sqrt();
+
+    if sample_std_dev.abs() < f64::EPSILON {
+        let (p_value, significant) = if mean_difference.abs() < f64::EPSILON {
+            (1.0, false)
+        } else {
+            (0.0, true)
+        };
+        return PairedDifferenceTest::Computed {
+            n,
+            mean_difference,
+            sample_std_dev,
+            standard_error: 0.0,
+            degrees_of_freedom: n - 1,
+            t_statistic: None,
+            p_value,
+            significant,
+        };
+    }
+
+    let standard_error = sample_std_dev / n_f64.sqrt();
+    let degrees_of_freedom = n - 1;
+    let t_statistic = mean_difference / standard_error;
+    let p_value = paired_difference_p_value(t_statistic, degrees_of_freedom);
+
+    PairedDifferenceTest::Computed {
+        n,
+        mean_difference,
+        sample_std_dev,
+        standard_error,
+        degrees_of_freedom,
+        t_statistic: Some(t_statistic),
+        p_value,
+        significant: p_value < PAIRED_DIFFERENCE_ALPHA,
     }
 }
 
@@ -247,6 +480,37 @@ pub fn render_comparison_markdown(
         "FAIL"
     };
     let _ = write!(out, "**Falsification gate:** {gate}\n\n");
+
+    match &report.paired_difference {
+        PairedDifferenceTest::Computed {
+            n,
+            mean_difference,
+            standard_error,
+            degrees_of_freedom,
+            t_statistic,
+            p_value,
+            significant,
+            ..
+        } => {
+            let t_display =
+                t_statistic.map_or_else(|| "undefined".to_string(), |t| format!("{t:.2}"));
+            let verdict = if *significant {
+                format!("significant at α = {PAIRED_DIFFERENCE_ALPHA}")
+            } else {
+                format!("not significant at α = {PAIRED_DIFFERENCE_ALPHA}")
+            };
+            let _ = write!(
+                out,
+                "**Paired-difference test:** n={n}, mean Δ {mean_difference:.3} (SEM {standard_error:.3}), t({degrees_of_freedom}) = {t_display}, p = {p_value:.4} — {verdict}\n\n",
+            );
+        }
+        PairedDifferenceTest::InsufficientPairs { n } => {
+            let _ = write!(
+                out,
+                "**Paired-difference test:** insufficient paired assertions (n={n}) for a significance test\n\n",
+            );
+        }
+    }
 
     let _ = writeln!(out, "| Case | {label_a} | {label_b} |");
     out.push_str("|------|--------|--------|\n");
@@ -380,6 +644,7 @@ mod tests {
                 ..Default::default()
             },
             falsification_gate: true,
+            paired_difference: PairedDifferenceTest::InsufficientPairs { n: 0 },
             cases: vec![],
         };
         assert!(render_comparison_markdown(&passing, "arm-a", "arm-b").contains("PASS"));
@@ -415,5 +680,178 @@ mod tests {
     fn passes_falsification_gate_fails_when_vacuous() {
         let totals = ComparisonTotals::default();
         assert!(!totals.passes_falsification_gate());
+    }
+
+    /// Reference value cross-check, required by design.md Specification
+    /// item 1 before `paired_difference_p_value` is trusted: the standard
+    /// printed two-tailed-5%-critical-value table entry for `df = 9` is
+    /// `t = 2.262`. Independently re-verified for this plan against
+    /// `scipy.stats.t.sf` and a from-scratch continued-fraction port
+    /// (agreement to ~1e-8); this test pins the value at a looser `1e-3`
+    /// tolerance appropriate for this repo's own implementation.
+    #[test]
+    fn p_value_matches_standard_two_tailed_five_percent_critical_value() {
+        let p = paired_difference_p_value(2.262, 9);
+        assert!(
+            (p - 0.0500).abs() < 1e-3,
+            "expected p ~= 0.0500 for t=2.262, df=9, got {p}"
+        );
+    }
+
+    /// A t-statistic of exactly zero carries no evidence against the null,
+    /// regardless of sample size.
+    #[test]
+    fn zero_t_statistic_always_yields_p_one() {
+        assert!((paired_difference_p_value(0.0, 5) - 1.0).abs() < 1e-9);
+        assert!((paired_difference_p_value(0.0, 9) - 1.0).abs() < 1e-9);
+    }
+
+    /// Monotonicity spot-check guarding against a sign or formula
+    /// inversion that could still hit the two pinned reference values by
+    /// coincidence.
+    #[test]
+    fn p_value_strictly_decreases_as_t_grows() {
+        let p_small = paired_difference_p_value(1.0, 9);
+        let p_large = paired_difference_p_value(5.0, 9);
+        assert!(
+            p_large < p_small,
+            "expected p(t=5) < p(t=1), got p(t=5)={p_large}, p(t=1)={p_small}"
+        );
+    }
+
+    /// Fewer than 2 paired assertions exist: a sample variance (and
+    /// therefore a standard error and a t-statistic) cannot be estimated
+    /// from 0 or 1 observations.
+    #[test]
+    fn fewer_than_two_diffs_yields_insufficient_pairs() {
+        match compute_paired_difference(&[]) {
+            PairedDifferenceTest::InsufficientPairs { n } => assert_eq!(n, 0),
+            computed @ PairedDifferenceTest::Computed { .. } => {
+                panic!("expected InsufficientPairs, got {computed:?}")
+            }
+        }
+        match compute_paired_difference(&[1.0]) {
+            PairedDifferenceTest::InsufficientPairs { n } => assert_eq!(n, 1),
+            computed @ PairedDifferenceTest::Computed { .. } => {
+                panic!("expected InsufficientPairs, got {computed:?}")
+            }
+        }
+    }
+
+    /// Every pair unchanged (the "vacuous comparison" Feature G's design
+    /// independently named): zero variance, zero mean difference. No
+    /// evidence of a difference either way.
+    #[test]
+    fn all_zero_diffs_yields_p_one_not_significant() {
+        match compute_paired_difference(&[0.0, 0.0, 0.0]) {
+            PairedDifferenceTest::Computed {
+                mean_difference,
+                t_statistic,
+                p_value,
+                significant,
+                ..
+            } => {
+                assert!((mean_difference - 0.0).abs() < 1e-9);
+                assert_eq!(t_statistic, None);
+                assert!((p_value - 1.0).abs() < 1e-9);
+                assert!(!significant);
+            }
+            insufficient @ PairedDifferenceTest::InsufficientPairs { .. } => {
+                panic!("expected Computed, got {insufficient:?}")
+            }
+        }
+    }
+
+    /// Every pair moved by the same nonzero amount: zero variance, nonzero
+    /// mean difference. The strongest evidence a paired comparison can
+    /// produce (a perfect, unanimous shift with zero within-pair
+    /// variance).
+    #[test]
+    fn all_equal_nonzero_diffs_yields_p_zero_significant() {
+        match compute_paired_difference(&[1.0, 1.0, 1.0]) {
+            PairedDifferenceTest::Computed {
+                mean_difference,
+                t_statistic,
+                p_value,
+                significant,
+                ..
+            } => {
+                assert!((mean_difference - 1.0).abs() < 1e-9);
+                assert_eq!(t_statistic, None);
+                assert!((p_value - 0.0).abs() < 1e-9);
+                assert!(significant);
+            }
+            insufficient @ PairedDifferenceTest::InsufficientPairs { .. } => {
+                panic!("expected Computed, got {insufficient:?}")
+            }
+        }
+    }
+
+    fn comparison_report_with(paired_difference: PairedDifferenceTest) -> super::ComparisonReport {
+        super::ComparisonReport {
+            arm_a: super::ArmRef {
+                run_id: String::from("arm-a"),
+            },
+            arm_b: super::ArmRef {
+                run_id: String::from("arm-b"),
+            },
+            totals: super::ComparisonTotals::default(),
+            falsification_gate: false,
+            paired_difference,
+            cases: vec![],
+        }
+    }
+
+    /// Facts-present check (design.md's own resolved wording decision):
+    /// `n`, `mean_difference`, `standard_error`, `t_statistic`,
+    /// `degrees_of_freedom`, `p_value`, and a not-significant phrase
+    /// against α = 0.05 must all appear somewhere in the rendered output.
+    /// Sentence structure is not load-bearing.
+    #[test]
+    fn render_comparison_markdown_names_computed_paired_difference_facts() {
+        let report = comparison_report_with(PairedDifferenceTest::Computed {
+            n: 10,
+            mean_difference: 0.2,
+            sample_std_dev: 0.632_455_53,
+            standard_error: 0.2,
+            degrees_of_freedom: 9,
+            t_statistic: Some(1.0),
+            p_value: 0.3434,
+            significant: false,
+        });
+        let markdown = super::render_comparison_markdown(&report, "before", "after");
+
+        assert!(markdown.contains("10"), "should name n: {markdown}");
+        assert!(
+            markdown.contains("0.2"),
+            "should name mean_difference/standard_error: {markdown}"
+        );
+        assert!(markdown.contains('9'), "should name df: {markdown}");
+        assert!(
+            markdown.contains('1'),
+            "should name t_statistic: {markdown}"
+        );
+        assert!(
+            markdown.contains("0.3434") || markdown.contains("0.343"),
+            "should name p_value: {markdown}"
+        );
+        assert!(markdown.contains("0.05"), "should name α: {markdown}");
+        assert!(
+            markdown.to_lowercase().contains("not significant"),
+            "should say not significant: {markdown}"
+        );
+    }
+
+    /// `InsufficientPairs` names `n` and says "insufficient".
+    #[test]
+    fn render_comparison_markdown_names_insufficient_pairs() {
+        let report = comparison_report_with(PairedDifferenceTest::InsufficientPairs { n: 1 });
+        let markdown = super::render_comparison_markdown(&report, "before", "after");
+
+        assert!(markdown.contains('1'), "should name n: {markdown}");
+        assert!(
+            markdown.to_lowercase().contains("insufficient"),
+            "should say insufficient: {markdown}"
+        );
     }
 }

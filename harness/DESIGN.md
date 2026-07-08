@@ -94,6 +94,7 @@ Assertion:
   | { type: "must_not_call_tool"; tool: string }
   | { type: "tool_call_count";    tool?: string; op: Op; value: number }
   | { type: "tool_call_order";    sequence: string[] }
+  | { type: "tool_call_collection"; tools: string[] }   # order-insensitive multiset: each name must appear at least as many times as listed; extra/intervening calls are ignored
 
   # ─── Text assertions (over the final assistant turn's text content)
   | { type: "text_contains";       value: string; case_sensitive?: bool }
