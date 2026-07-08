@@ -11,14 +11,6 @@ bundler). `python3 server.py` is the entire install step.
 
 ## The grading unit: a (judge, candidate) matrix cell
 
-Earlier iterations of this tool graded a bare mined conversation
-("pass/fail this whole candidate"). That was the wrong shape: judges are
-graded against *their own* rubric, and the same candidate can be relevant
-to several different judges with different verdicts. The grading unit is
-now a single matrix cell -- one judge, one candidate, one narrow
-(user, assistant) excerpt -- and the question is **"was the judge
-satisfied?"**, not "is this candidate good?".
-
 The flow is judge-first:
 
 1. Pick a judge (its full rubric/prompt text, pulled straight from the eval
@@ -55,22 +47,6 @@ present) says so explicitly and is never rendered as if it were a pass --
 "no checks" and "checks passed" are visually and textually distinct. If a
 cell has no cached pre-check data at all, the panel simply doesn't render
 (no misleading placeholder).
-
-For the 4 **mined** (real agent-session) matrix cells whose assistant turn
-is structured content (prose plus `tool_use` blocks), a `script` check is
-run against the narration *plus* a fenced code block synthesized from that
-session's own Edit/Write/MultiEdit tool calls (see
-`conversation_draft.flatten_for_checker`) -- because a script checker
-otherwise sees no code at all in the prose-only projection. When this
-flattening was used, the panel says so plainly with a small caption:
-*"checked against code from this session's Edit/Write calls, rendered as a
-code block"*. **This pre-check is informational only, and deliberately more
-generous than what the real, production judge/script assertion currently
-sees for those same mined cells** -- production reads only the final
-assistant turn's *text*, so a mined cell's real tool-call content is
-invisible to it today. A pre-check "pass" here is not a claim about what the
-live evaluator currently does with that same conversation; treat it as a
-second, independent data point for your own judgment, not as ground truth.
 
 The panel is served by `GET /api/precheck?judge_id=...&candidate_id=...`,
 backed by a `PrecheckStore` that loads a cached batch run,
@@ -253,21 +229,3 @@ path -- so a path-traversal-shaped id is rejected at the allowlist check
 and never reaches a file read. See
 `tests/test_app_integration.py::test_path_traversal_judge_id_rejected_without_touching_filesystem`
 and its candidate-id counterpart.
-
-## Dropped from v1: manual include/export, and the similarity heuristic
-
-Two things from the earlier bare-candidate grader were deliberately not
-carried forward:
-
-- **The include/export ceremony.** Grading now writes directly to the
-  real `evals/labels.yaml` the moment you press Pass/Fail -- there is no
-  "mark for export" toggle, no separate draft file, and no export button.
-- **The cosine-similarity suggestion heuristic.** It doesn't naturally fit
-  the new narrow-excerpt-per-cell model: each judge today has only 1-3
-  relevant cells (the whole matrix is 5 cells across 4 judges as of this
-  writing), which is too few neighbors per judge to make a similarity
-  suggestion meaningful, and neighbors from a *different* judge's cells
-  aren't comparable at all (a "Pass" under one judge's rubric says nothing
-  about whether a different judge would be satisfied). If the matrix grows
-  large enough per-judge for this to make sense again, it would need to be
-  re-scoped to compare only within a single judge's own graded cells.
