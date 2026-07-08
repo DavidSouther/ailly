@@ -22,7 +22,8 @@ use crate::knowledge::assertions::check_judge;
 use crate::knowledge::assertions::check_program;
 use crate::knowledge::assertions::check_script;
 
-const MISSING_CONVERSATION_CLASS: &str = "missing_conversation";
+/// Synthesized tag for a named case that matched zero conversations
+pub(crate) const MISSING_CONVERSATION_CLASS: &str = "missing_conversation";
 
 /// Full report serialized to `<project>/evals/reports/<run-id>.json`.
 /// Field names are the JSON keys; see DESIGN.md §evaluation for the contract.
