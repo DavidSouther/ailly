@@ -87,7 +87,7 @@ impl EvaluationContext<'_> {
 
 impl Assertion {
     /// Check this assertion against `conversation` in `ctx`. Total over every
-    /// variant. The 12 sync families ignore `ctx`; the 5 LLM/subprocess
+    /// variant. The 13 sync families ignore `ctx`; the 5 LLM/subprocess
     /// families return `Deferred` when their collaborator is `None`.
     ///
     /// Invariant: never panics, never performs I/O on its own, never
