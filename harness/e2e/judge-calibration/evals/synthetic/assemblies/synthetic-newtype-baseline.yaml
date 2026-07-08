@@ -1,0 +1,16 @@
+name: synthetic-newtype-baseline
+model: claude-sonnet-4-6
+
+matrix:
+  variant:
+    - "1"
+    - "2"
+    - "3"
+
+prefix:
+  - { kind: file, path: ./AGENTS.md,         cache: true }
+  - { kind: file, path: ./context/AGENTS.md, cache: true }
+
+conversation:
+  - { role: user, path: "prompts/synthetic/newtype/{{ variant }}.md" }
+  - { role: assistant }

@@ -1,0 +1,88 @@
+---
+model: claude-sonnet-4-6
+assembly: judge
+binding:
+  variant: '3'
+---
+role: system
+content: |-
+  You are an evaluator. Read the rubric and the candidate response.
+  Reason step-by-step about whether the candidate response satisfies
+  the rubric, then end your reply with one line:
+    GRADE: P    (rubric satisfied)
+    GRADE: F    (rubric violated)
+    GRADE: I    (cannot decide)
+  The last GRADE line is binding. Do not print GRADE inside your reasoning.
+---
+role: user
+content: |-
+  RUBRIC:
+  The call site emits a structured log record with `EventName` set
+  to `order.placed` and attaches fields under OpenTelemetry
+  semantic-convention keys (`http.response.status_code`, `order.id`,
+  `user.id`). The message body is a stable string; no values are
+  interpolated into it.
+
+
+  USER QUESTION:
+  In the account-signup handler, add a log line for when a new account is
+  created. On-call needs to grep by the new user id and see which
+  signup-flow variant they came through and what HTTP status code we
+  returned to the client. Write the one log call as you would for this
+  service.
+
+
+  CANDIDATE RESPONSE:
+  ```typescript
+  import { logger } from "./logger";
+
+  // Inside the account-signup handler, after the account is created:
+
+  logger.emit({
+    eventName: "account.created",
+    userId: newAccount.id,
+    signupFlowVariant: req.body.variant,
+    httpStatusCode: res.statusCode,
+  });
+  ```
+
+  PROGRAM_OUTPUTS:
+  [script] R3 semantic-convention keys: missing order.id, user.id, http.response.status_code; use the OpenTelemetry semantic-convention keys, not ad-hoc field names
+---
+role: assistant
+content: |-
+  Let me evaluate the candidate response against the rubric carefully.
+
+  **Rubric requirements:**
+  1. `EventName` set to `order.placed` — The candidate uses `eventName: "account.created"` (wrong event name, but the question is about account signup, not orders... however the rubric specifically says `order.placed`)
+  2. Fields under OpenTelemetry semantic-convention keys: `http.response.status_code`, `order.id`, `user.id` — The candidate uses `userId`, `signupFlowVariant`, `httpStatusCode` (ad-hoc names, not OTel semantic convention keys)
+  3. Message body is a stable string with no interpolated values — No message body is present at all
+
+  **Analysis:**
+
+  The rubric is explicit:
+  - `EventName` must be `order.placed` — candidate has `account.created` ❌
+  - Must use `http.response.status_code` — candidate uses `httpStatusCode` ❌
+  - Must use `order.id` — candidate uses `userId` (and `order.id` is missing entirely) ❌
+  - Must use `user.id` — candidate uses `userId` ❌
+  - Stable string message body (no interpolation) — absent ❌
+
+  The program outputs also confirm: "R3 semantic-convention keys: missing order.id, user.id, http.response.status_code; use the OpenTelemetry semantic-convention keys, not ad-hoc field names"
+
+  The candidate response fails on multiple rubric criteria: wrong event name, wrong field names (not OTel semantic-convention keys), missing fields, and no stable message body.
+
+  GRADE: F
+trace:
+  span_id: 019f38ee-2556-7290-b14f-8ed0eacd5df5
+  model: claude-sonnet-4-6
+  tokens:
+    input: 399
+    output: 386
+  latency_ms: 6930
+  events:
+  - name: gen_ai.completion
+    attributes:
+      gen_ai.request.model: claude-sonnet-4-6
+      gen_ai.system: anthropic
+      gen_ai.usage.input_tokens: 399
+      gen_ai.usage.output_tokens: 386

@@ -1,0 +1,82 @@
+---
+model: claude-sonnet-4-6
+assembly: judge
+binding:
+  variant: '1'
+---
+role: system
+content: |-
+  You are an evaluator. Read the rubric and the candidate response.
+  Reason step-by-step about whether the candidate response satisfies
+  the rubric, then end your reply with one line:
+    GRADE: P    (rubric satisfied)
+    GRADE: F    (rubric violated)
+    GRADE: I    (cannot decide)
+  The last GRADE line is binding. Do not print GRADE inside your reasoning.
+---
+role: user
+content: |-
+  RUBRIC:
+  The call site emits a structured log record with `EventName` set
+  to `order.placed` and attaches fields under OpenTelemetry
+  semantic-convention keys (`http.response.status_code`, `order.id`,
+  `user.id`). The message body is a stable string; no values are
+  interpolated into it.
+
+
+  USER QUESTION:
+  In the refund handler, add a log line for when a refund is issued.
+  Support needs to grep the logs for a specific refund and see which
+  order it was against, which customer got the money back, and what
+  amount was refunded. Write the one log call as you would for this
+  service.
+
+
+  CANDIDATE RESPONSE:
+  ```typescript
+  log.emit({
+    eventName: "refund.issued",
+    "refund.id": refundId,
+    "order.id": orderId,
+    "customer.id": customerId,
+    "refund.amount": amount,
+  });
+  ```
+
+  PROGRAM_OUTPUTS:
+  [script] R3 semantic-convention keys: missing user.id, http.response.status_code; use the OpenTelemetry semantic-convention keys, not ad-hoc field names
+---
+role: assistant
+content: |-
+  Let me evaluate the candidate response against the rubric step by step.
+
+  **Rubric requirements:**
+  1. `EventName` set to `order.placed` — The candidate uses `"refund.issued"` as the event name, not `"order.placed"`.
+  2. Fields under OpenTelemetry semantic-convention keys (`http.response.status_code`, `order.id`, `user.id`) — The candidate uses `"refund.id"`, `"order.id"`, `"customer.id"`, `"refund.amount"`. While `order.id` is present, `http.response.status_code` and `user.id` are missing. `customer.id` is used instead of `user.id`.
+  3. Message body is a stable string with no interpolated values — No message body is present at all.
+
+  **Analysis:**
+
+  - The event name is `"refund.issued"` instead of `"order.placed"` — this violates the rubric.
+  - `http.response.status_code` is absent.
+  - `user.id` is absent (replaced by `customer.id`).
+  - No stable message body string is included.
+  - The program output also flags missing `user.id` and `http.response.status_code`, and notes ad-hoc field names instead of OpenTelemetry semantic-convention keys.
+
+  The candidate response fails multiple rubric criteria.
+
+  GRADE: F
+trace:
+  span_id: 019f38ed-ed26-7963-bbdc-aadeb765b273
+  model: claude-sonnet-4-6
+  tokens:
+    input: 379
+    output: 329
+  latency_ms: 5853
+  events:
+  - name: gen_ai.completion
+    attributes:
+      gen_ai.request.model: claude-sonnet-4-6
+      gen_ai.system: anthropic
+      gen_ai.usage.input_tokens: 379
+      gen_ai.usage.output_tokens: 329

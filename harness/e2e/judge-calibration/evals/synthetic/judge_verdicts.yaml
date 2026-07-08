@@ -1,0 +1,593 @@
+# Real, live `ailly eval` judge verdicts captured against the new synthetic
+# conversations in conversations/. Each entry's judge prompt/rubric is copied
+# verbatim from the matching case in e2e/patterns-eval/evals/{baseline,invocation,discovery}.yaml
+# (the real judge's own eval suite) and executed live via `ailly eval` against
+# this project's own evals/synthetic-*.yaml files. This is the judge half of
+# calibration data -- the human verdict (TODO) is the other half.
+#
+# reasoning is the judge model's full raw reply, including its 'GRADE: P|F' line.
+# judge_transcript points at the full system+user+assistant judge call transcript.
+
+- judge_id: patterns-eval/baseline/newtype
+  conversation: conversations/patterns-eval__baseline__newtype/1.yaml
+  judge_transcript: evals/judges/2026-07-06T19-29-24Z-fb1aee-synthetic-newtype-baseline/1.1.assertion-0.yaml
+  verdict: pass
+  reasoning: 'I need to evaluate whether this candidate response satisfies the rubric for introducing
+    `CartId` and `PromoCodeId` types.
+
+
+    **Rubric requirements:**
+
+    1. Introduces types that wrap a string
+
+    2. Exposes construction as the only sanctioned entry point
+
+    3. Makes a plain string unassignable where the branded type is required
+
+    4. No `as` casts at call sites
+
+    5. Validation lives once in the constructor
+
+
+    **Analysis:**
+
+
+    1. **Types that wrap a string**: ✅ Both `CartId = string & { readonly [__cartId]: never }` and `PromoCodeId
+    = string & { readonly [__promoCodeId]: never }` are branded string types using unique symbols. They
+    wrap strings with nominal-like branding.
+
+
+    2. **Construction as the only sanctioned entry point**: ✅ The `CartId()` and `PromoCodeId()` constructor
+    functions are provided as the designated way to create these types.
+
+
+    3. **Plain string unassignable where the type is required**: ✅ Because of the brand, a raw `string`
+    cannot be directly assigned to `CartId` or `PromoCodeId` — the brand property won''t exist on a plain
+    string, so TypeScript will reject it.
+
+
+    4. **No `as` casts at call sites**: ✅ The call sites (`applyPromoToCart(cart, promo)`) use properly
+    constructed values via the constructor functions — no `as` casts at call sites.
+
+
+    5. **Validation lives once in the constructor**: The `as` cast lives inside the constructor functions
+    (`raw as CartId`), not at call sites. This is the standard and acceptable pattern for branded types
+    in TypeScript. The rubric says "no `as` casts at call sites" — the casts here are inside the constructor
+    functions, which is exactly where they should be. ✅
+
+
+    **Potential concerns:**
+
+    - The rubric mentions "UserId" but this is a generalized rubric applied to `CartId`/`PromoCodeId`
+    — the spirit maps directly.
+
+    - The rubric says "no classes" is required implicitly (it says "makes a plain string unassignable")
+    — the branded type approach achieves this.
+
+    - The constructors use `as` internally, but the rubric only prohibits `as` at **call sites**, which
+    is satisfied.
+
+
+    The solution correctly uses TypeScript''s branded/nominal type pattern with unique symbols, constructor
+    functions as entry points, no `as` casts at call sites, and a clear function signature demonstrating
+    the type safety.
+
+
+    GRADE: P'
+- judge_id: patterns-eval/baseline/newtype
+  conversation: conversations/patterns-eval__baseline__newtype/2.yaml
+  judge_transcript: evals/judges/2026-07-06T19-29-24Z-fb1aee-synthetic-newtype-baseline/2.2.assertion-0.yaml
+  verdict: pass
+  reasoning: 'I''ll evaluate this against the rubric:
+
+
+    **Rubric requirements:**
+
+    1. Introduces a `UserId` type that wraps a string — *Wait, the rubric says `UserId`, but the question
+    asks for `Sku` and `BinLocation`. The rubric appears to be a generalized description of the pattern,
+    not literally requiring `UserId`. I''ll interpret it as describing the pattern applied to whatever
+    types the question asks for.*
+
+
+    Let me re-read: "The code introduces a UserId type that wraps a string..." — this seems like a template
+    rubric describing the general pattern. The question asks for `Sku` and `BinLocation`. The rubric''s
+    requirements map to:
+
+
+    1. **Wrapper types that wrap a string** — `Sku` and `BinLocation` are both `Brand<string, ...>`, which
+    are string-based branded types. ✅
+
+    2. **Construction as the only sanctioned entry point** — `Sku(raw: string): Sku` and `BinLocation(raw:
+    string): BinLocation` are the only constructors. ✅
+
+    3. **Plain string unassignable where the type is required** — The branding makes `string` not assignable
+    to `Sku` or `BinLocation` directly. ✅
+
+    4. **No `as` casts at call sites** — The example call site uses `Sku(...)` and `BinLocation(...)`
+    constructors, no `as` casts. ✅ (The `as` casts are *inside* the constructors, which is the sanctioned
+    location.)
+
+    5. **Validation lives once in the constructor** — Regex validation is in each constructor. ✅
+
+    6. **`moveStock(sku, from, to)` signature using the types** — Present and correct. ✅
+
+
+    The `as` inside the constructor functions is the necessary internal cast to "escape" into the branded
+    type — this is standard practice and not a "call site" cast. The rubric says "no `as` casts at call
+    sites," and the call site example is clean.
+
+
+    All rubric requirements are satisfied.
+
+
+    GRADE: P'
+- judge_id: patterns-eval/baseline/newtype
+  conversation: conversations/patterns-eval__baseline__newtype/3.yaml
+  judge_transcript: evals/judges/2026-07-06T19-29-24Z-fb1aee-synthetic-newtype-baseline/3.3.assertion-0.yaml
+  verdict: pass
+  reasoning: 'The rubric has several specific requirements. Let me check each:
+
+
+    1. **"introduces a UserId type that wraps a string"** — The rubric says `UserId` specifically. The
+    candidate provides `InvoiceId` and `CustomerId` instead. However, reading the rubric charitably in
+    the context of the question (which is about `invoiceId` and `customerId`), the rubric''s mention of
+    `UserId` appears to be a generic placeholder example. The spirit of the rubric is about creating branded/nominal
+    types for IDs. The candidate does exactly this for the two relevant ID types.
+
+
+    2. **"exposes construction as the only sanctioned entry point"** — The candidate provides `toInvoiceId`
+    and `toCustomerId` as the only construction helpers. This is satisfied.
+
+
+    3. **"makes a plain string unassignable where UserId is required"** — With the branded type approach,
+    a plain `string` cannot be assigned directly to `InvoiceId` or `CustomerId` without going through
+    the helper. This is satisfied.
+
+
+    4. **"There are no `as` casts at call sites"** — The call sites (`await lookupInvoice(invoiceId)`
+    etc.) do not use `as` casts. The `as` casts are confined to the constructor/helper functions. This
+    is satisfied.
+
+
+    5. **"validation lives once in the constructor"** — The casting helpers centralize the coercion. Satisfied.
+
+
+    The only potential concern is the rubric literally says "UserId type" but the question asks for `InvoiceId`/`CustomerId`.
+    The rubric is clearly describing the pattern generically, not mandating a type literally named `UserId`.
+    The candidate''s solution correctly applies the pattern to both required types.
+
+
+    The solution is clean, correct, and satisfies all the rubric''s requirements in spirit and practice.
+
+
+    GRADE: P'
+- judge_id: patterns-eval/invocation/newtype
+  conversation: conversations/patterns-eval__invocation__newtype/1.yaml
+  judge_transcript: evals/judges/2026-07-06T19-29-24Z-7c7aba-synthetic-newtype-invocation/1.1.assertion-0.yaml
+  verdict: pass
+  reasoning: 'The rubric requires:
+
+    1. A UserId-like type (here CartId/PromoCodeId) that wraps a string
+
+    2. Construction as the only sanctioned entry point
+
+    3. A plain string must be unassignable where the branded type is required
+
+    4. No `as` casts at call sites
+
+    5. Validation lives once in the constructor
+
+
+    Let me evaluate each point:
+
+
+    1. **Type definitions**: `CartId = string & { readonly _brand: "CartId" }` and `PromoCodeId = string
+    & { readonly _brand: "PromoCodeId" }` — these are proper branded types that wrap strings. ✓
+
+
+    2. **Construction as only sanctioned entry point**: `makeCartId` and `makePromoCodeId` are the only
+    ways to create these types. ✓
+
+
+    3. **Plain string unassignable**: A plain `string` cannot be assigned to `CartId` or `PromoCodeId`
+    because `string` doesn''t have the `_brand` property. Passing a raw string directly to `applyPromoToCart`
+    would be a compile error. ✓
+
+
+    4. **No `as` casts at call sites**: The example call site uses `makeCartId(...)` and `makePromoCodeId(...)`
+    — no casts. The `as` casts are confined to the constructors. ✓
+
+
+    5. **Validation lives once in the constructor**: Both `makeCartId` and `makePromoCodeId` contain blank-check
+    validation. ✓
+
+
+    6. **Function signature applying promo to cart**: `applyPromoToCart(cartId: CartId, promoCodeId: PromoCodeId):
+    void` — clearly shows the type safety. ✓
+
+
+    The rubric mentions "UserId type" but the spirit of the rubric is clearly about the pattern (branded
+    types, construction, no casts at call sites), and the user question asks for CartId and PromoCodeId.
+    The candidate''s solution satisfies all the structural requirements of the rubric perfectly. The solution
+    uses the correct branded type pattern (not classes), has constructors as entry points, keeps casts
+    inside constructors, and the function signature demonstrates compile-time safety.
+
+
+    GRADE: P'
+- judge_id: patterns-eval/invocation/newtype
+  conversation: conversations/patterns-eval__invocation__newtype/2.yaml
+  judge_transcript: evals/judges/2026-07-06T19-29-24Z-7c7aba-synthetic-newtype-invocation/2.2.assertion-0.yaml
+  verdict: pass
+  reasoning: 'I need to evaluate this against the rubric, which requires:
+
+    1. A type that wraps a string
+
+    2. Construction as the only sanctioned entry point
+
+    3. Plain string unassignable where the type is required
+
+    4. No `as` casts at call sites
+
+    5. Validation lives once in the constructor
+
+
+    The rubric specifically mentions `UserId`, but the question asks for `Sku` and `BinLocation`. I''ll
+    evaluate the spirit of the rubric applied to the actual types requested.
+
+
+    **Checking each rubric point:**
+
+
+    **1. Types that wrap strings:**
+
+    ```typescript
+
+    type Sku = string & { readonly _brand: "Sku" };
+
+    type BinLocation = string & { readonly _brand: "BinLocation" };
+
+    ```
+
+    Yes — branded string types. A plain `string` cannot be assigned where `Sku` or `BinLocation` is required
+    because the brand intersection isn''t satisfied. ✓
+
+
+    **2. Construction as only sanctioned entry point:**
+
+    `makeSku()` and `makeBinLocation()` are the only ways to produce these types legitimately. ✓
+
+
+    **3. Plain string unassignable where the type is required:**
+
+    The branded intersection ensures `string` is not assignable to `Sku` or `BinLocation` without going
+    through the constructor. ✓
+
+
+    **4. No `as` casts at call sites:**
+
+    The call site is:
+
+    ```typescript
+
+    moveStock(sku, fromBin, toBin);
+
+    ```
+
+    No `as` casts here. The only `as` casts appear inside `makeSku` and `makeBinLocation` — exactly where
+    they belong. ✓
+
+
+    **5. Validation lives once in the constructor:**
+
+    Both `makeSku` and `makeBinLocation` contain regex validation. No validation scattered elsewhere.
+    ✓
+
+
+    **6. `moveStock` signature uses the branded types:**
+
+    ```typescript
+
+    function moveStock(sku: Sku, from: BinLocation, to: BinLocation): void
+
+    ```
+
+    ✓
+
+
+    The rubric mentions `UserId` specifically, but that''s the rubric''s example framing — the question
+    asks for `Sku` and `BinLocation`, and the candidate correctly applies the same pattern. The rubric''s
+    intent is clearly about the branded-type pattern, and the candidate satisfies all its structural requirements.
+
+
+    The response is clean, minimal, and directly addresses the warehouse domain problem. The `as` casts
+    are confined to the constructors only, call sites are cast-free, and the compiler would catch the
+    transposition bug described.
+
+
+    GRADE: P'
+- judge_id: patterns-eval/invocation/newtype
+  conversation: conversations/patterns-eval__invocation__newtype/3.yaml
+  judge_transcript: evals/judges/2026-07-06T19-29-24Z-7c7aba-synthetic-newtype-invocation/3.3.assertion-0.yaml
+  verdict: pass
+  reasoning: 'The rubric has four criteria. Let me check each:
+
+
+    1. **Introduces a UserId type that wraps a string** – The rubric says "UserId type" but the question
+    is about InvoiceId and CustomerId. The rubric appears to be a generalized description of the pattern;
+    the candidate produces two branded types for the actual use case. This is reasonable and satisfies
+    the spirit.
+
+
+    2. **Exposes construction as the only sanctioned entry point** – `makeInvoiceId` and `makeCustomerId`
+    are the only constructioned entry points. ✓
+
+
+    3. **Makes a plain string unassignable where the branded type is required** – The intersection type
+    `string & { readonly _brand: "InvoiceId" }` ensures a plain `string` cannot be assigned where `InvoiceId`
+    is required. ✓
+
+
+    4. **No `as` casts at call sites; validation lives once in the constructor** – The call site in `lookupInvoice`
+    uses `makeInvoiceId(rawId)` with no cast. The `as` casts are confined to inside `makeInvoiceId` and
+    `makeCustomerId`. ✓
+
+
+    The rubric''s mention of "UserId" is clearly a generalization of the pattern being asked for. The
+    candidate correctly applies the branded-type pattern to `InvoiceId` and `CustomerId`, which is exactly
+    what the question asked. All four criteria are met.
+
+
+    GRADE: P'
+- judge_id: patterns-eval/baseline/emitting-logs
+  conversation: conversations/patterns-eval__baseline__emitting-logs/1.yaml
+  judge_transcript: evals/judges/2026-07-06T19-29-25Z-11c4ed-synthetic-emitting-logs-baseline/1.1.assertion-0.yaml
+  verdict: fail
+  reasoning: 'Let me evaluate the candidate response against the rubric step by step.
+
+
+    **Rubric requirements:**
+
+    1. `EventName` set to `order.placed` — The candidate uses `"refund.issued"` as the event name, not
+    `"order.placed"`.
+
+    2. Fields under OpenTelemetry semantic-convention keys (`http.response.status_code`, `order.id`, `user.id`)
+    — The candidate uses `"refund.id"`, `"order.id"`, `"customer.id"`, `"refund.amount"`. While `order.id`
+    is present, `http.response.status_code` and `user.id` are missing. `customer.id` is used instead of
+    `user.id`.
+
+    3. Message body is a stable string with no interpolated values — No message body is present at all.
+
+
+    **Analysis:**
+
+
+    - The event name is `"refund.issued"` instead of `"order.placed"` — this violates the rubric.
+
+    - `http.response.status_code` is absent.
+
+    - `user.id` is absent (replaced by `customer.id`).
+
+    - No stable message body string is included.
+
+    - The program output also flags missing `user.id` and `http.response.status_code`, and notes ad-hoc
+    field names instead of OpenTelemetry semantic-convention keys.
+
+
+    The candidate response fails multiple rubric criteria.
+
+
+    GRADE: F'
+- judge_id: patterns-eval/baseline/emitting-logs
+  conversation: conversations/patterns-eval__baseline__emitting-logs/2.yaml
+  judge_transcript: evals/judges/2026-07-06T19-29-25Z-11c4ed-synthetic-emitting-logs-baseline/2.2.assertion-0.yaml
+  verdict: fail
+  reasoning: "I need to evaluate whether the candidate response satisfies the rubric.\n\n**Rubric requirements:**\n\
+    1. `EventName` set to `order.placed` ❌ (candidate uses `shipment.created`)\n2. Fields under OpenTelemetry\
+    \ semantic-convention keys: `http.response.status_code`, `order.id`, `user.id` ❌\n3. Message body\
+    \ is a stable string with no interpolated values — N/A (no message body used at all)\n\n**Analysis:**\n\
+    \nThe rubric specifically requires:\n- `EventName` = `order.placed` — The candidate uses `shipment.created`\
+    \ (wrong event name per rubric)\n- OTel semantic-convention keys: `http.response.status_code`, `order.id`,\
+    \ `user.id` — The candidate uses `shipment.id`, `order.id`, `warehouse.id`, `carrier.tracking.statusCode`\n\
+    \  - `order.id` ✅\n  - `http.response.status_code` ❌ (missing; candidate uses `carrier.tracking.statusCode`\
+    \ instead)\n  - `user.id` ❌ (missing entirely)\n\nThe candidate response uses ad-hoc field names rather\
+    \ than the specified OpenTelemetry semantic-convention keys. The PROGRAM_OUTPUTS script also confirms\
+    \ this: \"missing user.id, http.response.status_code; use the OpenTelemetry semantic-convention keys,\
+    \ not ad-hoc field names.\"\n\nThe rubric is explicitly about `order.placed` event with specific OTel\
+    \ keys. The candidate's response is for a different event (`shipment.created`) with different field\
+    \ names — this misses the required `http.response.status_code` and `user.id` fields, and uses the\
+    \ wrong `EventName`.\n\nGRADE: F"
+- judge_id: patterns-eval/baseline/emitting-logs
+  conversation: conversations/patterns-eval__baseline__emitting-logs/3.yaml
+  judge_transcript: evals/judges/2026-07-06T19-29-25Z-11c4ed-synthetic-emitting-logs-baseline/3.3.assertion-0.yaml
+  verdict: fail
+  reasoning: 'Let me evaluate the candidate response against the rubric carefully.
+
+
+    **Rubric requirements:**
+
+    1. `EventName` set to `order.placed` — The candidate uses `eventName: "account.created"` (wrong event
+    name, but the question is about account signup, not orders... however the rubric specifically says
+    `order.placed`)
+
+    2. Fields under OpenTelemetry semantic-convention keys: `http.response.status_code`, `order.id`, `user.id`
+    — The candidate uses `userId`, `signupFlowVariant`, `httpStatusCode` (ad-hoc names, not OTel semantic
+    convention keys)
+
+    3. Message body is a stable string with no interpolated values — No message body is present at all
+
+
+    **Analysis:**
+
+
+    The rubric is explicit:
+
+    - `EventName` must be `order.placed` — candidate has `account.created` ❌
+
+    - Must use `http.response.status_code` — candidate uses `httpStatusCode` ❌
+
+    - Must use `order.id` — candidate uses `userId` (and `order.id` is missing entirely) ❌
+
+    - Must use `user.id` — candidate uses `userId` ❌
+
+    - Stable string message body (no interpolation) — absent ❌
+
+
+    The program outputs also confirm: "R3 semantic-convention keys: missing order.id, user.id, http.response.status_code;
+    use the OpenTelemetry semantic-convention keys, not ad-hoc field names"
+
+
+    The candidate response fails on multiple rubric criteria: wrong event name, wrong field names (not
+    OTel semantic-convention keys), missing fields, and no stable message body.
+
+
+    GRADE: F'
+- judge_id: patterns-eval/invocation/emitting-logs
+  conversation: conversations/patterns-eval__invocation__emitting-logs/1.yaml
+  judge_transcript: evals/judges/2026-07-06T19-29-26Z-cc261a-synthetic-emitting-logs-invocation/1.1.assertion-0.yaml
+  verdict: fail
+  reasoning: 'The rubric requires three specific things:
+
+
+    1. **`EventName` set to `order.placed`** – The candidate uses `event_name: "refund.issued"`. The event
+    name is wrong (the rubric says `order.placed`), and the key name is `event_name` rather than `EventName`.
+
+
+    2. **Fields under OpenTelemetry semantic-convention keys including `http.response.status_code`, `order.id`,
+    `user.id`** – The candidate includes `order.id` and `user.id`, but omits `http.response.status_code`
+    entirely. The program output also flags this missing field.
+
+
+    3. **Message body is a stable string with no interpolated values** – The candidate does satisfy this:
+    `"refund issued"` is a stable string.
+
+
+    The candidate fails on two of the three rubric requirements:
+
+    - Wrong `EventName` value (`refund.issued` vs `order.placed`) and wrong key name.
+
+    - Missing `http.response.status_code` field.
+
+
+    GRADE: F'
+- judge_id: patterns-eval/invocation/emitting-logs
+  conversation: conversations/patterns-eval__invocation__emitting-logs/2.yaml
+  judge_transcript: evals/judges/2026-07-06T19-29-26Z-cc261a-synthetic-emitting-logs-invocation/2.2.assertion-0.yaml
+  verdict: fail
+  reasoning: 'Let me evaluate the candidate response against the rubric.
+
+
+    **Rubric requirements:**
+
+    1. `EventName` set to `order.placed` — The candidate uses `event_name: "shipment.created"` (different
+    event name, but the rubric says `order.placed`; however, the user question is about a *shipment-created*
+    handler, so `shipment.created` is contextually appropriate — but the rubric specifically says `order.placed`)
+
+    2. Fields under OpenTelemetry semantic-convention keys: `http.response.status_code`, `order.id`, `user.id`
+
+    3. Message body is a stable string with no interpolated values
+
+
+    **Analysis:**
+
+
+    1. **EventName = `order.placed`**: The candidate uses `"shipment.created"` not `"order.placed"`. This
+    violates the rubric''s explicit requirement.
+
+
+    2. **`http.response.status_code`**: Present ✓
+
+
+    3. **`order.id`**: Present ✓
+
+
+    4. **`user.id`**: **Missing** ✗ — The program output also flags this: "missing user.id"
+
+
+    5. **Stable message body with no interpolation**: The message `"shipment created"` is a stable string
+    with no interpolation ✓
+
+
+    The candidate response fails on two rubric points:
+
+    - Wrong `EventName` (`shipment.created` vs `order.placed`)
+
+    - Missing `user.id` field
+
+
+    The program output also confirms the `user.id` issue and notes the semantic-convention keys problem.
+
+
+    GRADE: F'
+- judge_id: patterns-eval/invocation/emitting-logs
+  conversation: conversations/patterns-eval__invocation__emitting-logs/3.yaml
+  judge_transcript: evals/judges/2026-07-06T19-29-26Z-cc261a-synthetic-emitting-logs-invocation/3.3.assertion-0.yaml
+  verdict: fail
+  reasoning: "I need to evaluate whether the candidate response satisfies the rubric.\n\n**Rubric requirements:**\n\
+    1. `EventName` set to `order.placed`\n2. Fields under OpenTelemetry semantic-convention keys:\n  \
+    \ - `http.response.status_code`\n   - `order.id`\n   - `user.id`\n3. Message body is a stable string\
+    \ with no interpolated values\n\n**Checking the candidate response:**\n\n1. **EventName `order.placed`**:\
+    \ The candidate uses `event_name: \"account.created\"` — this is for an account-signup handler, so\
+    \ `account.created` is contextually reasonable, but the rubric specifically requires `order.placed`.\
+    \ This does **not** match.\n\n2. **`http.response.status_code`**: ✅ Present as `\"http.response.status_code\"\
+    : response.statusCode`\n\n3. **`order.id`**: ❌ Not present. The candidate uses `\"user.id\"` and other\
+    \ fields, but there is no `order.id` field. (The program output also notes this: \"missing order.id\"\
+    )\n\n4. **`user.id`**: ✅ Present as `\"user.id\": newUser.id.toString()`\n\n5. **Stable message body\
+    \ with no interpolation**: ✅ `\"account created\"` is stable.\n\n**Summary of failures:**\n- `EventName`\
+    \ is `account.created` instead of `order.placed`\n- `order.id` field is missing\n- The program output\
+    \ confirms: \"missing order.id; use the OpenTelemetry semantic-convention keys\"\n\nThe candidate\
+    \ response fails to include `order.id` and uses the wrong event name (`account.created` vs `order.placed`).\n\
+    \nGRADE: F"
+- judge_id: patterns-eval/discovery/paired-log-handler-success
+  conversation: conversations/patterns-eval__discovery__paired-log-handler-success/1.yaml
+  judge_transcript: evals/judges/2026-07-06T19-29-27Z-07a637-synthetic-paired-log-handler-success-discovery/1.1.assertion-0.yaml
+  verdict: pass
+  reasoning: 'The candidate response clearly selects `patterns:emitting-logs` as the applicable skill
+    and explicitly states that `patterns:configuring-logging` does not apply because the subscriber is
+    already running. This directly satisfies both conditions of the rubric:
+
+
+    1. ✅ Selects `patterns:emitting-logs` because the success occurs inside an already-bootstrapped handler.
+
+    2. ✅ Does not recommend re-running `patterns:configuring-logging` — in fact, it actively explains
+    why that skill is not applicable.
+
+
+    GRADE: P'
+- judge_id: patterns-eval/discovery/paired-log-handler-success
+  conversation: conversations/patterns-eval__discovery__paired-log-handler-success/2.yaml
+  judge_transcript: evals/judges/2026-07-06T19-29-27Z-07a637-synthetic-paired-log-handler-success-discovery/2.2.assertion-0.yaml
+  verdict: pass
+  reasoning: 'The candidate response clearly recommends `patterns:emitting-logs` as the right skill to
+    reach for, and explicitly rules out `patterns:configuring-logging` because logging is already bootstrapped.
+    This directly satisfies both conditions of the rubric:
+
+
+    1. **Selects `patterns:emitting-logs`** ✓ — stated as "The right skill is `patterns:emitting-logs`"
+    and explained because the success occurs inside an already-running handler.
+
+    2. **Does not recommend re-running `patterns:configuring-logging`** ✓ — explicitly excluded with the
+    reasoning that the pipeline is already up and there''s nothing to configure.
+
+
+    The response is thorough and well-structured, but the rubric only cares about these two points, both
+    of which are satisfied.
+
+
+    GRADE: P'
+- judge_id: patterns-eval/discovery/paired-log-handler-success
+  conversation: conversations/patterns-eval__discovery__paired-log-handler-success/3.yaml
+  judge_transcript: evals/judges/2026-07-06T19-29-27Z-07a637-synthetic-paired-log-handler-success-discovery/3.3.assertion-0.yaml
+  verdict: pass
+  reasoning: 'The candidate response selects `patterns:emitting-logs` as the recommended skill, explicitly
+    stating it applies because the infrastructure is already in place. It also correctly excludes `patterns:configuring-logging`,
+    explaining it doesn''t apply in this context.
+
+
+    This directly satisfies both requirements of the rubric:
+
+    1. ✅ Selects `patterns:emitting-logs` because the success occurs inside an already-bootstrapped handler
+
+    2. ✅ Does not recommend re-running `patterns:configuring-logging`
+
+
+    GRADE: P'

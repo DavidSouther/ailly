@@ -1,0 +1,34 @@
+name: synthetic-newtype-baseline
+cases:
+  - name: "1"
+    assertions:
+      - { type: script, runtime: python, script: { path: evals/scripts/check_newtype.py } }
+      - type: judge
+        prompt: |
+          The code introduces a UserId type that wraps a string, exposes
+          construction as the only sanctioned entry point, and makes a plain
+          string unassignable where UserId is required. There are no `as`
+          casts at call sites; validation lives once in the constructor.
+      - { type: tokens, metric: total, op: "<", value: 6000 }
+
+  - name: "2"
+    assertions:
+      - { type: script, runtime: python, script: { path: evals/scripts/check_newtype.py } }
+      - type: judge
+        prompt: |
+          The code introduces a UserId type that wraps a string, exposes
+          construction as the only sanctioned entry point, and makes a plain
+          string unassignable where UserId is required. There are no `as`
+          casts at call sites; validation lives once in the constructor.
+      - { type: tokens, metric: total, op: "<", value: 6000 }
+
+  - name: "3"
+    assertions:
+      - { type: script, runtime: python, script: { path: evals/scripts/check_newtype.py } }
+      - type: judge
+        prompt: |
+          The code introduces a UserId type that wraps a string, exposes
+          construction as the only sanctioned entry point, and makes a plain
+          string unassignable where UserId is required. There are no `as`
+          casts at call sites; validation lives once in the constructor.
+      - { type: tokens, metric: total, op: "<", value: 6000 }
