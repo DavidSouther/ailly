@@ -11,6 +11,9 @@ clap = { version = "4", features = ["derive"] }
 dotenvy = "0.15"
 glob = "0.3"
 regex = "1"
+# Coupled to rig-bedrock's "0.4" cap below: rig-bedrock-v0.4.7 requires
+# rig-core = "0.38.0", so bumping this past 0.37 without also revisiting the
+# rig-bedrock requirement will make the dependency graph unsatisfiable.
 rig = { version = "0.37", package = "rig-core" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -23,6 +26,8 @@ tracing = "0.1"
 uuid = { version = "1", features = ["v7"] }
 vfs = "0.12"
 
+# Capped below rig-bedrock-v0.4.7, which requires rig-core = "0.38.0" and is
+# incompatible with the rig-core "0.37" pin above; see the comment there.
 [dependencies.rig-bedrock]
 version = "0.4"
 optional = true
@@ -32,6 +37,7 @@ http = "1"
 url = "2"
 
 [features]
+default = ["bedrock"]
 bedrock = ["dep:rig-bedrock"]
 
 [lints.clippy]

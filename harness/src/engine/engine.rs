@@ -102,6 +102,15 @@ pub trait EngineProvider: Send + Sync {
 ///   (`ANTHROPIC_API_KEY`).
 /// - `"gpt-"` resolves via `rig_engine::openai_from_env` (`OPENAI_API_KEY`).
 /// - `"gemini-"` resolves via `rig_engine::gemini_from_env` (`GEMINI_API_KEY`).
+/// - `"bedrock:"` (only when the `bedrock` Cargo feature is enabled, default
+///   on) resolves via `rig_engine::bedrock_from_env`, with the prefix stripped
+///   and the remainder forwarded verbatim as a raw AWS model id or
+///   inference-profile ARN. Unlike the other three, a recognised-but-
+///   credential-less Bedrock id resolves to `Ok`, not `Err(Auth)`: AWS
+///   credential resolution is deferred to the first live call, not checked at
+///   construction time. When the `bedrock` feature is disabled, a
+///   `"bedrock:"`-prefixed id falls through to `ModelNotFound` exactly like any
+///   other unrecognised prefix.
 /// - Any other id returns [`EngineError::ModelNotFound`]: an unrecognised
 ///   prefix is the only `ModelNotFound` path from routing. A provider's own 404
 ///   for a recognised family is a separate live concern mapped by
@@ -109,7 +118,8 @@ pub trait EngineProvider: Send + Sync {
 ///
 /// Recognition (prefix) and authorisation (key) are distinct failures: a
 /// recognised prefix with a missing key reaches its `*_from_env` constructor
-/// and fails with [`EngineError::Auth`], never `ModelNotFound`.
+/// and fails with [`EngineError::Auth`], never `ModelNotFound`. (Bedrock is
+/// the one exception to that pattern; see above.)
 ///
 /// Instantiated per conversation so a future heterogeneous run-dir
 /// (multiple models across bindings) needs no further refactoring.
@@ -132,6 +142,11 @@ pub fn open_engine_for_model(model: &ModelId) -> Result<Box<dyn EngineProvider>,
     }
     if id.starts_with("gemini-") {
         let engine = crate::engine::rig_engine::gemini_from_env(id)?;
+        return Ok(Box::new(engine));
+    }
+    #[cfg(feature = "bedrock")]
+    if let Some(remainder) = id.strip_prefix("bedrock:") {
+        let engine = crate::engine::rig_engine::bedrock_from_env(remainder, id)?;
         return Ok(Box::new(engine));
     }
     Err(EngineError::ModelNotFound {
@@ -462,6 +477,62 @@ mod tests {
             Err(EngineError::ModelNotFound { model }) => assert_eq!(model, requested),
             Err(other) => panic!("expected ModelNotFound, got {other:?}"),
             Ok(_) => panic!("an unrecognised prefix must not resolve to an engine"),
+        }
+    }
+
+    #[test]
+    #[cfg(feature = "bedrock")]
+    fn open_engine_for_model_bedrock_prefix_returns_a_real_engine() {
+        // Unlike claude-/gpt-/gemini-, a recognised Bedrock id resolves to Ok
+        // even with no AWS credentials present, because rig-bedrock defers
+        // credential resolution to the first live call (see rig_engine's
+        // bedrock_from_env doc comment).
+        let named =
+            open_engine_for_model(&ModelId::from("bedrock:meta.llama3-3-70b-instruct-v1:0"));
+        match named {
+            Ok(_) => {}
+            Err(err) => panic!("expected Ok, got {err:?}"),
+        }
+    }
+
+    #[test]
+    #[cfg(feature = "bedrock")]
+    fn open_engine_for_model_bedrock_prefix_accepts_an_inference_profile_arn_unvalidated() {
+        // The remainder after "bedrock:" is forwarded verbatim -- no shape
+        // check distinguishes a raw AWS model id from an inference-profile ARN.
+        let arn = open_engine_for_model(&ModelId::from(
+            "bedrock:arn:aws:bedrock:us-east-1:123456789012:inference-profile/us.meta.llama3-3-70b-instruct-v1:0",
+        ));
+        match arn {
+            Ok(_) => {}
+            Err(err) => panic!("expected Ok, got {err:?}"),
+        }
+    }
+
+    #[test]
+    fn open_engine_for_model_bedrock_shaped_id_without_prefix_returns_model_not_found() {
+        // Prefix dispatch, not substring match: a raw AWS model id with no
+        // Ailly-side "bedrock:" prefix must still be unrecognised, regardless
+        // of whether the bedrock feature is compiled in.
+        let requested = ModelId::from("meta.llama3-3-70b-instruct-v1:0");
+        match open_engine_for_model(&requested) {
+            Err(EngineError::ModelNotFound { model }) => assert_eq!(model, requested),
+            Err(other) => panic!("expected ModelNotFound, got {other:?}"),
+            Ok(_) => panic!("a raw AWS model id with no bedrock: prefix must not resolve"),
+        }
+    }
+
+    #[test]
+    #[cfg(not(feature = "bedrock"))]
+    fn open_engine_for_model_bedrock_prefix_falls_through_when_feature_disabled() {
+        // With the bedrock feature disabled, a "bedrock:"-prefixed id must
+        // fall through to today's pre-feature ModelNotFound, not panic or
+        // fail to compile.
+        let requested = ModelId::from("bedrock:meta.llama3-3-70b-instruct-v1:0");
+        match open_engine_for_model(&requested) {
+            Err(EngineError::ModelNotFound { model }) => assert_eq!(model, requested),
+            Err(other) => panic!("expected ModelNotFound, got {other:?}"),
+            Ok(_) => panic!("bedrock: prefix must not resolve when the feature is disabled"),
         }
     }
 }
