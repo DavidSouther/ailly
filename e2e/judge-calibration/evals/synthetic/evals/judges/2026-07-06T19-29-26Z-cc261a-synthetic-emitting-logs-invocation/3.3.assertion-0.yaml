@@ -1,0 +1,118 @@
+---
+model: claude-sonnet-4-6
+assembly: judge
+binding:
+  variant: '3'
+---
+role: system
+content: |-
+  You are an evaluator. Read the rubric and the candidate response.
+  Reason step-by-step about whether the candidate response satisfies
+  the rubric, then end your reply with one line:
+    GRADE: P    (rubric satisfied)
+    GRADE: F    (rubric violated)
+    GRADE: I    (cannot decide)
+  The last GRADE line is binding. Do not print GRADE inside your reasoning.
+---
+role: user
+content: |-
+  RUBRIC:
+  The call site emits a structured log record with `EventName` set
+  to `order.placed` and attaches fields under OpenTelemetry
+  semantic-convention keys (`http.response.status_code`, `order.id`,
+  `user.id`). The message body is a stable string; no values are
+  interpolated into it.
+
+
+  USER QUESTION:
+  In the account-signup handler, add a log line for when a new account is
+  created. On-call needs to grep by the new user id and see which
+  signup-flow variant they came through and what HTTP status code we
+  returned to the client. Write the one log call as you would for this
+  service.
+
+
+  CANDIDATE RESPONSE:
+  ```typescript
+  import { logger } from "./logger"; // the configured Pino / OTel logger for this service
+
+  // Inside the account-signup request handler, after the account has been
+  // persisted and the HTTP response status is known:
+
+  logger.info({
+    // ── Business event name (stable, machine-countable) ──────────────────
+    event_name: "account.created",
+
+    // ── Identity ─────────────────────────────────────────────────────────
+    "user.id": newUser.id.toString(),          // UserId newtype → stable key
+
+    // ── HTTP semantic conventions ─────────────────────────────────────────
+    "http.request.method":      "POST",
+    "http.route":               "/accounts/signup",
+    "http.response.status_code": response.statusCode,  // read from the real response
+
+    // ── Domain / experiment context ───────────────────────────────────────
+    "feature_flag.key":         "signup-flow",
+    "feature_flag.variant":     req.signupFlowVariant, // e.g. "control" | "streamlined-v2"
+  }, "account created");
+  ```
+
+  A few things worth calling out:
+
+  | Decision | Why |
+  |---|---|
+  | `event_name: "account.created"` | Gives the backend a stable pivot point to count signups, derive a rate, or set an SLO — without parsing the message body. |
+  | `"user.id"` not `userId` | OpenTelemetry semantic-convention key; dashboards and auto-instrumentation already know this name. On-call's grep lands on a queryable field. |
+  | `response.statusCode` read from the actual response | Never hard-code `201` here. If the handler ever returns `202 Accepted` after an async queue is introduced, the log stays correct automatically. |
+  | `"feature_flag.key"` / `"feature_flag.variant"` | OTel semantic-convention keys for feature-flag context. The signup-flow variant the caller asked for is on-call's second grep dimension. |
+  | Message body is a stable string — no interpolation | `"account created"` never changes regardless of input, so log aggregators can group on the body as a secondary signal. All variable data lives in fields. |
+
+  PROGRAM_OUTPUTS:
+  [script] R3 semantic-convention keys: missing order.id; use the OpenTelemetry semantic-convention keys, not ad-hoc field names
+---
+role: assistant
+content: |-
+  I need to evaluate whether the candidate response satisfies the rubric.
+
+  **Rubric requirements:**
+  1. `EventName` set to `order.placed`
+  2. Fields under OpenTelemetry semantic-convention keys:
+     - `http.response.status_code`
+     - `order.id`
+     - `user.id`
+  3. Message body is a stable string with no interpolated values
+
+  **Checking the candidate response:**
+
+  1. **EventName `order.placed`**: The candidate uses `event_name: "account.created"` — this is for an account-signup handler, so `account.created` is contextually reasonable, but the rubric specifically requires `order.placed`. This does **not** match.
+
+  2. **`http.response.status_code`**: ✅ Present as `"http.response.status_code": response.statusCode`
+
+  3. **`order.id`**: ❌ Not present. The candidate uses `"user.id"` and other fields, but there is no `order.id` field. (The program output also notes this: "missing order.id")
+
+  4. **`user.id`**: ✅ Present as `"user.id": newUser.id.toString()`
+
+  5. **Stable message body with no interpolation**: ✅ `"account created"` is stable.
+
+  **Summary of failures:**
+  - `EventName` is `account.created` instead of `order.placed`
+  - `order.id` field is missing
+  - The program output confirms: "missing order.id; use the OpenTelemetry semantic-convention keys"
+
+  The candidate response fails to include `order.id` and uses the wrong event name (`account.created` vs `order.placed`).
+
+  GRADE: F
+trace:
+  span_id: 019f38ee-7cf3-74a1-8324-fee40527a25c
+  model: claude-sonnet-4-6
+  tokens:
+    input: 850
+    output: 410
+  latency_ms: 7141
+  events:
+  - name: gen_ai.completion
+    attributes:
+      gen_ai.request.model: claude-sonnet-4-6
+      gen_ai.system: anthropic
+      gen_ai.usage.input_tokens: 850
+      gen_ai.usage.output_tokens: 410

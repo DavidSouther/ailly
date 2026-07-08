@@ -1,0 +1,179 @@
+---
+model: claude-sonnet-4-6
+assembly: judge
+binding:
+  variant: '2'
+---
+role: system
+content: |-
+  You are an evaluator. Read the rubric and the candidate response.
+  Reason step-by-step about whether the candidate response satisfies
+  the rubric, then end your reply with one line:
+    GRADE: P    (rubric satisfied)
+    GRADE: F    (rubric violated)
+    GRADE: I    (cannot decide)
+  The last GRADE line is binding. Do not print GRADE inside your reasoning.
+---
+role: user
+content: |-
+  RUBRIC:
+  The code introduces a UserId type that wraps a string, exposes
+  construction as the only sanctioned entry point, and makes a plain
+  string unassignable where UserId is required. There are no `as`
+  casts at call sites; validation lives once in the constructor.
+
+
+  USER QUESTION:
+  In our warehouse service, `sku` and `binLocation` are both represented
+  as plain strings, and a picker-app integration test just caught a call
+  that passed a bin location where a SKU was expected -- it compiled fine
+  and failed at runtime. I want the compiler to catch that instead. Add
+  `Sku` and `BinLocation` wrapper types and show the constructor for each
+  plus a single `moveStock(sku, from, to)` signature that uses them. Keep
+  it minimal -- just the types and validation, not a full inventory
+  aggregate.
+
+
+  CANDIDATE RESPONSE:
+  ```typescript
+  // newtype.ts – brand types for warehouse identifiers
+  //
+  // A "newtype" wraps a primitive in a branded intersection so the compiler
+  // treats each flavour as a distinct type even though the runtime value is
+  // still a plain string.  The only way to obtain a branded value is through
+  // the smart constructor, which is also where format validation lives.
+
+  // ---------------------------------------------------------------------------
+  // Brand helper
+  // ---------------------------------------------------------------------------
+
+  /** Attach a phantom brand to a base type without changing its runtime shape. */
+  type Brand<Base, Tag extends string> = Base & { readonly __brand: Tag };
+
+  // ---------------------------------------------------------------------------
+  // Sku
+  // ---------------------------------------------------------------------------
+
+  export type Sku = Brand<string, "Sku">;
+
+  /**
+   * Construct a validated {@link Sku}.
+   *
+   * Accepted format: one-to-three uppercase letters followed by a hyphen and
+   * four-to-eight digits, e.g. `WIDGET-00042`.
+   *
+   * @throws {TypeError} when `raw` does not match the expected format.
+   */
+  export function Sku(raw: string): Sku {
+    if (!/^[A-Z]{1,3}-\d{4,8}$/.test(raw)) {
+      throw new TypeError(
+        `Invalid SKU "${raw}". Expected format: 1-3 uppercase letters, ` +
+          `a hyphen, and 4-8 digits (e.g. "WID-00042").`
+      );
+    }
+    return raw as Sku;
+  }
+
+  // ---------------------------------------------------------------------------
+  // BinLocation
+  // ---------------------------------------------------------------------------
+
+  export type BinLocation = Brand<string, "BinLocation">;
+
+  /**
+   * Construct a validated {@link BinLocation}.
+   *
+   * Accepted format: aisle letter (A-Z), two-digit bay, a hyphen, and
+   * two-digit level, e.g. `B03-02`.
+   *
+   * @throws {TypeError} when `raw` does not match the expected format.
+   */
+  export function BinLocation(raw: string): BinLocation {
+    if (!/^[A-Z]\d{2}-\d{2}$/.test(raw)) {
+      throw new TypeError(
+        `Invalid bin location "${raw}". Expected format: aisle letter, ` +
+          `two-digit bay, a hyphen, and two-digit level (e.g. "B03-02").`
+      );
+    }
+    return raw as BinLocation;
+  }
+
+  // ---------------------------------------------------------------------------
+  // moveStock – type signature that enforces correct argument order
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Record a stock movement in the warehouse.
+   *
+   * Because {@link Sku} and {@link BinLocation} are distinct branded types the
+   * compiler will reject a call that accidentally swaps `sku` for a bin string
+   * or vice-versa – exactly the class of mistake caught by the integration test.
+   */
+  export function moveStock(sku: Sku, from: BinLocation, to: BinLocation): void {
+    console.log(
+      `Moving SKU ${sku} from bin ${from} to bin ${to}`
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Example call site
+  // ---------------------------------------------------------------------------
+
+  const sku      = Sku("WID-00042");
+  const fromBin  = BinLocation("A01-03");
+  const toBin    = BinLocation("B03-02");
+
+  moveStock(sku, fromBin, toBin);
+
+  // The following line would be a compile-time error – a BinLocation cannot be
+  // passed where a Sku is expected, even though both are strings at runtime:
+  //
+  //   moveStock(fromBin, sku, toBin);
+  //   ~~~~~~~~~~~~~~~~~~~
+  //   Argument of type 'BinLocation' is not assignable to parameter of type 'Sku'.
+  ```
+
+  ### Why this works
+
+  | concern | mechanism |
+  |---------|-----------|
+  | **Runtime value is still a `string`** | The brand is a phantom field (`__brand`) that exists only in the type system; `JSON.stringify`, `===`, and every string API work unchanged. |
+  | **`Sku` and `BinLocation` are mutually incompatible** | Each carries a different literal tag, so the compiler refuses to unify them even though both sit on top of `string`. |
+  | **The wrong-argument mistake is now a compile error** | `moveStock(binLocation, sku, toBin)` fails at `tsc` with *"Argument of type 'BinLocation' is not assignable to parameter of type 'Sku'"* — no runtime required. |
+  | **Validation is centralised** | Every path that produces a `Sku` or `BinLocation` must pass through the smart constructor, so illegal values can never enter the type. |
+---
+role: assistant
+content: |-
+  I'll evaluate this against the rubric:
+
+  **Rubric requirements:**
+  1. Introduces a `UserId` type that wraps a string — *Wait, the rubric says `UserId`, but the question asks for `Sku` and `BinLocation`. The rubric appears to be a generalized description of the pattern, not literally requiring `UserId`. I'll interpret it as describing the pattern applied to whatever types the question asks for.*
+
+  Let me re-read: "The code introduces a UserId type that wraps a string..." — this seems like a template rubric describing the general pattern. The question asks for `Sku` and `BinLocation`. The rubric's requirements map to:
+
+  1. **Wrapper types that wrap a string** — `Sku` and `BinLocation` are both `Brand<string, ...>`, which are string-based branded types. ✅
+  2. **Construction as the only sanctioned entry point** — `Sku(raw: string): Sku` and `BinLocation(raw: string): BinLocation` are the only constructors. ✅
+  3. **Plain string unassignable where the type is required** — The branding makes `string` not assignable to `Sku` or `BinLocation` directly. ✅
+  4. **No `as` casts at call sites** — The example call site uses `Sku(...)` and `BinLocation(...)` constructors, no `as` casts. ✅ (The `as` casts are *inside* the constructors, which is the sanctioned location.)
+  5. **Validation lives once in the constructor** — Regex validation is in each constructor. ✅
+  6. **`moveStock(sku, from, to)` signature using the types** — Present and correct. ✅
+
+  The `as` inside the constructor functions is the necessary internal cast to "escape" into the branded type — this is standard practice and not a "call site" cast. The rubric says "no `as` casts at call sites," and the call site example is clean.
+
+  All rubric requirements are satisfied.
+
+  GRADE: P
+trace:
+  span_id: 019f38ed-06bd-7902-b844-cbb5ded22ab2
+  model: claude-sonnet-4-6
+  tokens:
+    input: 1451
+    output: 493
+  latency_ms: 9517
+  events:
+  - name: gen_ai.completion
+    attributes:
+      gen_ai.request.model: claude-sonnet-4-6
+      gen_ai.system: anthropic
+      gen_ai.usage.input_tokens: 1451
+      gen_ai.usage.output_tokens: 493

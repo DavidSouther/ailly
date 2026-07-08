@@ -1,0 +1,135 @@
+---
+model: claude-sonnet-4-6
+assembly: judge
+binding:
+  variant: '1'
+---
+role: system
+content: |-
+  You are an evaluator. Read the rubric and the candidate response.
+  Reason step-by-step about whether the candidate response satisfies
+  the rubric, then end your reply with one line:
+    GRADE: P    (rubric satisfied)
+    GRADE: F    (rubric violated)
+    GRADE: I    (cannot decide)
+  The last GRADE line is binding. Do not print GRADE inside your reasoning.
+---
+role: user
+content: |-
+  RUBRIC:
+  The code introduces a UserId type that wraps a string, exposes
+  construction as the only sanctioned entry point, and makes a plain
+  string unassignable where UserId is required. There are no `as`
+  casts at call sites; validation lives once in the constructor.
+
+
+  USER QUESTION:
+  Our checkout flow keeps a `cartId` and a `promoCodeId` around as plain
+  strings, and a bug last week applied a promo code's id where a cart id
+  was expected because both were just `string` in the function signature.
+  Introduce distinct `CartId` and `PromoCodeId` types so that mistake is a
+  compile error, not a runtime bug. Show the two type definitions and one
+  function signature that applies a promo to a cart. Stay at the type
+  layer only -- no classes, no database entities.
+
+
+  CANDIDATE RESPONSE:
+  ```typescript
+  // ── Branded primitive types ──────────────────────────────────────────────────
+  //
+  // A brand is a phantom property that exists only in the type system.
+  // At runtime these are plain strings; zero overhead, zero wrapping.
+
+  type CartId      = string & { readonly _brand: "CartId" };
+  type PromoCodeId = string & { readonly _brand: "PromoCodeId" };
+
+  // ── Constructors (the only sanctioned entry points) ──────────────────────────
+  //
+  // All `as` casts live here, never at call sites.  Add any format validation
+  // you need (e.g. UUID shape) in one place without touching the rest of the
+  // codebase.
+
+  function makeCartId(raw: string): CartId {
+    if (raw.trim() === "") throw new Error("CartId must not be blank");
+    return raw as CartId;
+  }
+
+  function makePromoCodeId(raw: string): PromoCodeId {
+    if (raw.trim() === "") throw new Error("PromoCodeId must not be blank");
+    return raw as PromoCodeId;
+  }
+
+  // ── Domain operation ─────────────────────────────────────────────────────────
+  //
+  // The compiler now enforces argument order.  Passing a PromoCodeId where a
+  // CartId is expected — or vice-versa — is a type error, not a runtime
+  // surprise.
+
+  function applyPromoToCart(cartId: CartId, promoCodeId: PromoCodeId): void {
+    // domain logic goes here
+    console.log(`Applying promo ${promoCodeId} to cart ${cartId}`);
+  }
+
+  // ── Example call site ────────────────────────────────────────────────────────
+
+  const cartId      = makeCartId("cart-9f4e2a");
+  const promoCodeId = makePromoCodeId("SAVE10");
+
+  applyPromoToCart(cartId, promoCodeId);   // ✓ compiles
+
+  // The bug that prompted this change is now unrepresentable:
+  // applyPromoToCart(promoCodeId, cartId);
+  // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  // Argument of type 'PromoCodeId' is not assignable to parameter of type 'CartId'.
+  ```
+
+  ### What makes this safe
+
+  | Risk | How brands eliminate it |
+  |---|---|
+  | `applyPromoToCart(promoId, cartId)` — swapped args | Both parameters are distinct brands; the compiler rejects the call |
+  | `applyPromoToCart(rawString, rawString)` — unvalidated input | `string` is not assignable to `CartId` or `PromoCodeId`; you must go through a constructor |
+  | `as` casts leaking out to call sites | All casts are inside `makeCartId` / `makePromoCodeId`; call sites are cast-free |
+
+  The brands are phantom: they carry no runtime representation, so there is no wrapping object, no boxing, and no performance cost. The value you hand to a database or HTTP layer is still the plain string the constructor received.
+---
+role: assistant
+content: |-
+  The rubric requires:
+  1. A UserId-like type (here CartId/PromoCodeId) that wraps a string
+  2. Construction as the only sanctioned entry point
+  3. A plain string must be unassignable where the branded type is required
+  4. No `as` casts at call sites
+  5. Validation lives once in the constructor
+
+  Let me evaluate each point:
+
+  1. **Type definitions**: `CartId = string & { readonly _brand: "CartId" }` and `PromoCodeId = string & { readonly _brand: "PromoCodeId" }` — these are proper branded types that wrap strings. ✓
+
+  2. **Construction as only sanctioned entry point**: `makeCartId` and `makePromoCodeId` are the only ways to create these types. ✓
+
+  3. **Plain string unassignable**: A plain `string` cannot be assigned to `CartId` or `PromoCodeId` because `string` doesn't have the `_brand` property. Passing a raw string directly to `applyPromoToCart` would be a compile error. ✓
+
+  4. **No `as` casts at call sites**: The example call site uses `makeCartId(...)` and `makePromoCodeId(...)` — no casts. The `as` casts are confined to the constructors. ✓
+
+  5. **Validation lives once in the constructor**: Both `makeCartId` and `makePromoCodeId` contain blank-check validation. ✓
+
+  6. **Function signature applying promo to cart**: `applyPromoToCart(cartId: CartId, promoCodeId: PromoCodeId): void` — clearly shows the type safety. ✓
+
+  The rubric mentions "UserId type" but the spirit of the rubric is clearly about the pattern (branded types, construction, no casts at call sites), and the user question asks for CartId and PromoCodeId. The candidate's solution satisfies all the structural requirements of the rubric perfectly. The solution uses the correct branded type pattern (not classes), has constructors as entry points, keeps casts inside constructors, and the function signature demonstrates compile-time safety.
+
+  GRADE: P
+trace:
+  span_id: 019f38ed-828b-7382-a032-5776cf8f413c
+  model: claude-sonnet-4-6
+  tokens:
+    input: 1035
+    output: 501
+  latency_ms: 9069
+  events:
+  - name: gen_ai.completion
+    attributes:
+      gen_ai.request.model: claude-sonnet-4-6
+      gen_ai.system: anthropic
+      gen_ai.usage.input_tokens: 1035
+      gen_ai.usage.output_tokens: 501

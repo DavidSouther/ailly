@@ -1,0 +1,17 @@
+name: synthetic-paired-log-handler-success-discovery
+model: claude-sonnet-4-6
+
+matrix:
+  variant:
+    - "1"
+    - "2"
+    - "3"
+
+prefix:
+  - { kind: file,   path: ./AGENTS.md,                                cache: true }
+  - { kind: system, path: ./context/skills/disclosure.md,             cache: true }
+  - { kind: system, path: ./context/skills/using-patterns/SKILL.md,   cache: true }
+
+conversation:
+  - { role: user, path: "prompts/synthetic/paired-log-handler-success/{{ variant }}.md" }
+  - { role: assistant }

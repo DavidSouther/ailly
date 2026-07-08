@@ -1,0 +1,110 @@
+---
+model: claude-sonnet-4-6
+assembly: judge
+binding:
+  variant: '1'
+---
+role: system
+content: |-
+  You are an evaluator. Read the rubric and the candidate response.
+  Reason step-by-step about whether the candidate response satisfies
+  the rubric, then end your reply with one line:
+    GRADE: P    (rubric satisfied)
+    GRADE: F    (rubric violated)
+    GRADE: I    (cannot decide)
+  The last GRADE line is binding. Do not print GRADE inside your reasoning.
+---
+role: user
+content: |-
+  RUBRIC:
+  The code introduces a UserId type that wraps a string, exposes
+  construction as the only sanctioned entry point, and makes a plain
+  string unassignable where UserId is required. There are no `as`
+  casts at call sites; validation lives once in the constructor.
+
+
+  USER QUESTION:
+  Our checkout flow keeps a `cartId` and a `promoCodeId` around as plain
+  strings, and a bug last week applied a promo code's id where a cart id
+  was expected because both were just `string` in the function signature.
+  Introduce distinct `CartId` and `PromoCodeId` types so that mistake is a
+  compile error, not a runtime bug. Show the two type definitions and one
+  function signature that applies a promo to a cart. Stay at the type
+  layer only -- no classes, no database entities.
+
+
+  CANDIDATE RESPONSE:
+  ```typescript
+  // Brand types for checkout identifiers
+  declare const __cartId: unique symbol;
+  declare const __promoCodeId: unique symbol;
+
+  export type CartId = string & { readonly [__cartId]: never };
+  export type PromoCodeId = string & { readonly [__promoCodeId]: never };
+
+  // Constructor helpers — the only place raw strings cross the boundary
+  export const CartId = (raw: string): CartId => raw as CartId;
+  export const PromoCodeId = (raw: string): PromoCodeId => raw as PromoCodeId;
+
+  // Function signature that makes the earlier bug a compile error
+  export function applyPromoToCart(cartId: CartId, promoCodeId: PromoCodeId): void {
+    // implementation omitted — type layer only
+  }
+
+  // ── Example call site ────────────────────────────────────────────────────────
+
+  const cart  = CartId("cart-abc-123");
+  const promo = PromoCodeId("SUMMER20");
+
+  applyPromoToCart(cart, promo);          // ✔ compiles
+
+  // applyPromoToCart(promo, cart);       // ✘ Argument of type 'PromoCodeId' is
+                                          //   not assignable to parameter of
+                                          //   type 'CartId'.  (TS2345)
+  ```
+---
+role: assistant
+content: |-
+  I need to evaluate whether this candidate response satisfies the rubric for introducing `CartId` and `PromoCodeId` types.
+
+  **Rubric requirements:**
+  1. Introduces types that wrap a string
+  2. Exposes construction as the only sanctioned entry point
+  3. Makes a plain string unassignable where the branded type is required
+  4. No `as` casts at call sites
+  5. Validation lives once in the constructor
+
+  **Analysis:**
+
+  1. **Types that wrap a string**: ✅ Both `CartId = string & { readonly [__cartId]: never }` and `PromoCodeId = string & { readonly [__promoCodeId]: never }` are branded string types using unique symbols. They wrap strings with nominal-like branding.
+
+  2. **Construction as the only sanctioned entry point**: ✅ The `CartId()` and `PromoCodeId()` constructor functions are provided as the designated way to create these types.
+
+  3. **Plain string unassignable where the type is required**: ✅ Because of the brand, a raw `string` cannot be directly assigned to `CartId` or `PromoCodeId` — the brand property won't exist on a plain string, so TypeScript will reject it.
+
+  4. **No `as` casts at call sites**: ✅ The call sites (`applyPromoToCart(cart, promo)`) use properly constructed values via the constructor functions — no `as` casts at call sites.
+
+  5. **Validation lives once in the constructor**: The `as` cast lives inside the constructor functions (`raw as CartId`), not at call sites. This is the standard and acceptable pattern for branded types in TypeScript. The rubric says "no `as` casts at call sites" — the casts here are inside the constructor functions, which is exactly where they should be. ✅
+
+  **Potential concerns:**
+  - The rubric mentions "UserId" but this is a generalized rubric applied to `CartId`/`PromoCodeId` — the spirit maps directly.
+  - The rubric says "no classes" is required implicitly (it says "makes a plain string unassignable") — the branded type approach achieves this.
+  - The constructors use `as` internally, but the rubric only prohibits `as` at **call sites**, which is satisfied.
+
+  The solution correctly uses TypeScript's branded/nominal type pattern with unique symbols, constructor functions as entry points, no `as` casts at call sites, and a clear function signature demonstrating the type safety.
+
+  GRADE: P
+trace:
+  span_id: 019f38ec-e159-7322-b7e8-7b98b79e086f
+  model: claude-sonnet-4-6
+  tokens:
+    input: 616
+    output: 581
+  latency_ms: 11316
+  events:
+  - name: gen_ai.completion
+    attributes:
+      gen_ai.request.model: claude-sonnet-4-6
+      gen_ai.system: anthropic
+      gen_ai.usage.input_tokens: 616
+      gen_ai.usage.output_tokens: 581
