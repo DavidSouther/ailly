@@ -10,8 +10,10 @@ use std::fs;
 use std::io;
 use std::path::PathBuf;
 
+use crate::cli::case_filter_matches;
 use crate::cli::env;
 use crate::content::conversation::Conversation;
+use crate::content::evaluation::Case;
 use crate::content::evaluation::EvaluationError;
 use crate::content::project::Project;
 use crate::content::repository::ConversationKey;
@@ -29,7 +31,7 @@ use crate::knowledge::eval::EvalArgs;
 use crate::knowledge::eval::evaluate;
 use crate::knowledge::script_runner::TokioScriptRunner;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct EvalCmdArgs {
     pub project: PathBuf,
     /// Suite name; resolves to `<project>/evals/<suite>.yaml`.
@@ -38,6 +40,10 @@ pub struct EvalCmdArgs {
     /// is the directory basename when `over` is a directory, or the file stem
     /// when `over` is a single file.
     pub over: PathBuf,
+    /// Repeatable `--case <name>` filter. Empty means no filter: every
+    /// conversation under `over` and every named suite case is scored,
+    /// exactly as before this field existed.
+    pub cases: Vec<String>,
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Eq)]
@@ -92,6 +98,15 @@ pub enum EvalCmdError {
         #[source]
         source: io::Error,
     },
+    #[error(
+        "{} matched nothing; available cases: {}",
+        crate::cli::format_case_flags(requested),
+        available.join(", ")
+    )]
+    UnknownCase {
+        requested: Vec<String>,
+        available: Vec<String>,
+    },
 }
 
 /// End-to-end CLI handler. Loads the suite, loads every conversation under
@@ -104,7 +119,8 @@ pub enum EvalCmdError {
 pub async fn run(args: EvalCmdArgs) -> Result<EvalCmdOutcome, EvalCmdError> {
     let project = Project::open(&args.project)?;
     env::load_project_env(&args.project);
-    let suite = project.evals().get(&args.suite)?;
+    let mut suite = project.evals().get(&args.suite)?;
+    suite.cases = retain_filtered_cases(suite.cases, &args.cases);
 
     // Root a conversations repository at `over` itself, not at the project
     // root: `--over` may point anywhere on disk, including outside the project
@@ -126,7 +142,18 @@ pub async fn run(args: EvalCmdArgs) -> Result<EvalCmdOutcome, EvalCmdError> {
     // listing root: the root locates the conversation files (anywhere on
     // disk), the report id names the per-run report under the project.
     let report_id = report_id_for(&args.over);
-    let keys = conversations_repository.list(&RunId::default())?;
+    let all_keys = conversations_repository.list(&RunId::default())?;
+    let available: Vec<&str> = all_keys.iter().map(|k| k.name.as_str()).collect();
+    crate::cli::check_cases(&args.cases, &available, |requested, available| {
+        EvalCmdError::UnknownCase {
+            requested,
+            available,
+        }
+    })?;
+    let keys: Vec<ConversationKey> = all_keys
+        .into_iter()
+        .filter(|key| case_filter_matches(key.name.as_str(), &args.cases))
+        .collect();
     let mut conversations: Vec<(PathBuf, _)> = Vec::with_capacity(keys.len());
     for key in &keys {
         let conv = conversations_repository.load(key)?;
@@ -180,6 +207,24 @@ pub async fn run(args: EvalCmdArgs) -> Result<EvalCmdOutcome, EvalCmdError> {
         assertions_deferred_executable: executable_deferred_count(&report.per_class),
         report_path,
     })
+}
+
+/// Drop named suite cases the `--case` filter excludes, alongside the
+/// conversation-key filter applied in [`run`]. Filtering only the
+/// conversations would leave the excluded named cases in the suite, and
+/// `evaluate()` synthesizes a "no conversation found for case name"
+/// Malformed outcome for any named case with zero matches — exactly the
+/// false failure this feature must not introduce. Unnamed cases (`name:
+/// None`) have no per-name identity to filter on and are never dropped.
+/// Empty `cases` returns `cases` unchanged.
+fn retain_filtered_cases(cases: Vec<Case>, filter: &[String]) -> Vec<Case> {
+    cases
+        .into_iter()
+        .filter(|case| match &case.name {
+            Some(name) => case_filter_matches(name, filter),
+            None => true,
+        })
+        .collect()
 }
 
 /// Derive the per-run report id from the `--over` target: the directory
@@ -282,6 +327,98 @@ mod tests {
             },
         );
         assert_eq!(executable_deferred_count(&per_class), 3);
+    }
+
+    fn case_named(name: &str) -> Case {
+        Case {
+            name: Some(String::from(name)),
+            when: crate::content::conversation::BindingMap::new(),
+            assertions: vec![],
+        }
+    }
+
+    fn case_unnamed() -> Case {
+        Case {
+            name: None,
+            when: crate::content::conversation::BindingMap::new(),
+            assertions: vec![],
+        }
+    }
+
+    #[test]
+    fn retain_filtered_cases_keeps_everything_when_filter_is_empty() {
+        let cases = vec![case_named("a"), case_named("b"), case_unnamed()];
+        let filtered = retain_filtered_cases(cases.clone(), &[]);
+        assert_eq!(filtered, cases);
+    }
+
+    #[test]
+    fn retain_filtered_cases_drops_named_cases_not_in_the_filter() {
+        let cases = vec![case_named("a"), case_named("b"), case_named("c")];
+        let filtered = retain_filtered_cases(cases, &[String::from("b")]);
+        assert_eq!(filtered.len(), 1);
+        assert_eq!(filtered[0].name.as_deref(), Some("b"));
+    }
+
+    #[test]
+    fn retain_filtered_cases_never_drops_unnamed_cases() {
+        let cases = vec![case_named("a"), case_unnamed()];
+        let filtered = retain_filtered_cases(cases, &[String::from("nope")]);
+        assert_eq!(filtered.len(), 1);
+        assert_eq!(filtered[0].name, None);
+    }
+
+    const MINIMAL_SUITE_YAML: &str = "\
+name: minimal
+cases:
+  - name: a
+    assertions:
+      - { type: text_contains, value: \"noop\" }
+";
+
+    const MINIMAL_CONV: &str = "\
+---
+model: noop
+---
+role: user
+content: \"hi\"
+---
+role: assistant
+content: \"noop reply\"
+";
+
+    #[tokio::test]
+    async fn case_filter_with_a_typo_errors_with_requested_and_available_names() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let project = tmp.path().to_path_buf();
+        let evals_dir = project.join("evals");
+        fs::create_dir_all(&evals_dir).expect("mkdir evals");
+        fs::write(evals_dir.join("minimal.yaml"), MINIMAL_SUITE_YAML).expect("write suite");
+
+        let run_dir = project.join("runs").join("run-1");
+        fs::create_dir_all(&run_dir).expect("mkdir run dir");
+        fs::write(run_dir.join("a.yaml"), MINIMAL_CONV).expect("write conv a");
+        fs::write(run_dir.join("b.yaml"), MINIMAL_CONV).expect("write conv b");
+
+        let err = run(EvalCmdArgs {
+            project,
+            suite: String::from("minimal"),
+            over: run_dir,
+            cases: vec![String::from("a"), String::from("nope")],
+        })
+        .await
+        .expect_err("typo'd case name should hard-error");
+
+        match err {
+            EvalCmdError::UnknownCase {
+                requested,
+                available,
+            } => {
+                assert_eq!(requested, vec![String::from("nope")]);
+                assert_eq!(available, vec![String::from("a"), String::from("b")]);
+            }
+            other => panic!("expected UnknownCase, got {other:?}"),
+        }
     }
 
     #[test]

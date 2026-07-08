@@ -21,10 +21,14 @@ use crate::engine::engine::open_engine_for_model;
 /// Arguments for the run handler. `project` is accepted for symmetry with
 /// `AssembleArgs` and forward compatibility; the handler resolves `target`
 /// against the current working directory.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct RunArgs {
     pub project: PathBuf,
     pub target: PathBuf,
+    /// Repeatable `--case <name>` filter. Empty means no filter: every
+    /// resolved conversation key is processed, exactly as before this
+    /// field existed.
+    pub cases: Vec<String>,
 }
 
 /// Outcome counters returned to the library caller. The CLI binary does not
@@ -49,6 +53,15 @@ pub enum RunCmdError {
     TargetNotFound { path: PathBuf },
     #[error("target path {path:?} is not valid UTF-8")]
     NonUtf8Path { path: PathBuf },
+    #[error(
+        "{} matched nothing; available cases: {}",
+        crate::cli::format_case_flags(requested),
+        available.join(", ")
+    )]
+    UnknownCase {
+        requested: Vec<String>,
+        available: Vec<String>,
+    },
 }
 
 impl From<RunError> for RunCmdError {
@@ -73,7 +86,7 @@ pub async fn run(args: RunArgs) -> Result<RunOutcome, RunCmdError> {
     let project = crate::content::project::Project::open(&args.project)?;
     crate::cli::env::load_project_env(&args.project);
     let repo = project.conversations();
-    let keys = resolve_keys(&project, &repo, &args.target)?;
+    let keys = resolve_keys(&project, &repo, &args.target, &args.cases)?;
     let mut outcome = RunOutcome::default();
     for key in &keys {
         let mut conv = repo.load(key)?;
@@ -101,12 +114,19 @@ async fn fill_and_save(
 }
 
 /// Resolve `target` to one or more [`ConversationKey`]s. A file produces a
-/// single key; a directory lists all keys in that run. Providing neither
-/// returns [`RepositoryError::TargetNotFound`].
+/// single key; a directory lists all keys in that run, filtered by `cases`
+/// (empty means every key, unchanged from today). Either way, any requested
+/// `--case` value matching none of the names available in `target` (the
+/// single file's name, or every key in the directory) is a hard
+/// [`RunCmdError::UnknownCase`] naming the miss(es) and what was available —
+/// a file target combined with a non-matching filter errors rather than
+/// silently no-op-ing. Providing neither a file nor a directory returns
+/// [`RepositoryError::TargetNotFound`].
 fn resolve_keys(
     project: &crate::content::project::Project,
     repo: &impl ConversationRepository,
     target: &std::path::Path,
+    cases: &[String],
 ) -> Result<Vec<ConversationKey>, RunCmdError> {
     if target.to_str().is_none() {
         return Err(RunCmdError::NonUtf8Path {
@@ -125,6 +145,13 @@ fn resolve_keys(
     if is_file {
         let name =
             ConversationName::from(target.file_stem().and_then(|s| s.to_str()).unwrap_or(""));
+        let available = vec![name.as_str()];
+        crate::cli::check_cases(cases, &available, |requested, available| {
+            RunCmdError::UnknownCase {
+                requested,
+                available,
+            }
+        })?;
         let run_id = super::project_relative(project, target.parent().unwrap_or(target));
         return Ok(vec![ConversationKey { run_id, name }]);
     }
@@ -136,7 +163,18 @@ fn resolve_keys(
     })?;
     if is_dir {
         let run_id = super::project_relative(project, target);
-        return repo.list(&run_id).map_err(RunCmdError::Repository);
+        let keys = repo.list(&run_id).map_err(RunCmdError::Repository)?;
+        let available: Vec<&str> = keys.iter().map(|k| k.name.as_str()).collect();
+        crate::cli::check_cases(cases, &available, |requested, available| {
+            RunCmdError::UnknownCase {
+                requested,
+                available,
+            }
+        })?;
+        return Ok(keys
+            .into_iter()
+            .filter(|key| crate::cli::case_filter_matches(key.name.as_str(), cases))
+            .collect());
     }
     Err(RunCmdError::Repository(RepositoryError::TargetNotFound {
         path: target.to_path_buf(),
@@ -215,6 +253,7 @@ mod tests {
         RunArgs {
             project,
             target: target.to_path_buf(),
+            ..Default::default()
         }
     }
 
@@ -266,6 +305,97 @@ mod tests {
                 "assistant in {name} should be filled"
             );
         }
+    }
+
+    #[tokio::test]
+    async fn case_filter_on_a_directory_target_processes_only_the_named_keys() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        for name in ["a.yaml", "b.yaml", "c.yaml"] {
+            write_conversation(&tmp.path().join(name), None, false);
+        }
+
+        let mut args = args_for(tmp.path());
+        args.cases = vec![String::from("a"), String::from("c")];
+        let outcome = run(args).await.expect("filtered run dir");
+
+        assert_eq!(outcome.conversations_processed, 2);
+        assert_eq!(outcome.blank_assistants_filled, 2);
+
+        for name in ["a.yaml", "c.yaml"] {
+            let body = fs::read_to_string(tmp.path().join(name)).expect("read back");
+            let conv = Conversation::from_yaml_str(&body).expect("parse");
+            let assistant = conv.session.last().expect("assistant");
+            assert!(assistant.body.is_some(), "{name} should be filled");
+        }
+
+        let untouched = fs::read_to_string(tmp.path().join("b.yaml")).expect("read back");
+        let conv = Conversation::from_yaml_str(&untouched).expect("parse");
+        let assistant = conv.session.last().expect("assistant");
+        assert!(
+            assistant.body.is_none(),
+            "b.yaml was not named by --case and must be left untouched"
+        );
+    }
+
+    #[tokio::test]
+    async fn case_filter_with_one_real_name_and_one_typo_errors_on_the_typo() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        for name in ["a.yaml", "b.yaml"] {
+            write_conversation(&tmp.path().join(name), None, false);
+        }
+
+        let mut args = args_for(tmp.path());
+        args.cases = vec![String::from("a"), String::from("nope")];
+        let err = run(args)
+            .await
+            .expect_err("typo'd case name should hard-error");
+
+        match err {
+            RunCmdError::UnknownCase {
+                requested,
+                available,
+            } => {
+                assert_eq!(requested, vec![String::from("nope")]);
+                assert_eq!(available, vec![String::from("a"), String::from("b")]);
+            }
+            other => panic!("expected UnknownCase, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn case_filter_on_a_single_file_target_that_does_not_match_errors_instead_of_no_op() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let path = tmp.path().join("conv.yaml");
+        write_conversation(&path, None, false);
+
+        let mut args = args_for(&path);
+        args.cases = vec![String::from("nope")];
+        let err = run(args)
+            .await
+            .expect_err("a non-matching --case against a file target must error");
+
+        match err {
+            RunCmdError::UnknownCase {
+                requested,
+                available,
+            } => {
+                assert_eq!(requested, vec![String::from("nope")]);
+                assert_eq!(available, vec![String::from("conv")]);
+            }
+            other => panic!("expected UnknownCase, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn empty_case_filter_on_a_directory_target_is_unchanged_from_today() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        for name in ["a.yaml", "b.yaml"] {
+            write_conversation(&tmp.path().join(name), None, false);
+        }
+
+        let outcome = run(args_for(tmp.path())).await.expect("unfiltered run dir");
+
+        assert_eq!(outcome.conversations_processed, 2);
     }
 
     #[tokio::test]

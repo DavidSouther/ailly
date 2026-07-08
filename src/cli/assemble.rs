@@ -6,19 +6,26 @@
 
 use std::path::PathBuf;
 
+use crate::cli::case_filter_matches;
+use crate::cli::check_cases;
+use crate::cli::format_case_flags;
 use crate::content::assembly::AssemblyError;
 use crate::content::assembly::RenderError;
 use crate::content::project::Project;
 use crate::content::project::ProjectError;
 use crate::content::repository::AssemblyRepository;
 use crate::content::repository::RepositoryError;
+use crate::content::repository::filename_for;
 
 /// Arguments for the assemble handler. Public field list is fixed by the
 /// feature test's struct-literal call site.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct AssembleArgs {
     pub project: PathBuf,
     pub name: String,
+    /// Repeatable `--case <name>` filter. Empty means no filter: every
+    /// matrix binding is staged, exactly as before this field existed.
+    pub cases: Vec<String>,
 }
 
 /// Errors emitted by the assemble handler. Library-boundary error; the CLI
@@ -39,6 +46,15 @@ pub enum AssembleError {
         #[source]
         source: Box<AssembleError>,
     },
+    #[error(
+        "{} matched nothing; available cases: {}",
+        format_case_flags(requested),
+        available.join(", ")
+    )]
+    UnknownCase {
+        requested: Vec<String>,
+        available: Vec<String>,
+    },
 }
 
 /// Drive the assemble pipeline against `args.project`.
@@ -55,7 +71,7 @@ pub enum AssembleError {
 )]
 pub fn run(args: AssembleArgs) -> Result<PathBuf, AssembleError> {
     let project = Project::open(&args.project)?;
-    let run_dir = run_with_project(&project, &args.name)?;
+    let run_dir = run_with_project(&project, &args.name, &args.cases)?;
     // VfsPath → PathBuf at the CLI boundary. The vfs::PhysicalFS root is
     // not exposed by VfsPath, so the as_str() form is a vfs-rooted path
     // ("/runs/<id>"); join it onto the host project root to produce the
@@ -68,21 +84,50 @@ pub fn run(args: AssembleArgs) -> Result<PathBuf, AssembleError> {
 /// host-path bookkeeping; tests use it directly to exercise the pipeline
 /// against an in-memory project without touching the disk.
 ///
+/// `cases` is the `--case` filter: empty stages every matrix binding
+/// (today's behavior, unchanged); non-empty stages only bindings whose
+/// derived case name (`filename_for(binding)`, stripped of `.yaml`) exactly
+/// matches one of the requested names. Any requested name matching no
+/// binding is a hard [`AssembleError::UnknownCase`] naming the miss(es) and
+/// every binding name that was available — checked before any binding is
+/// staged, so a request mixing one real name and one typo does not
+/// partially assemble.
+///
 /// # Errors
 ///
 /// See [`AssembleError`].
-fn run_with_project(project: &Project, assembly_name: &str) -> Result<vfs::VfsPath, AssembleError> {
+fn run_with_project(
+    project: &Project,
+    assembly_name: &str,
+    cases: &[String],
+) -> Result<vfs::VfsPath, AssembleError> {
     let assembly = project.assemblies().get(assembly_name)?;
+    let bindings = assembly.expand_matrix()?;
+    let names: Vec<String> = bindings
+        .iter()
+        .map(|b| filename_for(b).trim_end_matches(".yaml").to_string())
+        .collect();
+    let available: Vec<&str> = names.iter().map(String::as_str).collect();
+    check_cases(cases, &available, |requested, available| {
+        AssembleError::UnknownCase {
+            requested,
+            available,
+        }
+    })?;
+
     let mut tx = project.begin_run();
-    for binding in assembly.expand_matrix()? {
+    for (binding, name) in bindings.iter().zip(names.iter()) {
+        if !case_filter_matches(name, cases) {
+            continue;
+        }
         let conversation =
             assembly
-                .render(project, &binding)
+                .render(project, binding)
                 .map_err(|e| AssembleError::Assembling {
                     name: assembly_name.to_string(),
                     source: Box::new(AssembleError::Render(e)),
                 })?;
-        tx.stage(&binding, &conversation)?;
+        tx.stage(binding, &conversation)?;
     }
     Ok(tx.commit(&assembly.name)?)
 }
@@ -143,6 +188,7 @@ model: claude-opus-4-7
         let run_dir = run(AssembleArgs {
             project: tmp.path().to_path_buf(),
             name: String::from("claim-handler"),
+            ..Default::default()
         })
         .expect("run");
         let names = yaml_files(&run_dir);
@@ -155,6 +201,7 @@ model: claude-opus-4-7
         let run_dir = run(AssembleArgs {
             project: tmp.path().to_path_buf(),
             name: String::from("claim-handler"),
+            ..Default::default()
         })
         .expect("run");
         let names = yaml_files(&run_dir);
@@ -165,11 +212,96 @@ model: claude-opus-4-7
     }
 
     #[test]
+    fn case_filter_selects_only_the_named_binding() {
+        let tmp = project_with_assembly(SINGLE_AXIS_ASSEMBLY);
+        let run_dir = run(AssembleArgs {
+            project: tmp.path().to_path_buf(),
+            name: String::from("claim-handler"),
+            cases: vec![String::from("beta")],
+        })
+        .expect("run");
+        let names = yaml_files(&run_dir);
+        assert_eq!(names, vec!["beta.yaml"]);
+    }
+
+    #[test]
+    fn case_filter_with_one_real_name_and_one_typo_errors_on_the_typo() {
+        let tmp = project_with_assembly(SINGLE_AXIS_ASSEMBLY);
+        let err = run(AssembleArgs {
+            project: tmp.path().to_path_buf(),
+            name: String::from("claim-handler"),
+            cases: vec![String::from("alpha"), String::from("alfa")],
+        })
+        .expect_err("typo'd case name should hard-error");
+        match err {
+            AssembleError::UnknownCase {
+                requested,
+                available,
+            } => {
+                assert_eq!(requested, vec![String::from("alfa")]);
+                assert_eq!(
+                    available,
+                    vec![
+                        String::from("alpha"),
+                        String::from("beta"),
+                        String::from("gamma")
+                    ]
+                );
+            }
+            other => panic!("expected UnknownCase, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn case_filter_where_every_requested_value_misses_lists_them_all() {
+        let tmp = project_with_assembly(SINGLE_AXIS_ASSEMBLY);
+        let err = run(AssembleArgs {
+            project: tmp.path().to_path_buf(),
+            name: String::from("claim-handler"),
+            cases: vec![String::from("nope"), String::from("nada")],
+        })
+        .expect_err("no requested case matches");
+        match err {
+            AssembleError::UnknownCase { requested, .. } => {
+                assert_eq!(requested, vec![String::from("nope"), String::from("nada")]);
+            }
+            other => panic!("expected UnknownCase, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn case_filter_with_repeated_flag_selects_every_named_binding() {
+        let tmp = project_with_assembly(SINGLE_AXIS_ASSEMBLY);
+        let run_dir = run(AssembleArgs {
+            project: tmp.path().to_path_buf(),
+            name: String::from("claim-handler"),
+            cases: vec![String::from("alpha"), String::from("gamma")],
+        })
+        .expect("run");
+        let names = yaml_files(&run_dir);
+        assert_eq!(names, vec!["alpha.yaml", "gamma.yaml"]);
+    }
+
+    #[test]
+    fn case_filter_on_two_axis_matrix_matches_the_full_dash_joined_name() {
+        let tmp = project_with_assembly(TWO_AXIS_ASSEMBLY);
+        let run_dir = run(AssembleArgs {
+            project: tmp.path().to_path_buf(),
+            name: String::from("claim-handler"),
+            cases: vec![String::from("a1-b2")],
+        })
+        .expect("run");
+        let names = yaml_files(&run_dir);
+        assert_eq!(names, vec!["a1-b2.yaml"]);
+    }
+
+    #[test]
     fn empty_matrix_writes_single_default_file() {
         let tmp = project_with_assembly(EMPTY_MATRIX_ASSEMBLY);
         let run_dir = run(AssembleArgs {
             project: tmp.path().to_path_buf(),
             name: String::from("claim-handler"),
+            ..Default::default()
         })
         .expect("run");
         let names = yaml_files(&run_dir);
@@ -182,6 +314,7 @@ model: claude-opus-4-7
         let run_dir = run(AssembleArgs {
             project: tmp.path().to_path_buf(),
             name: String::from("claim-handler"),
+            ..Default::default()
         })
         .expect("run");
 
@@ -203,6 +336,7 @@ model: claude-opus-4-7
         let run_dir = run(AssembleArgs {
             project,
             name: String::from("claim-handler"),
+            ..Default::default()
         })
         .expect("run");
 
@@ -248,6 +382,7 @@ model: claude-opus-4-7
         let run_dir = run(AssembleArgs {
             project,
             name: String::from("claim-handler"),
+            ..Default::default()
         })
         .expect("run");
 
@@ -297,6 +432,7 @@ prefix:
         let run_dir = run(AssembleArgs {
             project: tmp.path().to_path_buf(),
             name: String::from("two-blocks"),
+            ..Default::default()
         })
         .expect("run");
 
@@ -328,6 +464,7 @@ prefix:
         run(AssembleArgs {
             project,
             name: String::from(name),
+            ..Default::default()
         })
         .expect("assemble patterns-eval")
     }
@@ -403,6 +540,7 @@ prefix:
         let err = run(AssembleArgs {
             project: tmp.path().to_path_buf(),
             name: String::from("test-assembly"),
+            ..Default::default()
         })
         .expect_err("should fail on missing context dir");
 
@@ -445,8 +583,8 @@ prefix:
         let project = Project::open_memory();
         seed_memory_assembly(&project, SINGLE_AXIS_ASSEMBLY);
 
-        let first = run_with_project(&project, "claim-handler").expect("first run");
-        let second = run_with_project(&project, "claim-handler").expect("second run");
+        let first = run_with_project(&project, "claim-handler", &[]).expect("first run");
+        let second = run_with_project(&project, "claim-handler", &[]).expect("second run");
 
         assert_ne!(
             first.as_str(),

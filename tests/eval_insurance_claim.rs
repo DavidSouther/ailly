@@ -131,6 +131,7 @@ async fn insurance_claim_regression_suite_all_sync_pass_judge_defers() {
         project: project.clone(),
         suite: String::from("regression"),
         over: run_dir.clone(),
+        ..Default::default()
     })
     .await
     .expect("eval handler succeeds end-to-end");

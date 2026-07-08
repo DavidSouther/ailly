@@ -143,6 +143,7 @@ async fn eval_writes_report_and_reports_failure_counts_across_match_modes() {
         project: project.clone(),
         suite: String::from("regression"),
         over: run_dir.clone(),
+        ..Default::default()
     })
     .await
     .expect("eval handler succeeds end-to-end");
