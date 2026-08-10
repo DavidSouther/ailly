@@ -30,17 +30,17 @@ A user opens the app for the first time, or the hundredth. They need to get from
 
 ### 2. Investigate a single session's tool calls
 
-This is the core "where did the wrong turn come from" journey, extending the ToolCallSummary sketch's after-the-fact rollup.
+After a session has completed, review shows unexpected phrasing or citations. These indicate the session "took a wrong turn" early on, identifying an incorrect fact or inappropriate comment that got integrated into the context window. The user would like to identify where this came up, by reviewing the specific tool calls and responses.
 
-- See a top-level summary immediately on opening a session: total calls, distinct files touched, duration, subagent spawn count — the "at a glance, was this session big or small" read.
-- See the tool category split (exec / edit / read / other) as a proportion, to sense the shape of what the session did before reading a single line of detail.
+- See a top-level summary immediately on opening a session: total calls, distinct files touched, duration, subagent spawn count — an at a glance, was this session big or small overview.
+- See the tool category split (exec / edit / read / other) as a proportion, to sense the shape of what the session did before going into specific tool call details.
 - See calls broken down by individual tool, ranked by frequency, each showing its share of total calls.
 - Drill from a tool into its individual calls, each showing which agent (orchestrator or which subagent) made it, what the call's target was (a file, a command, a URL, a subagent), and enough of the call's detail to judge relevance without leaving this view.
 - Follow the sketch's "Sources" grouping specifically: Bash, Read, and WebFetch rolled into one umbrella (every way a fact enters context from outside the conversation), with a further breakdown by source kind (shell / file / web) and, for file reads, the literal file paths consulted.
-- Flag or highlight the tool calls the design doc calls "especially pertinent" — file reads, skill invocations, and API/web calls — as the calls most likely to be where an external fact entered context, distinct from calls that only rearrange things already in context (edits, todo updates).
+- Flag or highlight the tool calls that are "especially pertinent" — file reads, skill invocations, and API/web calls — as the calls most likely to be where an external fact entered context, distinct from calls that only rearrange things already in context (edits, todo updates).
 - See which files were touched, ranked by touch count, with which tools touched each file — to answer "what did the agent think was central to this task" by volume of attention.
 - Given a suspected wrong turn (a bad edit, a bad conclusion), walk backward from it to find the specific tool call(s) that introduced the fact behind it — this is the investigation the whole summary view exists to support, so it should be possible to go from "this file's final content looks wrong" to "this is the read/fetch/subagent-report that fed it" in a few clicks, not a manual scroll-and-search.
-- Handle very large sessions (hundreds of calls, dozens of files) without the summary view degrading into an unusable wall — capping what's shown by default with a visible "+N more" rather than silently truncating.
+- Handle very large sessions (hundreds of calls, dozens of files) without the summary view degrading into an unusable wall. This might be capping what's shown by default with a visible "+N more" rather than silently truncating, or other techniques TBD.
 
 ### 3. Investigate a collection of sessions
 
