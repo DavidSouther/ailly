@@ -1,0 +1,22 @@
+name: Checks
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  check:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: client/package-lock.json
+      - uses: dtolnay/rust-toolchain@stable
+      - run: npm ci --prefix client
+      - run: mise run check
+      - run: mise run test
+      - run: cargo fmt --manifest-path shell/Cargo.toml --check
+      - run: npm run tauri:build --prefix client

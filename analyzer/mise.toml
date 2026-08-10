@@ -1,0 +1,31 @@
+[tools]
+node = "22"
+rust = "stable"
+
+[tasks.format]
+description = "Format client and shell"
+run = ["mise -C client run format", "mise -C shell run format"]
+
+[tasks.check]
+description = "Run client and shell static analysis"
+run = ["mise -C client run check", "mise -C shell run check"]
+
+[tasks.test]
+description = "Run client and shell tests"
+run = ["mise -C client run test", "mise -C shell run test"]
+
+[tasks.lint]
+description = "Lint client and shell"
+run = ["mise -C client run lint", "mise -C shell run lint"]
+
+[tasks.dev]
+description = "Start the Tauri desktop app"
+run = "mise -C client run tauri-dev"
+
+[tasks.storybook]
+description = "Start Storybook"
+run = "mise -C client run storybook"
+
+[tasks.build]
+description = "Build the frontend and Tauri application"
+run = "mise -C client run tauri-build"

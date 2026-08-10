@@ -1,0 +1,23 @@
+{
+  "$schema": "https://biomejs.dev/schemas/1.9.0/schema.json",
+  "organizeImports": { "enabled": true },
+  "linter": {
+    "enabled": true,
+    "rules": {
+      "recommended": true,
+      "a11y": { "noSvgWithoutTitle": "off" },
+      "correctness": {
+        "noUnknownMediaFeatureName": "off",
+        "noUnknownUnit": "off",
+        "useExhaustiveDependencies": "off"
+      },
+      "suspicious": { "noArrayIndexKey": "off" },
+      "style": { "noNonNullAssertion": "off" }
+    }
+  },
+  "formatter": {
+    "enabled": true,
+    "indentStyle": "space",
+    "lineWidth": 100
+  }
+}

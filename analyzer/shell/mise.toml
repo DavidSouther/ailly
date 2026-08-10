@@ -1,0 +1,15 @@
+[tasks.format]
+description = "Format Rust"
+run = "cargo fmt"
+
+[tasks.check]
+description = "Run Rust Clippy with warnings denied"
+run = "cargo clippy -- -D warnings"
+
+[tasks.test]
+description = "Run Rust tests"
+run = "cargo test"
+
+[tasks.lint]
+description = "Lint Rust with Clippy"
+run = "cargo clippy -- -D warnings"

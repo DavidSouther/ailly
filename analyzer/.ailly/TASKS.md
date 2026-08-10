@@ -2,7 +2,7 @@
 
 Build the product vertically in this order. Each task should leave a usable, tested seam for the next one. Keep the app local-first and read-only throughout.
 
-## 1. Tauri shell
+## 1. Tauri shell — complete (2026-08-10)
 
 - Add the Tauri 2 desktop shell and Rust workspace.
 - Wire the React/Vite frontend into development and production builds.
@@ -11,6 +11,8 @@ Build the product vertically in this order. Each task should leave a usable, tes
 - Verify the shell launches on the target development platform and the existing frontend checks still pass.
 - Mise task runner to one-command start full Tauri app, just Storybook component tool, and run checks & tests.
 - CI hooks for checks, build, and deploy. Deploy using YYYY.0M.00INC+SHA calendar versioning.
+
+Deployment publication remains deferred because this project has no configured deployment target or signing-secret policy. Version is the initial "0.1.0"
 
 ## 2. Harness loader and event model
 

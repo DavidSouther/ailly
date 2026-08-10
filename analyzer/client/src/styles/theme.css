@@ -1,0 +1,784 @@
+/**
+ * (c) Copyright 2026 Nominal Inc. All rights reserved.
+ */
+
+@import "tailwindcss";
+@import "./variables.css";
+
+/* ─── Hairline border width: 0.5px on retina displays, 1px otherwise ─── */
+:root {
+  --border-width-hairline: 1px;
+}
+
+@media (-webkit-min-device-pixel-ratio: 2), (min-resolution: 192dpi), (min-resolution: 2dppx) {
+  :root {
+    --border-width-hairline: 0.5px;
+  }
+}
+
+/* ─── Theme-agnostic button pressed-state "pocket" primitives. The light/dark
+   scopes below map variants to these by fill: dark fills use the strong
+   pocket, light fills the soft one. ─── */
+:root {
+  --shadow-pocket-strong:
+    inset 0px 3px 5px -2px rgba(0, 0, 0, 0.55),
+    inset 3px 0px 5px -2px rgba(0, 0, 0, 0.4),
+    inset -3px 0px 5px -2px rgba(0, 0, 0, 0.4),
+    inset 0px 1px 0px 0px rgba(0, 0, 0, 0.4);
+  --shadow-pocket-soft:
+    inset 0px 3px 4px -2px rgba(0, 0, 0, 0.12),
+    inset 3px 0px 4px -2px rgba(0, 0, 0, 0.08),
+    inset -3px 0px 4px -2px rgba(0, 0, 0, 0.08),
+    inset 0px 1px 0px 0px rgba(0, 0, 0, 0.07);
+}
+
+/* ─── Solid background variants (opaque equivalents of alpha-based hover colors) ─── */
+:root,
+[data-theme="light"] {
+  --color-background-hover-solid: color-mix(
+    in srgb,
+    var(--color-neutral-900) 5%,
+    var(--color-background)
+  );
+  --color-background-active-solid: color-mix(
+    in srgb,
+    var(--color-neutral-900) 10%,
+    var(--color-background)
+  );
+  --color-background-active-hover-solid: color-mix(
+    in srgb,
+    var(--color-neutral-600) 7.5%,
+    var(--color-background)
+  );
+  --color-button-secondary-background-hover: var(--color-background-hover-solid);
+
+  /* Button backgrounds: primary is dark, secondary is light. */
+  --background-image-button-primary: linear-gradient(
+    to bottom,
+    var(--color-button-primary-background-gradient-start) 10.4%,
+    var(--color-button-primary-background-gradient-end) 69%
+  );
+  --background-image-button-primary-hover: linear-gradient(
+    to bottom,
+    var(--color-button-primary-background-gradient-hover-start),
+    var(--color-button-primary-background-gradient-hover-end)
+  );
+  /* Active uses the hover gradient — depth comes from the press shadow,
+     not a color change. */
+  --background-image-button-primary-active: var(--background-image-button-primary-hover);
+  --background-image-button-secondary: linear-gradient(
+    to bottom,
+    color-mix(
+      in srgb,
+      var(--color-button-secondary-background-gradient-start) 70%,
+      var(--color-white)
+    ),
+    var(--color-button-secondary-background-gradient-end) 72%
+  );
+  --background-image-button-secondary-hover: linear-gradient(
+    to bottom,
+    var(--color-button-secondary-background-gradient-hover-start),
+    var(--color-button-secondary-background-gradient-hover-end)
+  );
+  --background-image-button-secondary-active: var(--background-image-button-secondary-hover);
+  --shadow-button-primary: inset 0px 1.5px 0px 0px rgba(255, 255, 255, 0.35), inset 0px -0.5px 0px
+    0px rgba(255, 255, 255, 0.1);
+  /* Pressed-state pockets by fill: primary is a dark fill (strong),
+     secondary is a light fill (soft). */
+  --shadow-button-primary-active: var(--shadow-pocket-strong);
+  --shadow-button-secondary: inset 0px 1.5px 0px 0px rgba(255, 255, 255, 0.8), inset 0px -0.5px 0px
+    0px rgba(0, 0, 0, 0.1);
+  --shadow-button-secondary-active: var(--shadow-pocket-soft);
+
+  /* Floating = secondary's inset ledge + an outer drop shadow so the button
+     reads as elevated above the surface. */
+  --shadow-button-floating: var(--shadow-button-secondary), 0px 2px 4px -1px rgba(0, 0, 0, 0.06),
+    0px 1px 2px -1px rgba(0, 0, 0, 0.06);
+  --shadow-button-floating-hover: var(--shadow-button-secondary), 0px 6px 10px -2px
+    rgba(0, 0, 0, 0.08), 0px 2px 4px -2px rgba(0, 0, 0, 0.08);
+  --shadow-button-floating-active: var(--shadow-button-secondary-active);
+}
+
+.dark,
+[data-theme="dark"] {
+  --color-background-hover-solid: color-mix(
+    in srgb,
+    var(--color-white) 7.5%,
+    var(--color-background)
+  );
+  --color-background-active-solid: color-mix(
+    in srgb,
+    var(--color-white) 12.5%,
+    var(--color-background)
+  );
+  --color-background-active-hover-solid: color-mix(
+    in srgb,
+    var(--color-white) 10%,
+    var(--color-background)
+  );
+  --color-button-secondary-background-hover: var(--color-background-hover-solid);
+
+  /* Button backgrounds: primary/secondary swap light-dark roles. */
+  --background-image-button-primary: linear-gradient(
+    to bottom,
+    color-mix(
+      in srgb,
+      var(--color-button-primary-background-gradient-start) 85%,
+      var(--color-white)
+    ),
+    var(--color-button-primary-background-gradient-end) 72%
+  );
+  --background-image-button-primary-hover: linear-gradient(
+    to bottom,
+    var(--color-button-primary-background-gradient-hover-start),
+    var(--color-button-primary-background-gradient-hover-end)
+  );
+  --background-image-button-primary-active: var(--background-image-button-primary-hover);
+  --background-image-button-secondary: linear-gradient(
+    to bottom,
+    var(--color-button-secondary-background-gradient-start) 10.4%,
+    var(--color-button-secondary-background-gradient-end) 69%
+  );
+  --background-image-button-secondary-hover: linear-gradient(
+    to bottom,
+    var(--color-button-secondary-background-gradient-hover-start),
+    var(--color-button-secondary-background-gradient-hover-end)
+  );
+  --background-image-button-secondary-active: var(--background-image-button-secondary-hover);
+  --shadow-button-primary: inset 0px 1.5px 0px 0px rgba(255, 255, 255, 0.8), inset 0px -0.5px 0px
+    0px rgba(0, 0, 0, 0.1);
+  /* Pocket flip: dark-mode primary is a light fill (soft) while
+     secondary/floating are dark fills (strong). */
+  --shadow-button-primary-active: var(--shadow-pocket-soft);
+  --shadow-button-secondary: inset 0px 1px 0px 0px rgba(255, 255, 255, 0.35), inset 0px -0.5px 0px
+    0px rgba(255, 255, 255, 0.1);
+  --shadow-button-secondary-active: var(--shadow-pocket-strong);
+
+  /* Floating — secondary's inset ledge + outer drop. Outer drop alpha
+     bumped slightly since dark surfaces swallow shadow. */
+  --shadow-button-floating: var(--shadow-button-secondary), 0px 4px 6px -1px rgba(0, 0, 0, 0.4), 0px
+    2px 4px -2px rgba(0, 0, 0, 0.4);
+  --shadow-button-floating-hover: var(--shadow-button-secondary), 0px 10px 15px -3px
+    rgba(0, 0, 0, 0.5), 0px 4px 6px -4px rgba(0, 0, 0, 0.5);
+  --shadow-button-floating-active: var(--shadow-button-secondary-active);
+}
+
+/* Forced dark popovers stay darker when rendered over light surfaces. */
+:root:not(.dark) [data-theme="dark"] {
+  --color-popover-background: var(--color-neutral-800);
+}
+
+/* ─── Dark mode via class strategy ─── */
+@custom-variant dark (&:where(.dark, .dark *, [data-theme="dark"], [data-theme="dark"] *):not(:where([data-theme="light"], [data-theme="light"] *)));
+
+/* ─── Headless UI state variants (replaces @headlessui/tailwindcss plugin) ─── */
+@custom-variant ui-open (&[data-headlessui-state~="open"], &[data-open]);
+@custom-variant ui-active (&[data-headlessui-state~="active"], &[data-active]);
+@custom-variant ui-disabled (&[data-headlessui-state~="disabled"], &[data-disabled]);
+@custom-variant ui-selected (&[data-headlessui-state~="selected"], &[data-selected]);
+@custom-variant ui-not-open (&[data-headlessui-state]:not([data-headlessui-state~="open"]), &:not([data-open]));
+@custom-variant ui-not-active (&[data-headlessui-state]:not([data-headlessui-state~="active"]), &:not([data-active]));
+@custom-variant ui-not-disabled (&[data-headlessui-state]:not([data-headlessui-state~="disabled"]), &:not([data-disabled]));
+@custom-variant ui-not-selected (&[data-headlessui-state]:not([data-headlessui-state~="selected"]), &:not([data-selected]));
+
+/* ─── Dynamic color tokens (change between light/dark) ─── */
+@theme inline {
+  /* Backgrounds */
+  --color-background: var(--color-background);
+  --color-background-muted: var(--color-background-muted);
+  --color-background-raised: var(--color-background-raised);
+  --color-background-hover: var(--color-background-hover);
+  --color-background-active: var(--color-background-active);
+  --color-background-active-hover: var(--color-background-active-hover);
+  --color-background-hover-solid: var(--color-background-hover-solid);
+  --color-background-active-solid: var(--color-background-active-solid);
+  --color-background-active-hover-solid: var(--color-background-active-hover-solid);
+  --color-background-disabled: var(--color-background-disabled);
+  --color-background-overlay: var(--color-background-overlay);
+  --color-background-inverse: var(--color-background-inverse);
+  --color-background-brand: var(--color-background-brand);
+
+  /* Foregrounds */
+  --color-foreground: var(--color-foreground);
+  --color-foreground-muted: var(--color-foreground-muted);
+  --color-foreground-title: var(--color-foreground-title);
+  --color-foreground-active: var(--color-foreground-active);
+  --color-foreground-disabled: var(--color-foreground-disabled);
+  --color-foreground-brand: var(--color-foreground-brand);
+  --color-foreground-status-error: var(--color-foreground-status-error);
+  --color-foreground-status-warning: var(--color-foreground-status-warning);
+  --color-foreground-status-success: var(--color-foreground-status-success);
+
+  /* Borders */
+  --color-border: var(--color-border);
+  --color-border-muted: var(--color-border-muted);
+  --color-border-hover: var(--color-border-hover);
+  --color-border-active: var(--color-border-active);
+
+  /* Status */
+  --color-status-success: var(--color-status-success);
+  --color-status-warning: var(--color-status-warning);
+  --color-status-error: var(--color-status-error);
+
+  /* Brand & ring */
+  --color-brand: var(--color-brand);
+  --color-ring: var(--color-ring);
+
+  /* Placeholder & selection */
+  --color-placeholder: var(--color-placeholder);
+  --color-selection-muted: var(--color-selection-muted);
+
+  /* Popover */
+  --color-popover-background: var(--color-popover-background);
+  --color-popover-border: var(--color-popover-border);
+
+  /* Input */
+  --color-input-background: var(--color-input-background);
+  --color-input-border: var(--color-input-border);
+  --color-input-border-hover: var(--color-input-border-hover);
+  --color-input-border-active: var(--color-input-border-active);
+
+  /* Choice (checkbox, radio) */
+  --color-choice-border: var(--color-choice-border);
+  --color-choice-border-hover: var(--color-choice-border-hover);
+  --color-choice-background-active: var(--color-choice-background-active);
+  --color-choice-background-active-hover: var(--color-choice-background-active-hover);
+
+  /* Button primary */
+  --color-button-primary-background: var(--color-button-primary-background);
+  --color-button-primary-background-hover: var(--color-button-primary-background-hover);
+  --color-button-primary-foreground: var(--color-button-primary-foreground);
+  --color-button-primary-border: var(--color-button-primary-border);
+  --color-button-primary-border-hover: var(--color-button-primary-border-hover);
+
+  /* Button secondary */
+  --color-button-secondary-background: var(--color-button-secondary-background);
+  --color-button-secondary-background-hover: var(--color-button-secondary-background-hover);
+  --color-button-secondary-foreground: var(--color-button-secondary-foreground);
+  --color-button-secondary-border: var(--color-button-secondary-border);
+  --color-button-secondary-border-hover: var(--color-button-secondary-border-hover);
+
+  /* Button gradients (theme-aware).
+     Registered here for Tailwind v4 utility generation; concrete values
+     are assigned in the light/dark scopes above. */
+  --background-image-button-primary: var(--background-image-button-primary);
+  --background-image-button-primary-hover: var(--background-image-button-primary-hover);
+  --background-image-button-primary-active: var(--background-image-button-primary-active);
+  --background-image-button-secondary: var(--background-image-button-secondary);
+  --background-image-button-secondary-hover: var(--background-image-button-secondary-hover);
+  --background-image-button-secondary-active: var(--background-image-button-secondary-active);
+
+  /* Button inset shadows (theme-aware). Only resting/hover shadows are
+     registered — they're used as cva utilities. The `*-active` pressed-state
+     shadows are consumed via raw var() in button.module.css, keeping the
+     pressed state resistant to caller className/style overrides. */
+  --shadow-button-primary: var(--shadow-button-primary);
+  --shadow-button-secondary: var(--shadow-button-secondary);
+  --shadow-button-floating: var(--shadow-button-floating);
+  --shadow-button-floating-hover: var(--shadow-button-floating-hover);
+
+  /* Switch */
+  --color-switch-background: var(--color-switch-background);
+  --color-switch-background-hover: var(--color-switch-background-hover);
+  --color-switch-background-active: var(--color-switch-background-active);
+  --color-switch-handle-background: var(--color-switch-handle-background);
+
+  /* Badge default */
+  --color-badge-background: var(--color-badge-default-background);
+  --color-badge-foreground: var(--color-badge-default-foreground);
+  --color-badge-background-hover: var(--color-badge-default-background-hover);
+
+  /* Badge variants */
+  --color-badge-metal-background: var(--color-badge-metal-background);
+  --color-badge-metal-foreground: var(--color-badge-metal-foreground);
+  --color-badge-metal-background-hover: var(--color-badge-metal-background-hover);
+
+  --color-badge-green-background: var(--color-badge-green-background);
+  --color-badge-green-foreground: var(--color-badge-green-foreground);
+  --color-badge-green-background-hover: var(--color-badge-green-background-hover);
+
+  --color-badge-yellow-background: var(--color-badge-yellow-background);
+  --color-badge-yellow-foreground: var(--color-badge-yellow-foreground);
+  --color-badge-yellow-background-hover: var(--color-badge-yellow-background-hover);
+
+  --color-badge-red-background: var(--color-badge-red-background);
+  --color-badge-red-foreground: var(--color-badge-red-foreground);
+  --color-badge-red-background-hover: var(--color-badge-red-background-hover);
+
+  --color-badge-purple-background: var(--color-badge-purple-background);
+  --color-badge-purple-foreground: var(--color-badge-purple-foreground);
+  --color-badge-purple-background-hover: var(--color-badge-purple-background-hover);
+
+  --color-badge-blue-background: var(--color-badge-blue-background);
+  --color-badge-blue-foreground: var(--color-badge-blue-foreground);
+  --color-badge-blue-background-hover: var(--color-badge-blue-background-hover);
+
+  --color-badge-teal-background: var(--color-badge-teal-background);
+  --color-badge-teal-foreground: var(--color-badge-teal-foreground);
+  --color-badge-teal-background-hover: var(--color-badge-teal-background-hover);
+
+  --color-badge-indigo-background: var(--color-badge-indigo-background);
+  --color-badge-indigo-foreground: var(--color-badge-indigo-foreground);
+  --color-badge-indigo-background-hover: var(--color-badge-indigo-background-hover);
+
+  --color-badge-deep-purple-background: var(--color-badge-deep-purple-background);
+  --color-badge-deep-purple-foreground: var(--color-badge-deep-purple-foreground);
+  --color-badge-deep-purple-background-hover: var(--color-badge-deep-purple-background-hover);
+
+  --color-badge-blue-grey-background: var(--color-badge-blue-grey-background);
+  --color-badge-blue-grey-foreground: var(--color-badge-blue-grey-foreground);
+  --color-badge-blue-grey-background-hover: var(--color-badge-blue-grey-background-hover);
+
+  --color-badge-orange-background: var(--color-badge-orange-background);
+  --color-badge-orange-foreground: var(--color-badge-orange-foreground);
+  --color-badge-orange-background-hover: var(--color-badge-orange-background-hover);
+
+  --color-badge-amber-background: var(--color-badge-amber-background);
+  --color-badge-amber-foreground: var(--color-badge-amber-foreground);
+  --color-badge-amber-background-hover: var(--color-badge-amber-background-hover);
+
+  --color-badge-lime-background: var(--color-badge-lime-background);
+  --color-badge-lime-foreground: var(--color-badge-lime-foreground);
+  --color-badge-lime-background-hover: var(--color-badge-lime-background-hover);
+
+  --color-badge-cyan-background: var(--color-badge-cyan-background);
+  --color-badge-cyan-foreground: var(--color-badge-cyan-foreground);
+  --color-badge-cyan-background-hover: var(--color-badge-cyan-background-hover);
+
+  /* ShadCN semantic aliases (for ShadCN component compatibility) */
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+
+  /* Shadows - default (down) */
+  --shadow-sm: var(--shadow-down-sm);
+  --shadow: var(--shadow-down);
+  --shadow-md: var(--shadow-down-md);
+  --shadow-lg: var(--shadow-down-lg);
+  --shadow-xl: var(--shadow-down-xl);
+  --shadow-2xl: var(--shadow-down-2xl);
+
+  /* Shadows - left (for right-side sheets) */
+  --shadow-left-sm: var(--shadow-left-sm);
+  --shadow-left: var(--shadow-left);
+  --shadow-left-md: var(--shadow-left-md);
+  --shadow-left-lg: var(--shadow-left-lg);
+  --shadow-left-xl: var(--shadow-left-xl);
+  --shadow-left-2xl: var(--shadow-left-2xl);
+
+  /* Shadows - right (for left-side sheets) */
+  --shadow-right-sm: var(--shadow-right-sm);
+  --shadow-right: var(--shadow-right);
+  --shadow-right-md: var(--shadow-right-md);
+  --shadow-right-lg: var(--shadow-right-lg);
+  --shadow-right-xl: var(--shadow-right-xl);
+  --shadow-right-2xl: var(--shadow-right-2xl);
+
+  /* Shadow - inner */
+  --shadow-inner: var(--shadow-inner);
+}
+
+/* ─── Static theme values ─── */
+@theme {
+  /* Font families */
+  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    sans-serif, "Apple Color Emoji", "Segoe UI Emoji";
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+    "Liberation Mono", "Courier New", monospace, "Apple Color Emoji", "Segoe UI Emoji";
+
+  /* Custom font sizes (matches existing preset scale) */
+  --text-xs: 0.5625rem;
+  --text-xs--line-height: 1rem;
+  --text-sm: 0.625rem;
+  --text-sm--line-height: 1rem;
+  --text-base: 0.75rem;
+  --text-base--line-height: 1.125rem;
+  --text-lg: 0.9375rem;
+  --text-lg--line-height: 1.375rem;
+  --text-xl: 1.0625rem;
+  --text-xl--line-height: 1.5rem;
+  --text-2xl: 1.1875rem;
+  --text-2xl--line-height: 1.6875rem;
+  --text-3xl: 1.3125rem;
+  --text-3xl--line-height: 1.875rem;
+  --text-4xl: 2rem;
+  --text-4xl--line-height: 2.25rem;
+
+  /* Spacing base unit (4px) — p-1 = 4px, p-2 = 8px, etc. */
+  --spacing: 0.25rem;
+
+  /* Border radius */
+  --radius: 0rem;
+  --radius-sm: 0.125rem;
+  --radius-md: 0.375rem;
+  --radius-xl: 0.75rem;
+
+  /* Hairline height/width utilities (h-hairline, w-hairline) */
+  --spacing-hairline: var(--border-width-hairline, 1px);
+
+  /* Legacy palette colors (hardcoded, not from tokens) */
+  --color-gov-cui: #502b85;
+  --color-white: #ffffff;
+
+  --color-metal-50: #f9fafb;
+  --color-metal-100: #f3f4f6;
+  --color-metal-200: #e5e7eb;
+  --color-metal-300: #d1d5db;
+  --color-metal-400: #9ca3af;
+  --color-metal-500: #6b7280;
+  --color-metal-600: #4b5563;
+  --color-metal-700: #374151;
+  --color-metal-800: #1f2937;
+  --color-metal-900: #111827;
+  --color-metal-950: #030712;
+
+  --color-mint-50: #f0fdf4;
+  --color-mint-100: #dcfce7;
+  --color-mint-200: #bbf7d0;
+  --color-mint-300: #86efac;
+  --color-mint-400: #4ade80;
+  --color-mint-500: #22c55e;
+  --color-mint-600: #16a34a;
+  --color-mint-700: #15803d;
+  --color-mint-800: #065f46;
+  --color-mint-900: #064e3b;
+  --color-mint-950: #022c22;
+
+  --color-berry-50: #fff1f2;
+  --color-berry-100: #ffe4e6;
+  --color-berry-200: #fecdd3;
+  --color-berry-300: #fda4af;
+  --color-berry-400: #fb7185;
+  --color-berry-500: #f43f5e;
+  --color-berry-600: #e11d48;
+  --color-berry-700: #be123c;
+  --color-berry-800: #9d1741;
+  --color-berry-900: #78163d;
+  --color-berry-950: #500724;
+
+  --color-plum-50: #f5f3ff;
+  --color-plum-100: #ede9fe;
+  --color-plum-200: #ddd6fe;
+  --color-plum-300: #c4b5fd;
+  --color-plum-400: #a78bfa;
+  --color-plum-500: #8b5cf6;
+  --color-plum-600: #7c3aed;
+  --color-plum-700: #7e22ce;
+  --color-plum-800: #6b21a8;
+  --color-plum-900: #581c87;
+  --color-plum-950: #4a044e;
+
+  /* Animations */
+  --animate-popover-enter: enter-up 200ms ease-out forwards;
+  --animate-slide-down-and-fade: slideDownAndFade 400ms cubic-bezier(0.16, 1, 0.3, 1);
+  --animate-slide-left-and-fade: slideLeftAndFade 400ms cubic-bezier(0.16, 1, 0.3, 1);
+  --animate-slide-up-and-fade: slideUpAndFade 400ms cubic-bezier(0.16, 1, 0.3, 1);
+  --animate-slide-right-and-fade: slideRightAndFade 400ms cubic-bezier(0.16, 1, 0.3, 1);
+  --animate-slide-down: slideDown 300ms cubic-bezier(0.87, 0, 0.13, 1);
+  --animate-slide-up: slideUp 300ms cubic-bezier(0.87, 0, 0.13, 1);
+  --animate-accordion-down: accordion-down 0.2s ease-out;
+  --animate-accordion-up: accordion-up 0.2s ease-out;
+  --animate-stripes: stripes 2s linear infinite;
+  --animate-indeterminate-progress: indeterminate-progress 1.5s ease-in-out infinite;
+
+  @keyframes indeterminate-progress {
+    0% {
+      transform: translateX(-100%);
+    }
+    100% {
+      transform: translateX(400%);
+    }
+  }
+
+  @keyframes enter-up {
+    from {
+      opacity: 0;
+      transform: translateY(10px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+  @keyframes fadeIn {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+  @keyframes slideDownAndFade {
+    from {
+      opacity: 0;
+      transform: translateY(-2px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+  @keyframes slideLeftAndFade {
+    from {
+      opacity: 0;
+      transform: translateX(2px);
+    }
+    to {
+      opacity: 1;
+      transform: translateX(0);
+    }
+  }
+  @keyframes slideUpAndFade {
+    from {
+      opacity: 0;
+      transform: translateY(2px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+  @keyframes slideRightAndFade {
+    from {
+      opacity: 0;
+      transform: translateX(-2px);
+    }
+    to {
+      opacity: 1;
+      transform: translateX(0);
+    }
+  }
+  @keyframes hide {
+    from {
+      opacity: 1;
+    }
+    to {
+      opacity: 0;
+    }
+  }
+  @keyframes slideIn {
+    from {
+      transform: translateX(calc(100% + var(--viewport-padding)));
+    }
+    to {
+      transform: translateX(0);
+    }
+  }
+  @keyframes swipeOut {
+    from {
+      transform: translateX(var(--radix-toast-swipe-end-x));
+    }
+    to {
+      transform: translateX(calc(100% + var(--viewport-padding)));
+    }
+  }
+  @keyframes slideDown {
+    from {
+      height: 0;
+    }
+    to {
+      height: var(--radix-accordion-content-height);
+    }
+  }
+  @keyframes slideUp {
+    from {
+      height: var(--radix-accordion-content-height);
+    }
+    to {
+      height: 0;
+    }
+  }
+  @keyframes accordion-down {
+    from {
+      height: 0;
+    }
+    to {
+      height: var(--radix-accordion-content-height);
+    }
+  }
+  @keyframes accordion-up {
+    from {
+      height: var(--radix-accordion-content-height);
+    }
+    to {
+      height: 0;
+    }
+  }
+  @keyframes stripes {
+    0% {
+      transform: translateX(0);
+    }
+    100% {
+      transform: translateX(10px);
+    }
+  }
+}
+
+/* ─── Custom utilities ─── */
+@utility focus-ring {
+  &:focus-visible {
+    outline: 2px solid transparent;
+    outline-offset: 2px;
+    box-shadow: var(--tw-inset-shadow, 0 0 #0000), var(--tw-inset-ring-shadow, 0 0 #0000), 0 0 0 1px
+      var(--color-background), 0 0 0 3px var(--color-ring), var(--tw-shadow, 0 0 #0000);
+  }
+}
+
+@utility no-ligatures {
+  font-variant-ligatures: none;
+}
+
+@utility pointer-events-auto {
+  pointer-events: var(--nom-modal-pointer-events, auto);
+}
+
+/* Shared backdrop treatment for translucent overlay surfaces. Pair with
+   normal bg-* utilities for the surface color and opacity. */
+@utility overlay-surface-translucent {
+  -webkit-backdrop-filter: blur(var(--overlay-surface-blur, 5px));
+  backdrop-filter: blur(var(--overlay-surface-blur, 5px));
+}
+
+/* Eyebrow text — uppercase mono labels with positive tracking.
+   Pins font-family, size, line-height, tracking, weight, and case in one
+   utility so consumers get the full 6-prop treatment by writing one class.
+   Default weight is medium (500); override with font-normal / font-bold. */
+@utility eyebrow-base {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  line-height: 0.875rem;
+  letter-spacing: var(--tracking-wide, 0.025em);
+  font-weight: 500;
+  text-transform: uppercase;
+}
+
+@utility eyebrow-sm {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  line-height: 0.75rem;
+  letter-spacing: var(--tracking-wide, 0.025em);
+  font-weight: 500;
+  text-transform: uppercase;
+}
+
+@utility border {
+  border-width: var(--border-width-hairline, 1px);
+}
+
+@utility border-b {
+  border-bottom-width: var(--border-width-hairline, 1px);
+}
+
+@utility border-l {
+  border-left-width: var(--border-width-hairline, 1px);
+}
+
+@utility border-r {
+  border-right-width: var(--border-width-hairline, 1px);
+}
+
+@utility border-t {
+  border-top-width: var(--border-width-hairline, 1px);
+}
+
+@utility border-y {
+  border-block-width: var(--border-width-hairline, 1px);
+}
+
+@utility border-x {
+  border-inline-width: var(--border-width-hairline, 1px);
+}
+
+@utility divide-y {
+  :where(& > :not(:last-child)) {
+    border-bottom-width: var(--border-width-hairline, 1px);
+  }
+}
+
+@utility divide-x {
+  :where(& > :not(:last-child)) {
+    border-inline-end-width: var(--border-width-hairline, 1px);
+  }
+}
+
+/* Border shadows (simulate hairline borders via inset box-shadow) */
+@utility shadow-border-b {
+  box-shadow: inset 0 calc(-1 * var(--border-width-hairline, 1px)) 0 0 var(--color-border);
+}
+
+@utility shadow-border-t {
+  box-shadow: inset 0 var(--border-width-hairline, 1px) 0 0 var(--color-border);
+}
+
+@utility shadow-border-l {
+  box-shadow: inset var(--border-width-hairline, 1px) 0 0 0 var(--color-border);
+}
+
+@utility shadow-border-r {
+  box-shadow: inset calc(-1 * var(--border-width-hairline, 1px)) 0 0 0 var(--color-border);
+}
+
+/* ─── Plugins ─── */
+@plugin "tailwindcss-animate";
+
+/* ─── Base styles ─── */
+@layer base {
+  html {
+    font-size: 16px;
+    scroll-behavior: smooth;
+  }
+
+  body {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    background-color: var(--color-background);
+    color: var(--color-foreground);
+    font-family: var(--font-sans);
+    font-size: var(--text-base);
+  }
+
+  /* Override TW4 preflight's `border: 0 solid` which resets border-color
+     to currentColor. This restores the TW3 behavior where `border` uses
+     a visible default color. */
+  *,
+  ::after,
+  ::before,
+  ::backdrop,
+  ::file-selector-button {
+    border-color: var(--color-border);
+  }
+
+  /* Global scrollbar styling */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-neutral-300) transparent;
+  }
+
+  .dark * {
+    scrollbar-color: var(--color-neutral-500) transparent;
+  }
+
+  /* Lucide icon defaults */
+  .lucide {
+    stroke-width: 2px;
+    flex-shrink: 0;
+    flex-grow: 0;
+  }
+
+  button {
+    cursor: pointer;
+  }
+}
+
+@source "../**/*.{ts,tsx,js,jsx,mdx}";

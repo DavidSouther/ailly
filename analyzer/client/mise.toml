@@ -1,0 +1,27 @@
+[tasks.format]
+description = "Format TypeScript and CSS"
+run = "npx biome format --write src tests .storybook"
+
+[tasks.check]
+description = "Type-check and Biome-check TypeScript"
+run = "npm run check"
+
+[tasks.test]
+description = "Run TypeScript tests"
+run = "npm test"
+
+[tasks.lint]
+description = "Lint TypeScript"
+run = "npm run lint"
+
+[tasks.storybook]
+description = "Start Storybook"
+run = "npm run storybook"
+
+[tasks.tauri-dev]
+description = "Start the Tauri desktop app"
+run = "npm run tauri:dev"
+
+[tasks.tauri-build]
+description = "Build the Tauri desktop app"
+run = "npm run tauri:build"

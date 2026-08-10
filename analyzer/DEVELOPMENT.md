@@ -37,22 +37,23 @@ The product investigates completed sessions on disk. Live or streaming views, ar
 
 ## Local development
 
-Install the Node dependencies, then run the frontend during early UI work with:
+Install the client dependencies, then run the desktop app from the repository root with:
 
 ```sh
-npm install
-npm run dev
+mise install
+npm install --prefix client
+mise run dev
 ```
 
-Once the Tauri shell is present, use the repository's Tauri development command for the desktop app. The standard checks are:
+The standard checks are:
 
 ```sh
-npm run check
-npm test
-npm run build
+mise run check
+mise run test
+mise run build
 ```
 
-Rust code must also pass its package tests and formatter checks. Keep parsing and aggregation logic independently testable without starting the desktop shell.
+Rust code must also pass Clippy with warnings denied and rustfmt. Keep parsing and aggregation logic independently testable without starting the desktop shell.
 
 ## Implementation principles
 

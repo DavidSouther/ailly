@@ -44,10 +44,14 @@ The original files remain the evidence. The index records where each event came 
 ## Development
 
 ```sh
-npm install
-npm run dev
-npm test
-npm run check
+npm install --prefix client
+mise run dev
+mise run check
+mise run test
+mise run build
 ```
+
+The same workflows are available through Mise: `mise run dev`, `mise run storybook`,
+`mise run check`, and `mise run build`.
 
 The implementation roadmap lives in [.ailly/TASKS.md](.ailly/TASKS.md), and project architecture and development conventions live in [DEVELOPMENT.md](DEVELOPMENT.md).
