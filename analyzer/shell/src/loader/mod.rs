@@ -2,6 +2,8 @@
 
 mod claude;
 mod codex;
+#[cfg(test)]
+pub(crate) mod conformance;
 mod pi;
 
 use crate::model::{
@@ -31,6 +33,7 @@ pub fn discover_sessions(roots: &DiscoveryRoots) -> Vec<(Harness, PathBuf)> {
         .home
         .clone()
         .or_else(|| std::env::var_os("HOME").map(PathBuf::from));
+
     let mut found = Vec::new();
     if let Some(home) = home {
         found.extend(jsonl_files(
@@ -47,11 +50,14 @@ pub fn discover_sessions(roots: &DiscoveryRoots) -> Vec<(Harness, PathBuf)> {
     for root in &roots.pi_session_roots {
         found.extend(jsonl_files(root, Harness::Pi));
     }
-    found.sort_by(|left, right| left.1.cmp(&right.1));
+
+    found.sort_by(|a, b| a.1.cmp(&b.1));
     found.dedup();
     found
 }
 
+/// Recursively collects `.jsonl` files under `root`, tolerating a missing or
+/// unreadable root by returning no files rather than an error.
 fn jsonl_files(root: &Path, harness: Harness) -> Vec<(Harness, PathBuf)> {
     let mut files = Vec::new();
     visit_jsonl(root, harness, &mut files);
@@ -63,14 +69,11 @@ fn visit_jsonl(path: &Path, harness: Harness, files: &mut Vec<(Harness, PathBuf)
         return;
     };
     for entry in entries.flatten() {
-        let path = entry.path();
-        if path.is_dir() {
-            visit_jsonl(&path, harness, files);
-        } else if path
-            .extension()
-            .is_some_and(|extension| extension == "jsonl")
-        {
-            files.push((harness, path));
+        let entry_path = entry.path();
+        if entry_path.is_dir() {
+            visit_jsonl(&entry_path, harness, files);
+        } else if entry_path.extension().and_then(|ext| ext.to_str()) == Some("jsonl") {
+            files.push((harness, entry_path));
         }
     }
 }
@@ -136,94 +139,96 @@ pub fn parse_pi(path: &Path) -> ParsedSession {
     parse_jsonl(path, Harness::Pi, pi::record)
 }
 
-type RecordParser = fn(&Value, &mut ParsedSession, &str, Provenance);
+pub(crate) type RecordParser = fn(&Value, &mut ParsedSession, &str, Provenance);
 fn parse_jsonl(path: &Path, harness: Harness, parser: RecordParser) -> ParsedSession {
-    let path_text = path.to_string_lossy().into_owned();
     let mut parsed = ParsedSession::default();
+    let path_str = path.to_string_lossy().to_string();
+
     let file = match fs::File::open(path) {
         Ok(file) => file,
-        Err(error) => {
+        Err(err) => {
             parsed.diagnostics.push(Diagnostic {
-                source: provenance(harness, &path_text, 0),
-                message: format!("could not read source: {error}"),
+                source: provenance(harness, &path_str, 0),
+                message: format!("could not open file: {err}"),
             });
             return parsed;
         }
     };
+
     for (index, line) in io::BufReader::new(file).lines().enumerate() {
-        let source = provenance(harness, &path_text, index + 1);
+        let source = provenance(harness, &path_str, index + 1);
         match line {
-            Ok(line) if line.trim().is_empty() => parsed.diagnostics.push(Diagnostic {
+            Ok(text) => {
+                if text.trim().is_empty() {
+                    parsed.diagnostics.push(Diagnostic {
+                        source,
+                        message: "empty record".to_string(),
+                    });
+                    continue;
+                }
+                match serde_json::from_str::<Value>(&text) {
+                    Ok(value) => parser(&value, &mut parsed, &path_str, source),
+                    Err(err) => parsed.diagnostics.push(Diagnostic {
+                        source,
+                        message: format!("malformed JSON: {err}"),
+                    }),
+                }
+            }
+            Err(err) => parsed.diagnostics.push(Diagnostic {
                 source,
-                message: "empty record".into(),
-            }),
-            Ok(line) => match serde_json::from_str::<Value>(&line) {
-                Ok(record) => parser(&record, &mut parsed, &path_text, source),
-                Err(error) => parsed.diagnostics.push(Diagnostic {
-                    source,
-                    message: format!("malformed JSON: {error}"),
-                }),
-            },
-            Err(error) => parsed.diagnostics.push(Diagnostic {
-                source,
-                message: format!("could not read record: {error}"),
+                message: format!("could not read record: {err}"),
             }),
         }
     }
-    if parsed.session.is_none() {
-        parsed.session = Some(fallback_session(harness, &path_text));
-    }
+
     parsed
 }
 
 fn provenance(harness: Harness, path: &str, line: usize) -> Provenance {
     Provenance {
         harness,
-        path: path.into(),
+        path: path.to_string(),
         line,
         ordinal: line,
     }
 }
-fn fallback_session(harness: Harness, path: &str) -> Session {
-    Session {
-        id: format!("{:?}:{path}", harness),
-        harness,
-        source: provenance(harness, path, 0),
-        native_id: SourceValue::Absent,
-        project: SourceValue::Absent,
-        parent_session: SourceValue::Absent,
-    }
-}
+/// Looks up the first present name and returns its string value, distinguishing "absent"
+/// (no name present) from "malformed" (present but not a string).
 pub(crate) fn string(value: &Value, names: &[&str]) -> SourceValue<String> {
     for name in names {
         if let Some(item) = value.get(*name) {
             return item
                 .as_str()
-                .map(|text| SourceValue::Recorded(text.into()))
+                .map(|text| SourceValue::Recorded(text.to_string()))
                 .unwrap_or(SourceValue::Malformed);
         }
     }
     SourceValue::Absent
 }
+
+/// Convenience over `string` for call sites that only need the recorded case, treating
+/// absent/malformed/unsupported alike as "nothing usable here".
 pub(crate) fn recorded_string(value: &Value, names: &[&str]) -> Option<String> {
     match string(value, names) {
         SourceValue::Recorded(value) => Some(value),
         _ => None,
     }
 }
+
 pub(crate) fn number(value: Option<&Value>) -> SourceValue<u64> {
     value
         .and_then(Value::as_u64)
         .map(SourceValue::Recorded)
         .unwrap_or(SourceValue::Absent)
 }
+
 pub(crate) fn session_id(harness: Harness, path: &str, native: Option<String>) -> String {
     format!(
-        "{:?}:{path}:{}",
-        harness,
-        native.unwrap_or_else(|| "source".into())
+        "{harness:?}:{path}:{}",
+        native.unwrap_or_else(|| "source".to_string())
     )
 }
+
 pub(crate) fn event_id(session: &str, source: &Provenance, native: &SourceValue<String>) -> String {
     let key = match native {
         SourceValue::Recorded(id) => id.clone(),
@@ -231,6 +236,7 @@ pub(crate) fn event_id(session: &str, source: &Provenance, native: &SourceValue<
     };
     format!("{session}:{key}")
 }
+
 pub(crate) fn event(
     session: &str,
     kind: EventKind,
@@ -239,7 +245,7 @@ pub(crate) fn event(
 ) -> Event {
     Event {
         id: event_id(session, &source, &native_id),
-        session_id: session.into(),
+        session_id: session.to_string(),
         kind,
         source,
         native_id,
@@ -251,6 +257,30 @@ pub(crate) fn event(
         detail: SourceValue::Absent,
     }
 }
+
+/// Pushes one `Relationship` from `from_event_id` to `to_native_id` when the harness record
+/// actually supplied that native id. Every adapter's conversation-tree-parent and
+/// tool-call-result edges share exactly this "if the source recorded the target id, link to
+/// it" shape; this collects the four real call sites (Claude's parent edge, Codex's and Pi's
+/// tool-result edges, Pi's parent edge) into one place instead of repeating the `if let
+/// Some(..) { parsed.relationships.push(Relationship { .. }) }` block per edge.
+pub(crate) fn push_relationship_if_present(
+    parsed: &mut ParsedSession,
+    kind: RelationshipKind,
+    from_event_id: String,
+    to_native_id: Option<String>,
+    source: Provenance,
+) {
+    if let Some(to_native_id) = to_native_id {
+        parsed.relationships.push(Relationship {
+            kind,
+            from_event_id,
+            to_native_id,
+            source,
+        });
+    }
+}
+
 pub(crate) fn usage(value: Option<&Value>, scope: &str) -> SourceValue<TokenUsage> {
     let Some(value) = value else {
         return SourceValue::Absent;
@@ -281,7 +311,7 @@ pub(crate) fn usage(value: Option<&Value>, scope: &str) -> SourceValue<TokenUsag
                 .get("total_tokens")
                 .or_else(|| value.get("totalTokens")),
         ),
-        scope: scope.into(),
+        scope: scope.to_string(),
     })
 }
 
@@ -304,35 +334,218 @@ pub(crate) fn content_text(content: Option<&Value>) -> SourceValue<String> {
         None => SourceValue::Absent,
     }
 }
+/// Builds a `ToolCall` from a harness-specific record whose call-name and call-input fields
+/// vary by name (`name`/`input` for Claude, `name`/`arguments` for Codex, etc).
 pub(crate) fn tool_call(value: &Value, name: &str, input: &str) -> ToolCall {
-    let input_value = value
-        .get(input)
+    let input_value = value.get(input);
+    let recorded_input = input_value
         .map(Value::to_string)
         .map(SourceValue::Recorded)
         .unwrap_or(SourceValue::Absent);
-    let input_text = value.get(input).and_then(Value::as_str);
-    let path = value
-        .get(input)
+    let path = input_value
         .and_then(|arguments| arguments.get("path").or_else(|| arguments.get("file_path")))
         .and_then(Value::as_str)
         .map(str::to_owned)
-        .or_else(|| input_text.and_then(extract_path))
+        .or_else(|| input_value.and_then(Value::as_str).and_then(extract_path))
         .or_else(|| recorded_string(value, &["path", "file_path"]))
         .map(SourceValue::Recorded)
         .unwrap_or(SourceValue::Absent);
     ToolCall {
-        name: recorded_string(value, &[name]).unwrap_or_else(|| "unknown".into()),
+        name: recorded_string(value, &[name]).unwrap_or_else(|| "unknown".to_string()),
         call_id: string(value, &["id", "call_id"]),
-        input: input_value,
+        input: recorded_input,
         command: string(value, &["command"]),
         path,
         url: string(value, &["url"]),
     }
 }
+
+/// Codex `function_call` arguments sometimes arrive as a JSON-encoded string rather than an
+/// object; this pulls a `path` out of that string form without treating it as malformed.
 pub(crate) fn extract_path(input: &str) -> Option<String> {
     serde_json::from_str::<Value>(input)
         .ok()?
         .get("path")?
         .as_str()
         .map(str::to_owned)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+
+    fn write_temp_file(name: &str, contents: &str) -> PathBuf {
+        let path = std::env::temp_dir().join(format!(
+            "ailly-parse-jsonl-test-{}-{}-{}",
+            std::process::id(),
+            name,
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("system clock after epoch")
+                .as_nanos()
+        ));
+        let mut file = fs::File::create(&path).expect("create temp fixture file");
+        file.write_all(contents.as_bytes())
+            .expect("write temp fixture file");
+        path
+    }
+
+    fn noop(_value: &Value, _parsed: &mut ParsedSession, _path: &str, _source: Provenance) {}
+
+    fn unique_temp_dir(name: &str) -> PathBuf {
+        std::env::temp_dir().join(format!(
+            "ailly-discover-sessions-test-{}-{}-{}",
+            std::process::id(),
+            name,
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("system clock after epoch")
+                .as_nanos()
+        ))
+    }
+
+    #[test]
+    fn a_home_with_no_harness_folders_returns_an_empty_result_without_panicking() {
+        let home = unique_temp_dir("empty-home");
+        fs::create_dir_all(&home).expect("create empty home");
+
+        let found = discover_sessions(&DiscoveryRoots {
+            home: Some(home.clone()),
+            pi_session_roots: Vec::new(),
+        });
+
+        assert_eq!(found, Vec::new());
+        fs::remove_dir_all(&home).ok();
+    }
+
+    #[test]
+    fn claude_sessions_and_projects_both_surface_as_claude_code_recursively() {
+        let home = unique_temp_dir("claude-both-roots");
+        let sessions_nested = home.join(".claude/sessions/nested");
+        let projects_nested = home.join(".claude/projects/proj/nested");
+        fs::create_dir_all(&sessions_nested).expect("create sessions nested dir");
+        fs::create_dir_all(&projects_nested).expect("create projects nested dir");
+        fs::write(sessions_nested.join("a.jsonl"), "{}").expect("write sessions fixture");
+        fs::write(projects_nested.join("b.jsonl"), "{}").expect("write projects fixture");
+
+        let found = discover_sessions(&DiscoveryRoots {
+            home: Some(home.clone()),
+            pi_session_roots: Vec::new(),
+        });
+
+        assert_eq!(found.len(), 2);
+        assert!(found
+            .iter()
+            .all(|(harness, _)| *harness == Harness::ClaudeCode));
+        fs::remove_dir_all(&home).ok();
+    }
+
+    #[test]
+    fn a_non_jsonl_file_in_a_session_root_is_not_returned() {
+        let home = unique_temp_dir("non-jsonl");
+        let sessions = home.join(".claude/sessions");
+        fs::create_dir_all(&sessions).expect("create sessions dir");
+        fs::write(sessions.join("notes.txt"), "not jsonl").expect("write non-jsonl file");
+        fs::write(sessions.join("session.jsonl"), "{}").expect("write jsonl file");
+
+        let found = discover_sessions(&DiscoveryRoots {
+            home: Some(home.clone()),
+            pi_session_roots: Vec::new(),
+        });
+
+        assert_eq!(found.len(), 1);
+        assert!(found[0].1.ends_with("session.jsonl"));
+        fs::remove_dir_all(&home).ok();
+    }
+
+    #[test]
+    fn a_root_listed_twice_is_deduplicated_in_the_result() {
+        let home = unique_temp_dir("empty-home-for-dedup");
+        fs::create_dir_all(&home).expect("create empty home");
+        let pi_root = unique_temp_dir("pi-dup-root");
+        fs::create_dir_all(&pi_root).expect("create pi root");
+        fs::write(pi_root.join("session.jsonl"), "{}").expect("write jsonl file");
+
+        let found = discover_sessions(&DiscoveryRoots {
+            home: Some(home.clone()),
+            pi_session_roots: vec![pi_root.clone(), pi_root.clone()],
+        });
+
+        assert_eq!(found, vec![(Harness::Pi, pi_root.join("session.jsonl"))]);
+        fs::remove_dir_all(&home).ok();
+        fs::remove_dir_all(&pi_root).ok();
+    }
+
+    #[test]
+    fn configured_pi_roots_are_discovered_without_reading_pi_settings() {
+        let home = unique_temp_dir("empty-home-for-pi-roots");
+        fs::create_dir_all(&home).expect("create empty home");
+        let pi_root = unique_temp_dir("configured-pi-root");
+        fs::create_dir_all(&pi_root).expect("create configured pi root");
+        fs::write(pi_root.join("session.jsonl"), "{}").expect("write jsonl file");
+
+        let found = discover_sessions(&DiscoveryRoots {
+            home: Some(home.clone()),
+            pi_session_roots: vec![pi_root.clone()],
+        });
+
+        assert_eq!(found, vec![(Harness::Pi, pi_root.join("session.jsonl"))]);
+        fs::remove_dir_all(&home).ok();
+        fs::remove_dir_all(&pi_root).ok();
+    }
+
+    #[test]
+    fn one_malformed_line_becomes_a_diagnostic_without_dropping_the_file() {
+        let path = write_temp_file(
+            "malformed-line",
+            "{\"type\":\"a\"}\nnot-json\n{\"type\":\"b\"}\n",
+        );
+
+        let parsed = parse_jsonl(&path, Harness::ClaudeCode, noop);
+
+        assert_eq!(parsed.diagnostics.len(), 1);
+        assert_eq!(parsed.diagnostics[0].source.line, 2);
+        fs::remove_file(&path).ok();
+    }
+
+    #[test]
+    fn empty_or_whitespace_only_line_becomes_a_diagnostic_not_a_silent_skip() {
+        let path = write_temp_file("blank-line", "{\"type\":\"a\"}\n   \n{\"type\":\"b\"}\n");
+
+        let parsed = parse_jsonl(&path, Harness::ClaudeCode, noop);
+
+        assert_eq!(parsed.diagnostics.len(), 1);
+        assert_eq!(parsed.diagnostics[0].source.line, 2);
+        assert_eq!(parsed.diagnostics[0].message, "empty record");
+        fs::remove_file(&path).ok();
+    }
+
+    #[test]
+    fn unreadable_file_produces_exactly_one_diagnostic_at_line_zero_without_panicking() {
+        let path = std::env::temp_dir().join(format!(
+            "ailly-parse-jsonl-test-missing-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("system clock after epoch")
+                .as_nanos()
+        ));
+        let _ = fs::remove_file(&path);
+
+        let parsed = parse_jsonl(&path, Harness::ClaudeCode, noop);
+
+        assert_eq!(parsed.diagnostics.len(), 1);
+        assert_eq!(parsed.diagnostics[0].source.line, 0);
+    }
+
+    #[test]
+    fn a_well_formed_file_with_zero_bad_lines_produces_zero_diagnostics() {
+        let path = write_temp_file("clean-file", "{\"type\":\"a\"}\n{\"type\":\"b\"}\n");
+
+        let parsed = parse_jsonl(&path, Harness::ClaudeCode, noop);
+
+        assert_eq!(parsed.diagnostics.len(), 0);
+        fs::remove_file(&path).ok();
+    }
 }

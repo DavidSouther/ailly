@@ -14,13 +14,13 @@ Build the product vertically in this order. Each task should leave a usable, tes
 
 Deployment publication remains deferred because this project has no configured deployment target or signing-secret policy. Version is the initial "0.1.0"
 
-## 2. Harness loader and event model
+## 2. Harness loader and event model — complete (2026-08-11)
 
 - Define the normalized session, turn, tool-call, subagent, token, file, and provenance types.
 - Implement adapter interfaces that isolate harness-specific formats.
-- Add Claude Code and Codex discovery and parsing for the local session locations named in the brief.
+- Add Claude Code, Codex, and Pi discovery and parsing for their documented local session locations, including configured Pi session roots.
 - Preserve source coordinates and unknown fields without inventing missing facts.
-- Add fixture-based parser tests, including malformed and partial records.
+- Add fixture-based parser tests for Claude Code, Codex, and Pi, including malformed and partial records and Pi's header, message/tool, tree, and unknown-entry cases.
 
 ## 3. SQLite index
 

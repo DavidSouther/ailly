@@ -145,3 +145,49 @@ pub struct Diagnostic {
     pub source: Provenance,
     pub message: String,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn source_value_states_stay_pairwise_distinct() {
+        let recorded = SourceValue::Recorded("x".to_string());
+        let absent: SourceValue<String> = SourceValue::Absent;
+        let unsupported: SourceValue<String> = SourceValue::Unsupported;
+        let malformed: SourceValue<String> = SourceValue::Malformed;
+
+        assert_ne!(recorded, absent);
+        assert_ne!(absent, unsupported);
+        assert_ne!(unsupported, malformed);
+        assert_ne!(malformed, recorded);
+    }
+
+    #[test]
+    fn recorded_values_compare_by_inner_value_not_discriminant() {
+        let a = SourceValue::Recorded("x".to_string());
+        let b = SourceValue::Recorded("y".to_string());
+
+        assert_ne!(a, b);
+        assert_eq!(a, SourceValue::Recorded("x".to_string()));
+    }
+
+    #[test]
+    fn source_value_composed_in_a_struct_compares_field_wise() {
+        let with_text = Turn {
+            role: "user".to_string(),
+            text: SourceValue::Recorded("hello".to_string()),
+        };
+        let with_absent_text = Turn {
+            role: "user".to_string(),
+            text: SourceValue::Absent,
+        };
+        let same_as_first = Turn {
+            role: "user".to_string(),
+            text: SourceValue::Recorded("hello".to_string()),
+        };
+
+        assert_ne!(with_text, with_absent_text);
+        assert_eq!(with_text, same_as_first);
+    }
+}

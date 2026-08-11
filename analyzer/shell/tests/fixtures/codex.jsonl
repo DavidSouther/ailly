@@ -2,3 +2,4 @@
 {"type":"response_item","timestamp":"2026-01-01T00:00:00Z","payload":{"type":"message","id":"m1","role":"user","content":"hello"}}
 {"type":"response_item","payload":{"type":"function_call","call_id":"c1","name":"exec_command","arguments":"{\"path\":\"Cargo.toml\"}"}}
 {"type":"response_item","payload":{"type":"function_call_output","call_id":"c1","output":"done"}}
+not-json
