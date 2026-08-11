@@ -1,3 +1,6 @@
+pub mod loader;
+pub mod model;
+
 #[tauri::command]
 fn app_ready() -> &'static str {
     "ailly-analyzer"
