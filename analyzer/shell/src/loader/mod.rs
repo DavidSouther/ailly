@@ -21,7 +21,7 @@ pub trait HarnessAdapter {
     fn parse(&self, path: &Path) -> ParsedSession;
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
 pub struct DiscoveryRoots {
     pub home: Option<PathBuf>,
     /// Explicit Pi roots, normally supplied by an application preference.
@@ -232,9 +232,9 @@ pub(crate) fn session_id(harness: Harness, path: &str, native: Option<String>) -
 pub(crate) fn event_id(session: &str, source: &Provenance, native: &SourceValue<String>) -> String {
     let key = match native {
         SourceValue::Recorded(id) => id.clone(),
-        _ => source.line.to_string(),
+        _ => "native".to_string(),
     };
-    format!("{session}:{key}")
+    format!("{session}:{}:{}", source.line, key)
 }
 
 pub(crate) fn event(

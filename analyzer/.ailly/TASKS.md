@@ -22,7 +22,7 @@ Deployment publication remains deferred because this project has no configured d
 - Preserve source coordinates and unknown fields without inventing missing facts.
 - Add fixture-based parser tests for Claude Code, Codex, and Pi, including malformed and partial records and Pi's header, message/tool, tree, and unknown-entry cases.
 
-## 3. SQLite index
+## 3. SQLite index — complete (2026-08-12)
 
 - Add the rebuildable SQLite schema and FTS5 search indexes.
 - Index sessions incrementally using source-file identity and modification metadata.
@@ -75,6 +75,14 @@ Deployment publication remains deferred because this project has no configured d
 - Add side-by-side comparison for the dimensions relevant to wrong-turn investigation.
 - Surface recurring files, subagent types, and pertinent call patterns.
 - Preserve drill-down links from collection patterns to individual sessions.
+
+## Deferred from Task 3
+
+- Index-time `session_rollups` (add only after a measured list/summary query is slow).
+- Forward `schema_version` migrations beyond delete-and-rebuild.
+- User-chosen index directory; content-hash incremental keys; widen FTS coverage.
+- Polished indexing progress UI (Journey 1 can show a minimal status first).
+- Extra index unit coverage: interrupt mid-batch; source edit then re-index; source delete then prune; `Unsupported`/`Malformed` field round-trip.
 
 ## Working rule
 
