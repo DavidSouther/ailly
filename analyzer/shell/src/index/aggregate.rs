@@ -5,7 +5,7 @@
 
 use super::{
     EventPage, IndexError, IndexRefresh, IndexStatus, ListSessionsQuery, PageQuery, Paged,
-    SearchHit, SearchQuery, SessionListItem, SessionSummary,
+    ReconcileProgress, SearchHit, SearchQuery, SessionListItem, SessionSummary,
 };
 
 /// Rebuildable local cache of normalized session evidence.
@@ -13,7 +13,18 @@ use super::{
 /// One reconcile touches source-file identity rows, session headers, events,
 /// relationships, diagnostics, and search content atomically per source file.
 pub trait SessionIndex {
-    fn refresh(&self, refresh: IndexRefresh) -> Result<(), IndexError>;
+    /// Reconciles sources, invoking `progress` after each discovered file.
+    fn refresh_with_progress(
+        &self,
+        refresh: IndexRefresh,
+        progress: &mut dyn FnMut(ReconcileProgress),
+    ) -> Result<(), IndexError>;
+
+    /// Reconciles sources without observing progress.
+    fn refresh(&self, refresh: IndexRefresh) -> Result<(), IndexError> {
+        self.refresh_with_progress(refresh, &mut |_| {})
+    }
+
     fn cancel(&self);
     fn status(&self) -> IndexStatus;
     fn list_sessions(&self, query: ListSessionsQuery)

@@ -11,7 +11,7 @@ mod sqlite;
 
 pub use aggregate::SessionIndex;
 pub use memory::InMemorySessionIndex;
-pub use reconcile::IndexRefresh;
+pub use reconcile::{IndexRefresh, ReconcileProgress};
 pub use sqlite::SqliteSessionIndex;
 
 use crate::model::{Event, Harness, SourceValue};
@@ -58,6 +58,8 @@ pub struct SessionListItem {
     pub project: SourceValue<String>,
     pub event_count: usize,
     pub token_total: SourceValue<u64>,
+    /// Latest recorded event timestamp for the session, else `Absent`.
+    pub last_activity: SourceValue<String>,
 }
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]

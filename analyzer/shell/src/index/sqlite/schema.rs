@@ -14,11 +14,13 @@ pub fn open_connection(path: &std::path::Path) -> rusqlite::Result<Connection> {
 }
 
 fn ensure_schema(conn: &Connection) -> rusqlite::Result<()> {
+    // `meta.value` is a TEXT column, so the stored version is read as text and
+    // parsed. An unparseable value counts as a mismatch and triggers a rebuild.
     let stored = match conn
         .query_row(
             "SELECT value FROM meta WHERE key = 'schema_version'",
             [],
-            |row| row.get::<_, i64>(0),
+            |row| row.get::<_, String>(0),
         )
         .optional()
     {
@@ -30,8 +32,9 @@ fn ensure_schema(conn: &Connection) -> rusqlite::Result<()> {
         }
         Err(err) => return Err(err),
     };
+    let version = stored.as_deref().and_then(|text| text.parse::<i64>().ok());
 
-    if stored != Some(SCHEMA_VERSION) {
+    if version != Some(SCHEMA_VERSION) {
         if stored.is_some() {
             drop_tables(conn)?;
         }

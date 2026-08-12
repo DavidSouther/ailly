@@ -4,7 +4,7 @@ use crate::index::domain::{
     batch_from_parsed, event_kind_name, harness_name, parse_event_kind, parse_harness,
     relationship_kind_name, token_total_from_events, FileIdentity,
 };
-use crate::index::reconcile::{run_reconcile, IndexRefresh, ReconcileBackend};
+use crate::index::reconcile::ReconcileBackend;
 use crate::index::source_value::{decode, decode_required, encode, IndexCodecError, SourceKind};
 use crate::index::{
     EventPage, IndexError, ListSessionsQuery, PageQuery, Paged, SearchHit, SearchQuery,
@@ -13,7 +13,6 @@ use crate::index::{
 use crate::model::{Event, Harness, ParsedSession, Provenance, Relationship, Session, SourceValue};
 use rusqlite::{params, Connection, OptionalExtension, Transaction};
 use std::collections::HashSet;
-use std::sync::{Arc, Mutex};
 
 pub struct SqliteBackend {
     conn: Connection,
@@ -22,14 +21,6 @@ pub struct SqliteBackend {
 impl SqliteBackend {
     pub fn new(conn: Connection) -> Self {
         Self { conn }
-    }
-
-    pub fn refresh(
-        &mut self,
-        refresh: IndexRefresh,
-        interrupt: Arc<Mutex<bool>>,
-    ) -> Result<(), IndexError> {
-        run_reconcile(self, refresh, interrupt)
     }
 
     pub fn list_sessions(
@@ -231,12 +222,17 @@ fn map_session_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<SessionListItem>
     let harness = parse_harness(&row.get::<_, String>(1)?).expect("stored harness");
     let project_kind = SourceKind::parse(&row.get::<_, String>(2)?).expect("stored project kind");
     let project_value = row.get::<_, Option<String>>(3)?;
+    let last_activity = match row.get::<_, Option<String>>(5)? {
+        Some(ts) => SourceValue::Recorded(ts),
+        None => SourceValue::Absent,
+    };
     Ok(SessionListItem {
         id: row.get(0)?,
         harness,
         project: decode(project_kind, project_value.as_deref()),
         event_count: row.get::<_, i64>(4)? as usize,
         token_total: SourceValue::Absent,
+        last_activity,
     })
 }
 

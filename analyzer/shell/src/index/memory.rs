@@ -4,7 +4,7 @@ use crate::index::aggregate::SessionIndex;
 use crate::index::domain::{
     batch_from_parsed, token_total_from_events, FileIdentity, ParsedBatch, SearchRow,
 };
-use crate::index::reconcile::{run_reconcile, IndexRefresh, ReconcileBackend};
+use crate::index::reconcile::{run_reconcile, IndexRefresh, ReconcileBackend, ReconcileProgress};
 use crate::index::{
     EventPage, IndexError, IndexStatus, ListSessionsQuery, PageQuery, Paged, SearchHit,
     SearchQuery, SessionListItem, SessionSummary,
@@ -51,40 +51,30 @@ impl Default for InMemorySessionIndex {
     }
 }
 
-struct MemoryBackend<'a> {
-    store: &'a mut Store,
-}
-
-impl ReconcileBackend for MemoryBackend<'_> {
+impl ReconcileBackend for Store {
     fn stored_paths(&self) -> Result<HashSet<String>, IndexError> {
-        Ok(self.store.source_files.keys().cloned().collect())
+        Ok(self.source_files.keys().cloned().collect())
     }
 
     fn is_unchanged(&self, identity: &FileIdentity) -> Result<bool, IndexError> {
-        Ok(self.store.source_files.get(&identity.path) == Some(identity))
+        Ok(self.source_files.get(&identity.path) == Some(identity))
     }
 
     fn remove_file(&mut self, path: &str) -> Result<(), IndexError> {
         let removed_event_ids: HashSet<String> = self
-            .store
             .events
             .iter()
             .filter(|event| event.source.path == path)
             .map(|event| event.id.clone())
             .collect();
-        self.store.source_files.remove(path);
-        self.store
-            .sessions
-            .retain(|_, stored| stored.source_path != path);
-        self.store.events.retain(|event| event.source.path != path);
-        self.store
-            .relationships
+        self.source_files.remove(path);
+        self.sessions.retain(|_, stored| stored.source_path != path);
+        self.events.retain(|event| event.source.path != path);
+        self.relationships
             .retain(|relationship| relationship.source.path != path);
-        self.store
-            .diagnostics
+        self.diagnostics
             .retain(|diagnostic| diagnostic.source.path != path);
-        self.store
-            .search
+        self.search
             .retain(|row| !removed_event_ids.contains(&row.event_id));
         Ok(())
     }
@@ -97,13 +87,12 @@ impl ReconcileBackend for MemoryBackend<'_> {
     ) -> Result<(), IndexError> {
         self.remove_file(&identity.path)?;
         apply_batch(
-            self.store,
+            self,
             harness,
             &identity.path,
             batch_from_parsed(harness, &identity.path, parsed),
         )?;
-        self.store
-            .source_files
+        self.source_files
             .insert(identity.path.clone(), identity.clone());
         Ok(())
     }
@@ -132,11 +121,13 @@ fn apply_batch(
 }
 
 impl SessionIndex for InMemorySessionIndex {
-    fn refresh(&self, refresh: IndexRefresh) -> Result<(), IndexError> {
+    fn refresh_with_progress(
+        &self,
+        refresh: IndexRefresh,
+        progress: &mut dyn FnMut(ReconcileProgress),
+    ) -> Result<(), IndexError> {
         *self.status.lock().expect("status lock") = IndexStatus::Running;
-        let mut store = self.store.lock().map_err(|_| IndexError::LockPoisoned)?;
-        let mut backend = MemoryBackend { store: &mut store };
-        match run_reconcile(&mut backend, refresh, self.interrupt.clone()) {
+        match run_reconcile(&self.store, refresh, self.interrupt.clone(), progress) {
             Ok(()) => {
                 *self.status.lock().expect("status lock") = IndexStatus::Idle;
                 Ok(())
@@ -185,12 +176,17 @@ impl SessionIndex for InMemorySessionIndex {
                     .iter()
                     .filter(|event| event.session_id == stored.session.id)
                     .count();
+                let last_activity = match latest_timestamp(&store.events, &stored.session.id) {
+                    Some(ts) => SourceValue::Recorded(ts),
+                    None => SourceValue::Absent,
+                };
                 SessionListItem {
                     id: stored.session.id.clone(),
                     harness: stored.session.harness,
                     project: stored.session.project.clone(),
                     event_count,
                     token_total: SourceValue::Absent,
+                    last_activity,
                 }
             })
             .collect();

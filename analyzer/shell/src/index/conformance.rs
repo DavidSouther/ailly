@@ -54,11 +54,32 @@ pub(crate) fn assert_indexes_all_harnesses(index: &dyn SessionIndex, label: &str
         home: Some(home.clone()),
         pi_session_roots: Vec::new(),
     };
+    let mut reports = Vec::new();
     index
-        .refresh(IndexRefresh {
-            roots: roots.clone(),
-        })
+        .refresh_with_progress(
+            IndexRefresh {
+                roots: roots.clone(),
+            },
+            &mut |progress| reports.push(progress),
+        )
         .expect("first reconcile");
+    assert_eq!(
+        reports.len(),
+        3,
+        "reconcile must report progress once per discovered source, got {reports:?}"
+    );
+    assert!(
+        reports.iter().all(|report| report.total == 3),
+        "every progress report must carry the discovered total, got {reports:?}"
+    );
+    assert_eq!(
+        reports
+            .iter()
+            .map(|report| report.indexed)
+            .collect::<Vec<_>>(),
+        vec![1, 2, 3],
+        "progress must advance monotonically so the UI can stream partial results"
+    );
 
     let listed = index
         .list_sessions(ListSessionsQuery {

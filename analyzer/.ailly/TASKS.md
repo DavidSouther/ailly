@@ -30,13 +30,18 @@ Deployment publication remains deferred because this project has no configured d
 - Expose bounded queries for session lists, event pages, summaries, and search.
 - Test interruption, repeat indexing, source changes, and unsupported metadata.
 
-## 4. Journey 1: Find a session
+## 4. Journey 1: Find a session — complete (2026-08-12)
 
 - Discover available harnesses and local session roots.
 - Build the session list with recency, project, label, size, duration, and token summary.
 - Add search and filters for project, date range, harness, and rough size.
 - Add a useful default selection and a clear empty state.
 - Keep large collections responsive with pagination or virtualization.
+
+Shipped: auto-discover default roots; streaming non-blocking index refresh with progress;
+session list (harness, project, event count, last activity); harness filter; client-side
+text filter; empty/error/zero states; Zustand session store. Also fixed Task 3 reopen bug
+(`meta.schema_version` TEXT read as i64).
 
 ## 5. Journey 6: Read the complete conversation
 
@@ -81,8 +86,15 @@ Deployment publication remains deferred because this project has no configured d
 - Index-time `session_rollups` (add only after a measured list/summary query is slow).
 - Forward `schema_version` migrations beyond delete-and-rebuild.
 - User-chosen index directory; content-hash incremental keys; widen FTS coverage.
-- Polished indexing progress UI (Journey 1 can show a minimal status first).
 - Extra index unit coverage: interrupt mid-batch; source edit then re-index; source delete then prune; `Unsupported`/`Malformed` field round-trip.
+
+## Deferred from Journey 1
+
+- List-row token totals and duration (need rollups or summary batching; avoid N+1).
+- Date-range and rough-size filters beyond the current harness + text controls.
+- Session labels when a harness records them.
+- Virtualize the session list once real collections are large enough to measure.
+- FTS content search over event text (belongs with read/investigate journeys).
 
 ## Working rule
 

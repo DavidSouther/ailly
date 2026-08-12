@@ -3,14 +3,23 @@ pub mod loader;
 pub mod model;
 
 use index::{
-    EventPage, Index, IndexRefresh, IndexStatus, ListSessionsQuery, PageQuery, Paged, SearchHit,
-    SearchQuery, SessionIndex, SessionListItem, SessionSummary,
+    EventPage, Index, IndexRefresh, IndexStatus, ListSessionsQuery, PageQuery, Paged,
+    ReconcileProgress, SearchHit, SearchQuery, SessionIndex, SessionListItem, SessionSummary,
 };
 use loader::DiscoveryRoots;
-use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
+use tauri::{Emitter, Manager};
 
 static INDEX: Mutex<Option<Arc<Index>>> = Mutex::new(None);
+
+/// Event carrying `ReconcileProgress` while a refresh walks discovered sources.
+const EVENT_PROGRESS: &str = "index-progress";
+/// Event carrying the terminal `IndexStatus` when a refresh stops.
+const EVENT_COMPLETE: &str = "index-complete";
+
+/// Floor between progress events, so a large scan cannot flood the webview.
+const PROGRESS_INTERVAL: Duration = Duration::from_millis(100);
 
 fn index_handle() -> Result<Arc<Index>, String> {
     INDEX
@@ -25,21 +34,59 @@ fn app_ready() -> &'static str {
     "ailly-analyzer"
 }
 
-#[tauri::command]
-fn index_init(app_data_dir: String) -> Result<(), String> {
-    let path = PathBuf::from(app_data_dir).join("index.sqlite");
-    let index = index::open_index(&path).map_err(|err| err.to_string())?;
+/// Opens the index under the platform app-data directory, creating it if needed.
+///
+/// The backend resolves its own cache location so the frontend needs no path
+/// capability, and every failure reports the path it was working on.
+#[tauri::command(async)]
+fn index_init(app: tauri::AppHandle) -> Result<(), String> {
+    let dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|err| format!("no app data directory available: {err}"))?;
+    std::fs::create_dir_all(&dir)
+        .map_err(|err| format!("could not create {}: {err}", dir.display()))?;
+    let path = dir.join("index.sqlite");
+    let index = index::open_index(&path)
+        .map_err(|err| format!("could not open index at {}: {err}", path.display()))?;
     *INDEX.lock().expect("index lock") = Some(Arc::new(index));
     Ok(())
 }
 
-#[tauri::command]
-fn index_refresh(roots: DiscoveryRoots) -> Result<IndexStatus, String> {
+/// Starts a reconcile on a background thread and returns immediately.
+///
+/// Progress arrives as `index-progress` events and the terminal state as
+/// `index-complete`, so the window stays interactive and the frontend can
+/// re-query the growing index while the scan is still running.
+#[tauri::command(async)]
+fn index_refresh(app: tauri::AppHandle, roots: DiscoveryRoots) -> Result<IndexStatus, String> {
     let index = index_handle()?;
-    index
-        .refresh(IndexRefresh { roots })
-        .map_err(|err| err.to_string())?;
-    Ok(index.status())
+    if index.status() == IndexStatus::Running {
+        return Ok(IndexStatus::Running);
+    }
+
+    std::thread::spawn(move || {
+        let mut last_emit: Option<Instant> = None;
+        let mut progress = |progress: ReconcileProgress| {
+            let due = last_emit.is_none_or(|at| at.elapsed() >= PROGRESS_INTERVAL);
+            if due || progress.indexed == progress.total {
+                last_emit = Some(Instant::now());
+                let _ = app.emit(EVENT_PROGRESS, progress);
+            }
+        };
+        let status = match index.refresh_with_progress(IndexRefresh { roots }, &mut progress) {
+            Ok(()) => index.status(),
+            Err(err) => {
+                eprintln!("ailly-analyzer: reconcile failed: {err}");
+                IndexStatus::Error {
+                    message: err.to_string(),
+                }
+            }
+        };
+        let _ = app.emit(EVENT_COMPLETE, status);
+    });
+
+    Ok(IndexStatus::Running)
 }
 
 #[tauri::command]
@@ -54,28 +101,28 @@ fn index_status() -> Result<IndexStatus, String> {
     Ok(index_handle()?.status())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn list_sessions(query: ListSessionsQuery) -> Result<Paged<SessionListItem>, String> {
     index_handle()?
         .list_sessions(query)
         .map_err(|err| err.to_string())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn get_session_summary(session_id: String) -> Result<SessionSummary, String> {
     index_handle()?
         .get_session_summary(&session_id)
         .map_err(|err| err.to_string())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn get_event_page(session_id: String, query: PageQuery) -> Result<EventPage, String> {
     index_handle()?
         .get_event_page(&session_id, query)
         .map_err(|err| err.to_string())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn search_index(query: SearchQuery) -> Result<Paged<SearchHit>, String> {
     index_handle()?
         .search_index(query)
