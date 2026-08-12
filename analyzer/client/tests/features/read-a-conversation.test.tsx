@@ -60,6 +60,7 @@ function baseEvent(id: string, ordinal: number, kind: EventKind): AillyEvent {
     timestamp: "Absent",
     turn: "Absent",
     tool_call: "Absent",
+    tool_result: "Absent",
     token_usage: "Absent",
     files: "Absent",
     detail: "Absent",
@@ -87,6 +88,17 @@ const EVENTS: AillyEvent[] = [
         command: { Recorded: "cargo test" },
         path: "Absent",
         url: "Absent",
+        cwd: "Absent",
+      },
+    },
+  },
+  {
+    ...baseEvent("evt-3-result", 4, EventKind.ToolResult),
+    tool_result: {
+      Recorded: {
+        call_id: { Recorded: "call-1" },
+        output: { Recorded: "test result: ok. 42 passed; 0 failed" },
+        is_error: "Absent",
       },
     },
   },
@@ -124,23 +136,30 @@ function conversation() {
   return screen.getByRole("region", { name: /conversation/i });
 }
 
+/** Selecting a session opens the Summary tab; the transcript is one click away. */
+async function openConversation() {
+  await userEvent.click(await screen.findByRole("tab", { name: /conversation/i }));
+  return await screen.findByRole("region", { name: /conversation/i });
+}
+
 describe("Journey 6: Read the complete conversation", () => {
   it("renders user turns, assistant text, tool calls, and subagents in source order", async () => {
     await renderApp();
 
-    const convo = await screen.findByRole("region", { name: /conversation/i });
+    const convo = await openConversation();
     await within(convo).findByText("Please refactor the parser");
 
     const text = convo.textContent ?? "";
     expect(text.indexOf("Please refactor the parser")).toBeGreaterThanOrEqual(0);
     expect(text.indexOf("Please refactor the parser")).toBeLessThan(text.indexOf("On it"));
     expect(text.indexOf("On it")).toBeLessThan(text.indexOf("Shell"));
-    expect(text.indexOf("Shell")).toBeLessThan(text.indexOf("All tests pass."));
+    expect(text.indexOf("Shell")).toBeLessThan(text.indexOf("Tool result"));
+    expect(text.indexOf("Tool result")).toBeLessThan(text.indexOf("All tests pass."));
   });
 
   it("keeps tool call parameters collapsed until expanded on demand", async () => {
     await renderApp();
-    const convo = await screen.findByRole("region", { name: /conversation/i });
+    const convo = await openConversation();
     await within(convo).findByText("Please refactor the parser");
 
     expect(within(convo).getByText("Shell")).toBeInTheDocument();
@@ -155,9 +174,22 @@ describe("Journey 6: Read the complete conversation", () => {
     expect(toggle).toHaveAttribute("aria-expanded", "true");
   });
 
+  it("keeps a tool result's captured output collapsed until expanded on demand", async () => {
+    await renderApp();
+    const convo = await openConversation();
+    await within(convo).findByText("Please refactor the parser");
+
+    expect(within(convo).queryByText(/42 passed/)).not.toBeInTheDocument();
+
+    const toggle = within(convo).getByRole("button", { name: /tool result/i });
+    await userEvent.click(toggle);
+
+    expect(await within(convo).findByText(/42 passed/)).toBeInTheDocument();
+  });
+
   it("represents a subagent spawn with expandable nested activity", async () => {
     await renderApp();
-    const convo = await screen.findByRole("region", { name: /conversation/i });
+    const convo = await openConversation();
     await within(convo).findByText("Please refactor the parser");
 
     const toggle = within(convo).getByRole("button", { name: /subagent/i });
@@ -170,7 +202,7 @@ describe("Journey 6: Read the complete conversation", () => {
 
   it("anchors each rendered event so other views can link to it", async () => {
     await renderApp();
-    const convo = await screen.findByRole("region", { name: /conversation/i });
+    const convo = await openConversation();
     await within(convo).findByText("Please refactor the parser");
 
     expect(convo.querySelectorAll('[id^="event-"]')).toHaveLength(EVENTS.length);

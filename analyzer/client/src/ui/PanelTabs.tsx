@@ -16,7 +16,11 @@ interface TabsContextValue {
 
 const TabsContext = createContext<TabsContextValue | null>(null);
 
-function useTabsContext(): TabsContextValue {
+/**
+ * The active tab and a setter for it, so content rendered inside one tab can
+ * hand the user off to another — a summary linking into the transcript, say.
+ */
+export function usePanelTabs(): TabsContextValue {
   const ctx = useContext(TabsContext);
   if (!ctx) {
     throw new Error("PanelTabs* components must be used within PanelTabs");
@@ -40,7 +44,11 @@ export function PanelTabs({ defaultValue, className, children }: PanelTabsProps)
 }
 
 export function PanelTabsList({ children }: { children?: ReactNode }) {
-  return <div className="box-border flex h-8 gap-0">{children}</div>;
+  return (
+    <div role="tablist" className="box-border flex h-8 gap-0">
+      {children}
+    </div>
+  );
 }
 
 interface PanelTabsTriggerProps {
@@ -50,11 +58,12 @@ interface PanelTabsTriggerProps {
 }
 
 export function PanelTabsTrigger({ value, label }: PanelTabsTriggerProps) {
-  const { value: active, setValue } = useTabsContext();
+  const { value: active, setValue } = usePanelTabs();
   const selected = active === value;
   return (
     <button
       type="button"
+      role="tab"
       onClick={() => setValue(value)}
       aria-selected={selected}
       className={cn(
@@ -74,7 +83,11 @@ interface PanelTabsContentProps {
 }
 
 export function PanelTabsContent({ value, className, children }: PanelTabsContentProps) {
-  const { value: active } = useTabsContext();
+  const { value: active } = usePanelTabs();
   if (active !== value) return null;
-  return <div className={className}>{children}</div>;
+  return (
+    <div role="tabpanel" className={className}>
+      {children}
+    </div>
+  );
 }

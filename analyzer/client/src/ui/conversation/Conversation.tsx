@@ -1,33 +1,24 @@
-import { Bot, ChevronDown, ChevronRight, MessagesSquare, Wrench } from "lucide-react";
-import { type ReactNode, useEffect, useState } from "react";
+import { Bot, ChevronDown, ChevronRight, MessagesSquare, Terminal, Wrench } from "lucide-react";
+import { type ReactNode, useState } from "react";
 
-import { type AillyEvent, EventKind, errorMessage, getEventPage, isRecorded } from "../../tauri";
+import { type AillyEvent, EventKind, type SourceValue, isRecorded } from "../../tauri";
+import { CapturedOutput } from "../CapturedOutput";
+import { type LoadState, LoadStatus } from "../useSessionEvents";
 import {
   type DetailRow,
   eventAnchorId,
   roleLabel,
   subagentDetail,
   toolDetailRows,
+  toolResultTitle,
   toolTitle,
   turnText,
 } from "./format";
 
 interface ConversationProps {
-  sessionId: string | null;
+  state: LoadState;
+  project?: SourceValue<string>;
 }
-
-export enum LoadStatus {
-  Idle = "idle",
-  Loading = "loading",
-  Error = "error",
-  Ready = "ready",
-}
-
-type LoadState =
-  | { status: LoadStatus.Idle }
-  | { status: LoadStatus.Loading }
-  | { status: LoadStatus.Error; message: string }
-  | { status: LoadStatus.Ready; events: AillyEvent[] };
 
 /**
  * The conversation lens: a completed session read top-to-bottom in source
@@ -35,43 +26,18 @@ type LoadState =
  * scannable and expand on demand. Artifact contents are deliberately omitted;
  * this view shows turns and references, not file bodies.
  */
-export function Conversation({ sessionId }: ConversationProps) {
-  const [state, setState] = useState<LoadState>({ status: LoadStatus.Idle });
-
-  useEffect(() => {
-    if (sessionId === null) {
-      setState({ status: LoadStatus.Idle });
-      return;
-    }
-    let cancelled = false;
-    setState({ status: LoadStatus.Loading });
-    getEventPage(sessionId)
-      .then((events) => {
-        if (!cancelled) {
-          setState({ status: LoadStatus.Ready, events });
-        }
-      })
-      .catch((cause: unknown) => {
-        if (!cancelled) {
-          setState({ status: LoadStatus.Error, message: errorMessage(cause) });
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [sessionId]);
-
+export function Conversation({ state, project = "Absent" }: ConversationProps) {
   return (
     <section
       aria-label="Conversation"
       className="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto overscroll-contain bg-background"
     >
-      <ConversationBody state={state} />
+      <ConversationBody state={state} project={project} />
     </section>
   );
 }
 
-function ConversationBody({ state }: { state: LoadState }) {
+function ConversationBody({ state, project }: { state: LoadState; project: SourceValue<string> }) {
   if (state.status === LoadStatus.Idle) {
     return (
       <Placeholder title="No session selected" hint="Select a session to read its conversation." />
@@ -99,20 +65,22 @@ function ConversationBody({ state }: { state: LoadState }) {
     <ol className="flex flex-col gap-3 px-6 py-4">
       {state.events.map((event) => (
         <li key={event.id} id={eventAnchorId(event.id)}>
-          <EventRow event={event} />
+          <EventRow event={event} project={project} />
         </li>
       ))}
     </ol>
   );
 }
 
-function EventRow({ event }: { event: AillyEvent }) {
+function EventRow({ event, project }: { event: AillyEvent; project: SourceValue<string> }) {
   switch (event.kind) {
     case EventKind.UserTurn:
     case EventKind.AssistantTurn:
       return <TurnRow event={event} />;
     case EventKind.ToolCall:
-      return <ToolCallRow event={event} />;
+      return <ToolCallRow event={event} project={project} />;
+    case EventKind.ToolResult:
+      return <ToolResultRow event={event} />;
     case EventKind.SubagentSpawn:
       return (
         <Expandable icon={<Bot size={14} />} title="Subagent spawn">
@@ -138,10 +106,10 @@ function TurnRow({ event }: { event: AillyEvent }) {
   );
 }
 
-function ToolCallRow({ event }: { event: AillyEvent }) {
+function ToolCallRow({ event, project }: { event: AillyEvent; project: SourceValue<string> }) {
   const tool = isRecorded(event.tool_call) ? event.tool_call.Recorded : null;
   const title = tool ? toolTitle(tool) : "Tool call";
-  const rows: DetailRow[] = tool ? toolDetailRows(tool) : [];
+  const rows: DetailRow[] = tool ? toolDetailRows(tool, project) : [];
   return (
     <Expandable icon={<Wrench size={14} />} title={title}>
       {rows.length === 0 ? (
@@ -158,6 +126,17 @@ function ToolCallRow({ event }: { event: AillyEvent }) {
           ))}
         </dl>
       )}
+    </Expandable>
+  );
+}
+
+function ToolResultRow({ event }: { event: AillyEvent }) {
+  const result = isRecorded(event.tool_result) ? event.tool_result.Recorded : null;
+  const output = result === null ? null : result.output;
+  const isError = result !== null && isRecorded(result.is_error) && result.is_error.Recorded;
+  return (
+    <Expandable icon={<Terminal size={14} />} title={toolResultTitle(result)}>
+      <CapturedOutput output={output} isError={isError} />
     </Expandable>
   );
 }

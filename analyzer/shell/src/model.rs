@@ -70,6 +70,21 @@ pub struct ToolCall {
     pub command: SourceValue<String>,
     pub path: SourceValue<String>,
     pub url: SourceValue<String>,
+    /// The directory the call ran in, when the harness recorded one — either on
+    /// the call's own payload or on the record that encloses it.
+    pub cwd: SourceValue<String>,
+}
+
+/// What a tool call returned, as the harness recorded it. `output` is the text
+/// the agent saw, not a harness-specific breakdown of it.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct ToolResult {
+    /// The call this result answers, when the harness recorded that linkage.
+    pub call_id: SourceValue<String>,
+    pub output: SourceValue<String>,
+    /// Only Claude records a failure flag. It is never inferred from output
+    /// text, so the other harnesses leave it Absent.
+    pub is_error: SourceValue<bool>,
 }
 
 /// An explicitly recorded delegation. Adapters must not manufacture this from
@@ -126,6 +141,7 @@ pub struct Event {
     pub timestamp: SourceValue<String>,
     pub turn: SourceValue<Turn>,
     pub tool_call: SourceValue<ToolCall>,
+    pub tool_result: SourceValue<ToolResult>,
     pub token_usage: SourceValue<TokenUsage>,
     pub files: SourceValue<Vec<FileReference>>,
     /// A compact reason for unknown/custom records; raw payloads are not required.

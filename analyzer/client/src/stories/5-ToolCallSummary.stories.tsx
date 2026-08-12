@@ -510,8 +510,6 @@ interface CallDetail {
 interface ToolGroup {
   tool: ToolName;
   count: number;
-  /** Whether the doc's "especially pertinent" callout applies to this tool. */
-  notable: boolean;
   sample: CallDetail[];
 }
 
@@ -522,7 +520,6 @@ interface SourceTypeGroup {
   label: string;
   tool: ToolName;
   count: number;
-  notable: boolean;
   sample: CallDetail[];
 }
 
@@ -531,7 +528,7 @@ interface SourceTypeGroup {
  * outside the conversation -- shell output, file contents, and remote
  * responses, respectively. Grouped under one "Sources" umbrella so an
  * operator can audit provenance in one place, then drill into a specific
- * kind (and, for file reads, the exact files consulted).
+ * kind (and, for file access, the exact files consulted).
  */
 const SOURCE_GROUPS: SourceTypeGroup[] = [
   {
@@ -539,7 +536,6 @@ const SOURCE_GROUPS: SourceTypeGroup[] = [
     label: "Shell output",
     tool: "Bash",
     count: 31,
-    notable: false,
     sample: [
       {
         id: "bash-1",
@@ -573,10 +569,9 @@ const SOURCE_GROUPS: SourceTypeGroup[] = [
   },
   {
     kind: "file",
-    label: "File reads",
+    label: "File access",
     tool: "Read",
     count: 9,
-    notable: true,
     sample: [
       {
         id: "read-1",
@@ -614,7 +609,6 @@ const SOURCE_GROUPS: SourceTypeGroup[] = [
     label: "Web / API",
     tool: "WebFetch",
     count: 1,
-    notable: true,
     sample: [
       {
         id: "fetch-1",
@@ -629,13 +623,11 @@ const SOURCE_GROUPS: SourceTypeGroup[] = [
 ];
 
 const SOURCES_TOTAL = SOURCE_GROUPS.reduce((sum, group) => sum + group.count, 0);
-const SOURCES_NOTABLE = SOURCE_GROUPS.some((group) => group.notable);
 
 const TOOL_GROUPS: ToolGroup[] = [
   {
     tool: "Edit",
     count: 11,
-    notable: false,
     sample: [
       {
         id: "edit-1",
@@ -670,7 +662,6 @@ const TOOL_GROUPS: ToolGroup[] = [
   {
     tool: "Write",
     count: 4,
-    notable: false,
     sample: [
       {
         id: "write-1",
@@ -698,7 +689,6 @@ const TOOL_GROUPS: ToolGroup[] = [
   {
     tool: "Agent",
     count: 3,
-    notable: false,
     sample: [
       {
         id: "agent-1",
@@ -727,7 +717,6 @@ const TOOL_GROUPS: ToolGroup[] = [
   {
     tool: "TodoWrite",
     count: 1,
-    notable: false,
     sample: [
       {
         id: "todo-1",
@@ -742,7 +731,6 @@ const TOOL_GROUPS: ToolGroup[] = [
   {
     tool: "Skill",
     count: 1,
-    notable: true,
     sample: [
       {
         id: "skill-1",
@@ -757,7 +745,6 @@ const TOOL_GROUPS: ToolGroup[] = [
   {
     tool: "AskUserQuestion",
     count: 1,
-    notable: false,
     sample: [
       {
         id: "ask-1",
@@ -802,11 +789,6 @@ function ToolGroupRow({ group }: { group: ToolGroup }) {
       >
         <Icon className="h-3.5 w-3.5 shrink-0 text-foreground-muted" />
         <StrongText className="text-sm">{group.tool}</StrongText>
-        {group.notable ? (
-          <Badge color={BadgeColor.METAL_DARK} outlined={true} textSize="sm" className="shrink-0">
-            Notable
-          </Badge>
-        ) : null}
         <span className="ml-auto shrink-0 text-xs text-foreground-muted">{group.count} calls</span>
         {expanded ? (
           <ChevronDownIcon className="h-3.5 w-3.5 shrink-0 text-foreground-muted" />
@@ -853,11 +835,6 @@ function SourceTypeRow({ group }: { group: SourceTypeGroup }) {
       >
         <Icon className="h-3.5 w-3.5 shrink-0 text-foreground-muted" />
         <StrongText className="text-sm">{group.label}</StrongText>
-        {group.notable ? (
-          <Badge color={BadgeColor.METAL_DARK} outlined={true} textSize="sm" className="shrink-0">
-            Notable
-          </Badge>
-        ) : null}
         <span className="ml-auto shrink-0 text-xs text-foreground-muted">{group.count} calls</span>
         {expanded ? (
           <ChevronDownIcon className="h-3.5 w-3.5 shrink-0 text-foreground-muted" />
@@ -896,11 +873,6 @@ function SourcesRow() {
       >
         <LibraryIcon className="h-3.5 w-3.5 shrink-0 text-foreground-muted" />
         <StrongText className="text-sm">Sources</StrongText>
-        {SOURCES_NOTABLE ? (
-          <Badge color={BadgeColor.METAL_DARK} outlined={true} textSize="sm" className="shrink-0">
-            Notable
-          </Badge>
-        ) : null}
         <span className="ml-auto shrink-0 text-xs text-foreground-muted">
           {SOURCES_TOTAL} calls
         </span>
@@ -931,7 +903,7 @@ export function ByTool() {
         out specifically: which tools were called with what parameters. Bash, Read, and WebFetch are
         rolled into a single <StrongText className="text-xs">Sources</StrongText> group — every way
         a fact enters context from outside the conversation. Expand it for the breakdown by type,
-        then expand a type (e.g. File reads) to see exactly which files were consulted.
+        then expand a type (e.g. File access) to see exactly which files were consulted.
       </BodyText>
       <div className="rounded-md border">
         <SourcesRow />

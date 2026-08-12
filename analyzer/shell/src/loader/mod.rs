@@ -8,7 +8,7 @@ mod pi;
 
 use crate::model::{
     Diagnostic, Event, EventKind, Harness, ParsedSession, Provenance, Relationship,
-    RelationshipKind, Session, SourceValue, TokenUsage, ToolCall, Turn,
+    RelationshipKind, Session, SourceValue, TokenUsage, ToolCall, ToolResult, Turn,
 };
 use serde_json::Value;
 use std::fs;
@@ -252,6 +252,7 @@ pub(crate) fn event(
         timestamp: SourceValue::Absent,
         turn: SourceValue::Absent,
         tool_call: SourceValue::Absent,
+        tool_result: SourceValue::Absent,
         token_usage: SourceValue::Absent,
         files: SourceValue::Absent,
         detail: SourceValue::Absent,
@@ -334,9 +335,61 @@ pub(crate) fn content_text(content: Option<&Value>) -> SourceValue<String> {
         None => SourceValue::Absent,
     }
 }
+/// Finds a named field on a call, checking in order: the call's input payload as an object,
+/// that payload decoded from a JSON-encoded string (Codex's `arguments` shape), then a
+/// top-level key on the record itself. Returns an owned value, because the decoded form
+/// borrows from a `Value` this function parses and drops.
+pub(crate) fn find_input_field(value: &Value, input_key: &str, names: &[&str]) -> Option<Value> {
+    fn first_named(container: &Value, names: &[&str]) -> Option<Value> {
+        names.iter().find_map(|name| container.get(*name).cloned())
+    }
+
+    value
+        .get(input_key)
+        .and_then(|payload| {
+            first_named(payload, names).or_else(|| {
+                let decoded = serde_json::from_str::<Value>(payload.as_str()?).ok()?;
+                first_named(&decoded, names)
+            })
+        })
+        .or_else(|| first_named(value, names))
+}
+
+/// Coerces a found field into a string `SourceValue`, matching `string`'s Recorded/Malformed/
+/// Absent semantics.
+pub(crate) fn string_field(found: Option<Value>) -> SourceValue<String> {
+    match found {
+        Some(Value::String(text)) => SourceValue::Recorded(text),
+        Some(_) => SourceValue::Malformed,
+        None => SourceValue::Absent,
+    }
+}
+
+/// Coerces a found field into a command `SourceValue`: a string is Recorded verbatim, an
+/// array of argument strings is Recorded as one joined line, and anything else present is
+/// Malformed.
+pub(crate) fn command_field(found: Option<Value>) -> SourceValue<String> {
+    match found {
+        Some(Value::Array(parts)) => parts
+            .iter()
+            .map(Value::as_str)
+            .collect::<Option<Vec<_>>>()
+            .map(|parts| SourceValue::Recorded(parts.join(" ")))
+            .unwrap_or(SourceValue::Malformed),
+        other => string_field(other),
+    }
+}
+
 /// Builds a `ToolCall` from a harness-specific record whose call-name and call-input fields
-/// vary by name (`name`/`input` for Claude, `name`/`arguments` for Codex, etc).
-pub(crate) fn tool_call(value: &Value, name: &str, input: &str) -> ToolCall {
+/// vary by name (`name`/`input` for Claude, `name`/`arguments` for Codex, etc). `record_cwd`
+/// is the working directory of the record enclosing the call, which only the adapter that can
+/// see that record is able to supply.
+pub(crate) fn tool_call(
+    value: &Value,
+    name: &str,
+    input: &str,
+    record_cwd: SourceValue<String>,
+) -> ToolCall {
     let input_value = value.get(input);
     let recorded_input = input_value
         .map(Value::to_string)
@@ -350,13 +403,42 @@ pub(crate) fn tool_call(value: &Value, name: &str, input: &str) -> ToolCall {
         .or_else(|| recorded_string(value, &["path", "file_path"]))
         .map(SourceValue::Recorded)
         .unwrap_or(SourceValue::Absent);
+    // Only a call that recorded nothing at all borrows the enclosing record's
+    // directory; a malformed one keeps saying so.
+    let cwd = match string_field(find_input_field(value, input, &["workdir", "cwd"])) {
+        SourceValue::Absent => record_cwd,
+        payload_cwd => payload_cwd,
+    };
     ToolCall {
         name: recorded_string(value, &[name]).unwrap_or_else(|| "unknown".to_string()),
         call_id: string(value, &["id", "call_id"]),
         input: recorded_input,
-        command: string(value, &["command"]),
+        command: command_field(find_input_field(value, input, &["command", "cmd"])),
         path,
-        url: string(value, &["url"]),
+        url: string_field(find_input_field(value, input, &["url"])),
+        cwd,
+    }
+}
+
+/// Builds a `ToolResult` from a harness-specific result record. `call_id_names` are the
+/// keys that can name the call being answered, and `output_name` the key holding what the
+/// call returned — a plain string for Codex and Pi, or Claude's array of content blocks,
+/// both of which `content_text` already reads.
+pub(crate) fn tool_result(value: &Value, call_id_names: &[&str], output_name: &str) -> ToolResult {
+    ToolResult {
+        call_id: string(value, call_id_names),
+        output: content_text(value.get(output_name)),
+        is_error: bool_field(value.get("is_error")),
+    }
+}
+
+/// Coerces a found field into a boolean `SourceValue`, matching `string`'s
+/// Recorded/Malformed/Absent semantics.
+pub(crate) fn bool_field(found: Option<&Value>) -> SourceValue<bool> {
+    match found {
+        Some(Value::Bool(flag)) => SourceValue::Recorded(*flag),
+        Some(_) => SourceValue::Malformed,
+        None => SourceValue::Absent,
     }
 }
 
@@ -373,6 +455,7 @@ pub(crate) fn extract_path(input: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
     use std::io::Write;
 
     fn write_temp_file(name: &str, contents: &str) -> PathBuf {
@@ -547,5 +630,146 @@ mod tests {
 
         assert_eq!(parsed.diagnostics.len(), 0);
         fs::remove_file(&path).ok();
+    }
+
+    #[test]
+    fn a_command_nested_in_the_input_payload_resolves_recorded() {
+        let value = json!({"name": "Bash", "input": {"command": "cd shell && cargo test", "description": "run them"}});
+
+        let call = tool_call(&value, "name", "input", SourceValue::Absent);
+
+        assert_eq!(
+            call.command,
+            SourceValue::Recorded("cd shell && cargo test".to_string())
+        );
+    }
+
+    #[test]
+    fn a_command_spelled_cmd_inside_a_json_encoded_payload_resolves_recorded() {
+        let value = json!({
+            "name": "exec_command",
+            "arguments": "{\"cmd\":\"sed -n '1,260p' src/main.rs\",\"workdir\":\"/other\"}"
+        });
+
+        let call = tool_call(&value, "name", "arguments", SourceValue::Absent);
+
+        assert_eq!(
+            call.command,
+            SourceValue::Recorded("sed -n '1,260p' src/main.rs".to_string())
+        );
+    }
+
+    #[test]
+    fn a_top_level_command_key_still_resolves_when_the_payload_has_none() {
+        let value = json!({"name": "Bash", "command": "ls", "input": {"description": "list"}});
+
+        let call = tool_call(&value, "name", "input", SourceValue::Absent);
+
+        assert_eq!(call.command, SourceValue::Recorded("ls".to_string()));
+    }
+
+    #[test]
+    fn a_command_that_is_neither_a_string_nor_a_string_array_is_malformed_not_absent() {
+        let value = json!({"name": "Bash", "input": {"command": {"argv": ["ls"]}}});
+
+        let call = tool_call(&value, "name", "input", SourceValue::Absent);
+
+        // A value was present, it just was not usable; that is not the same
+        // fact as the harness recording nothing.
+        assert_eq!(call.command, SourceValue::Malformed);
+    }
+
+    #[test]
+    fn an_argv_array_command_joins_into_one_displayable_line() {
+        let value = json!({"name": "Bash", "input": {"command": ["bash", "-lc", "echo hi"]}});
+
+        let call = tool_call(&value, "name", "input", SourceValue::Absent);
+
+        assert_eq!(
+            call.command,
+            SourceValue::Recorded("bash -lc echo hi".to_string())
+        );
+    }
+
+    #[test]
+    fn a_payload_string_that_is_not_json_leaves_command_absent_but_keeps_input_verbatim() {
+        let value =
+            json!({"name": "exec", "input": "const r = await tools.exec_command({cmd:\"ls\"});"});
+
+        let call = tool_call(&value, "name", "input", SourceValue::Absent);
+
+        assert_eq!(call.command, SourceValue::Absent);
+        assert_eq!(
+            call.input,
+            SourceValue::Recorded(
+                "\"const r = await tools.exec_command({cmd:\\\"ls\\\"});\"".to_string()
+            )
+        );
+    }
+
+    #[test]
+    fn a_calls_own_workdir_wins_over_the_enclosing_records_directory() {
+        let value = json!({
+            "name": "exec_command",
+            "arguments": "{\"cmd\":\"ls\",\"workdir\":\"/Users/dev/other-repo\"}"
+        });
+
+        let call = tool_call(
+            &value,
+            "name",
+            "arguments",
+            SourceValue::Recorded("/Users/dev/repo".to_string()),
+        );
+
+        assert_eq!(
+            call.cwd,
+            SourceValue::Recorded("/Users/dev/other-repo".to_string())
+        );
+    }
+
+    #[test]
+    fn a_call_with_no_recorded_directory_falls_back_to_the_enclosing_records() {
+        let value = json!({"name": "Bash", "input": {"command": "ls"}});
+
+        let call = tool_call(
+            &value,
+            "name",
+            "input",
+            SourceValue::Recorded("/Users/dev/repo".to_string()),
+        );
+
+        assert_eq!(
+            call.cwd,
+            SourceValue::Recorded("/Users/dev/repo".to_string())
+        );
+    }
+
+    #[test]
+    fn a_malformed_payload_directory_does_not_fall_back_to_the_enclosing_records() {
+        let value = json!({"name": "exec_command", "input": {"workdir": 17}});
+
+        let call = tool_call(
+            &value,
+            "name",
+            "input",
+            SourceValue::Recorded("/Users/dev/repo".to_string()),
+        );
+
+        // The call recorded a directory; it was just unusable. Substituting the
+        // enclosing record's would report a fact the call never made.
+        assert_eq!(call.cwd, SourceValue::Malformed);
+    }
+
+    #[test]
+    fn a_url_nested_in_the_input_payload_resolves_recorded() {
+        let value =
+            json!({"name": "WebFetch", "input": {"url": "https://example.com/openapi.json"}});
+
+        let call = tool_call(&value, "name", "input", SourceValue::Absent);
+
+        assert_eq!(
+            call.url,
+            SourceValue::Recorded("https://example.com/openapi.json".to_string())
+        );
     }
 }

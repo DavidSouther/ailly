@@ -2,7 +2,7 @@ import { RefreshCw, Search, SearchX } from "lucide-react";
 import { useEffect } from "react";
 import { useShallow } from "zustand/react/shallow";
 
-import { Conversation } from "./ui/conversation/Conversation";
+import { SessionPane } from "./ui/SessionPane";
 import { SessionList } from "./ui/sessions/SessionList";
 import { HARNESS_LABEL } from "./ui/sessions/format";
 import {
@@ -157,7 +157,10 @@ export function App() {
           )}
         </section>
 
-        <Conversation sessionId={selectedId} />
+        <SessionPane
+          sessionId={selectedId}
+          project={sessions.find((session) => session.id === selectedId)?.project ?? "Absent"}
+        />
       </div>
     </main>
   );

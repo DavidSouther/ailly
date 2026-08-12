@@ -59,16 +59,29 @@ pub(crate) fn record(value: &Value, parsed: &mut ParsedSession, path: &str, sour
         }
         Some("function_call") => {
             let mut call = event(&session, EventKind::ToolCall, source, native);
-            call.tool_call = SourceValue::Recorded(tool_call(payload, "name", "arguments"));
+            call.tool_call =
+                SourceValue::Recorded(tool_call(payload, "name", "arguments", SourceValue::Absent));
+            parsed.events.push(call);
+        }
+        // A custom tool call carries its payload as a JavaScript snippet under
+        // `input` rather than JSON under `arguments`. It still records the tool
+        // that ran, so it surfaces as a call; whatever the snippet says stays
+        // uninterpreted in `input`.
+        Some("custom_tool_call") => {
+            let mut call = event(&session, EventKind::ToolCall, source, native);
+            call.tool_call =
+                SourceValue::Recorded(tool_call(payload, "name", "input", SourceValue::Absent));
             parsed.events.push(call);
         }
         Some("function_call_output") => {
-            let result = event(
+            let mut result = event(
                 &session,
                 EventKind::ToolResult,
                 source.clone(),
                 native.clone(),
             );
+            result.tool_result =
+                SourceValue::Recorded(tool_result(payload, &["call_id"], "output"));
             let id = result.id.clone();
             parsed.events.push(result);
             let call_id = match native {
@@ -106,13 +119,19 @@ mod tests {
                 json!({"type":"response_item","payload":{"type":"message","id":"turn-user","role":"user","content":"hello"}}),
                 json!({"type":"response_item","payload":{"type":"message","id":"turn-assistant","role":"assistant","content":"reading a file"}}),
                 json!({"type":"response_item","payload":{"type":"function_call","call_id":"call-1","name":"read_file","arguments":"{\"path\":\"README.md\"}"}}),
+                json!({"type":"response_item","payload":{"type":"function_call","call_id":"call-2","name":"exec_command","arguments":"{\"cmd\":\"cargo test\",\"workdir\":\"/tmp/proj\"}"}}),
                 json!({"type":"response_item","payload":{"type":"function_call_output","call_id":"call-1","output":"ok"}}),
             ],
             native_session_id: "native-session",
             project: "/tmp/proj",
             tool_name: "read_file",
             tool_path: "README.md",
+            shell_tool_name: "exec_command",
+            tool_command: "cargo test",
+            // Codex records the directory on the call itself, not on the record.
+            tool_cwd: Some("/tmp/proj"),
             tool_result_call_id: Some("call-1"),
+            tool_result_output: Some("ok"),
             tree_parent_id: None,
             // No Codex response_item supplies usage; it must resolve Absent,
             // never a fabricated zeroed TokenUsage.
@@ -145,6 +164,43 @@ mod tests {
         let parsed = parse_records(record, Harness::Codex, &[value]);
 
         assert!(parsed.events.is_empty());
+    }
+
+    #[test]
+    fn custom_tool_call_records_surface_as_tool_call_events_with_input_preserved_verbatim() {
+        let value = json!({"type":"response_item","payload":{
+            "type":"custom_tool_call","id":"ctc_1","call_id":"call_1","name":"exec",
+            "input":"const r = await tools.exec_command({\"cmd\":\"ls\"});\ntext(r.output);"
+        }});
+        let parsed = parse_records(record, Harness::Codex, &[value]);
+
+        assert_eq!(parsed.events.len(), 1);
+        assert_eq!(parsed.events[0].kind, EventKind::ToolCall);
+        let SourceValue::Recorded(call) = &parsed.events[0].tool_call else {
+            panic!("expected a recorded tool call");
+        };
+        assert_eq!(call.name, "exec");
+        assert!(matches!(call.input, SourceValue::Recorded(_)));
+        // The input is a JavaScript snippet, not JSON. Reading a command out
+        // of it would be inference, so these stay honestly unrecorded.
+        assert_eq!(call.command, SourceValue::Absent);
+        assert_eq!(call.cwd, SourceValue::Absent);
+        assert_eq!(call.path, SourceValue::Absent);
+    }
+
+    #[test]
+    fn an_apply_patch_custom_tool_call_gets_no_special_casing_by_name() {
+        let value = json!({"type":"response_item","payload":{
+            "type":"custom_tool_call","id":"ctc_2","call_id":"call_2","name":"apply_patch",
+            "input":"*** Begin Patch\n*** End Patch"
+        }});
+        let parsed = parse_records(record, Harness::Codex, &[value]);
+
+        let SourceValue::Recorded(call) = &parsed.events[0].tool_call else {
+            panic!("expected a recorded tool call");
+        };
+        assert_eq!(call.name, "apply_patch");
+        assert_eq!(call.command, SourceValue::Absent);
     }
 
     #[test]

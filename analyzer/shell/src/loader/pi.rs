@@ -74,6 +74,10 @@ pub(crate) fn record(value: &Value, parsed: &mut ParsedSession, path: &str, sour
             })
             .unwrap_or(SourceValue::Absent);
         base.token_usage = usage(message.get("usage"), "message");
+        if kind == EventKind::ToolResult {
+            base.tool_result =
+                SourceValue::Recorded(tool_result(message, &["toolCallId"], "content"));
+        }
     }
 
     if kind == EventKind::Unknown {
@@ -108,7 +112,12 @@ pub(crate) fn record(value: &Value, parsed: &mut ParsedSession, path: &str, sour
                     source.clone(),
                     string(block, &["id"]),
                 );
-                call.tool_call = SourceValue::Recorded(tool_call(block, "name", "arguments"));
+                call.tool_call = SourceValue::Recorded(tool_call(
+                    block,
+                    "name",
+                    "arguments",
+                    SourceValue::Absent,
+                ));
                 parsed.events.push(call);
             }
         }
@@ -150,7 +159,8 @@ mod tests {
                         "role": "assistant",
                         "content": [
                             {"type": "text", "text": "reading a file"},
-                            {"type": "toolCall", "id": "call-1", "name": "read", "arguments": {"path": "README.md"}}
+                            {"type": "toolCall", "id": "call-1", "name": "read", "arguments": {"path": "README.md"}},
+                            {"type": "toolCall", "id": "call-2", "name": "bash", "arguments": {"command": "cargo test"}}
                         ],
                         "usage": {"inputTokens": 10, "outputTokens": 2, "totalTokens": 12}
                     }
@@ -161,7 +171,13 @@ mod tests {
             project: "/tmp/proj",
             tool_name: "read",
             tool_path: "README.md",
+            shell_tool_name: "bash",
+            tool_command: "cargo test",
+            // Pi records a working directory on the session header and nowhere
+            // else; the shared test holds the adapter to that absence.
+            tool_cwd: None,
             tool_result_call_id: Some("call-1"),
+            tool_result_output: Some("ok"),
             tree_parent_id: Some("turn-user"),
             assistant_usage: Some(TokenUsage {
                 input: SourceValue::Recorded(10),
@@ -194,6 +210,35 @@ mod tests {
         // SubagentSpawn relationship edge; no adapter constructs that variant.
         assert!(parsed.relationships.is_empty());
         assert!(parsed.events.is_empty());
+    }
+
+    #[test]
+    fn a_session_headers_cwd_is_never_copied_down_onto_a_tool_call() {
+        // Pi records a working directory on the session header and nowhere
+        // else. Copying it onto the call would turn a session-level fact into
+        // a per-call one the transcript never recorded.
+        let values = [
+            json!({"type":"session","version":3,"id":"pi-1","cwd":"/Users/dev/repo"}),
+            json!({"type":"message","id":"m1","message":{"role":"assistant","content":[
+                {"type":"toolCall","id":"call-1","name":"bash","arguments":{"command":"ls -la"}}
+            ]}}),
+        ];
+        let parsed = parse_records(record, Harness::Pi, &values);
+
+        let call_event = parsed
+            .events
+            .iter()
+            .find(|event| event.kind == EventKind::ToolCall)
+            .expect("a tool call event");
+        let SourceValue::Recorded(call) = &call_event.tool_call else {
+            panic!("expected a recorded tool call");
+        };
+        assert_eq!(call.command, SourceValue::Recorded("ls -la".to_string()));
+        assert_eq!(call.cwd, SourceValue::Absent);
+        assert_eq!(
+            parsed.session.expect("session header").project,
+            SourceValue::Recorded("/Users/dev/repo".to_string())
+        );
     }
 
     #[test]

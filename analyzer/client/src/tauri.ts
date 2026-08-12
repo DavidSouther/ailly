@@ -95,6 +95,14 @@ export interface ToolCall {
   command: SourceValue<string>;
   path: SourceValue<string>;
   url: SourceValue<string>;
+  cwd: SourceValue<string>;
+}
+
+/** Mirrors the Rust `ToolResult`. */
+export interface ToolResult {
+  call_id: SourceValue<string>;
+  output: SourceValue<string>;
+  is_error: SourceValue<boolean>;
 }
 
 /** Mirrors the Rust `FileReference`. */
@@ -116,6 +124,7 @@ export interface AillyEvent {
   timestamp: SourceValue<string>;
   turn: SourceValue<Turn>;
   tool_call: SourceValue<ToolCall>;
+  tool_result: SourceValue<ToolResult>;
   token_usage: SourceValue<unknown>;
   files: SourceValue<FileReference[]>;
   detail: SourceValue<string>;

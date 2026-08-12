@@ -91,7 +91,8 @@ impl SqliteBackend {
                 turn_json, tool_call_json,
                 token_usage_kind, token_usage_json,
                 files_json,
-                detail_kind, detail_value
+                detail_kind, detail_value,
+                tool_result_json
              FROM events
              WHERE session_id = ?1
              ORDER BY prov_ordinal ASC
@@ -141,7 +142,8 @@ impl SqliteBackend {
                 turn_json, tool_call_json,
                 token_usage_kind, token_usage_json,
                 files_json,
-                detail_kind, detail_value
+                detail_kind, detail_value,
+                tool_result_json
              FROM events WHERE session_id = ?1",
         )?;
         let events = stmt
@@ -336,6 +338,10 @@ fn insert_event(tx: &Transaction<'_>, source_path: &str, event: &Event) -> Resul
         SourceValue::Recorded(tool) => Some(serde_json::to_string(tool)?),
         _ => None,
     };
+    let tool_result_json = match &event.tool_result {
+        SourceValue::Recorded(result) => Some(serde_json::to_string(result)?),
+        _ => None,
+    };
     let (token_kind, token_json) = encode(&event.token_usage);
     let files_json = match &event.files {
         SourceValue::Recorded(files) => Some(serde_json::to_string(files)?),
@@ -352,8 +358,9 @@ fn insert_event(tx: &Transaction<'_>, source_path: &str, event: &Event) -> Resul
             turn_json, tool_call_json,
             token_usage_kind, token_usage_json,
             files_json,
-            detail_kind, detail_value
-        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19)",
+            detail_kind, detail_value,
+            tool_result_json
+        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20)",
         params![
             event.id,
             event.session_id,
@@ -374,6 +381,7 @@ fn insert_event(tx: &Transaction<'_>, source_path: &str, event: &Event) -> Resul
             files_json,
             detail_kind.as_str(),
             detail_value,
+            tool_result_json,
         ],
     )?;
     Ok(())
@@ -460,6 +468,7 @@ fn read_event(row: &rusqlite::Row<'_>) -> Result<Event, IndexError> {
         timestamp: decode_required(timestamp_kind, row.get::<_, Option<String>>(11)?.as_deref())?,
         turn: decode_optional_json(row.get::<_, Option<String>>(12)?)?,
         tool_call: decode_optional_json(row.get::<_, Option<String>>(13)?)?,
+        tool_result: decode_optional_json(row.get::<_, Option<String>>(19)?)?,
         token_usage: decode_required(token_kind, row.get::<_, Option<String>>(15)?.as_deref())?,
         files: decode_optional_json(row.get::<_, Option<String>>(16)?)?,
         detail: decode_required(detail_kind, row.get::<_, Option<String>>(18)?.as_deref())?,

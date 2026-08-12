@@ -639,6 +639,23 @@
   font-variant-ligatures: none;
 }
 
+/* Single-line truncation that keeps the END of the string visible, for file
+   paths where the tail (the filename) identifies the row and the head is
+   shared boilerplate. The RTL flip is what moves the ellipsis to the left; the
+   leading LRM keeps the string itself LTR so a leading "/" is not reordered to
+   the far end. */
+@utility truncate-start {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  direction: rtl;
+  text-align: left;
+
+  &::before {
+    content: "\200E";
+  }
+}
+
 @utility pointer-events-auto {
   pointer-events: var(--nom-modal-pointer-events, auto);
 }
@@ -789,6 +806,15 @@
     stroke-width: 2px;
     flex-shrink: 0;
     flex-grow: 0;
+  }
+
+  /* The UA stylesheet gives fieldset `min-inline-size: min-content`, so a
+     fieldset used as a semantic grouping container refuses to shrink below its
+     widest unbreakable child and pushes long content past the pane edge. Every
+     fieldset here groups layout rather than form controls, so none of them wants
+     that behavior. */
+  fieldset {
+    min-inline-size: 0;
   }
 
   button {

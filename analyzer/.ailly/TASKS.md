@@ -56,13 +56,19 @@ list; ordered render by `EventKind`; collapsed tool calls / expandable subagent
 detail; stable `event-*` anchors; independent pane scrolling with document
 overscroll locked. Backend `get_event_page` was already sufficient (frontend-only).
 
-## 6. Journey 2: Investigate one session's tool calls
+## 6. Journey 2: Investigate one session's tool calls — complete (2026-08-12)
 
 - Add the session summary and tool-category/tool-frequency breakdowns.
 - Add sources grouping for shell, file, and web inputs.
 - Show pertinent calls, touched files, and the tools responsible for each touch.
-- Implement backward navigation from a suspect file or output to candidate introducing events.
 - Make uncertainty and unsupported provenance explicit.
+
+Shipped: Summary tab beside Conversation; category split and calls-by-tool;
+Sources (shell / file access / web) with expandable calls; files touched live
+inside File access with start-truncated paths; command and per-call cwd parsing
+for Claude/Codex/Pi (`SCHEMA_VERSION` 2, then 3); captured tool output on
+shell rows and Conversation `tool_result` rows; cwd shown only when ambiguous
+(relative path or different from the session).
 
 ## 7. Journey 5: Review subagents
 
@@ -93,6 +99,26 @@ overscroll locked. Backend `get_event_page` was already sufficient (frontend-onl
 - User-chosen index directory; content-hash incremental keys; widen FTS coverage.
 - Extra index unit coverage: interrupt mid-batch; source edit then re-index; source delete then prune; `Unsupported`/`Malformed` field round-trip.
 
+## Captured tool output — complete (2026-08-12-C-captured-tool-output)
+
+- Model `ToolResult` (call id, output, error flag) and capture it in all three
+  adapters; Claude's results are `tool_result` blocks on user records, which the
+  adapter previously dropped entirely.
+- Persist `tool_result_json` on `events` (`SCHEMA_VERSION` 3, drop and rebuild).
+- Pair results to calls by recorded id only, and expand a call in the Summary
+  pane or a `tool_result` row in the Conversation pane to read what it captured,
+  clamped to 50 lines.
+
+Deferred:
+
+- Claude's `toolUseResult` detail: separate stderr, `interrupted`, and
+  structured patches, which have no Codex or Pi counterpart.
+- Exit codes; no harness records one as a field, and reading
+  "Process exited with code N" out of Codex's output prose would be inference.
+- Captured output in the FTS index, which belongs with the search journey.
+- Image and `tool_reference` results (7 of 111 in one sampled Claude session)
+  resolve `Unsupported` and read as "recorded in a form this view cannot show".
+
 ## Deferred from Journey 1
 
 - List-row token totals and duration (need rollups or summary batching; avoid N+1).
@@ -101,11 +127,24 @@ overscroll locked. Backend `get_event_page` was already sufficient (frontend-onl
 - Virtualize the session list once real collections are large enough to measure.
 - FTS content search over event text (belongs with read/investigate journeys).
 
+## Deferred from the tool-call command/cwd bugfix (2026-08-12-B)
+
+- Recover the command from Codex `custom_tool_call` records: they carry a
+  JavaScript snippet (`const r = await tools.exec_command({cmd: "…"})`) rather
+  than JSON, so the tool name and raw snippet surface but the command itself
+  would be inferred. Locally these are a large slice of Codex activity (~6.5k
+  `exec` and ~1.7k `apply_patch` records), so a parser for that snippet shape
+  is worth revisiting.
+- The argv-array `shell` call shape (`command: ["bash", "-lc", "…"]`) is
+  handled defensively but does not appear anywhere in the local corpus, so it
+  is unverified against real data.
+- Per-call working directory for Pi stays `Absent`: Pi records `cwd` only on
+  the session header, and borrowing it would report a fact the call never made.
+
 ## Deferred from Journey 6
 
 - Paginate or virtualize the conversation once real sessions exceed the single
   bounded `getEventPage` page (limit 5000).
-- Expandable `tool_result` rows (currently shown as compact meta lines).
 - Richer subagent nested activity once adapters emit spawn relationships;
   today detail comes from the event `detail` field.
 - Wire summary / drill-down views into the `event-*` anchors.

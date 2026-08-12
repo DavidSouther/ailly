@@ -2,7 +2,7 @@
 
 use rusqlite::{Connection, OptionalExtension};
 
-pub const SCHEMA_VERSION: i64 = 1;
+pub const SCHEMA_VERSION: i64 = 3;
 
 pub fn open_connection(path: &std::path::Path) -> rusqlite::Result<Connection> {
     let conn = Connection::open(path)?;
@@ -108,6 +108,7 @@ fn create_schema(conn: &Connection) -> rusqlite::Result<()> {
             timestamp_value TEXT,
             turn_json TEXT,
             tool_call_json TEXT,
+            tool_result_json TEXT,
             token_usage_kind TEXT NOT NULL,
             token_usage_json TEXT,
             files_json TEXT,

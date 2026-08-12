@@ -3,6 +3,7 @@ import {
   EventKind,
   type SourceValue,
   type ToolCall,
+  type ToolResult,
   isRecorded,
 } from "../../tauri";
 
@@ -48,17 +49,71 @@ export interface DetailRow {
   value: string;
 }
 
+/** Absolute paths already say where they are; a cwd next to them is noise. */
+export function isAbsolutePath(path: string): boolean {
+  return path.startsWith("/") || /^[A-Za-z]:[\\/]/.test(path);
+}
+
+/**
+ * Whether a call's working directory is worth showing. Absolute paths locate
+ * themselves; a directory matching the session's is already on the session
+ * tile. Anything else is ambiguous without it.
+ */
+export function shouldShowToolCwd(args: {
+  cwd: string | null;
+  path: string | null;
+  sessionCwd: string | null;
+}): boolean {
+  if (args.cwd === null) {
+    return false;
+  }
+  if (args.path !== null && isAbsolutePath(args.path)) {
+    return false;
+  }
+  if (args.sessionCwd !== null && args.cwd === args.sessionCwd) {
+    return false;
+  }
+  return true;
+}
+
 /** Only the recorded tool fields, as label/value rows for the expanded view. */
-export function toolDetailRows(tool: ToolCall): DetailRow[] {
+export function toolDetailRows(
+  tool: ToolCall,
+  sessionCwd: SourceValue<string> = "Absent",
+): DetailRow[] {
+  // Input is the raw payload and usually repeats Command/Path/URL once those
+  // are extracted. Keep it only when none of those are recorded — Codex
+  // custom_tool_call snippets have nothing else to show.
+  const hasStructuredDetail =
+    isRecorded(tool.command) || isRecorded(tool.path) || isRecorded(tool.url);
+  const showCwd = shouldShowToolCwd({
+    cwd: isRecorded(tool.cwd) ? tool.cwd.Recorded : null,
+    path: isRecorded(tool.path) ? tool.path.Recorded : null,
+    sessionCwd: isRecorded(sessionCwd) ? sessionCwd.Recorded : null,
+  });
   const candidates: Array<[string, SourceValue<string>]> = [
     ["Command", tool.command],
     ["Path", tool.path],
     ["URL", tool.url],
-    ["Input", tool.input],
+    ...(showCwd ? ([["Working directory", tool.cwd]] as Array<[string, SourceValue<string>]>) : []),
+    ...(hasStructuredDetail
+      ? []
+      : ([["Input", tool.input]] as Array<[string, SourceValue<string>]>)),
   ];
   return candidates
     .filter((entry): entry is [string, { Recorded: string }] => isRecorded(entry[1]))
     .map(([label, value]) => ({ label, value: value.Recorded }));
+}
+
+/**
+ * Display title for a tool result. The call it answers is the only identity a
+ * result record carries, so it goes in the title when the harness recorded one.
+ */
+export function toolResultTitle(result: ToolResult | null): string {
+  if (result === null || !isRecorded(result.call_id)) {
+    return "Tool result";
+  }
+  return `Tool result — ${result.call_id.Recorded}`;
 }
 
 /** A subagent spawn's recorded detail, or an explicit note when absent. */
