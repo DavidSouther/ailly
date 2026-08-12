@@ -43,13 +43,18 @@ session list (harness, project, event count, last activity); harness filter; cli
 text filter; empty/error/zero states; Zustand session store. Also fixed Task 3 reopen bug
 (`meta.schema_version` TEXT read as i64).
 
-## 5. Journey 6: Read the complete conversation
+## 5. Journey 6: Read the complete conversation — complete (2026-08-12)
 
 - Render user turns, assistant text, tool calls, and subagent spawns in source order.
 - Keep tool calls collapsed by default and expand their parameters/results on demand.
 - Represent subagents inline with expandable nested activity.
 - Deliberately omit artifact contents from this traditional conversation view.
 - Add anchors that can later connect this view to summary and drill-down views.
+
+Shipped: `getEventPage` + `AillyEvent` bindings; conversation pane beside the session
+list; ordered render by `EventKind`; collapsed tool calls / expandable subagent
+detail; stable `event-*` anchors; independent pane scrolling with document
+overscroll locked. Backend `get_event_page` was already sufficient (frontend-only).
 
 ## 6. Journey 2: Investigate one session's tool calls
 
@@ -95,6 +100,15 @@ text filter; empty/error/zero states; Zustand session store. Also fixed Task 3 r
 - Session labels when a harness records them.
 - Virtualize the session list once real collections are large enough to measure.
 - FTS content search over event text (belongs with read/investigate journeys).
+
+## Deferred from Journey 6
+
+- Paginate or virtualize the conversation once real sessions exceed the single
+  bounded `getEventPage` page (limit 5000).
+- Expandable `tool_result` rows (currently shown as compact meta lines).
+- Richer subagent nested activity once adapters emit spawn relationships;
+  today detail comes from the event `detail` field.
+- Wire summary / drill-down views into the `event-*` anchors.
 
 ## Working rule
 

@@ -2,6 +2,7 @@ import { RefreshCw, Search, SearchX } from "lucide-react";
 import { useEffect } from "react";
 import { useShallow } from "zustand/react/shallow";
 
+import { Conversation } from "./ui/conversation/Conversation";
 import { SessionList } from "./ui/sessions/SessionList";
 import { HARNESS_LABEL } from "./ui/sessions/format";
 import {
@@ -53,8 +54,8 @@ export function App() {
       : "Scanning local sessions…";
 
   return (
-    <main className="flex min-h-screen flex-col bg-background text-foreground">
-      <header className="flex items-center justify-between gap-4 border-b px-6 py-4">
+    <main className="flex h-screen flex-col overflow-hidden bg-background text-foreground">
+      <header className="flex shrink-0 items-center justify-between gap-4 border-b px-6 py-4">
         <div className="flex flex-col gap-0.5">
           <p className="eyebrow-sm text-foreground-muted">Ailly Analyzer</p>
           <h1 className="font-semibold text-foreground-title text-xl tracking-tight">Sessions</h1>
@@ -71,7 +72,7 @@ export function App() {
         </button>
       </header>
 
-      <div className="flex items-center gap-3 border-b px-6 py-3">
+      <div className="flex shrink-0 items-center gap-3 border-b px-6 py-3">
         <div className="relative flex-1">
           <Search
             size={14}
@@ -110,47 +111,54 @@ export function App() {
         </label>
       </div>
 
-      <section className="flex-1 overflow-auto">
-        {error && (
-          <p className="mx-6 mt-4 rounded-md border border-status-error px-4 py-3 text-foreground-status-error">
-            {error}
-          </p>
-        )}
-
-        {sessions.length === 0 &&
-          (indexing ? (
-            <EmptyState
-              title="Looking for sessions"
-              hint={`${progressLabel} Claude Code, Codex, and Pi folders under your home directory are scanned; sessions appear here as they are indexed.`}
-            />
-          ) : (
-            <EmptyState
-              title="No sessions found"
-              hint="Ailly Analyzer scans Claude Code, Codex, and Pi session folders under your home directory. Run an agent session, then Rescan."
-            />
-          ))}
-
-        {sessions.length > 0 && visible.length === 0 && (
-          <EmptyState
-            title="No sessions match your filters"
-            hint="Clear the search box or choose a different harness."
-          />
-        )}
-
-        {visible.length > 0 && (
-          <>
-            <p className="px-6 pt-3 pb-1 text-foreground-muted">
-              {visible.length} of {sessions.length} sessions
-              {indexing ? ` · ${progressLabel}` : ""}
+      <div className="flex min-h-0 flex-1">
+        <section
+          className="flex min-h-0 w-[26rem] shrink-0 flex-col overflow-y-auto overscroll-contain border-r"
+          aria-label="Sessions panel"
+        >
+          {error && (
+            <p className="mx-6 mt-4 rounded-md border border-status-error px-4 py-3 text-foreground-status-error">
+              {error}
             </p>
-            <SessionList
-              sessions={visible}
-              selectedId={selectedId}
-              onSelect={(id) => dispatch({ type: SessionsActionType.Select, id })}
+          )}
+
+          {sessions.length === 0 &&
+            (indexing ? (
+              <EmptyState
+                title="Looking for sessions"
+                hint={`${progressLabel} Claude Code, Codex, and Pi folders under your home directory are scanned; sessions appear here as they are indexed.`}
+              />
+            ) : (
+              <EmptyState
+                title="No sessions found"
+                hint="Ailly Analyzer scans Claude Code, Codex, and Pi session folders under your home directory. Run an agent session, then Rescan."
+              />
+            ))}
+
+          {sessions.length > 0 && visible.length === 0 && (
+            <EmptyState
+              title="No sessions match your filters"
+              hint="Clear the search box or choose a different harness."
             />
-          </>
-        )}
-      </section>
+          )}
+
+          {visible.length > 0 && (
+            <>
+              <p className="px-6 pt-3 pb-1 text-foreground-muted">
+                {visible.length} of {sessions.length} sessions
+                {indexing ? ` · ${progressLabel}` : ""}
+              </p>
+              <SessionList
+                sessions={visible}
+                selectedId={selectedId}
+                onSelect={(id) => dispatch({ type: SessionsActionType.Select, id })}
+              />
+            </>
+          )}
+        </section>
+
+        <Conversation sessionId={selectedId} />
+      </div>
     </main>
   );
 }

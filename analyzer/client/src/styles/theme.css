@@ -739,6 +739,21 @@
     scroll-behavior: smooth;
   }
 
+  /* The desktop shell is a fixed viewport: only the designated panes scroll.
+     Pinning the document height and refusing overscroll stops the whole app
+     from rubber-banding when a scroll starts outside a scroll pane. */
+  html,
+  body {
+    height: 100%;
+    overflow: hidden;
+    overscroll-behavior: none;
+  }
+
+  #root {
+    height: 100%;
+    overflow: hidden;
+  }
+
   body {
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;

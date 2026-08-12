@@ -59,6 +59,77 @@ interface ListSessionsQuery {
   project: string | null;
 }
 
+/** Mirrors the Rust `EventKind` (`#[serde(rename_all = "snake_case")]`). */
+export enum EventKind {
+  UserTurn = "user_turn",
+  AssistantTurn = "assistant_turn",
+  ToolCall = "tool_call",
+  ToolResult = "tool_result",
+  SubagentSpawn = "subagent_spawn",
+  SessionMetadata = "session_metadata",
+  ModelChange = "model_change",
+  ThinkingChange = "thinking_change",
+  Summary = "summary",
+  Unknown = "unknown",
+}
+
+/** Mirrors the Rust `Provenance`: where a normalized event came from. */
+export interface Provenance {
+  harness: Harness;
+  path: string;
+  line: number;
+  ordinal: number;
+}
+
+/** Mirrors the Rust `Turn`. */
+export interface Turn {
+  role: string;
+  text: SourceValue<string>;
+}
+
+/** Mirrors the Rust `ToolCall`. */
+export interface ToolCall {
+  name: string;
+  call_id: SourceValue<string>;
+  input: SourceValue<string>;
+  command: SourceValue<string>;
+  path: SourceValue<string>;
+  url: SourceValue<string>;
+}
+
+/** Mirrors the Rust `FileReference`. */
+export interface FileReference {
+  path: string;
+  operation: SourceValue<string>;
+}
+
+/**
+ * Mirrors the Rust `Event`. Named `AillyEvent` to avoid clashing with the DOM
+ * `Event`. Token usage detail is preserved verbatim and not interpreted here.
+ */
+export interface AillyEvent {
+  id: string;
+  session_id: string;
+  kind: EventKind;
+  source: Provenance;
+  native_id: SourceValue<string>;
+  timestamp: SourceValue<string>;
+  turn: SourceValue<Turn>;
+  tool_call: SourceValue<ToolCall>;
+  token_usage: SourceValue<unknown>;
+  files: SourceValue<FileReference[]>;
+  detail: SourceValue<string>;
+}
+
+interface EventPage {
+  events: AillyEvent[];
+}
+
+interface PageQuery {
+  limit: number;
+  offset: number;
+}
+
 /** How far a running reconcile has walked its discovered sources. */
 export interface IndexProgress {
   indexed: number;
@@ -109,6 +180,18 @@ export async function listSessions(): Promise<SessionListItem[]> {
   };
   const page = await invoke<Paged<SessionListItem>>("list_sessions", { query });
   return page.items;
+}
+
+/**
+ * Reads one bounded page of a session's normalized events, ordered by native
+ * record order (source ordinal). The whole conversation fits in one page for
+ * now; pagination/virtualization is deferred until real collections are large.
+ */
+export async function getEventPage(sessionId: string): Promise<AillyEvent[]> {
+  await initIndex();
+  const query: PageQuery = { limit: 5000, offset: 0 };
+  const page = await invoke<EventPage>("get_event_page", { sessionId, query });
+  return page.events;
 }
 
 /**
