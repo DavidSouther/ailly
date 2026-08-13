@@ -269,7 +269,7 @@ fn map_session_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<SessionListItem>
     let project_kind = SourceKind::parse(&row.get::<_, String>(2)?).expect("stored project kind");
     let project_value = row.get::<_, Option<String>>(3)?;
     let last_activity = match row.get::<_, Option<String>>(5)? {
-        Some(ts) => SourceValue::Recorded(ts),
+        Some(ts) => decode::<String>(SourceKind::Recorded, Some(&ts)),
         None => SourceValue::Absent,
     };
     Ok(SessionListItem {

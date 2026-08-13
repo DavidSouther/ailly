@@ -154,6 +154,7 @@ pub(crate) fn record(value: &Value, parsed: &mut ParsedSession, path: &str, sour
         .clone();
     let payload_type = recorded_string(payload, &["type"]);
     let native = string(payload, &["id", "call_id"]);
+    let timestamp = string(value, &["timestamp"]);
 
     match payload_type.as_deref() {
         Some("message") => {
@@ -166,6 +167,7 @@ pub(crate) fn record(value: &Value, parsed: &mut ParsedSession, path: &str, sour
                 },
                 source,
                 native,
+                timestamp,
             );
             turn_event.turn = role
                 .map(|role| {
@@ -184,12 +186,18 @@ pub(crate) fn record(value: &Value, parsed: &mut ParsedSession, path: &str, sour
         Some("function_call")
             if recorded_string(payload, &["name"]).as_deref() == Some("spawn_agent") =>
         {
-            let mut spawn = event(&session, EventKind::SubagentSpawn, source, native);
+            let mut spawn = event(
+                &session,
+                EventKind::SubagentSpawn,
+                source,
+                native,
+                timestamp,
+            );
             spawn.subagent = SourceValue::Recorded(subagent_from_spawn_agent(payload, None));
             parsed.events.push(spawn);
         }
         Some("function_call") => {
-            let mut call = event(&session, EventKind::ToolCall, source, native);
+            let mut call = event(&session, EventKind::ToolCall, source, native, timestamp);
             call.tool_call =
                 SourceValue::Recorded(tool_call(payload, "name", "arguments", SourceValue::Absent));
             parsed.events.push(call);
@@ -199,7 +207,7 @@ pub(crate) fn record(value: &Value, parsed: &mut ParsedSession, path: &str, sour
         // that ran, so it surfaces as a call; whatever the snippet says stays
         // uninterpreted in `input`.
         Some("custom_tool_call") => {
-            let mut call = event(&session, EventKind::ToolCall, source, native);
+            let mut call = event(&session, EventKind::ToolCall, source, native, timestamp);
             call.tool_call =
                 SourceValue::Recorded(tool_call(payload, "name", "input", SourceValue::Absent));
             parsed.events.push(call);
@@ -210,6 +218,7 @@ pub(crate) fn record(value: &Value, parsed: &mut ParsedSession, path: &str, sour
                 EventKind::ToolResult,
                 source.clone(),
                 native.clone(),
+                timestamp,
             );
             result.tool_result =
                 SourceValue::Recorded(tool_result(payload, &["call_id"], "output"));
@@ -435,5 +444,43 @@ mod tests {
             tool_call.path,
             SourceValue::Recorded("Cargo.toml".to_string())
         );
+    }
+
+    #[test]
+    fn a_top_level_iso_timestamp_string_is_recorded() {
+        let value = json!({
+            "type": "response_item",
+            "timestamp": "2026-01-02T12:00:00.000Z",
+            "payload": {"type": "message", "id": "turn-user", "role": "user", "content": "hello"}
+        });
+        let parsed = parse_records(record, Harness::Codex, &[value]);
+
+        assert_eq!(
+            parsed.events[0].timestamp,
+            SourceValue::Recorded("2026-01-02T12:00:00.000Z".to_string())
+        );
+    }
+
+    #[test]
+    fn a_missing_timestamp_key_is_absent() {
+        let value = json!({
+            "type": "response_item",
+            "payload": {"type": "message", "id": "turn-user", "role": "user", "content": "hello"}
+        });
+        let parsed = parse_records(record, Harness::Codex, &[value]);
+
+        assert_eq!(parsed.events[0].timestamp, SourceValue::Absent);
+    }
+
+    #[test]
+    fn a_numeric_timestamp_is_malformed() {
+        let value = json!({
+            "type": "response_item",
+            "timestamp": 1735819200000_u64,
+            "payload": {"type": "message", "id": "turn-user", "role": "user", "content": "hello"}
+        });
+        let parsed = parse_records(record, Harness::Codex, &[value]);
+
+        assert_eq!(parsed.events[0].timestamp, SourceValue::Malformed);
     }
 }

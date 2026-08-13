@@ -252,6 +252,7 @@ pub(crate) fn event(
     kind: EventKind,
     source: Provenance,
     native_id: SourceValue<String>,
+    timestamp: SourceValue<String>,
 ) -> Event {
     Event {
         id: event_id(session, &source, &native_id),
@@ -259,7 +260,7 @@ pub(crate) fn event(
         kind,
         source,
         native_id,
-        timestamp: SourceValue::Absent,
+        timestamp,
         turn: SourceValue::Absent,
         tool_call: SourceValue::Absent,
         tool_result: SourceValue::Absent,

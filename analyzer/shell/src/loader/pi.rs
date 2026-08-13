@@ -91,6 +91,7 @@ pub(crate) fn record(value: &Value, parsed: &mut ParsedSession, path: &str, sour
         .map(|session| session.id.clone())
         .expect("session is seeded immediately above when absent");
     let native = string(value, &["id"]);
+    let timestamp = string(value, &["timestamp"]);
     let message = value.get("message");
     let role = message.and_then(|message| recorded_string(message, &["role"]));
 
@@ -107,7 +108,13 @@ pub(crate) fn record(value: &Value, parsed: &mut ParsedSession, path: &str, sour
         _ => EventKind::Unknown,
     };
 
-    let mut base = event(&session, kind, source.clone(), native.clone());
+    let mut base = event(
+        &session,
+        kind,
+        source.clone(),
+        native.clone(),
+        timestamp.clone(),
+    );
 
     if let Some(message) = message {
         base.turn = role
@@ -166,6 +173,7 @@ pub(crate) fn record(value: &Value, parsed: &mut ParsedSession, path: &str, sour
                         EventKind::SubagentSpawn,
                         source.clone(),
                         string(block, &["id"]),
+                        timestamp.clone(),
                     );
                     spawn.subagent = SourceValue::Recorded(subagent_from_ailly_subagent(
                         block,
@@ -179,6 +187,7 @@ pub(crate) fn record(value: &Value, parsed: &mut ParsedSession, path: &str, sour
                     EventKind::ToolCall,
                     source.clone(),
                     string(block, &["id"]),
+                    timestamp.clone(),
                 );
                 call.tool_call = SourceValue::Recorded(tool_call(
                     block,
@@ -452,5 +461,47 @@ mod tests {
         assert_eq!(session.native_id, SourceValue::Absent);
         assert_eq!(session.project, SourceValue::Absent);
         assert_eq!(session.parent_session, SourceValue::Absent);
+    }
+
+    #[test]
+    fn a_top_level_iso_timestamp_string_is_recorded() {
+        let value = json!({
+            "type": "message",
+            "id": "m1",
+            "timestamp": "2026-01-02T12:00:00.000Z",
+            "message": {"role": "user", "content": "hello"}
+        });
+        let parsed = parse_records(record, Harness::Pi, &[value]);
+
+        assert_eq!(
+            parsed.events[0].timestamp,
+            SourceValue::Recorded("2026-01-02T12:00:00.000Z".to_string())
+        );
+    }
+
+    #[test]
+    fn a_missing_timestamp_key_is_absent() {
+        let value = json!({
+            "type": "message",
+            "id": "m1",
+            "message": {"role": "user", "content": "hello"}
+        });
+        let parsed = parse_records(record, Harness::Pi, &[value]);
+
+        assert_eq!(parsed.events[0].timestamp, SourceValue::Absent);
+    }
+
+    #[test]
+    fn a_numeric_timestamp_is_malformed() {
+        // Pi sometimes stamps top-level epoch millis; that is present-but-not-a-string.
+        let value = json!({
+            "type": "message",
+            "id": "m1",
+            "timestamp": 1735819200000_u64,
+            "message": {"role": "user", "content": "hello"}
+        });
+        let parsed = parse_records(record, Harness::Pi, &[value]);
+
+        assert_eq!(parsed.events[0].timestamp, SourceValue::Malformed);
     }
 }

@@ -206,11 +206,16 @@ export async function initIndex(): Promise<void> {
   return initialized;
 }
 
-/** Reads the currently indexed sessions, ordered most-recent-first. */
+/**
+ * Reads the currently indexed sessions, ordered most-recent-first. One high
+ * ceiling (100_000) covers any realistic local collection for now;
+ * pagination/virtualization of the session list is deferred until real
+ * collections are large enough to measure.
+ */
 export async function listSessions(): Promise<SessionListItem[]> {
   await initIndex();
   const query: ListSessionsQuery = {
-    limit: 500,
+    limit: 100_000,
     offset: 0,
     harness: null,
     project: null,

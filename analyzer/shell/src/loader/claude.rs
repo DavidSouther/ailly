@@ -133,6 +133,7 @@ pub(crate) fn record(value: &Value, parsed: &mut ParsedSession, path: &str, sour
     // Claude records the working directory on the record, not on the tool_use
     // block inside it, so this must be read before descending into `message`.
     let record_cwd = string(value, &["cwd"]);
+    let timestamp = string(value, &["timestamp"]);
     let message = value.get("message").unwrap_or(value);
     let role = recorded_string(message, &["role"]);
     let mut base = event(
@@ -144,6 +145,7 @@ pub(crate) fn record(value: &Value, parsed: &mut ParsedSession, path: &str, sour
         },
         source.clone(),
         native.clone(),
+        timestamp.clone(),
     );
     base.turn = role
         .clone()
@@ -173,6 +175,7 @@ pub(crate) fn record(value: &Value, parsed: &mut ParsedSession, path: &str, sour
                         EventKind::SubagentSpawn,
                         source.clone(),
                         string(block, &["id"]),
+                        timestamp.clone(),
                     );
                     let subagent = subagent_from_agent_call(block, value.get("toolUseResult"));
                     let child = recorded(&subagent.native_id);
@@ -193,6 +196,7 @@ pub(crate) fn record(value: &Value, parsed: &mut ParsedSession, path: &str, sour
                         EventKind::ToolCall,
                         source.clone(),
                         string(block, &["id"]),
+                        timestamp.clone(),
                     );
                     call.tool_call = SourceValue::Recorded(tool_call(
                         block,
@@ -211,6 +215,7 @@ pub(crate) fn record(value: &Value, parsed: &mut ParsedSession, path: &str, sour
                         EventKind::ToolResult,
                         source.clone(),
                         string(block, &["tool_use_id"]),
+                        timestamp.clone(),
                     );
                     result.tool_result =
                         SourceValue::Recorded(tool_result(block, &["tool_use_id"], "content"));
@@ -546,5 +551,79 @@ mod tests {
 
         assert_eq!(parsed.events.len(), 1);
         assert_eq!(parsed.events[0].kind, EventKind::ToolCall);
+    }
+
+    #[test]
+    fn a_top_level_iso_timestamp_string_is_recorded() {
+        let value = json!({
+            "type": "user",
+            "uuid": "a",
+            "sessionId": "s",
+            "timestamp": "2026-01-02T12:00:00.000Z",
+            "message": {"role": "user", "content": "hello"}
+        });
+        let parsed = parse_records(record, Harness::ClaudeCode, &[value]);
+
+        assert_eq!(
+            parsed.events[0].timestamp,
+            SourceValue::Recorded("2026-01-02T12:00:00.000Z".to_string())
+        );
+    }
+
+    #[test]
+    fn a_missing_timestamp_key_is_absent() {
+        let value = json!({
+            "type": "user",
+            "uuid": "a",
+            "sessionId": "s",
+            "message": {"role": "user", "content": "hello"}
+        });
+        let parsed = parse_records(record, Harness::ClaudeCode, &[value]);
+
+        assert_eq!(parsed.events[0].timestamp, SourceValue::Absent);
+    }
+
+    #[test]
+    fn a_numeric_timestamp_is_malformed() {
+        let value = json!({
+            "type": "user",
+            "uuid": "a",
+            "sessionId": "s",
+            "timestamp": 1735819200000_u64,
+            "message": {"role": "user", "content": "hello"}
+        });
+        let parsed = parse_records(record, Harness::ClaudeCode, &[value]);
+
+        assert_eq!(parsed.events[0].timestamp, SourceValue::Malformed);
+    }
+
+    #[test]
+    fn sibling_events_from_one_assistant_record_inherit_the_record_timestamp() {
+        let stamp = "2026-01-02T12:00:00.000Z";
+        let value = json!({
+            "type": "assistant",
+            "uuid": "a",
+            "sessionId": "s",
+            "timestamp": stamp,
+            "message": {
+                "role": "assistant",
+                "content": [
+                    {"type": "text", "text": "delegating"},
+                    {"type": "tool_use", "id": "call-1", "name": "Read", "input": {"file_path": "README.md"}},
+                    {"type": "tool_use", "id": "call-2", "name": "Agent", "input": {"subagent_type": "explore", "prompt": "look around"}}
+                ]
+            }
+        });
+        let parsed = parse_records(record, Harness::ClaudeCode, &[value]);
+
+        assert!(parsed.events.len() >= 3);
+        let expected = SourceValue::Recorded(stamp.to_string());
+        for event in &parsed.events {
+            assert_eq!(
+                event.timestamp, expected,
+                "sibling {:?} must inherit the record timestamp",
+                event.kind
+            );
+        }
     }
 }

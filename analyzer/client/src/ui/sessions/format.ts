@@ -20,8 +20,10 @@ export function projectLabel(project: SourceValue<string>): string {
 
 /**
  * Human label for the session's latest activity. Recorded timestamps render as
- * a locale date-time when parseable, otherwise verbatim; non-recorded states
- * stay explicit rather than fabricating a time.
+ * a relative day when recent (Today / Yesterday / weekday for 2–5 days ago),
+ * otherwise a compact locale date (year only when not the current year), always
+ * with hour:minute and no seconds. Unparseable strings stay verbatim;
+ * non-recorded states stay explicit.
  */
 export function lastActivityLabel(lastActivity: SourceValue<string>): string {
   if (!isRecorded(lastActivity)) {
@@ -29,7 +31,40 @@ export function lastActivityLabel(lastActivity: SourceValue<string>): string {
   }
   const raw = lastActivity.Recorded;
   const parsed = new Date(raw);
-  return Number.isNaN(parsed.getTime()) ? raw : parsed.toLocaleString();
+  if (Number.isNaN(parsed.getTime())) {
+    return raw;
+  }
+  const time = parsed.toLocaleString(undefined, {
+    hour: "numeric",
+    minute: "2-digit",
+  });
+  return `${activityDayLabel(parsed)}, ${time}`;
+}
+
+/** Calendar days between a local date and today: 0 today, 1 yesterday, …. */
+function localDaysAgo(when: Date, now = new Date()): number {
+  const today = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
+  const then = Date.UTC(when.getFullYear(), when.getMonth(), when.getDate());
+  return Math.round((today - then) / 86_400_000);
+}
+
+function activityDayLabel(when: Date, now = new Date()): string {
+  const daysAgo = localDaysAgo(when, now);
+  if (daysAgo === 0) {
+    return "Today";
+  }
+  if (daysAgo === 1) {
+    return "Yesterday";
+  }
+  if (daysAgo >= 2 && daysAgo <= 5) {
+    return when.toLocaleString(undefined, { weekday: "long" });
+  }
+  const sameYear = when.getFullYear() === now.getFullYear();
+  return when.toLocaleString(undefined, {
+    month: "short",
+    day: "numeric",
+    ...(sameYear ? {} : { year: "numeric" }),
+  });
 }
 
 export function eventCountLabel(count: number): string {

@@ -237,6 +237,19 @@ Deferred:
 - Additional `key:` filter chips beyond `harness:` (unknown keys stay free-text;
   date/size remain under Journey 1 deferred).
 
+## Session timestamps + list ceiling — complete (2026-08-13-D-session-timestamps)
+
+- Thread top-level harness `timestamp` ISO strings through `loader::event()` for
+  Claude, Codex, and Pi (sibling events inherit the record stamp; missing stays
+  Absent, non-string Malformed; no mtime inference).
+- Decode sqlite `list_sessions` `max_ts` so `last_activity` is an unquoted ISO
+  string (`SCHEMA_VERSION` 5, drop and rebuild).
+- Raise `listSessions` ceiling from 500 to 100_000 (pagination still deferred).
+- Compact relative list labels: Today / Yesterday / weekday (2–5 days ago), else
+  day/month (year when needed), always hour:minute.
+
+Deferred: none beyond Journey 1's existing "Virtualize the session list…" item.
+
 ## Working rule
 
 Do not add live streaming, session mutation, session resumption, cloud synchronization, or artifact review to this task list without revisiting the product boundary in `BRIEF.md`. A recorded call parameter shown under that call is not artifact review; reconstructing a file on disk is.

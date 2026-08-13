@@ -104,6 +104,8 @@ mod tests {
     use crate::index::conformance::{build_three_harness_home, conformance_tests};
     use crate::index::ListSessionsQuery;
     use crate::loader::DiscoveryRoots;
+    use crate::model::SourceValue;
+    use std::fs;
 
     fn temp_index_path(label: &str) -> std::path::PathBuf {
         std::env::temp_dir().join(format!(
@@ -167,5 +169,82 @@ mod tests {
 
         let _ = std::fs::remove_file(&path);
         let _ = std::fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn list_sessions_returns_decoded_iso_last_activity_ordered_most_recent_first() {
+        let home = std::env::temp_dir().join(format!(
+            "ailly-session-timestamps-{}-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("system clock after epoch")
+                .as_nanos(),
+            "home"
+        ));
+        let _ = fs::remove_dir_all(&home);
+        let sessions = home.join(".claude/sessions");
+        fs::create_dir_all(&sessions).expect("create claude sessions root");
+
+        let older = "2026-01-02T12:00:00.000Z";
+        let newer = "2026-01-02T13:00:00.000Z";
+        fs::write(
+            sessions.join("older.jsonl"),
+            format!(
+                r#"{{"type":"user","uuid":"u-older","sessionId":"session-older","cwd":"/work","timestamp":"{older}","message":{{"role":"user","content":"older"}}}}
+"#
+            ),
+        )
+        .expect("write older transcript");
+        fs::write(
+            sessions.join("newer.jsonl"),
+            format!(
+                r#"{{"type":"user","uuid":"u-newer","sessionId":"session-newer","cwd":"/work","timestamp":"{newer}","message":{{"role":"user","content":"newer"}}}}
+"#
+            ),
+        )
+        .expect("write newer transcript");
+
+        let path = temp_index_path("session-timestamps");
+        let _ = fs::remove_file(&path);
+        let index = SqliteSessionIndex::open(&path).expect("open sqlite index");
+        index
+            .refresh(IndexRefresh {
+                roots: DiscoveryRoots {
+                    home: Some(home.clone()),
+                    pi_session_roots: Vec::new(),
+                },
+            })
+            .expect("index the two transcripts");
+
+        let items = list_all(&index);
+        assert_eq!(items.len(), 2, "both transcripts must be indexed");
+
+        for item in &items {
+            match &item.last_activity {
+                SourceValue::Recorded(ts) => {
+                    assert!(
+                        !ts.starts_with('"'),
+                        "last_activity must be the unquoted ISO string, got {ts:?}"
+                    );
+                }
+                other => panic!(
+                    "expected Recorded last_activity, got {other:?} for session {}",
+                    item.id
+                ),
+            }
+        }
+
+        let SourceValue::Recorded(first_ts) = &items[0].last_activity else {
+            unreachable!("asserted Recorded above");
+        };
+        let SourceValue::Recorded(second_ts) = &items[1].last_activity else {
+            unreachable!("asserted Recorded above");
+        };
+        assert_eq!(first_ts, newer);
+        assert_eq!(second_ts, older);
+
+        let _ = fs::remove_file(&path);
+        let _ = fs::remove_dir_all(&home);
     }
 }
