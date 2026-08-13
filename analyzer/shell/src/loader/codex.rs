@@ -2,6 +2,127 @@
 
 use super::*;
 
+/// The delegation Codex recorded, built from a `spawn_agent` function call's
+/// arguments and, when the caller already has it, the matching `wait_agent`
+/// status entry. Streaming through a file the status arrives many records
+/// later, so `record` builds with `None` and folds the outcome in on arrival.
+///
+/// Codex records neither a duration nor per-subagent tokens, so both stay
+/// Absent; a duration derived from the spawn/wait timestamps would measure the
+/// parent's wait, not the child's run.
+pub(crate) fn subagent_from_spawn_agent(payload: &Value, wait_status: Option<&Value>) -> Subagent {
+    Subagent {
+        agent_type: string_field(find_input_field(payload, "arguments", &["agent_type"])),
+        prompt: string_field(find_input_field(
+            payload,
+            "arguments",
+            &["message", "prompt"],
+        )),
+        outcome: wait_status
+            .map(spawn_outcome)
+            .unwrap_or(SourceValue::Absent),
+        ..Subagent::unrecorded()
+    }
+}
+
+/// A `wait_agent` status entry is a one-key object naming how the delegation
+/// ended, e.g. `{"completed": "<final report>"}`. The key is the outcome; the
+/// report text is the child's own output, not a fact about the spawn.
+fn spawn_outcome(status: &Value) -> SourceValue<String> {
+    match status.as_object().and_then(|entry| entry.keys().next()) {
+        Some(outcome) => SourceValue::Recorded(outcome.clone()),
+        None => SourceValue::Malformed,
+    }
+}
+
+/// Codex writes a call's output as a JSON-encoded string; this reads it back
+/// without treating the encoding as a fact about the call.
+fn decoded_output(output: Option<&Value>) -> Option<Value> {
+    match output? {
+        Value::String(text) => serde_json::from_str(text).ok(),
+        other => Some(other.clone()),
+    }
+}
+
+/// The tool a recorded call named, found by the call id — the only linkage
+/// Codex writes between a call and the output that answers it.
+fn tool_name_for_call(parsed: &ParsedSession, call_id: &SourceValue<String>) -> Option<String> {
+    parsed
+        .events
+        .iter()
+        .find(|event| event.kind == EventKind::ToolCall && &event.native_id == call_id)
+        .and_then(|event| match &event.tool_call {
+            SourceValue::Recorded(call) => Some(call.name.clone()),
+            _ => None,
+        })
+}
+
+/// Folds a `function_call_output` back onto the spawn it concerns: a
+/// `spawn_agent` call's own output names the child, and a `wait_agent` call's
+/// output reports how a named child ended. Both are matched by recorded id.
+fn link_spawn_output(
+    parsed: &mut ParsedSession,
+    call_id: &SourceValue<String>,
+    output: Option<&Value>,
+    source: &Provenance,
+) {
+    let Some(output) = decoded_output(output) else {
+        return;
+    };
+    if let Some((spawn_id, child)) = apply_spawn_identity(parsed, call_id, &output) {
+        push_relationship_if_present(
+            parsed,
+            RelationshipKind::SubagentSpawn,
+            spawn_id,
+            child,
+            source.clone(),
+        );
+        return;
+    }
+    if tool_name_for_call(parsed, call_id).as_deref() == Some("wait_agent") {
+        apply_wait_agent_status(parsed, &output);
+    }
+}
+
+/// Names the child a `spawn_agent` output reported. Returns the spawn event and
+/// the child id to link, or `None` when this output answered some other call.
+fn apply_spawn_identity(
+    parsed: &mut ParsedSession,
+    call_id: &SourceValue<String>,
+    output: &Value,
+) -> Option<(String, Option<String>)> {
+    let spawn = parsed
+        .events
+        .iter_mut()
+        .find(|event| event.kind == EventKind::SubagentSpawn && &event.native_id == call_id)?;
+    let SourceValue::Recorded(subagent) = &mut spawn.subagent else {
+        return None;
+    };
+    subagent.native_id = string(output, &["agent_id"]);
+    subagent.nickname = string(output, &["nickname"]);
+    let child = recorded(&subagent.native_id);
+    Some((spawn.id.clone(), child))
+}
+
+fn apply_wait_agent_status(parsed: &mut ParsedSession, output: &Value) {
+    let Some(statuses) = output.get("status").and_then(Value::as_object) else {
+        return;
+    };
+    for (agent_id, status) in statuses {
+        let named = SourceValue::Recorded(agent_id.clone());
+        for event in parsed.events.iter_mut() {
+            if event.kind != EventKind::SubagentSpawn {
+                continue;
+            }
+            if let SourceValue::Recorded(subagent) = &mut event.subagent {
+                if subagent.native_id == named {
+                    subagent.outcome = spawn_outcome(status);
+                }
+            }
+        }
+    }
+}
+
 pub(crate) fn record(value: &Value, parsed: &mut ParsedSession, path: &str, source: Provenance) {
     let record_type = recorded_string(value, &["type"]);
     let payload = value.get("payload").unwrap_or(value);
@@ -57,6 +178,16 @@ pub(crate) fn record(value: &Value, parsed: &mut ParsedSession, path: &str, sour
             turn_event.token_usage = usage(payload.get("usage"), "message");
             parsed.events.push(turn_event);
         }
+        // A delegation, not an undifferentiated tool call. The child id and the
+        // outcome arrive in later records, so only what this call recorded is
+        // read here.
+        Some("function_call")
+            if recorded_string(payload, &["name"]).as_deref() == Some("spawn_agent") =>
+        {
+            let mut spawn = event(&session, EventKind::SubagentSpawn, source, native);
+            spawn.subagent = SourceValue::Recorded(subagent_from_spawn_agent(payload, None));
+            parsed.events.push(spawn);
+        }
         Some("function_call") => {
             let mut call = event(&session, EventKind::ToolCall, source, native);
             call.tool_call =
@@ -84,17 +215,14 @@ pub(crate) fn record(value: &Value, parsed: &mut ParsedSession, path: &str, sour
                 SourceValue::Recorded(tool_result(payload, &["call_id"], "output"));
             let id = result.id.clone();
             parsed.events.push(result);
-            let call_id = match native {
-                SourceValue::Recorded(call_id) => Some(call_id),
-                _ => None,
-            };
             push_relationship_if_present(
                 parsed,
                 RelationshipKind::ToolCallResult,
                 id,
-                call_id,
-                source,
+                recorded(&native),
+                source.clone(),
             );
+            link_spawn_output(parsed, &native, payload.get("output"), &source);
         }
         _ => {}
     }
@@ -102,7 +230,7 @@ pub(crate) fn record(value: &Value, parsed: &mut ParsedSession, path: &str, sour
 
 #[cfg(test)]
 mod tests {
-    use super::conformance::{conformance_tests, parse_records, Conformance};
+    use super::conformance::{conformance_tests, parse_records, Conformance, ConformanceSpawn};
     use super::*;
     use serde_json::json;
 
@@ -121,6 +249,12 @@ mod tests {
                 json!({"type":"response_item","payload":{"type":"function_call","call_id":"call-1","name":"read_file","arguments":"{\"path\":\"README.md\"}"}}),
                 json!({"type":"response_item","payload":{"type":"function_call","call_id":"call-2","name":"exec_command","arguments":"{\"cmd\":\"cargo test\",\"workdir\":\"/tmp/proj\"}"}}),
                 json!({"type":"response_item","payload":{"type":"function_call_output","call_id":"call-1","output":"ok"}}),
+                // A delegation: the call gives type and prompt, its output
+                // names the child, and a later wait_agent reports the outcome.
+                json!({"type":"response_item","payload":{"type":"function_call","call_id":"call-3","name":"spawn_agent","arguments":"{\"agent_type\":\"explore\",\"message\":\"Map the parser module\"}"}}),
+                json!({"type":"response_item","payload":{"type":"function_call_output","call_id":"call-3","output":"{\"agent_id\":\"agent-7\",\"nickname\":\"Avicenna\"}"}}),
+                json!({"type":"response_item","payload":{"type":"function_call","call_id":"call-4","name":"wait_agent","arguments":"{\"agent_id\":\"agent-7\"}"}}),
+                json!({"type":"response_item","payload":{"type":"function_call_output","call_id":"call-4","output":"{\"status\":{\"agent-7\":{\"completed\":\"report\"}},\"timed_out\":false}"}}),
             ],
             native_session_id: "native-session",
             project: "/tmp/proj",
@@ -136,6 +270,15 @@ mod tests {
             // No Codex response_item supplies usage; it must resolve Absent,
             // never a fabricated zeroed TokenUsage.
             assistant_usage: None,
+            subagent_spawn: Some(ConformanceSpawn {
+                agent_type: "explore",
+                prompt: "Map the parser module",
+                outcome: Some("completed"),
+                // Codex times nothing and counts no per-subagent tokens.
+                duration_ms: None,
+                child_native_id: Some("agent-7"),
+                child_token_total: None,
+            }),
         }
     }
 
@@ -201,6 +344,77 @@ mod tests {
         };
         assert_eq!(call.name, "apply_patch");
         assert_eq!(call.command, SourceValue::Absent);
+    }
+
+    /// 433 of 519 local Codex spawns have no output naming a child. The spawn
+    /// is still evidence; the missing linkage is not filled in by adjacency.
+    #[test]
+    fn a_spawn_whose_output_never_named_a_child_emits_the_event_but_no_edge() {
+        let value = json!({"type":"response_item","payload":{"type":"function_call","call_id":"call-1","name":"spawn_agent","arguments":"{\"agent_type\":\"explore\",\"message\":\"Map the parser\"}"}});
+        let parsed = parse_records(record, Harness::Codex, &[value]);
+
+        assert_eq!(parsed.events.len(), 1);
+        assert_eq!(parsed.events[0].kind, EventKind::SubagentSpawn);
+        let SourceValue::Recorded(subagent) = &parsed.events[0].subagent else {
+            panic!("expected a recorded subagent");
+        };
+        assert_eq!(
+            subagent.prompt,
+            SourceValue::Recorded("Map the parser".to_string())
+        );
+        assert_eq!(subagent.native_id, SourceValue::Absent);
+        assert_eq!(subagent.outcome, SourceValue::Absent);
+        assert!(parsed.relationships.is_empty());
+    }
+
+    /// A named child with no `wait_agent` reporting on it links, but the
+    /// outcome stays unrecorded — the two facts are independent.
+    #[test]
+    fn a_named_child_with_no_wait_agent_links_but_records_no_outcome() {
+        let values = [
+            json!({"type":"response_item","payload":{"type":"function_call","call_id":"call-1","name":"spawn_agent","arguments":"{\"agent_type\":\"explore\",\"message\":\"Map the parser\"}"}}),
+            json!({"type":"response_item","payload":{"type":"function_call_output","call_id":"call-1","output":"{\"agent_id\":\"agent-7\",\"nickname\":\"Avicenna\"}"}}),
+        ];
+        let parsed = parse_records(record, Harness::Codex, &values);
+
+        let spawn = parsed
+            .events
+            .iter()
+            .find(|event| event.kind == EventKind::SubagentSpawn)
+            .expect("a spawn event");
+        let SourceValue::Recorded(subagent) = &spawn.subagent else {
+            panic!("expected a recorded subagent");
+        };
+        assert_eq!(
+            subagent.native_id,
+            SourceValue::Recorded("agent-7".to_string())
+        );
+        assert_eq!(
+            subagent.nickname,
+            SourceValue::Recorded("Avicenna".to_string())
+        );
+        assert_eq!(subagent.outcome, SourceValue::Absent);
+        let spawn_edges: Vec<_> = parsed
+            .relationships
+            .iter()
+            .filter(|edge| edge.kind == RelationshipKind::SubagentSpawn)
+            .collect();
+        assert_eq!(spawn_edges.len(), 1);
+        assert_eq!(spawn_edges[0].to_native_id, "agent-7");
+    }
+
+    #[test]
+    fn a_wait_agent_status_entry_reports_its_key_as_the_outcome() {
+        let payload =
+            json!({"type":"function_call","call_id":"c","name":"spawn_agent","arguments":"{}"});
+
+        let subagent =
+            subagent_from_spawn_agent(&payload, Some(&json!({"failed": "ran out of context"})));
+
+        assert_eq!(
+            subagent.outcome,
+            SourceValue::Recorded("failed".to_string())
+        );
     }
 
     #[test]

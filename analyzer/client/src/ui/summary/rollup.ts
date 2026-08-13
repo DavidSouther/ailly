@@ -29,6 +29,8 @@ export interface ToolFrequency {
   count: number;
   share: number;
   category: ToolCategory | "unclassified";
+  /** Every call of this tool, in source order, with the detail Sources used to hold. */
+  calls: SourceCall[];
 }
 
 export interface SourceCall {
@@ -192,19 +194,66 @@ function categoryTotals(calls: RecordedCall[]): {
   };
 }
 
-function toolsByFrequency(calls: RecordedCall[]): ToolFrequency[] {
-  const counts = new Map<string, number>();
+function toolsByFrequency(
+  calls: RecordedCall[],
+  results: Map<string, ToolResult[]>,
+): ToolFrequency[] {
+  const byName = new Map<string, RecordedCall[]>();
   for (const call of calls) {
-    counts.set(call.tool.name, (counts.get(call.tool.name) ?? 0) + 1);
+    const named = byName.get(call.tool.name) ?? [];
+    named.push(call);
+    byName.set(call.tool.name, named);
   }
-  return [...counts.entries()]
-    .map(([name, count]) => ({
+  return [...byName.entries()]
+    .map(([name, named]) => ({
       name,
-      count,
-      share: share(count, calls.length),
+      count: named.length,
+      share: share(named.length, calls.length),
       category: categoryForTool(name),
+      calls: named.map((call) => callDetail(call, results)),
     }))
     .sort((a, b) => b.count - a.count);
+}
+
+/**
+ * The detail a Calls-by-tool row expands to: command, path, or URL when the
+ * tool is one of those kinds, otherwise whatever target field the harness
+ * wrote. Missing targets stay labelled rather than blank.
+ */
+function callDetail(call: RecordedCall, results: Map<string, ToolResult[]>): SourceCall {
+  const kind = sourceKindOf(call.tool);
+  if (kind !== null) {
+    return sourceCall(call, kind, results);
+  }
+  const field = firstRecordedTarget(call.tool);
+  const answers = isRecorded(call.tool.call_id)
+    ? (results.get(call.tool.call_id.Recorded) ?? [])
+    : [];
+  const outputs = answers.flatMap((result) =>
+    isRecorded(result.output) ? [result.output.Recorded] : [],
+  );
+  const output =
+    outputs.length > 0 ? { Recorded: outputs.join("\n") } : (answers[0]?.output ?? null);
+  return {
+    eventId: call.event.id,
+    toolName: call.tool.name,
+    detail: field ?? "Detail not recorded",
+    detailRecorded: field !== null,
+    cwd: isRecorded(call.tool.cwd) ? call.tool.cwd.Recorded : null,
+    output,
+    outputIsError: answers.some(
+      (result) => isRecorded(result.is_error) && result.is_error.Recorded,
+    ),
+  };
+}
+
+function firstRecordedTarget(tool: ToolCall): string | null {
+  for (const field of [tool.command, tool.path, tool.url, tool.input] as const) {
+    if (isRecorded(field)) {
+      return field.Recorded;
+    }
+  }
+  return null;
 }
 
 /** The field each kind of source is about: a command, a path, or a URL. */
@@ -354,7 +403,8 @@ function sessionDuration(events: AillyEvent[]): SourceValue<string> {
   return { Recorded: durationLabel(Math.max(...times) - Math.min(...times)) };
 }
 
-function durationLabel(milliseconds: number): string {
+/** One form for every span the product shows, whole-session or per-spawn. */
+export function durationLabel(milliseconds: number): string {
   const seconds = Math.round(milliseconds / 1000);
   const hours = Math.floor(seconds / 3600);
   const minutes = Math.floor((seconds % 3600) / 60);
@@ -367,7 +417,11 @@ function durationLabel(milliseconds: number): string {
   return `${seconds}s`;
 }
 
-/** Absent rather than zero: no harness records spawns yet, so zero is not a fact. */
+/**
+ * Absent when the page has no spawn events. The Summary tile labels that as
+ * "0" — the session recorded no delegations — rather than "Not recorded",
+ * which would imply the harness omitted the field.
+ */
 function subagentSpawnCount(events: AillyEvent[]): SourceValue<number> {
   const count = events.filter((event) => event.kind === EventKind.SubagentSpawn).length;
   return count === 0 ? "Absent" : { Recorded: count };
@@ -378,6 +432,7 @@ export function summarizeSession(events: AillyEvent[]): SessionSummaryStats {
   const calls = recordedCalls(events);
   const { categories, unclassified } = categoryTotals(calls);
   const files = filesTouched(calls);
+  const results = resultsByCallId(events);
   return {
     toolCallCount: calls.length,
     filesTouchedCount: files.length,
@@ -385,8 +440,8 @@ export function summarizeSession(events: AillyEvent[]): SessionSummaryStats {
     subagentSpawnCount: subagentSpawnCount(events),
     categories,
     unclassified,
-    toolsByFrequency: toolsByFrequency(calls),
-    sources: sourceGroups(calls, files, resultsByCallId(events)),
+    toolsByFrequency: toolsByFrequency(calls, results),
+    sources: sourceGroups(calls, files, results),
     filesTouched: files,
   };
 }

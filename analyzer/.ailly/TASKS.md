@@ -70,12 +70,45 @@ for Claude/Codex/Pi (`SCHEMA_VERSION` 2, then 3); captured tool output on
 shell rows and Conversation `tool_result` rows; cwd shown only when ambiguous
 (relative path or different from the session).
 
-## 7. Journey 5: Review subagents
+## 7. Journey 5: Review subagents — complete (2026-08-12-D-review-subagents)
 
 - Show every subagent spawn with type, prompt, duration, outcome, and token usage.
 - Provide a nested subagent investigation view with its calls and files.
 - Link parent spawn records to child events wherever the source format supports it.
 - Add a clearly labeled fallback for inferred or unavailable parent-decision linkage.
+
+Shipped: `Subagent` grown to every dimension a harness may record and hung off
+`Event` (`subagent_json`, `SCHEMA_VERSION` 4, drop and rebuild); Claude `Agent`
+/ `Task`, Codex `spawn_agent`, and Pi `ailly_subagent` calls now emit
+`EventKind::SubagentSpawn` with the outcome, duration, and tokens their own
+transcripts wrote, folded back from the later result record by recorded id
+rather than adjacency; `resolve_child_session_id` closes the parent→child link
+at read time from the child transcript's path. A Subagents tab lists every
+spawn (prompt preview of three lines, full text on expand) and opens a linked
+child into the same Summary / Conversation / Subagents lenses as the parent.
+Summary's "Include subagent tools" toggle folds descendants into Calls by tool
+and the category split together; call details that used to live under Sources
+expand from each tool row. Zero spawns read as `0`. Schema open now rebuilds
+atomically, so a half-written index heals on the next launch. Subagent tokens
+live on the payload only, never on the event's `token_usage`, so Journey 4's
+split stays open. The conformance suite asserts a spawn edge exists if and
+only if the source named a child.
+
+Deferred:
+
+- `loader::tool_result` still reads only `is_error`, so Pi's camelCase `isError`
+  is dropped from `ToolResult`. Pi's *spawn* outcome reads the flag directly in
+  `pi.rs`; the general fix belongs with a tool-result pass.
+- Claude's `agent-<agentId>.meta.json` sidecar, which carries the spawning
+  `toolUseId` and `spawnDepth` — a second, child-side linkage vector this does
+  not need.
+- Sidechain child sessions still appear unlabelled in the session list
+  (244 locally); that is Journey 1 presentation.
+- Per-spawn token splits, cache-versus-fresh accounting, and spend over time
+  (Journey 4).
+- Codex `session_meta.source.subagent.thread_spawn` as a child-side
+  back-reference: the filename match is exact and verified, so this is only
+  worth adding if a rollout is ever renamed.
 
 ## 8. Journey 4: Review token usage
 
@@ -145,8 +178,9 @@ Deferred:
 
 - Paginate or virtualize the conversation once real sessions exceed the single
   bounded `getEventPage` page (limit 5000).
-- Richer subagent nested activity once adapters emit spawn relationships;
-  today detail comes from the event `detail` field.
+- Richer subagent nested activity in the Conversation lens. The row now reads
+  the delegation's recorded prompt (Journey 5); the calls and files the child
+  made live in the Subagents tab rather than inline here.
 - Wire summary / drill-down views into the `event-*` anchors.
 
 ## Working rule

@@ -20,6 +20,7 @@ function baseEvent(id: string, ordinal: number, kind: EventKind): AillyEvent {
     token_usage: "Absent",
     files: "Absent",
     detail: "Absent",
+    subagent: "Absent",
   };
 }
 
@@ -143,12 +144,13 @@ describe("summarizeSession", () => {
   it("ranks tools by count and keeps raw harness names", () => {
     const stats = summarizeSession(EVENTS);
 
-    expect(stats.toolsByFrequency[0]).toEqual({
+    expect(stats.toolsByFrequency[0]).toMatchObject({
       name: "Read",
       count: 2,
       share: 33,
       category: "read",
     });
+    expect(stats.toolsByFrequency[0]?.calls).toHaveLength(2);
     expect(stats.toolsByFrequency.map((tool) => tool.name)).toContain("mcp__acme__lookup");
   });
 

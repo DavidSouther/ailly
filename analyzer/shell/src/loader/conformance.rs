@@ -50,6 +50,27 @@ pub(crate) struct Conformance {
     /// transcript supplies none, in which case usage must resolve `Absent`,
     /// never a fabricated zeroed `TokenUsage`.
     pub assistant_usage: Option<TokenUsage>,
+    /// The delegation the transcript records. `None` when it records none, in
+    /// which case the shared test asserts the adapter manufactures neither a
+    /// spawn event nor a spawn edge.
+    pub subagent_spawn: Option<ConformanceSpawn>,
+}
+
+/// One fixture's recorded delegation, in normalized terms. Every `Option` here
+/// is a fact about the *transcript*, not an allowance for the adapter: `None`
+/// means the harness recorded nothing, and the shared test then holds the
+/// adapter to `Absent`.
+pub(crate) struct ConformanceSpawn {
+    pub agent_type: &'static str,
+    pub prompt: &'static str,
+    pub outcome: Option<&'static str>,
+    pub duration_ms: Option<u64>,
+    /// The child the source named. The spawn edge is emitted if and only if
+    /// this is `Some`.
+    pub child_native_id: Option<&'static str>,
+    /// The child's own recorded token total, which must live on the subagent
+    /// payload and never on the spawn event's own `token_usage`.
+    pub child_token_total: Option<u64>,
 }
 
 impl Conformance {
@@ -233,7 +254,10 @@ pub(crate) fn assert_tool_result_output_is_recorded(conformance: &Conformance) {
         );
         return;
     };
-    let result = only_event(&parsed, EventKind::ToolResult);
+    let result = match conformance.tool_result_call_id {
+        Some(call_id) => tool_result_answering(&parsed, call_id),
+        None => only_event(&parsed, EventKind::ToolResult),
+    };
     let SourceValue::Recorded(recorded) = &result.tool_result else {
         panic!(
             "expected a recorded tool result, got {:?}",
@@ -251,15 +275,40 @@ pub(crate) fn assert_tool_result_output_is_recorded(conformance: &Conformance) {
     }
 }
 
+/// The one result event answering `call_id`. Fixtures that record a delegation
+/// carry more than one result, so the shared assertions address each by the
+/// call it answers rather than by being the only one.
+fn tool_result_answering<'a>(parsed: &'a ParsedSession, call_id: &str) -> &'a Event {
+    let answers: Vec<&Event> = events_of_kind(parsed, EventKind::ToolResult)
+        .into_iter()
+        .filter(|event| match &event.tool_result {
+            SourceValue::Recorded(result) => {
+                result.call_id == SourceValue::Recorded(call_id.to_string())
+            }
+            _ => false,
+        })
+        .collect();
+    assert_eq!(
+        answers.len(),
+        1,
+        "expected exactly one result answering {call_id}"
+    );
+    answers[0]
+}
+
 pub(crate) fn assert_tool_result_linkage(conformance: &Conformance) {
     let parsed = conformance.parse();
     let edges = edges_of_kind(&parsed, RelationshipKind::ToolCallResult);
     match conformance.tool_result_call_id {
         Some(call_id) => {
-            let result = only_event(&parsed, EventKind::ToolResult);
-            assert_eq!(edges.len(), 1);
-            assert_eq!(edges[0].from_event_id, result.id);
-            assert_eq!(edges[0].to_native_id, call_id);
+            let result = tool_result_answering(&parsed, call_id);
+            let linking: Vec<&Relationship> = edges
+                .iter()
+                .copied()
+                .filter(|edge| edge.to_native_id == call_id)
+                .collect();
+            assert_eq!(linking.len(), 1);
+            assert_eq!(linking[0].from_event_id, result.id);
         }
         None => {
             assert!(
@@ -288,11 +337,78 @@ pub(crate) fn assert_tree_parent_linkage(conformance: &Conformance) {
     }
 }
 
-pub(crate) fn assert_no_subagent_spawn(conformance: &Conformance) {
+/// A spawn carries only what its harness recorded, and its child edge exists
+/// if and only if the source named a child. Linkage is never inferred from
+/// adjacency, and the child's tokens never land on the parent's event.
+pub(crate) fn assert_subagent_spawn_matches_recorded_delegation(conformance: &Conformance) {
     let parsed = conformance.parse();
-    // SubagentSpawn is reserved for explicit delegation evidence, which no
-    // adapter's transcript records; none may manufacture the variant.
-    assert!(edges_of_kind(&parsed, RelationshipKind::SubagentSpawn).is_empty());
+    let edges = edges_of_kind(&parsed, RelationshipKind::SubagentSpawn);
+    let Some(expected) = &conformance.subagent_spawn else {
+        assert!(
+            events_of_kind(&parsed, EventKind::SubagentSpawn).is_empty(),
+            "this transcript records no delegation; none may be manufactured"
+        );
+        assert!(edges.is_empty());
+        return;
+    };
+
+    let spawn = only_event(&parsed, EventKind::SubagentSpawn);
+    let SourceValue::Recorded(subagent) = &spawn.subagent else {
+        panic!("expected a recorded subagent, got {:?}", spawn.subagent);
+    };
+    assert_eq!(
+        subagent.agent_type,
+        SourceValue::Recorded(expected.agent_type.to_string())
+    );
+    assert_eq!(
+        subagent.prompt,
+        SourceValue::Recorded(expected.prompt.to_string())
+    );
+    assert_expected(&subagent.outcome, expected.outcome.map(str::to_string));
+    assert_expected(&subagent.duration_ms, expected.duration_ms);
+    // Resolving a spawn to an indexed child session is the query layer's job;
+    // an adapter can only ever see one file.
+    assert_eq!(subagent.child_session_id, SourceValue::Absent);
+    // A child's tokens on the parent's own event would silently inflate the
+    // parent session's total.
+    assert_eq!(spawn.token_usage, SourceValue::Absent);
+    match expected.child_token_total {
+        Some(total) => {
+            let SourceValue::Recorded(usage) = &subagent.token_usage else {
+                panic!(
+                    "expected recorded subagent tokens, got {:?}",
+                    subagent.token_usage
+                );
+            };
+            assert_eq!(usage.total, SourceValue::Recorded(total));
+        }
+        None => assert_eq!(subagent.token_usage, SourceValue::Absent),
+    }
+
+    assert_expected(
+        &subagent.native_id,
+        expected.child_native_id.map(str::to_string),
+    );
+    match expected.child_native_id {
+        Some(child) => {
+            assert_eq!(edges.len(), 1, "expected exactly one spawn edge");
+            assert_eq!(edges[0].from_event_id, spawn.id);
+            assert_eq!(edges[0].to_native_id, child);
+        }
+        None => assert!(
+            edges.is_empty(),
+            "this transcript names no child; no spawn edge may be manufactured"
+        ),
+    }
+}
+
+/// Asserts a `SourceValue` matches what the transcript recorded, holding an
+/// adapter to `Absent` wherever the harness wrote nothing.
+fn assert_expected<T: std::fmt::Debug + PartialEq>(actual: &SourceValue<T>, expected: Option<T>) {
+    match expected {
+        Some(value) => assert_eq!(*actual, SourceValue::Recorded(value)),
+        None => assert_eq!(*actual, SourceValue::Absent),
+    }
 }
 
 pub(crate) fn assert_event_provenance(conformance: &Conformance) {
@@ -366,8 +482,10 @@ macro_rules! conformance_tests {
         }
 
         #[test]
-        fn no_adapter_manufactures_a_subagent_spawn_edge() {
-            crate::loader::conformance::assert_no_subagent_spawn(&$conformance());
+        fn a_subagent_spawn_carries_only_what_its_harness_recorded() {
+            crate::loader::conformance::assert_subagent_spawn_matches_recorded_delegation(
+                &$conformance(),
+            );
         }
 
         #[test]

@@ -105,6 +105,33 @@ export interface ToolResult {
   is_error: SourceValue<boolean>;
 }
 
+/** Mirrors the Rust `TokenUsage` as it appears on a subagent payload. */
+export interface SubagentTokenUsage {
+  input: SourceValue<number>;
+  output: SourceValue<number>;
+  cache_read: SourceValue<number>;
+  cache_write: SourceValue<number>;
+  total: SourceValue<number>;
+  scope: string;
+}
+
+/**
+ * Mirrors the Rust `Subagent`: the delegation facts one harness recorded, each
+ * independently recorded-or-not. A harness that wrote no duration leaves
+ * `duration_ms` unrecorded rather than zero.
+ */
+export interface Subagent {
+  native_id: SourceValue<string>;
+  agent_type: SourceValue<string>;
+  prompt: SourceValue<string>;
+  outcome: SourceValue<string>;
+  nickname: SourceValue<string>;
+  duration_ms: SourceValue<number>;
+  token_usage: SourceValue<SubagentTokenUsage>;
+  /** The indexed child session this spawn produced, when the source named one. */
+  child_session_id: SourceValue<string>;
+}
+
 /** Mirrors the Rust `FileReference`. */
 export interface FileReference {
   path: string;
@@ -128,6 +155,7 @@ export interface AillyEvent {
   token_usage: SourceValue<unknown>;
   files: SourceValue<FileReference[]>;
   detail: SourceValue<string>;
+  subagent: SourceValue<Subagent>;
 }
 
 interface EventPage {

@@ -8,7 +8,7 @@ mod pi;
 
 use crate::model::{
     Diagnostic, Event, EventKind, Harness, ParsedSession, Provenance, Relationship,
-    RelationshipKind, Session, SourceValue, TokenUsage, ToolCall, ToolResult, Turn,
+    RelationshipKind, Session, SourceValue, Subagent, TokenUsage, ToolCall, ToolResult, Turn,
 };
 use serde_json::Value;
 use std::fs;
@@ -215,6 +215,16 @@ pub(crate) fn recorded_string(value: &Value, names: &[&str]) -> Option<String> {
     }
 }
 
+/// The value a `SourceValue` recorded, if it recorded one. Adapters use this
+/// wherever a downstream call wants a plain `Option` — chiefly the "link only
+/// what the source named" relationship helper below.
+pub(crate) fn recorded<T: Clone>(value: &SourceValue<T>) -> Option<T> {
+    match value {
+        SourceValue::Recorded(value) => Some(value.clone()),
+        _ => None,
+    }
+}
+
 pub(crate) fn number(value: Option<&Value>) -> SourceValue<u64> {
     value
         .and_then(Value::as_u64)
@@ -256,6 +266,7 @@ pub(crate) fn event(
         token_usage: SourceValue::Absent,
         files: SourceValue::Absent,
         detail: SourceValue::Absent,
+        subagent: SourceValue::Absent,
     }
 }
 

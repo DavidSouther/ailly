@@ -116,7 +116,15 @@ export function toolResultTitle(result: ToolResult | null): string {
   return `Tool result — ${result.call_id.Recorded}`;
 }
 
-/** A subagent spawn's recorded detail, or an explicit note when absent. */
+/**
+ * What a spawn delegated, as the transcript reads it: the prompt the harness
+ * recorded, else whatever raw detail the record carried, else an explicit note.
+ * The full picture lives in the Subagents tab; this is the one line the
+ * transcript owes a reader passing through.
+ */
 export function subagentDetail(event: AillyEvent): string {
+  if (isRecorded(event.subagent) && isRecorded(event.subagent.Recorded.prompt)) {
+    return event.subagent.Recorded.prompt.Recorded;
+  }
   return isRecorded(event.detail) ? event.detail.Recorded : "No delegation detail recorded";
 }

@@ -2,6 +2,52 @@
 
 use super::*;
 
+/// The delegation Pi recorded, built from an `ailly_subagent` `toolCall` block
+/// and the error flag on the result that answered it. Pi names no child, times
+/// nothing, and counts no tokens, so those stay Absent.
+pub(crate) fn subagent_from_ailly_subagent(block: &Value, is_error: SourceValue<bool>) -> Subagent {
+    Subagent {
+        agent_type: string_field(find_input_field(block, "arguments", &["reference"])),
+        prompt: string_field(find_input_field(block, "arguments", &["task"])),
+        outcome: outcome_from_error_flag(is_error),
+        ..Subagent::unrecorded()
+    }
+}
+
+/// Pi records how a delegation ended as a bare error flag and nothing else.
+/// The returned report often opens "FAILED: …", but reading that prose would
+/// be inference rather than evidence.
+fn outcome_from_error_flag(is_error: SourceValue<bool>) -> SourceValue<String> {
+    match is_error {
+        SourceValue::Recorded(true) => SourceValue::Recorded("error".to_string()),
+        SourceValue::Recorded(false) => SourceValue::Recorded("completed".to_string()),
+        SourceValue::Absent => SourceValue::Absent,
+        SourceValue::Unsupported => SourceValue::Unsupported,
+        SourceValue::Malformed => SourceValue::Malformed,
+    }
+}
+
+/// Folds a delegation's error flag back onto the spawn the same transcript
+/// recorded, matched by the tool-call id the result names. Pi spells the flag
+/// `isError`, which `loader::tool_result` does not read, so it is read here.
+fn link_subagent_outcome(parsed: &mut ParsedSession, message: &Value) {
+    let Some(tool_call_id) = recorded_string(message, &["toolCallId"]) else {
+        return;
+    };
+    let named = SourceValue::Recorded(tool_call_id);
+    let outcome = outcome_from_error_flag(bool_field(
+        message.get("isError").or_else(|| message.get("is_error")),
+    ));
+    for event in parsed.events.iter_mut() {
+        if event.kind != EventKind::SubagentSpawn || event.native_id != named {
+            continue;
+        }
+        if let SourceValue::Recorded(subagent) = &mut event.subagent {
+            subagent.outcome = outcome.clone();
+        }
+    }
+}
+
 pub(crate) fn record(value: &Value, parsed: &mut ParsedSession, path: &str, source: Provenance) {
     let record_type = recorded_string(value, &["type"]);
 
@@ -100,12 +146,34 @@ pub(crate) fn record(value: &Value, parsed: &mut ParsedSession, path: &str, sour
         source.clone(),
     );
 
+    if kind == EventKind::ToolResult {
+        if let Some(message) = message {
+            link_subagent_outcome(parsed, message);
+        }
+    }
+
     if let Some(message) = message.filter(|_| role.as_deref() == Some("assistant")) {
         if let Some(blocks) = message.get("content").and_then(Value::as_array) {
             for block in blocks
                 .iter()
                 .filter(|block| block.get("type").and_then(Value::as_str) == Some("toolCall"))
             {
+                // A delegation is an ordinary toolCall block; only its name
+                // says so. Pi names no child, so no spawn edge is ever emitted.
+                if recorded_string(block, &["name"]).as_deref() == Some("ailly_subagent") {
+                    let mut spawn = event(
+                        &session,
+                        EventKind::SubagentSpawn,
+                        source.clone(),
+                        string(block, &["id"]),
+                    );
+                    spawn.subagent = SourceValue::Recorded(subagent_from_ailly_subagent(
+                        block,
+                        SourceValue::Absent,
+                    ));
+                    parsed.events.push(spawn);
+                    continue;
+                }
                 let mut call = event(
                     &session,
                     EventKind::ToolCall,
@@ -136,7 +204,7 @@ pub(crate) fn record(value: &Value, parsed: &mut ParsedSession, path: &str, sour
 
 #[cfg(test)]
 mod tests {
-    use super::conformance::{conformance_tests, parse_records, Conformance};
+    use super::conformance::{conformance_tests, parse_records, Conformance, ConformanceSpawn};
     use super::*;
     use serde_json::json;
 
@@ -160,12 +228,14 @@ mod tests {
                         "content": [
                             {"type": "text", "text": "reading a file"},
                             {"type": "toolCall", "id": "call-1", "name": "read", "arguments": {"path": "README.md"}},
-                            {"type": "toolCall", "id": "call-2", "name": "bash", "arguments": {"command": "cargo test"}}
+                            {"type": "toolCall", "id": "call-2", "name": "bash", "arguments": {"command": "cargo test"}},
+                            {"type": "toolCall", "id": "call-3", "name": "ailly_subagent", "arguments": {"reference": "explore", "task": "Map the parser module"}}
                         ],
                         "usage": {"inputTokens": 10, "outputTokens": 2, "totalTokens": 12}
                     }
                 }),
                 json!({"type":"message","id":"result-1","message":{"role":"toolResult","toolCallId":"call-1","content":"ok"}}),
+                json!({"type":"message","id":"result-3","message":{"role":"toolResult","toolCallId":"call-3","content":"mapped","isError":false}}),
             ],
             native_session_id: "native-session",
             project: "/tmp/proj",
@@ -188,6 +258,17 @@ mod tests {
                 cache_write: SourceValue::Absent,
                 total: SourceValue::Recorded(12),
                 scope: "message".to_string(),
+            }),
+            // Pi records the delegation and its error flag and nothing else,
+            // so this fixture is the "no child was ever named" case: no id, no
+            // duration, no tokens, and therefore no spawn edge.
+            subagent_spawn: Some(ConformanceSpawn {
+                agent_type: "explore",
+                prompt: "Map the parser module",
+                outcome: Some("completed"),
+                duration_ms: None,
+                child_native_id: None,
+                child_token_total: None,
             }),
         }
     }
@@ -239,6 +320,64 @@ mod tests {
             parsed.session.expect("session header").project,
             SourceValue::Recorded("/Users/dev/repo".to_string())
         );
+    }
+
+    /// Pi's only outcome evidence is a boolean, written camelCase. Both of its
+    /// values are recorded facts; neither is read from the report's prose.
+    #[test]
+    fn both_settings_of_the_results_error_flag_resolve_a_recorded_outcome() {
+        for (flag, expected) in [(true, "error"), (false, "completed")] {
+            let values = [
+                json!({"type":"message","id":"m1","message":{"role":"assistant","content":[
+                    {"type":"toolCall","id":"call-1","name":"ailly_subagent","arguments":{"reference":"research","task":"Trace the spec"}}
+                ]}}),
+                json!({"type":"message","id":"r1","message":{"role":"toolResult","toolCallId":"call-1","content":"done","isError":flag}}),
+            ];
+            let parsed = parse_records(record, Harness::Pi, &values);
+
+            let spawn = parsed
+                .events
+                .iter()
+                .find(|event| event.kind == EventKind::SubagentSpawn)
+                .expect("a spawn event");
+            let SourceValue::Recorded(subagent) = &spawn.subagent else {
+                panic!("expected a recorded subagent");
+            };
+            assert_eq!(
+                subagent.outcome,
+                SourceValue::Recorded(expected.to_string()),
+                "isError {flag} should record outcome {expected}"
+            );
+            assert_eq!(
+                subagent.agent_type,
+                SourceValue::Recorded("research".to_string())
+            );
+            // Pi never names a child, so it never emits a spawn edge.
+            assert!(parsed
+                .relationships
+                .iter()
+                .all(|edge| edge.kind != RelationshipKind::SubagentSpawn));
+        }
+    }
+
+    #[test]
+    fn a_delegation_with_no_result_records_no_outcome_rather_than_success() {
+        let value = json!({"type":"message","id":"m1","message":{"role":"assistant","content":[
+            {"type":"toolCall","id":"call-1","name":"ailly_subagent","arguments":{"reference":"research","task":"Trace the spec"}}
+        ]}});
+        let parsed = parse_records(record, Harness::Pi, &[value]);
+
+        let spawn = parsed
+            .events
+            .iter()
+            .find(|event| event.kind == EventKind::SubagentSpawn)
+            .expect("a spawn event");
+        let SourceValue::Recorded(subagent) = &spawn.subagent else {
+            panic!("expected a recorded subagent");
+        };
+        assert_eq!(subagent.outcome, SourceValue::Absent);
+        assert_eq!(subagent.duration_ms, SourceValue::Absent);
+        assert_eq!(subagent.token_usage, SourceValue::Absent);
     }
 
     #[test]

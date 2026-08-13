@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import type { ToolCall } from "../../src/tauri";
+import { type AillyEvent, EventKind, type Subagent, type ToolCall } from "../../src/tauri";
 import {
   shouldShowToolCwd,
+  subagentDetail,
   toolDetailRows,
   toolResultTitle,
 } from "../../src/ui/conversation/format";
@@ -112,6 +113,52 @@ describe("toolDetailRows", () => {
 
   it("treats a malformed value as unrecorded rather than rendering it", () => {
     expect(toolDetailRows({ ...BASE_TOOL, cwd: "Malformed" })).toEqual([]);
+  });
+});
+
+describe("subagentDetail", () => {
+  const UNRECORDED_SPAWN: Subagent = {
+    native_id: "Absent",
+    agent_type: "Absent",
+    prompt: "Absent",
+    outcome: "Absent",
+    nickname: "Absent",
+    duration_ms: "Absent",
+    token_usage: "Absent",
+    child_session_id: "Absent",
+  };
+
+  function spawnEvent(overrides: Partial<AillyEvent>): AillyEvent {
+    return {
+      id: "evt-1",
+      session_id: "one",
+      kind: EventKind.SubagentSpawn,
+      source: { harness: "claude_code", path: "/home/a.jsonl", line: 1, ordinal: 1 },
+      native_id: "Absent",
+      timestamp: "Absent",
+      turn: "Absent",
+      tool_call: "Absent",
+      tool_result: "Absent",
+      token_usage: "Absent",
+      files: "Absent",
+      detail: "Absent",
+      subagent: "Absent",
+      ...overrides,
+    };
+  }
+
+  it("reads the prompt the delegation recorded", () => {
+    const event = spawnEvent({
+      subagent: { Recorded: { ...UNRECORDED_SPAWN, prompt: { Recorded: "Map the parser" } } },
+    });
+
+    expect(subagentDetail(event)).toBe("Map the parser");
+  });
+
+  it("says so when the delegation recorded nothing to show", () => {
+    expect(subagentDetail(spawnEvent({ subagent: { Recorded: UNRECORDED_SPAWN } }))).toBe(
+      "No delegation detail recorded",
+    );
   });
 });
 

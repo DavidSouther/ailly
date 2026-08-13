@@ -2,6 +2,115 @@
 
 use super::*;
 
+/// Claude delegates through an ordinary `tool_use` block; only its name says so.
+fn is_agent_call(block: &Value) -> bool {
+    matches!(
+        block.get("name").and_then(Value::as_str),
+        Some("Agent") | Some("Task")
+    )
+}
+
+/// The delegation Claude recorded, built from an `Agent`/`Task` `tool_use`
+/// block plus, when the enclosing record carried one, its `toolUseResult`.
+pub(crate) fn subagent_from_agent_call(block: &Value, tool_use_result: Option<&Value>) -> Subagent {
+    let mut subagent = Subagent {
+        agent_type: string_field(find_input_field(block, "input", &["subagent_type"])),
+        prompt: string_field(find_input_field(block, "input", &["prompt", "description"])),
+        ..Subagent::unrecorded()
+    };
+    if let Some(result) = tool_use_result {
+        apply_agent_result(&mut subagent, result);
+    }
+    subagent
+}
+
+/// Folds what a delegation's `toolUseResult` reported into the spawn its call
+/// recorded. The call-side type and prompt win where both sides carry one,
+/// because that is what the orchestrator actually asked for.
+fn apply_agent_result(subagent: &mut Subagent, result: &Value) {
+    subagent.outcome = string(result, &["status"]);
+    subagent.native_id = string(result, &["agentId"]);
+    subagent.duration_ms = number(result.get("totalDurationMs"));
+    subagent.token_usage = subagent_usage(result);
+    if matches!(subagent.agent_type, SourceValue::Absent) {
+        subagent.agent_type = string(result, &["agentType"]);
+    }
+    if matches!(subagent.prompt, SourceValue::Absent) {
+        subagent.prompt = string(result, &["prompt"]);
+    }
+}
+
+/// The child's own token figures. Claude splits them: the per-kind counts sit
+/// in `usage`, while the rolled-up total sits beside it as `totalTokens`.
+fn subagent_usage(result: &Value) -> SourceValue<TokenUsage> {
+    let total = number(result.get("totalTokens"));
+    match usage(result.get("usage"), "subagent") {
+        SourceValue::Recorded(mut recorded_usage) => {
+            if matches!(recorded_usage.total, SourceValue::Absent) {
+                recorded_usage.total = total;
+            }
+            SourceValue::Recorded(recorded_usage)
+        }
+        // No per-kind breakdown, but a total is still a recorded fact.
+        _ => match total {
+            SourceValue::Recorded(total) => SourceValue::Recorded(TokenUsage {
+                input: SourceValue::Absent,
+                output: SourceValue::Absent,
+                cache_read: SourceValue::Absent,
+                cache_write: SourceValue::Absent,
+                total: SourceValue::Recorded(total),
+                scope: "subagent".to_string(),
+            }),
+            _ => SourceValue::Absent,
+        },
+    }
+}
+
+/// Folds a delegation's reported result back onto the spawn event the same
+/// transcript recorded, matched by the `tool_use` id the result names — never
+/// by adjacency. Claude writes `toolUseResult` on the later user record that
+/// delivers the result block, not on the assistant record that made the call.
+fn link_agent_result(
+    parsed: &mut ParsedSession,
+    tool_use_id: Option<String>,
+    result: &Value,
+    source: &Provenance,
+) {
+    let Some(tool_use_id) = tool_use_id else {
+        return;
+    };
+    let named = SourceValue::Recorded(tool_use_id);
+    let linked = {
+        let Some(spawn) = parsed
+            .events
+            .iter_mut()
+            .find(|event| event.kind == EventKind::SubagentSpawn && event.native_id == named)
+        else {
+            return;
+        };
+        let SourceValue::Recorded(subagent) = &mut spawn.subagent else {
+            return;
+        };
+        // The edge is emitted where the child id is first named, so a record
+        // that repeats an already-known id does not duplicate it.
+        let already_named = matches!(subagent.native_id, SourceValue::Recorded(_));
+        apply_agent_result(subagent, result);
+        let child = if already_named {
+            None
+        } else {
+            recorded(&subagent.native_id)
+        };
+        (spawn.id.clone(), child)
+    };
+    push_relationship_if_present(
+        parsed,
+        RelationshipKind::SubagentSpawn,
+        linked.0,
+        linked.1,
+        source.clone(),
+    );
+}
+
 pub(crate) fn record(value: &Value, parsed: &mut ParsedSession, path: &str, source: Provenance) {
     let record_type = recorded_string(value, &["type"]);
     let native = string(value, &["uuid"]);
@@ -55,6 +164,29 @@ pub(crate) fn record(value: &Value, parsed: &mut ParsedSession, path: &str, sour
     if let Some(blocks) = message.get("content").and_then(Value::as_array) {
         for block in blocks {
             match block.get("type").and_then(Value::as_str) {
+                // An explicitly recorded delegation, not an undifferentiated
+                // tool call. Its own tokens stay on the payload so they never
+                // inflate the parent session's total.
+                Some("tool_use") if is_agent_call(block) => {
+                    let mut spawn = event(
+                        &session,
+                        EventKind::SubagentSpawn,
+                        source.clone(),
+                        string(block, &["id"]),
+                    );
+                    let subagent = subagent_from_agent_call(block, value.get("toolUseResult"));
+                    let child = recorded(&subagent.native_id);
+                    spawn.subagent = SourceValue::Recorded(subagent);
+                    let spawn_id = spawn.id.clone();
+                    parsed.events.push(spawn);
+                    push_relationship_if_present(
+                        parsed,
+                        RelationshipKind::SubagentSpawn,
+                        spawn_id,
+                        child,
+                        source.clone(),
+                    );
+                }
                 Some("tool_use") => {
                     let mut call = event(
                         &session,
@@ -91,6 +223,14 @@ pub(crate) fn record(value: &Value, parsed: &mut ParsedSession, path: &str, sour
                         recorded_string(block, &["tool_use_id"]),
                         source.clone(),
                     );
+                    if let Some(result) = value.get("toolUseResult") {
+                        link_agent_result(
+                            parsed,
+                            recorded_string(block, &["tool_use_id"]),
+                            result,
+                            &source,
+                        );
+                    }
                 }
                 _ => {}
             }
@@ -108,7 +248,7 @@ pub(crate) fn record(value: &Value, parsed: &mut ParsedSession, path: &str, sour
 
 #[cfg(test)]
 mod tests {
-    use super::conformance::{conformance_tests, parse_records, Conformance};
+    use super::conformance::{conformance_tests, parse_records, Conformance, ConformanceSpawn};
     use super::*;
     use serde_json::json;
 
@@ -142,7 +282,8 @@ mod tests {
                         "content": [
                             {"type": "text", "text": "reading a file"},
                             {"type": "tool_use", "id": "call-1", "name": "Read", "input": {"file_path": "README.md"}},
-                            {"type": "tool_use", "id": "call-2", "name": "Bash", "input": {"command": "cargo test"}}
+                            {"type": "tool_use", "id": "call-2", "name": "Bash", "input": {"command": "cargo test"}},
+                            {"type": "tool_use", "id": "call-3", "name": "Agent", "input": {"subagent_type": "explore", "description": "map the parser", "prompt": "Map the parser module"}}
                         ],
                         "usage": {"input_tokens": 10, "output_tokens": 2}
                     }
@@ -157,6 +298,28 @@ mod tests {
                         "content": [
                             {"type": "tool_result", "tool_use_id": "call-1", "is_error": false, "content": "ok"}
                         ]
+                    }
+                }),
+                // A delegation's outcome arrives on the later user record that
+                // delivers its result block, as a sibling `toolUseResult`.
+                json!({
+                    "type": "user",
+                    "uuid": "result-3",
+                    "sessionId": "native-session",
+                    "cwd": "/tmp/proj",
+                    "message": {
+                        "role": "user",
+                        "content": [
+                            {"type": "tool_result", "tool_use_id": "call-3", "content": "mapped"}
+                        ]
+                    },
+                    "toolUseResult": {
+                        "status": "completed",
+                        "agentId": "a3c304e0",
+                        "agentType": "explore",
+                        "totalDurationMs": 467407,
+                        "totalTokens": 128450,
+                        "usage": {"input_tokens": 4210, "output_tokens": 9330}
                     }
                 }),
             ],
@@ -179,6 +342,16 @@ mod tests {
                 cache_write: SourceValue::Absent,
                 total: SourceValue::Absent,
                 scope: "message".to_string(),
+            }),
+            // Claude is the one harness that records every dimension, and it
+            // names the child, so this fixture is the positive edge case.
+            subagent_spawn: Some(ConformanceSpawn {
+                agent_type: "explore",
+                prompt: "Map the parser module",
+                outcome: Some("completed"),
+                duration_ms: Some(467407),
+                child_native_id: Some("a3c304e0"),
+                child_token_total: Some(128450),
             }),
         }
     }
@@ -261,6 +434,99 @@ mod tests {
             panic!("expected a recorded tool call");
         };
         assert_eq!(call.cwd, SourceValue::Absent);
+    }
+
+    /// 149 of 223 local Claude spawns never had a result written back. The
+    /// delegation still happened, so the spawn is recorded; everything the
+    /// result would have carried stays unrecorded rather than zeroed.
+    #[test]
+    fn an_agent_call_whose_result_was_never_written_back_records_the_spawn_and_nothing_more() {
+        let value = json!({
+            "type": "assistant",
+            "uuid": "a",
+            "sessionId": "s",
+            "message": {
+                "role": "assistant",
+                "content": [{"type": "tool_use", "id": "call-1", "name": "Agent", "input": {"subagent_type": "explore", "prompt": "Map the parser"}}]
+            }
+        });
+        let parsed = parse_records(record, Harness::ClaudeCode, &[value]);
+
+        let spawn = parsed
+            .events
+            .iter()
+            .find(|event| event.kind == EventKind::SubagentSpawn)
+            .expect("a spawn event");
+        let SourceValue::Recorded(subagent) = &spawn.subagent else {
+            panic!("expected a recorded subagent");
+        };
+        assert_eq!(
+            subagent.agent_type,
+            SourceValue::Recorded("explore".to_string())
+        );
+        assert_eq!(subagent.outcome, SourceValue::Absent);
+        assert_eq!(subagent.duration_ms, SourceValue::Absent);
+        assert_eq!(subagent.token_usage, SourceValue::Absent);
+        assert_eq!(subagent.native_id, SourceValue::Absent);
+        assert!(parsed.relationships.is_empty());
+    }
+
+    /// The older `Task` spelling is the same delegation; both must surface as a
+    /// spawn rather than as an ordinary tool call.
+    #[test]
+    fn a_task_named_delegation_is_a_spawn_not_a_tool_call() {
+        let value = json!({
+            "type": "assistant",
+            "uuid": "a",
+            "sessionId": "s",
+            "message": {
+                "role": "assistant",
+                "content": [{"type": "tool_use", "id": "call-1", "name": "Task", "input": {"description": "look around"}}]
+            }
+        });
+        let parsed = parse_records(record, Harness::ClaudeCode, &[value]);
+
+        assert!(parsed
+            .events
+            .iter()
+            .all(|event| event.kind != EventKind::ToolCall));
+        let spawn = parsed
+            .events
+            .iter()
+            .find(|event| event.kind == EventKind::SubagentSpawn)
+            .expect("a spawn event");
+        let SourceValue::Recorded(subagent) = &spawn.subagent else {
+            panic!("expected a recorded subagent");
+        };
+        // Only a description was recorded; it is the prompt evidence there is.
+        assert_eq!(
+            subagent.prompt,
+            SourceValue::Recorded("look around".to_string())
+        );
+        assert_eq!(subagent.agent_type, SourceValue::Absent);
+    }
+
+    /// A result whose `usage` carries no rolled-up total still recorded one
+    /// beside it, and the payload must read it rather than report no tokens.
+    #[test]
+    fn a_results_total_tokens_fill_in_for_a_usage_object_that_carries_none() {
+        let result = json!({
+            "status": "completed",
+            "totalTokens": 128450,
+            "usage": {"input_tokens": 4210, "output_tokens": 9330}
+        });
+
+        let subagent = subagent_from_agent_call(
+            &json!({"type": "tool_use", "id": "c", "name": "Agent", "input": {}}),
+            Some(&result),
+        );
+
+        let SourceValue::Recorded(usage) = &subagent.token_usage else {
+            panic!("expected recorded tokens");
+        };
+        assert_eq!(usage.total, SourceValue::Recorded(128450));
+        assert_eq!(usage.input, SourceValue::Recorded(4210));
+        assert_eq!(usage.scope, "subagent");
     }
 
     #[test]

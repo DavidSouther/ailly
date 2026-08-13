@@ -88,13 +88,41 @@ pub struct ToolResult {
 }
 
 /// An explicitly recorded delegation. Adapters must not manufacture this from
-/// conversation-tree parents or adjacent records.
+/// conversation-tree parents or adjacent records. Every dimension is
+/// independently recorded-or-not: a harness that wrote no duration leaves
+/// `duration_ms` Absent rather than zero.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct Subagent {
     pub native_id: SourceValue<String>,
     pub agent_type: SourceValue<String>,
     pub prompt: SourceValue<String>,
     pub outcome: SourceValue<String>,
+    /// A human label for the child, where a harness records one (Codex).
+    pub nickname: SourceValue<String>,
+    pub duration_ms: SourceValue<u64>,
+    /// The child's own token figures. These never move onto the spawn event's
+    /// `token_usage`, which `token_total_from_events` sums for the parent.
+    pub token_usage: SourceValue<TokenUsage>,
+    /// Populated by the query layer at read time, never by an adapter —
+    /// adapters only ever emit Absent here.
+    pub child_session_id: SourceValue<String>,
+}
+
+impl Subagent {
+    /// A delegation with nothing recorded yet, for adapters to fill in only the
+    /// dimensions their harness actually wrote.
+    pub fn unrecorded() -> Self {
+        Self {
+            native_id: SourceValue::Absent,
+            agent_type: SourceValue::Absent,
+            prompt: SourceValue::Absent,
+            outcome: SourceValue::Absent,
+            nickname: SourceValue::Absent,
+            duration_ms: SourceValue::Absent,
+            token_usage: SourceValue::Absent,
+            child_session_id: SourceValue::Absent,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -146,6 +174,9 @@ pub struct Event {
     pub files: SourceValue<Vec<FileReference>>,
     /// A compact reason for unknown/custom records; raw payloads are not required.
     pub detail: SourceValue<String>,
+    /// The delegation facts a `SubagentSpawn` event carries. Absent on every
+    /// other kind of event.
+    pub subagent: SourceValue<Subagent>,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]

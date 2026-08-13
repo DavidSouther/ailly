@@ -64,6 +64,7 @@ function baseEvent(id: string, ordinal: number, kind: EventKind): AillyEvent {
     token_usage: "Absent",
     files: "Absent",
     detail: "Absent",
+    subagent: "Absent",
   };
 }
 

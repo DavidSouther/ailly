@@ -68,6 +68,7 @@ function baseEvent(id: string, ordinal: number, kind: EventKind): AillyEvent {
     token_usage: "Absent",
     files: "Absent",
     detail: "Absent",
+    subagent: "Absent",
   };
 }
 
@@ -180,7 +181,7 @@ describe("Journey 2: Investigate a single session's tool calls", () => {
     expect(within(tile("Tool calls")).getByText("6")).toBeInTheDocument();
     expect(within(tile("Files touched")).getByText("2")).toBeInTheDocument();
     expect(within(tile("Duration")).getByText(/not recorded/i)).toBeInTheDocument();
-    expect(within(tile("Subagent spawns")).getByText(/not recorded/i)).toBeInTheDocument();
+    expect(within(tile("Subagent spawns")).getByText("0")).toBeInTheDocument();
 
     // Where this session ran, as a session-level fact.
     expect(within(tile("Working directory")).getByText("ailly-analyzer")).toBeInTheDocument();
@@ -193,46 +194,38 @@ describe("Journey 2: Investigate a single session's tool calls", () => {
     expect(within(categories).getByText(/edit.*17%/i)).toBeInTheDocument();
     expect(within(categories).getByText(/unclassified.*17%/i)).toBeInTheDocument();
 
-    // Calls by tool, ranked, with raw harness names preserved.
+    // Calls by tool, ranked, with raw harness names preserved. Expanding a row
+    // reveals the individual calls that used to live under Sources.
     const byTool = within(summary()).getByRole("list", { name: /calls by tool/i });
     const toolRows = within(byTool).getAllByRole("listitem");
     expect(toolRows[0]).toHaveTextContent(/Read/);
     expect(toolRows[0]).toHaveTextContent(/2 calls/);
     expect(within(byTool).getByText("mcp__acme__lookup")).toBeInTheDocument();
 
-    // Sources: every way an outside fact entered context, with the unrecorded
-    // web target admitted as unrecorded.
-    const sources = within(summary()).getByRole("group", { name: /sources/i });
-    await expand(sources, /shell output/i);
-    expect(within(sources).getByText("rg -l LegacySession")).toBeInTheDocument();
+    await expand(byTool, /Bash/);
+    const bashCalls = within(byTool).getByRole("list", { name: /bash calls/i });
+    expect(within(bashCalls).getByText("rg -l LegacySession")).toBeInTheDocument();
     // The call ran somewhere other than the session's own directory, which is
     // exactly the kind of thing that explains a surprising result.
-    expect(within(sources).getByText(/\/Users\/dev\/other-repo/)).toBeInTheDocument();
+    expect(within(bashCalls).getByText(/\/Users\/dev\/other-repo/)).toBeInTheDocument();
 
     // The command itself expands to what it captured — the fact that decides
     // whether the session went wrong here.
-    await expand(sources, /rg -l LegacySession/);
-    expect(within(sources).getByText(/packages\/auth\/src\/legacy\.ts/)).toBeInTheDocument();
+    await expand(bashCalls, /rg -l LegacySession/);
+    expect(within(bashCalls).getByText(/packages\/auth\/src\/legacy\.ts/)).toBeInTheDocument();
 
-    const fileAccess = within(sources).getByRole("group", { name: /file access/i });
-    await expand(fileAccess, /file access/i);
-    // File access expands to the ranked files-touched list: path, tools, and
-    // how often each was touched.
-    const files = within(fileAccess).getByRole("list", { name: /files touched/i });
-    const topFile = within(files).getAllByRole("listitem")[0] as HTMLElement;
-    expect(topFile).toHaveTextContent(SUSPECT_FILE);
-    expect(topFile).toHaveTextContent(/2 touches/);
-    expect(within(topFile).getByText("Read")).toBeInTheDocument();
-    expect(within(topFile).getByText("Edit")).toBeInTheDocument();
-    expect(within(fileAccess).getByText("docs/auth/runbook.md")).toBeInTheDocument();
+    await expand(byTool, /^Read/);
+    const readCalls = within(byTool).getByRole("list", { name: /^Read calls$/i });
+    expect(within(readCalls).getByText(SUSPECT_FILE)).toBeInTheDocument();
+    expect(within(readCalls).getByText("docs/auth/runbook.md")).toBeInTheDocument();
 
-    const web = within(sources).getByRole("group", { name: /web/i });
-    await expand(web, /web/i);
-    expect(within(web).getByText(/target not recorded/i)).toBeInTheDocument();
+    await expand(byTool, /WebFetch/);
+    const webCalls = within(byTool).getByRole("list", { name: /WebFetch calls/i });
+    expect(within(webCalls).getByText(/target not recorded/i)).toBeInTheDocument();
 
     // Nothing in this session answered the web call, and the pane says so
     // rather than showing an empty box.
-    await expand(web, /target not recorded/i);
-    expect(within(web).getByText(/output not recorded/i)).toBeInTheDocument();
+    await expand(webCalls, /target not recorded/i);
+    expect(within(webCalls).getByText(/output not recorded/i)).toBeInTheDocument();
   });
 });
