@@ -7,6 +7,7 @@ import { ToolPayload } from "../ToolPayload";
 import { Badge } from "../badges/badge";
 import { BadgeColor } from "../colors";
 import { shouldShowToolCwd } from "../conversation/format";
+import { toolIcon } from "../toolIcons";
 import type { FileTouch, SourceCall, ToolCategory, ToolFrequency } from "./rollup";
 
 /**
@@ -90,6 +91,7 @@ export function CallsByTool({
 
 function ToolCallsRow({ tool, sessionCwd }: { tool: ToolFrequency; sessionCwd: string | null }) {
   const [open, setOpen] = useState(false);
+  const Icon = toolIcon(tool.name);
   return (
     <li className="border-b last:border-b-0">
       <button
@@ -103,6 +105,7 @@ function ToolCallsRow({ tool, sessionCwd }: { tool: ToolFrequency; sessionCwd: s
         ) : (
           <ChevronRight size={14} className="shrink-0 text-foreground-muted" />
         )}
+        <Icon size={14} className="shrink-0 text-foreground-muted" aria-hidden="true" />
         <span className="min-w-0 truncate font-medium text-foreground-title">{tool.name}</span>
         <span className="shrink-0 text-foreground-muted text-xs">
           {CATEGORY_LABEL[tool.category]}

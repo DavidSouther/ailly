@@ -5,4 +5,8 @@
 
 import type { ComponentType } from "react";
 
-export type IconType = ComponentType<{ className?: string }>;
+export type IconType = ComponentType<{
+  className?: string;
+  size?: string | number;
+  "aria-hidden"?: boolean | "true" | "false";
+}>;

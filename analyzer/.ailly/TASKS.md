@@ -203,6 +203,21 @@ Deferred:
 - `NotebookEdit` path promotion (`notebook_path`) and category-table entry.
 - FTS coverage of payloads (with search journey).
 
+## Tool call type icons — complete (2026-08-13-B-tool-call-icons)
+
+- Shared `toolIcon(name)` lookup: name table, then `categoryForTool`, then a
+  neutral wrench for unclassified / other.
+- Summary "Calls by tool" rows and Conversation tool-call rows show the glyph
+  with `aria-hidden` so accessible names stay unchanged.
+- Subagents lens inherits both via `SessionLenses`.
+
+Deferred:
+
+- Icons on Conversation tool *result* rows (needs call/result pairing in that
+  lens first).
+- Icons inside `Badge`-rendered surfaces (`CategorySplit`, `FileAccessList`) —
+  `Badge` must forward `aria-hidden` first.
+
 ## Working rule
 
 Do not add live streaming, session mutation, session resumption, cloud synchronization, or artifact review to this task list without revisiting the product boundary in `BRIEF.md`. A recorded call parameter shown under that call is not artifact review; reconstructing a file on disk is.

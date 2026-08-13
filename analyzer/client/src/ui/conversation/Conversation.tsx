@@ -5,6 +5,7 @@ import { type AillyEvent, EventKind, type SourceValue, isRecorded } from "../../
 import { CapturedOutput } from "../CapturedOutput";
 import { ToolPayload } from "../ToolPayload";
 import { toolPayloadText } from "../payload";
+import { toolIcon } from "../toolIcons";
 import { type LoadState, LoadStatus } from "../useSessionEvents";
 import {
   type DetailRow,
@@ -113,8 +114,9 @@ function ToolCallRow({ event, project }: { event: AillyEvent; project: SourceVal
   const title = tool ? toolTitle(tool) : "Tool call";
   const rows: DetailRow[] = tool ? toolDetailRows(tool, project) : [];
   const payload = tool ? toolPayloadText(tool) : null;
+  const Icon = tool ? toolIcon(tool.name) : Wrench;
   return (
-    <Expandable icon={<Wrench size={14} />} title={title}>
+    <Expandable icon={<Icon size={14} aria-hidden="true" />} title={title}>
       {rows.length === 0 && payload === null ? (
         <p className="text-foreground-muted">No recorded parameters.</p>
       ) : (
