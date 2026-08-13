@@ -155,7 +155,8 @@ Deferred:
 ## Deferred from Journey 1
 
 - List-row token totals and duration (need rollups or summary batching; avoid N+1).
-- Date-range and rough-size filters beyond the current harness + text controls.
+- Date-range and rough-size filters beyond free-text search and `harness:` chips
+  (the harness dropdown is gone; chips/`harness:` tokens are the harness filter).
 - Session labels when a harness records them.
 - Virtualize the session list once real collections are large enough to measure.
 - FTS content search over event text (belongs with read/investigate journeys).
@@ -217,6 +218,24 @@ Deferred:
   lens first).
 - Icons inside `Badge`-rendered surfaces (`CategorySplit`, `FileAccessList`) —
   `Badge` must forward `aria-hidden` first.
+
+## Rescan + harness chips — complete (2026-08-13-C-rescan-and-harness-chips)
+
+- Move Rescan from the app header into the sessions panel chrome (not a list
+  `<li>`), keeping busy/`aria-busy`, progress, and error behavior.
+- Remove the harness `<select>` and Zustand `harness` / `SetHarness`; search is
+  the sole filter source of truth.
+- Parse `harness:` tokens (optional space after `:`, case-insensitive, id/label
+  match with `_`/`-`/space equivalence) into removable chips; residual free text
+  still matches via `matchesQuery`.
+- Multiple `harness:` tokens union (OR); no token means all harnesses;
+  unrecognized token values match nothing.
+
+Deferred:
+
+- URL/query persistence of search chip state.
+- Additional `key:` filter chips beyond `harness:` (unknown keys stay free-text;
+  date/size remain under Journey 1 deferred).
 
 ## Working rule
 

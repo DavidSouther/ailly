@@ -1,7 +1,6 @@
 import { create } from "zustand";
 
 import {
-  type Harness,
   type IndexProgress,
   type IndexStatus,
   type SessionListItem,
@@ -12,8 +11,7 @@ import {
   startRefresh,
 } from "../../tauri";
 import { matchesQuery } from "./format";
-
-export type HarnessFilter = Harness | "all";
+import { parseHarnessFilter } from "./searchQuery";
 
 export interface SessionsState {
   sessions: SessionListItem[];
@@ -21,7 +19,6 @@ export interface SessionsState {
   progress: IndexProgress | null;
   error: string | null;
   search: string;
-  harness: HarnessFilter;
   selectedId: string | null;
 }
 
@@ -32,7 +29,6 @@ export enum SessionsActionType {
   RescanStarted = "rescan_started",
   ScanFailed = "scan_failed",
   SetSearch = "set_search",
-  SetHarness = "set_harness",
   Select = "select",
   Reset = "reset",
 }
@@ -44,7 +40,6 @@ export type SessionsAction =
   | { type: SessionsActionType.RescanStarted }
   | { type: SessionsActionType.ScanFailed; error: string }
   | { type: SessionsActionType.SetSearch; search: string }
-  | { type: SessionsActionType.SetHarness; harness: HarnessFilter }
   | { type: SessionsActionType.Select; id: string }
   | { type: SessionsActionType.Reset };
 
@@ -54,16 +49,16 @@ export const initialSessionsState: SessionsState = {
   progress: null,
   error: null,
   search: "",
-  harness: "all",
   selectedId: null,
 };
 
-/** Sessions matching the current harness + text filters. */
+/** Sessions matching harness tokens + residual free-text from `search`. */
 export function visibleSessions(state: SessionsState): SessionListItem[] {
+  const { harnesses, residual } = parseHarnessFilter(state.search);
   return state.sessions.filter(
     (session) =>
-      (state.harness === "all" || session.harness === state.harness) &&
-      matchesQuery(session, state.search),
+      (harnesses === null || harnesses.includes(session.harness)) &&
+      matchesQuery(session, residual),
   );
 }
 
@@ -92,8 +87,6 @@ export function sessionsReducer(state: SessionsState, action: SessionsAction): S
       return { ...state, indexing: false, error: action.error };
     case SessionsActionType.SetSearch:
       return withSelection({ ...state, search: action.search });
-    case SessionsActionType.SetHarness:
-      return withSelection({ ...state, harness: action.harness });
     case SessionsActionType.Select:
       return { ...state, selectedId: action.id };
     case SessionsActionType.Reset:

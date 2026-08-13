@@ -152,9 +152,9 @@ describe("Journey 1: Find a session", () => {
     await renderApp();
     await waitFor(() => expect(visibleSessions()).toHaveLength(3));
 
-    await userEvent.selectOptions(screen.getByLabelText("Filter by harness"), "codex");
+    await userEvent.type(screen.getByLabelText("Filter sessions"), "harness: codex");
 
-    expect(visibleSessions()).toHaveLength(1);
+    await waitFor(() => expect(visibleSessions()).toHaveLength(1));
     expect(screen.getByText("billing-service")).toBeInTheDocument();
     expect(screen.queryByText("ailly-analyzer")).not.toBeInTheDocument();
   });
