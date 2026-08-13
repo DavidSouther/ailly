@@ -30,8 +30,6 @@ export function CapturedOutput({
   output,
   isError = false,
 }: { output: SourceValue<string> | null; isError?: boolean }) {
-  const [showAll, setShowAll] = useState(false);
-
   if (output === null) {
     return <p className="text-foreground-muted text-xs italic">Output not recorded</p>;
   }
@@ -42,7 +40,16 @@ export function CapturedOutput({
     return <p className="text-foreground-muted text-xs italic">Recorded an empty output</p>;
   }
 
-  const text = output.Recorded;
+  return <ClampedText text={output.Recorded} isError={isError} />;
+}
+
+/**
+ * Recorded text a session captured, bounded so one long block cannot swamp the
+ * pane. Shared by every lens that shows captured bytes, so a result and a
+ * call's parameters clamp at the same length and toggle the same way.
+ */
+export function ClampedText({ text, isError = false }: { text: string; isError?: boolean }) {
+  const [showAll, setShowAll] = useState(false);
   const lines = text.split("\n");
   const clamped = !showAll && lines.length > CLAMP_LINES;
   return (

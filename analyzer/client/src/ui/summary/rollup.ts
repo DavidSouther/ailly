@@ -6,6 +6,7 @@ import {
   type ToolResult,
   isRecorded,
 } from "../../tauri";
+import { toolPayloadText } from "../payload";
 
 export type ToolCategory = "exec" | "edit" | "read" | "other";
 export type SourceKind = "shell" | "file" | "web";
@@ -41,11 +42,19 @@ export interface SourceCall {
   /** True when the source data is missing, so detail reads e.g. "Target not recorded". */
   detailRecorded: boolean;
   /**
+   * The path this call recorded, if any. Kept beside `detail` because a path
+   * and a command are different facts to the working-directory decision, and
+   * `detail` cannot tell them apart.
+   */
+  path: string | null;
+  /**
    * The directory this call ran in, or null when the harness recorded none.
    * Unlike `detail` there is no stand-in copy: an unrecorded directory is
    * shown as nothing at all rather than claimed to be the session's.
    */
   cwd: string | null;
+  /** The recorded parameters this call's own row does not already show. */
+  payload: SourceValue<string> | null;
   /**
    * What the call returned, or null when nothing in this session answered it.
    * The `SourceValue` is kept rather than flattened, because "recorded an
@@ -239,7 +248,9 @@ function callDetail(call: RecordedCall, results: Map<string, ToolResult[]>): Sou
     toolName: call.tool.name,
     detail: field ?? "Detail not recorded",
     detailRecorded: field !== null,
+    path: isRecorded(call.tool.path) ? call.tool.path.Recorded : null,
     cwd: isRecorded(call.tool.cwd) ? call.tool.cwd.Recorded : null,
+    payload: toolPayloadText(call.tool),
     output,
     outputIsError: answers.some(
       (result) => isRecorded(result.is_error) && result.is_error.Recorded,
@@ -313,7 +324,9 @@ function sourceCall(
     toolName: call.tool.name,
     detail: isRecorded(field) ? field.Recorded : SOURCE_META[kind].missingDetail,
     detailRecorded: isRecorded(field),
+    path: isRecorded(call.tool.path) ? call.tool.path.Recorded : null,
     cwd: isRecorded(call.tool.cwd) ? call.tool.cwd.Recorded : null,
+    payload: toolPayloadText(call.tool),
     output,
     outputIsError: answers.some(
       (result) => isRecorded(result.is_error) && result.is_error.Recorded,

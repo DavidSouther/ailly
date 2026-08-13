@@ -96,19 +96,18 @@ describe("toolDetailRows", () => {
       input: { Recorded: '{"command":"ls -la"}' },
     });
 
-    // Input repeats Command once that is recorded, so it stays off the list.
     expect(rows.map((row) => row.label)).toEqual(["Command", "Working directory"]);
   });
 
-  it("falls back to Input when no structured detail was recorded", () => {
+  it("leaves the raw payload to the parameters block rather than making it a row", () => {
     const rows = toolDetailRows({
       ...BASE_TOOL,
       input: { Recorded: 'const r = await tools.exec_command({cmd:"ls"});' },
     });
 
-    expect(rows).toEqual([
-      { label: "Input", value: 'const r = await tools.exec_command({cmd:"ls"});' },
-    ]);
+    // A payload is recorded text of any length, so it renders as a clamped
+    // block beneath these rows instead of as a one-line value inside them.
+    expect(rows).toEqual([]);
   });
 
   it("treats a malformed value as unrecorded rather than rendering it", () => {

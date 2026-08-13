@@ -3,6 +3,8 @@ import { type ReactNode, useState } from "react";
 
 import { type AillyEvent, EventKind, type SourceValue, isRecorded } from "../../tauri";
 import { CapturedOutput } from "../CapturedOutput";
+import { ToolPayload } from "../ToolPayload";
+import { toolPayloadText } from "../payload";
 import { type LoadState, LoadStatus } from "../useSessionEvents";
 import {
   type DetailRow,
@@ -110,21 +112,25 @@ function ToolCallRow({ event, project }: { event: AillyEvent; project: SourceVal
   const tool = isRecorded(event.tool_call) ? event.tool_call.Recorded : null;
   const title = tool ? toolTitle(tool) : "Tool call";
   const rows: DetailRow[] = tool ? toolDetailRows(tool, project) : [];
+  const payload = tool ? toolPayloadText(tool) : null;
   return (
     <Expandable icon={<Wrench size={14} />} title={title}>
-      {rows.length === 0 ? (
+      {rows.length === 0 && payload === null ? (
         <p className="text-foreground-muted">No recorded parameters.</p>
       ) : (
-        <dl className="flex flex-col gap-2">
-          {rows.map((row) => (
-            <div key={row.label}>
-              <dt className="eyebrow-sm text-foreground-muted">{row.label}</dt>
-              <dd className="whitespace-pre-wrap break-words font-mono text-foreground text-xs">
-                {row.value}
-              </dd>
-            </div>
-          ))}
-        </dl>
+        <div className="flex min-w-0 flex-col gap-2">
+          <dl className="flex flex-col gap-2">
+            {rows.map((row) => (
+              <div key={row.label}>
+                <dt className="eyebrow-sm text-foreground-muted">{row.label}</dt>
+                <dd className="whitespace-pre-wrap break-words font-mono text-foreground text-xs">
+                  {row.value}
+                </dd>
+              </div>
+            ))}
+          </dl>
+          <ToolPayload payload={payload} />
+        </div>
       )}
     </Expandable>
   );

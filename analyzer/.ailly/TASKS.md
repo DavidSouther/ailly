@@ -183,6 +183,26 @@ Deferred:
   made live in the Subagents tab rather than inline here.
 - Wire summary / drill-down views into the `event-*` anchors.
 
+## Tool-call write/edit payloads — complete (2026-08-13-A-tool-call-edits)
+
+- Decode and show recorded call parameters beyond Command/Path/URL/cwd when a
+  tool call expands, in both Summary and Conversation.
+- Claude `Edit`/`Write` and Pi `edit`/`write` show readable source lines;
+  Codex `apply_patch` string payloads are unescaped and clamped.
+- Subtractive rule: values already shown as structured rows are dropped so
+  Bash gains no duplicate; Read surfaces `offset`/`limit`.
+- Shared `ClampedText` (50 lines); `BRIEF.md` clarifies parameter vs artifact.
+
+Deferred:
+
+- Structured interpretation of edit fields (diff `old_string`/`new_string`,
+  type `edits[]`) and any diff dependency.
+- Pair payload with applied-vs-failed result state in Conversation; Pi's
+  camelCase `isError` still dropped by `loader::tool_result`.
+- File-first route from Summary File access into the calls that touched a path.
+- `NotebookEdit` path promotion (`notebook_path`) and category-table entry.
+- FTS coverage of payloads (with search journey).
+
 ## Working rule
 
-Do not add live streaming, session mutation, session resumption, cloud synchronization, or artifact review to this task list without revisiting the product boundary in `BRIEF.md`.
+Do not add live streaming, session mutation, session resumption, cloud synchronization, or artifact review to this task list without revisiting the product boundary in `BRIEF.md`. A recorded call parameter shown under that call is not artifact review; reconstructing a file on disk is.

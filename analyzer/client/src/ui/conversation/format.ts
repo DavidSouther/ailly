@@ -76,16 +76,16 @@ export function shouldShowToolCwd(args: {
   return true;
 }
 
-/** Only the recorded tool fields, as label/value rows for the expanded view. */
+/**
+ * The recorded tool fields, as label/value rows for the expanded view. The raw
+ * payload is not among them: it is a block of recorded text rather than a
+ * one-line value, so `toolPayloadText` decodes it and `ToolPayload` renders it
+ * beneath these rows.
+ */
 export function toolDetailRows(
   tool: ToolCall,
   sessionCwd: SourceValue<string> = "Absent",
 ): DetailRow[] {
-  // Input is the raw payload and usually repeats Command/Path/URL once those
-  // are extracted. Keep it only when none of those are recorded — Codex
-  // custom_tool_call snippets have nothing else to show.
-  const hasStructuredDetail =
-    isRecorded(tool.command) || isRecorded(tool.path) || isRecorded(tool.url);
   const showCwd = shouldShowToolCwd({
     cwd: isRecorded(tool.cwd) ? tool.cwd.Recorded : null,
     path: isRecorded(tool.path) ? tool.path.Recorded : null,
@@ -96,9 +96,6 @@ export function toolDetailRows(
     ["Path", tool.path],
     ["URL", tool.url],
     ...(showCwd ? ([["Working directory", tool.cwd]] as Array<[string, SourceValue<string>]>) : []),
-    ...(hasStructuredDetail
-      ? []
-      : ([["Input", tool.input]] as Array<[string, SourceValue<string>]>)),
   ];
   return candidates
     .filter((entry): entry is [string, { Recorded: string }] => isRecorded(entry[1]))

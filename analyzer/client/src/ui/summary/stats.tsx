@@ -3,6 +3,7 @@ import { type ReactNode, useState } from "react";
 
 import { type SourceValue, isRecorded } from "../../tauri";
 import { CapturedOutput } from "../CapturedOutput";
+import { ToolPayload } from "../ToolPayload";
 import { Badge } from "../badges/badge";
 import { BadgeColor } from "../colors";
 import { shouldShowToolCwd } from "../conversation/format";
@@ -130,7 +131,7 @@ function ToolCallsRow({ tool, sessionCwd }: { tool: ToolFrequency; sessionCwd: s
 /** One call, expanding to what it captured. */
 function CallRow({ call, sessionCwd }: { call: SourceCall; sessionCwd: string | null }) {
   const [open, setOpen] = useState(false);
-  const showCwd = shouldShowToolCwd({ cwd: call.cwd, path: null, sessionCwd });
+  const showCwd = shouldShowToolCwd({ cwd: call.cwd, path: call.path, sessionCwd });
   return (
     <div className="flex min-w-0 flex-col gap-0.5">
       <button
@@ -160,7 +161,8 @@ function CallRow({ call, sessionCwd }: { call: SourceCall; sessionCwd: string | 
         </span>
       ) : null}
       {open ? (
-        <div className="min-w-0 w-full pt-1 pl-[18px]">
+        <div className="flex min-w-0 w-full flex-col gap-1.5 pt-1 pl-[18px]">
+          <ToolPayload payload={call.payload} />
           <CapturedOutput output={call.output} isError={call.outputIsError} />
         </div>
       ) : null}
