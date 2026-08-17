@@ -4,6 +4,12 @@ See where an agent session went wrong, and where the budget went.
 
 Ailly Analyzer is a native, local-first desktop workspace for understanding completed Claude Code, Codex, and other agent sessions. Open the sessions already on your computer, find the important moment, and move from a high-level summary to the exact tool call, file read, web request, or subagent result that shaped the outcome.
 
+![Ailly Analyzer showing an LLM session with 30 tool calls, using 4 million tokens for an estimated $0.2985 spend](./screenshot.png)
+
+## Quickstart
+
+With [mise](https://mise.jdx.dev) installed, clone this repo, trust it, and run `mise dev`
+
 ## What it unlocks
 
 - Find sessions across supported local harnesses without hunting through every tool and project.
