@@ -3,7 +3,7 @@
 use rusqlite::types::Value;
 use rusqlite::{Connection, OptionalExtension, TransactionBehavior};
 
-pub const SCHEMA_VERSION: i64 = 5;
+pub const SCHEMA_VERSION: i64 = 9;
 
 pub fn open_connection(path: &std::path::Path) -> rusqlite::Result<Connection> {
     let mut conn = Connection::open(path)?;
@@ -103,7 +103,24 @@ fn create_schema(conn: &Connection) -> rusqlite::Result<()> {
             project_kind TEXT NOT NULL,
             project_value TEXT,
             parent_session_kind TEXT NOT NULL,
-            parent_session_value TEXT
+            parent_session_value TEXT,
+            -- The session's own token and dollar figures, folded once when the
+            -- session is indexed so a list row never has to open a transcript
+            -- to show them. Each is an independently recorded-or-not
+            -- SourceValue, encoded the way every other column here is.
+            token_total_kind TEXT NOT NULL,
+            token_total_value TEXT,
+            recorded_price_micros_kind TEXT NOT NULL,
+            recorded_price_micros_value TEXT,
+            estimated_tokens_kind TEXT NOT NULL,
+            estimated_tokens_value TEXT,
+            estimated_price_micros_kind TEXT NOT NULL,
+            estimated_price_micros_value TEXT,
+            -- The date of the rate table the estimate was priced against. The
+            -- catalog can refresh while the estimate stays frozen, so the row
+            -- has to carry the date rather than let a surface assume today's.
+            estimated_as_of_kind TEXT NOT NULL,
+            estimated_as_of_value TEXT
         );
 
         CREATE TABLE events (
@@ -117,6 +134,10 @@ fn create_schema(conn: &Connection) -> rusqlite::Result<()> {
             prov_ordinal INTEGER NOT NULL,
             native_id_kind TEXT NOT NULL,
             native_id_value TEXT,
+            response_id_kind TEXT NOT NULL,
+            response_id_value TEXT,
+            model_kind TEXT NOT NULL,
+            model_value TEXT,
             timestamp_kind TEXT NOT NULL,
             timestamp_value TEXT,
             turn_json TEXT,

@@ -36,6 +36,8 @@ function baseEvent(id: string, ordinal: number, kind: EventKind): AillyEvent {
     kind,
     source: { harness: "claude_code", path: "/home/parent.jsonl", line: ordinal, ordinal },
     native_id: "Absent",
+    response_id: "Absent",
+    model: "Absent",
     timestamp: "Absent",
     turn: "Absent",
     tool_call: "Absent",
@@ -93,6 +95,7 @@ function linkedSpawn(prompt: string, childSessionId: string): Subagent {
         cache_read: "Absent",
         cache_write: "Absent",
         total: { Recorded: 128450 },
+        cost_total_micros: "Absent",
         scope: "subagent",
       },
     },
@@ -136,9 +139,9 @@ describe("subagentSpawnRows", () => {
 
     expect(rows).toHaveLength(2);
     expect(rows[0]?.durationLabel).toEqual({ Recorded: "7m 47s" });
-    expect(rows[0]?.tokensLabel).toEqual({ Recorded: "128,450" });
+    expect(rows[0]?.finalContextLabel).toEqual({ Recorded: "128,450" });
     expect(rows[1]?.durationLabel).toBe("Absent");
-    expect(rows[1]?.tokensLabel).toBe("Absent");
+    expect(rows[1]?.finalContextLabel).toBe("Absent");
   });
 
   /// A payload the index could not read is not a delegation the product can
@@ -152,7 +155,7 @@ describe("subagentSpawnRows", () => {
     expect(rows).toEqual([]);
   });
 
-  it("carries a spawn whose tokens were recorded without a rolled-up total as unrecorded", () => {
+  it("carries a spawn whose usage was recorded without a rolled-up total as unrecorded", () => {
     const partial: Subagent = {
       ...UNRECORDED,
       token_usage: {
@@ -162,6 +165,7 @@ describe("subagentSpawnRows", () => {
           cache_read: "Absent",
           cache_write: "Absent",
           total: "Absent",
+          cost_total_micros: "Absent",
           scope: "subagent",
         },
       },
@@ -169,7 +173,7 @@ describe("subagentSpawnRows", () => {
 
     const rows = subagentSpawnRows([spawnEvent("evt-1", 1, { Recorded: partial })]);
 
-    expect(rows[0]?.tokensLabel).toBe("Absent");
+    expect(rows[0]?.finalContextLabel).toBe("Absent");
   });
 });
 

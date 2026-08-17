@@ -50,6 +50,11 @@ pub(crate) struct Conformance {
     /// transcript supplies none, in which case usage must resolve `Absent`,
     /// never a fabricated zeroed `TokenUsage`.
     pub assistant_usage: Option<TokenUsage>,
+    /// The model the assistant turn names. `None` when the harness names none
+    /// on that record — Codex names its model on a `turn_context` record
+    /// instead — and the shared test then holds the adapter to `Absent` rather
+    /// than a model borrowed from elsewhere in the file.
+    pub assistant_model: Option<&'static str>,
     /// The delegation the transcript records. `None` when it records none, in
     /// which case the shared test asserts the adapter manufactures neither a
     /// spawn event nor a spawn edge.
@@ -87,9 +92,10 @@ pub(crate) fn parse_records(
     values: &[Value],
 ) -> ParsedSession {
     let mut parsed = ParsedSession::default();
+    let mut state = AdapterState::default();
     for (index, value) in values.iter().enumerate() {
         let source = provenance(harness, "fixture.jsonl", index + 1);
-        record(value, &mut parsed, "fixture.jsonl", source);
+        record(value, &mut parsed, &mut state, "fixture.jsonl", source);
     }
     parsed
 }
@@ -240,6 +246,21 @@ pub(crate) fn assert_token_usage_is_honest(conformance: &Conformance) {
     // fabricated zeroed TokenUsage.
     for user in events_of_kind(&parsed, EventKind::UserTurn) {
         assert_eq!(user.token_usage, SourceValue::Absent);
+    }
+}
+
+/// A price lookup needs to know which model spent the tokens, so the model is
+/// read wherever the harness wrote it and left Absent wherever it did not. A
+/// user turn never names one: nothing was generated to charge for.
+pub(crate) fn assert_model_matches_recorded_identity(conformance: &Conformance) {
+    let parsed = conformance.parse();
+    let assistant = only_event(&parsed, EventKind::AssistantTurn);
+    assert_expected(
+        &assistant.model,
+        conformance.assistant_model.map(str::to_string),
+    );
+    for user in events_of_kind(&parsed, EventKind::UserTurn) {
+        assert_eq!(user.model, SourceValue::Absent);
     }
 }
 
@@ -464,6 +485,11 @@ macro_rules! conformance_tests {
         #[test]
         fn token_usage_reflects_only_what_the_harness_recorded_never_zeroed() {
             crate::loader::conformance::assert_token_usage_is_honest(&$conformance());
+        }
+
+        #[test]
+        fn the_model_reflects_only_what_the_harness_named_on_that_record() {
+            crate::loader::conformance::assert_model_matches_recorded_identity(&$conformance());
         }
 
         #[test]

@@ -12,7 +12,13 @@ export interface SubagentSpawnRow {
   prompt: SourceValue<string>;
   outcome: SourceValue<string>;
   durationLabel: SourceValue<string>;
-  tokensLabel: SourceValue<string>;
+  /**
+   * The harness's own token figure for the spawn: how large the child's final
+   * turn's context was, which is a different fact from what the child spent.
+   * Named for what it is — a bare "Tokens" invited reading it as the cost of the
+   * delegation, which it undercounts by 62× in the sampled session.
+   */
+  finalContextLabel: SourceValue<string>;
   childSessionId: SourceValue<string>;
 }
 
@@ -37,7 +43,7 @@ export function subagentSpawnRows(events: AillyEvent[]): SubagentSpawnRow[] {
       durationLabel: isRecorded(spawn.duration_ms)
         ? { Recorded: durationLabel(spawn.duration_ms.Recorded) }
         : spawn.duration_ms,
-      tokensLabel: isRecorded(total) ? { Recorded: total.Recorded.toLocaleString() } : total,
+      finalContextLabel: isRecorded(total) ? { Recorded: total.Recorded.toLocaleString() } : total,
       childSessionId: spawn.child_session_id,
     });
   }

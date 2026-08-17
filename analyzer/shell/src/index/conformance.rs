@@ -103,12 +103,60 @@ pub(crate) fn assert_indexes_all_harnesses(index: &dyn SessionIndex, label: &str
         );
     }
 
-    let codex_id = listed
+    // The session row carries its own token figures, so nothing has to open a
+    // transcript to show them. Pi's fixture writes a `totalTokens` of its own,
+    // which is the recorded figure the row must report.
+    let pi = listed
+        .iter()
+        .find(|item| item.harness == Harness::Pi)
+        .expect("Pi session listed");
+    assert_eq!(
+        pi.token_total,
+        SourceValue::Recorded(12),
+        "the harness's own recorded total must reach the list row"
+    );
+    // That fixture is dated well over a month before any run of this suite, so
+    // the age gate withholds the estimate: today's rate table is not evidence
+    // about what a session that old actually paid.
+    assert!(
+        matches!(pi.estimated_price_micros, SourceValue::Absent),
+        "a session older than the estimate window must carry no estimated price, got {:?}",
+        pi.estimated_price_micros
+    );
+    assert!(
+        matches!(pi.estimated_tokens, SourceValue::Absent),
+        "the two estimate columns are written together or not at all, got {:?}",
+        pi.estimated_tokens
+    );
+    assert!(
+        matches!(pi.estimated_as_of, SourceValue::Absent),
+        "a session with no estimate has no catalog date to name, got {:?}",
+        pi.estimated_as_of
+    );
+
+    // Codex's fixture records no usage at all, so every figure stays Absent
+    // rather than becoming a fabricated zero.
+    let codex = listed
         .iter()
         .find(|item| item.harness == Harness::Codex)
-        .expect("Codex session listed")
-        .id
-        .clone();
+        .expect("Codex session listed");
+    for (name, figure) in [
+        ("token_total", &codex.token_total),
+        ("recorded_price_micros", &codex.recorded_price_micros),
+        ("estimated_tokens", &codex.estimated_tokens),
+        ("estimated_price_micros", &codex.estimated_price_micros),
+    ] {
+        assert!(
+            matches!(figure, SourceValue::Absent),
+            "a session with no recorded usage must leave {name} Absent, got {figure:?}"
+        );
+    }
+    assert!(
+        matches!(codex.estimated_as_of, SourceValue::Absent),
+        "a session with no recorded usage must leave estimated_as_of Absent, got {:?}",
+        codex.estimated_as_of
+    );
+    let codex_id = codex.id.clone();
     let codex_summary = index.get_session_summary(&codex_id).expect("Codex summary");
     assert!(
         matches!(codex_summary.token_total, SourceValue::Absent),

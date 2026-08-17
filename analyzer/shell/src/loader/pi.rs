@@ -48,7 +48,13 @@ fn link_subagent_outcome(parsed: &mut ParsedSession, message: &Value) {
     }
 }
 
-pub(crate) fn record(value: &Value, parsed: &mut ParsedSession, path: &str, source: Provenance) {
+pub(crate) fn record(
+    value: &Value,
+    parsed: &mut ParsedSession,
+    _state: &mut AdapterState,
+    path: &str,
+    source: Provenance,
+) {
     let record_type = recorded_string(value, &["type"]);
 
     if record_type.as_deref() == Some("session") {
@@ -127,6 +133,14 @@ pub(crate) fn record(value: &Value, parsed: &mut ParsedSession, path: &str, sour
             })
             .unwrap_or(SourceValue::Absent);
         base.token_usage = usage(message.get("usage"), "message");
+        // Pi names the model beside the usage and the price it charged for it,
+        // the same one-to-one grain Claude records, so a recorded cost and the
+        // model that earned it never have to be matched up across records. The
+        // separate `model_change` record is a marker of the switch, not the
+        // per-message fact this reads.
+        if role.as_deref() == Some("assistant") {
+            base.model = string(message, &["model"]);
+        }
         if kind == EventKind::ToolResult {
             base.tool_result =
                 SourceValue::Recorded(tool_result(message, &["toolCallId"], "content"));
@@ -234,13 +248,27 @@ mod tests {
                     "parentId": "turn-user",
                     "message": {
                         "role": "assistant",
+                        "model": "claude-sonnet-5",
                         "content": [
                             {"type": "text", "text": "reading a file"},
                             {"type": "toolCall", "id": "call-1", "name": "read", "arguments": {"path": "README.md"}},
                             {"type": "toolCall", "id": "call-2", "name": "bash", "arguments": {"command": "cargo test"}},
                             {"type": "toolCall", "id": "call-3", "name": "ailly_subagent", "arguments": {"reference": "explore", "task": "Map the parser module"}}
                         ],
-                        "usage": {"inputTokens": 10, "outputTokens": 2, "totalTokens": 12}
+                        // Pi's real key names, with a non-zero cache write. The
+                        // fixture used to carry fabricated `inputTokens`-style
+                        // names, which is why the reader's own wrong names went
+                        // unnoticed and Pi's breakdown read as empty.
+                        //
+                        // The nested `cost` is Pi's own price for exactly these
+                        // buckets, and the only source-recorded dollar figure
+                        // any of the three harnesses writes.
+                        "usage": {
+                            "input": 10, "output": 2, "cacheRead": 30, "cacheWrite": 40,
+                            "reasoning": 1, "totalTokens": 82,
+                            "cost": {"input": 0.013192, "output": 0.003552,
+                                     "cacheRead": 0.0011264, "cacheWrite": 0, "total": 0.0178704}
+                        }
                     }
                 }),
                 json!({"type":"message","id":"result-1","message":{"role":"toolResult","toolCallId":"call-1","content":"ok"}}),
@@ -261,13 +289,15 @@ mod tests {
             assistant_usage: Some(TokenUsage {
                 input: SourceValue::Recorded(10),
                 output: SourceValue::Recorded(2),
-                // Not recorded by the pi.jsonl shape; must stay Absent,
-                // never a fabricated zero.
-                cache_read: SourceValue::Absent,
-                cache_write: SourceValue::Absent,
-                total: SourceValue::Recorded(12),
+                cache_read: SourceValue::Recorded(30),
+                cache_write: SourceValue::Recorded(40),
+                total: SourceValue::Recorded(82),
+                // $0.0178704 as millionths of a dollar, rounded half away from
+                // zero. Pi is the only harness this is ever Recorded for.
+                cost_total_micros: SourceValue::Recorded(17870),
                 scope: "message".to_string(),
             }),
+            assistant_model: Some("claude-sonnet-5"),
             // Pi records the delegation and its error flag and nothing else,
             // so this fixture is the "no child was ever named" case: no id, no
             // duration, no tokens, and therefore no spawn edge.
@@ -285,6 +315,90 @@ mod tests {
     conformance_tests!(conformance);
 
     // --- Pi-specific quirks ---
+
+    /// The membership question the design flagged as unverified, settled by
+    /// measurement rather than by this fixture.
+    ///
+    /// Across every local Pi transcript, 677 of 681 usage records satisfy
+    /// `input + output + cacheRead + cacheWrite == totalTokens`, and 555 of them
+    /// carry a non-zero `cacheWrite`. Not one satisfies any subset relation. So
+    /// Pi's four figures are disjoint and sit *beside* one another, exactly as
+    /// Claude's do — unlike Codex, whose cache figures are inside its input.
+    #[test]
+    fn pis_four_usage_figures_are_disjoint_and_sum_to_its_recorded_total() {
+        let parsed = parse_records(record, Harness::Pi, &conformance().transcript);
+        let assistant = parsed
+            .events
+            .iter()
+            .find(|event| event.kind == EventKind::AssistantTurn)
+            .expect("an assistant turn");
+        let SourceValue::Recorded(usage) = &assistant.token_usage else {
+            panic!("expected recorded usage, got {:?}", assistant.token_usage);
+        };
+        let recorded = |value: &SourceValue<u64>| match value {
+            SourceValue::Recorded(number) => *number,
+            other => panic!("expected a recorded figure, got {other:?}"),
+        };
+
+        assert_eq!(
+            recorded(&usage.input)
+                + recorded(&usage.output)
+                + recorded(&usage.cache_read)
+                + recorded(&usage.cache_write),
+            recorded(&usage.total)
+        );
+    }
+
+    /// Pi records no response identity, so every one of its usage records counts
+    /// once downstream rather than collapsing into a neighbour.
+    #[test]
+    fn pi_records_no_response_identity() {
+        let parsed = parse_records(record, Harness::Pi, &conformance().transcript);
+
+        for event in &parsed.events {
+            assert_eq!(event.response_id, SourceValue::Absent);
+        }
+    }
+
+    /// Pi is the only harness whose transcript states a price, so it is the
+    /// only one whose dollar figure is a recorded fact rather than an estimate.
+    /// 681 of 681 local Pi usage records carry `usage.cost`.
+    #[test]
+    fn pi_records_its_own_price_beside_the_buckets_it_priced() {
+        let parsed = parse_records(record, Harness::Pi, &conformance().transcript);
+        let assistant = parsed
+            .events
+            .iter()
+            .find(|event| event.kind == EventKind::AssistantTurn)
+            .expect("an assistant turn");
+        let SourceValue::Recorded(usage) = &assistant.token_usage else {
+            panic!("expected recorded usage, got {:?}", assistant.token_usage);
+        };
+
+        assert_eq!(usage.cost_total_micros, SourceValue::Recorded(17870));
+        assert_eq!(
+            assistant.model,
+            SourceValue::Recorded("claude-sonnet-5".to_string())
+        );
+    }
+
+    /// Pi's four zero-cost records all have all-zero usage too, so a zero price
+    /// beside real spend never appears. A record that priced itself at nothing
+    /// still priced itself, which is not the same as recording no price.
+    #[test]
+    fn a_recorded_price_of_zero_is_a_recorded_price_not_an_absent_one() {
+        let value = json!({"type":"message","id":"m1","message":{
+            "role":"assistant","model":"claude-sonnet-5","content":"idle",
+            "usage":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,
+                     "cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}}
+        }});
+        let parsed = parse_records(record, Harness::Pi, &[value]);
+
+        let SourceValue::Recorded(usage) = &parsed.events[0].token_usage else {
+            panic!("expected recorded usage");
+        };
+        assert_eq!(usage.cost_total_micros, SourceValue::Recorded(0));
+    }
 
     #[test]
     fn parent_session_is_fork_lineage_on_the_header_not_a_subagent_spawn_edge() {

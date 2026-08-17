@@ -6,6 +6,7 @@ import { CapturedOutput } from "../CapturedOutput";
 import { ToolPayload } from "../ToolPayload";
 import { toolPayloadText } from "../payload";
 import { toolIcon } from "../toolIcons";
+import { useLandingTarget } from "../useLandingTarget";
 import { type LoadState, LoadStatus } from "../useSessionEvents";
 import {
   type DetailRow,
@@ -67,11 +68,28 @@ function ConversationBody({ state, project }: { state: LoadState; project: Sourc
   return (
     <ol className="flex flex-col gap-3 px-6 py-4">
       {state.events.map((event) => (
-        <li key={event.id} id={eventAnchorId(event.id)}>
-          <EventRow event={event} project={project} />
-        </li>
+        <TranscriptRow key={event.id} event={event} project={project} />
       ))}
     </ol>
+  );
+}
+
+/**
+ * One event in source order, and the landing spot another lens can hand a user
+ * to — the Tokens lens sends an expensive response here to be read in context.
+ */
+function TranscriptRow({ event, project }: { event: AillyEvent; project: SourceValue<string> }) {
+  const { ref, landed } = useLandingTarget<HTMLLIElement>(event.id);
+  return (
+    <li
+      ref={ref}
+      id={eventAnchorId(event.id)}
+      tabIndex={landed ? -1 : undefined}
+      aria-current={landed ? "location" : undefined}
+      className={landed ? "focus-ring rounded-md ring-2 ring-foreground" : undefined}
+    >
+      <EventRow event={event} project={project} />
+    </li>
   );
 }
 

@@ -50,7 +50,14 @@ fn index_init(app: tauri::AppHandle) -> Result<(), String> {
     let index = index::open_index(&path)
         .map_err(|err| format!("could not open index at {}: {err}", path.display()))?;
     *INDEX.lock().expect("index lock") = Some(Arc::new(index));
+    index::start_catalog_refresh(pricing_cache_path(&dir));
     Ok(())
+}
+
+/// Where a refreshed rate table is cached: beside the index whose rows it
+/// prices, under the same app-data directory the backend already owns.
+fn pricing_cache_path(app_data_dir: &std::path::Path) -> std::path::PathBuf {
+    app_data_dir.join("pricing").join("litellm-snapshot.json")
 }
 
 /// Starts a reconcile on a background thread and returns immediately.
@@ -63,6 +70,14 @@ fn index_refresh(app: tauri::AppHandle, roots: DiscoveryRoots) -> Result<IndexSt
     let index = index_handle()?;
     if index.status() == IndexStatus::Running {
         return Ok(IndexStatus::Running);
+    }
+
+    // A rescan is the moment a stale catalog matters, since it is when new
+    // sessions get their prices. Nothing waits on it: the refresh has its own
+    // thread and its own once-a-day guard, and the reconcile below starts
+    // whether it succeeds or not.
+    if let Ok(dir) = app.path().app_data_dir() {
+        index::start_catalog_refresh(pricing_cache_path(&dir));
     }
 
     std::thread::spawn(move || {

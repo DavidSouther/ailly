@@ -33,13 +33,51 @@ export function isRecorded<T>(value: SourceValue<T>): value is { Recorded: T } {
   return typeof value === "object" && value !== null && "Recorded" in value;
 }
 
+/**
+ * One session's token and dollar figures, folded by the indexer when the
+ * session was first read and stored on its row.
+ *
+ * The client does not compute these. A session's headline spend is read from
+ * here rather than folded out of an event page, so a list row can show it
+ * without opening a transcript, and so the rate table that turns tokens into
+ * dollars lives in exactly one place — the Rust index.
+ *
+ * Scoped to the session's *own* events. A spawned child is its own indexed
+ * session with its own figures; summing a subtree means summing the rows.
+ */
+export interface SessionTokenFigures {
+  /**
+   * Tokens the harness itself totalled. Claude writes no total anywhere, so
+   * this is unrecorded for every Claude session and `estimated_tokens` is the
+   * figure to fall back to.
+   */
+  token_total: SourceValue<number>;
+  /** Millionths of a dollar the harness itself charged. Only Pi writes any. */
+  recorded_price_micros: SourceValue<number>;
+  /** The deduped four-bucket sum the estimate below priced. */
+  estimated_tokens: SourceValue<number>;
+  /**
+   * Millionths of a dollar derived from the index's pinned rate table when the
+   * session was first seen, and frozen from then on. Unrecorded when the
+   * harness charged its own price, when the session was already more than a
+   * month old at first discovery, or when no model it named has a public rate.
+   */
+  estimated_price_micros: SourceValue<number>;
+  /**
+   * The ISO date of the rate table that produced the estimate above. The index
+   * refreshes its rate table while a written estimate stays frozen, so this is
+   * the only thing that says how old the rates behind a price are — a surface
+   * that showed an estimate without it would leave the reader to assume today's.
+   */
+  estimated_as_of: SourceValue<string>;
+}
+
 /** Mirrors the Rust `SessionListItem`. */
-export interface SessionListItem {
+export interface SessionListItem extends SessionTokenFigures {
   id: string;
   harness: Harness;
   project: SourceValue<string>;
   event_count: number;
-  token_total: SourceValue<number>;
   last_activity: SourceValue<string>;
 }
 
@@ -105,15 +143,32 @@ export interface ToolResult {
   is_error: SourceValue<boolean>;
 }
 
-/** Mirrors the Rust `TokenUsage` as it appears on a subagent payload. */
-export interface SubagentTokenUsage {
+/**
+ * Mirrors the Rust `TokenUsage`. Every dimension is independently
+ * recorded-or-not, and the values are the harness's own: `input` is whatever
+ * the source wrote, which for Codex already contains its cached portion. The
+ * per-harness normalization into disjoint buckets lives in `tokens/rollup.ts`.
+ */
+export interface TokenUsage {
   input: SourceValue<number>;
   output: SourceValue<number>;
   cache_read: SourceValue<number>;
   cache_write: SourceValue<number>;
   total: SourceValue<number>;
+  /**
+   * What the harness itself charged for this record, in millionths of one US
+   * dollar. Only Pi writes a dollar figure, so this is unrecorded for Claude
+   * and Codex — whose price can only be a catalog estimate, labelled as one.
+   */
+  cost_total_micros: SourceValue<number>;
   scope: string;
 }
+
+/**
+ * The name this record carried while only subagent payloads used it. Kept as an
+ * alias because it is part of the module's published surface.
+ */
+export type SubagentTokenUsage = TokenUsage;
 
 /**
  * Mirrors the Rust `Subagent`: the delegation facts one harness recorded, each
@@ -127,7 +182,7 @@ export interface Subagent {
   outcome: SourceValue<string>;
   nickname: SourceValue<string>;
   duration_ms: SourceValue<number>;
-  token_usage: SourceValue<SubagentTokenUsage>;
+  token_usage: SourceValue<TokenUsage>;
   /** The indexed child session this spawn produced, when the source named one. */
   child_session_id: SourceValue<string>;
 }
@@ -140,7 +195,7 @@ export interface FileReference {
 
 /**
  * Mirrors the Rust `Event`. Named `AillyEvent` to avoid clashing with the DOM
- * `Event`. Token usage detail is preserved verbatim and not interpreted here.
+ * `Event`.
  */
 export interface AillyEvent {
   id: string;
@@ -148,11 +203,24 @@ export interface AillyEvent {
   kind: EventKind;
   source: Provenance;
   native_id: SourceValue<string>;
+  /**
+   * The API response this event's usage belongs to, when the harness wrote one.
+   * Several Claude records repeat one response's usage, so this is the key that
+   * collapses them; Codex and Pi leave it unrecorded.
+   */
+  response_id: SourceValue<string>;
+  /**
+   * The model that produced this event, when a record of the same transcript
+   * named one. Claude and Pi write it beside the usage it priced; Codex names
+   * it on a separate record, so its usage events carry the last one named
+   * before them. Per-event because a model can change mid-session.
+   */
+  model: SourceValue<string>;
   timestamp: SourceValue<string>;
   turn: SourceValue<Turn>;
   tool_call: SourceValue<ToolCall>;
   tool_result: SourceValue<ToolResult>;
-  token_usage: SourceValue<unknown>;
+  token_usage: SourceValue<TokenUsage>;
   files: SourceValue<FileReference[]>;
   detail: SourceValue<string>;
   subagent: SourceValue<Subagent>;

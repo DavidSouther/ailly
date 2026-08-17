@@ -5,13 +5,22 @@
  */
 
 import type { ReactNode } from "react";
-import React, { createContext, useContext, useState } from "react";
+import React, { createContext, useContext, useMemo, useState } from "react";
 
 import { cn } from "./utils";
 
 interface TabsContextValue {
   value: string;
   setValue: (value: string) => void;
+  /**
+   * The event a just-switched-to pane should land on, once it mounts. The
+   * destination pane clears it when consumed, so a later plain tab click does
+   * not replay a stale target.
+   */
+  target: string | null;
+  /** Switches tabs and hands the destination pane something to land on. */
+  navigateTo: (tab: string, eventId: string) => void;
+  clearTarget: () => void;
 }
 
 const TabsContext = createContext<TabsContextValue | null>(null);
@@ -28,6 +37,15 @@ export function usePanelTabs(): TabsContextValue {
   return ctx;
 }
 
+/**
+ * The tab context when there is one. A lens rendered on its own, outside any
+ * tab strip, has no sibling to hand a user to and no tab to be handed from, so
+ * the absence is an ordinary case rather than a mistake.
+ */
+export function usePanelTabsIfPresent(): TabsContextValue | null {
+  return useContext(TabsContext);
+}
+
 interface PanelTabsProps {
   defaultValue?: string;
   className?: string;
@@ -36,8 +54,22 @@ interface PanelTabsProps {
 
 export function PanelTabs({ defaultValue, className, children }: PanelTabsProps) {
   const [value, setValue] = useState(defaultValue ?? "");
+  const [target, setTarget] = useState<string | null>(null);
+  const context = useMemo<TabsContextValue>(
+    () => ({
+      value,
+      setValue,
+      target,
+      navigateTo: (tab, eventId) => {
+        setTarget(eventId);
+        setValue(tab);
+      },
+      clearTarget: () => setTarget(null),
+    }),
+    [value, target],
+  );
   return (
-    <TabsContext.Provider value={{ value, setValue }}>
+    <TabsContext.Provider value={context}>
       <div className={className}>{children}</div>
     </TabsContext.Provider>
   );

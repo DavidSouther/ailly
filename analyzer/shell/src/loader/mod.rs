@@ -139,9 +139,42 @@ pub fn parse_pi(path: &Path) -> ParsedSession {
     parse_jsonl(path, Harness::Pi, pi::record)
 }
 
-pub(crate) type RecordParser = fn(&Value, &mut ParsedSession, &str, Provenance);
+/// The streaming state one adapter carries between the records of a single
+/// file, for facts a harness records on a different record from the one they
+/// describe. Only Codex needs it today: it names the model on a `turn_context`
+/// record and reports usage on a `token_count` record that names none.
+#[derive(Debug, Default)]
+pub(crate) struct AdapterState {
+    last_model: Option<String>,
+}
+
+impl AdapterState {
+    /// Remembers a model a record just named. Only a recorded id is kept: a
+    /// malformed one must not be carried onto a later record as though the
+    /// transcript had named it.
+    pub(crate) fn name_model(&mut self, model: SourceValue<String>) {
+        if let SourceValue::Recorded(id) = model {
+            self.last_model = Some(id);
+        }
+    }
+
+    /// The model to stamp on a usage record that named none. Absent until some
+    /// earlier record in the same file named one — never the session's most
+    /// common model, and never a hardcoded default. Measured over 804 local
+    /// Codex transcripts, 44 carry at least one `token_count` reached before
+    /// any model was named, so this case is real rather than defensive.
+    pub(crate) fn carried_model(&self) -> SourceValue<String> {
+        match &self.last_model {
+            Some(id) => SourceValue::Recorded(id.clone()),
+            None => SourceValue::Absent,
+        }
+    }
+}
+
+pub(crate) type RecordParser = fn(&Value, &mut ParsedSession, &mut AdapterState, &str, Provenance);
 fn parse_jsonl(path: &Path, harness: Harness, parser: RecordParser) -> ParsedSession {
     let mut parsed = ParsedSession::default();
+    let mut state = AdapterState::default();
     let path_str = path.to_string_lossy().to_string();
 
     let file = match fs::File::open(path) {
@@ -167,7 +200,7 @@ fn parse_jsonl(path: &Path, harness: Harness, parser: RecordParser) -> ParsedSes
                     continue;
                 }
                 match serde_json::from_str::<Value>(&text) {
-                    Ok(value) => parser(&value, &mut parsed, &path_str, source),
+                    Ok(value) => parser(&value, &mut parsed, &mut state, &path_str, source),
                     Err(err) => parsed.diagnostics.push(Diagnostic {
                         source,
                         message: format!("malformed JSON: {err}"),
@@ -260,6 +293,8 @@ pub(crate) fn event(
         kind,
         source,
         native_id,
+        response_id: SourceValue::Absent,
+        model: SourceValue::Absent,
         timestamp,
         turn: SourceValue::Absent,
         tool_call: SourceValue::Absent,
@@ -294,38 +329,70 @@ pub(crate) fn push_relationship_if_present(
     }
 }
 
+/// Reads whichever of `keys` the record actually used, so one reader serves all
+/// three harnesses' spellings of the same figure.
+fn first_number(value: &Value, keys: &[&str]) -> SourceValue<u64> {
+    number(keys.iter().find_map(|key| value.get(key)))
+}
+
+/// Every harness names the same five figures differently, and each list below is
+/// the set of spellings seen in real transcripts for one figure. A name absent
+/// from these lists reads Absent, never zero.
+///
+/// The figures are stored exactly as recorded. Codex counts its cache figures
+/// *inside* `input_tokens` while Claude and Pi count theirs beside it — see the
+/// membership tests in each adapter — and reconciling that difference is the
+/// client's job, since only the client knows the harness it is folding.
 pub(crate) fn usage(value: Option<&Value>, scope: &str) -> SourceValue<TokenUsage> {
     let Some(value) = value else {
         return SourceValue::Absent;
     };
     SourceValue::Recorded(TokenUsage {
-        input: number(
-            value
-                .get("input_tokens")
-                .or_else(|| value.get("inputTokens")),
+        input: first_number(value, &["input_tokens", "inputTokens", "input"]),
+        output: first_number(value, &["output_tokens", "outputTokens", "output"]),
+        cache_read: first_number(
+            value,
+            &[
+                "cache_read_input_tokens",
+                "cached_input_tokens",
+                "cacheReadTokens",
+                "cacheRead",
+            ],
         ),
-        output: number(
-            value
-                .get("output_tokens")
-                .or_else(|| value.get("outputTokens")),
+        cache_write: first_number(
+            value,
+            &[
+                "cache_creation_input_tokens",
+                "cache_write_input_tokens",
+                "cacheWriteTokens",
+                "cacheWrite",
+            ],
         ),
-        cache_read: number(
-            value
-                .get("cache_read_input_tokens")
-                .or_else(|| value.get("cacheReadTokens")),
-        ),
-        cache_write: number(
-            value
-                .get("cache_creation_input_tokens")
-                .or_else(|| value.get("cacheWriteTokens")),
-        ),
-        total: number(
-            value
-                .get("total_tokens")
-                .or_else(|| value.get("totalTokens")),
-        ),
+        total: first_number(value, &["total_tokens", "totalTokens"]),
+        cost_total_micros: cost_micros(value),
         scope: scope.to_string(),
     })
+}
+
+/// The dollar figure a usage record priced itself at, as millionths of a US
+/// dollar. Only Pi writes one, nested as `cost.total` beside the token buckets
+/// its four siblings price, so Claude's and Codex's records resolve Absent here
+/// without a per-harness branch.
+///
+/// The conversion rounds half away from zero, so a stored figure is at most
+/// half a millionth of a dollar from the one the transcript wrote. A `cost.total`
+/// that is present but not a non-negative finite number is Malformed: a price
+/// nobody can read is not a price of zero.
+fn cost_micros(usage: &Value) -> SourceValue<u64> {
+    let Some(total) = usage.get("cost").and_then(|cost| cost.get("total")) else {
+        return SourceValue::Absent;
+    };
+    match total.as_f64() {
+        Some(usd) if usd.is_finite() && usd >= 0.0 => {
+            SourceValue::Recorded((usd * 1_000_000.0).round() as u64)
+        }
+        _ => SourceValue::Malformed,
+    }
 }
 
 pub(crate) fn content_text(content: Option<&Value>) -> SourceValue<String> {
@@ -486,7 +553,14 @@ mod tests {
         path
     }
 
-    fn noop(_value: &Value, _parsed: &mut ParsedSession, _path: &str, _source: Provenance) {}
+    fn noop(
+        _value: &Value,
+        _parsed: &mut ParsedSession,
+        _state: &mut AdapterState,
+        _path: &str,
+        _source: Provenance,
+    ) {
+    }
 
     fn unique_temp_dir(name: &str) -> PathBuf {
         std::env::temp_dir().join(format!(
@@ -770,6 +844,83 @@ mod tests {
         // The call recorded a directory; it was just unusable. Substituting the
         // enclosing record's would report a fact the call never made.
         assert_eq!(call.cwd, SourceValue::Malformed);
+    }
+
+    /// Pi's own figures run to seven decimal places, so the stored integer has
+    /// to keep the fractions cents would erase. `0.0011264` is a real cache-read
+    /// charge from a local transcript; rounded to cents it would read as free.
+    #[test]
+    fn a_fractional_dollar_cost_survives_as_millionths_rather_than_rounding_to_cents() {
+        let cases = [
+            (0.0178704_f64, 17870_u64),
+            (0.0011264, 1126),
+            (0.013192, 13192),
+            (0.0, 0),
+        ];
+        for (usd, expected_micros) in cases {
+            let value = json!({"input": 6596, "output": 296, "cost": {"total": usd}});
+
+            let SourceValue::Recorded(usage) = usage(Some(&value), "message") else {
+                panic!("expected recorded usage");
+            };
+
+            assert_eq!(
+                usage.cost_total_micros,
+                SourceValue::Recorded(expected_micros),
+                "${usd} should store as {expected_micros} millionths"
+            );
+        }
+    }
+
+    /// A harness that priced nothing must not read as having priced zero, which
+    /// is what every Claude and Codex record does.
+    #[test]
+    fn a_usage_record_with_no_cost_object_records_no_cost_rather_than_zero() {
+        let value = json!({"input_tokens": 2, "output_tokens": 109});
+
+        let SourceValue::Recorded(usage) = usage(Some(&value), "message") else {
+            panic!("expected recorded usage");
+        };
+
+        assert_eq!(usage.cost_total_micros, SourceValue::Absent);
+    }
+
+    #[test]
+    fn a_cost_total_that_is_not_a_readable_price_is_malformed_not_zero() {
+        for unreadable in [json!("0.0178704"), json!(-0.5), json!(null)] {
+            let value = json!({"input": 10, "cost": {"total": unreadable}});
+
+            let SourceValue::Recorded(usage) = usage(Some(&value), "message") else {
+                panic!("expected recorded usage");
+            };
+
+            assert_eq!(
+                usage.cost_total_micros,
+                SourceValue::Malformed,
+                "{unreadable} is not a price, and is not a price of zero either"
+            );
+        }
+    }
+
+    /// A model named by an earlier record is carried onto later ones; a
+    /// malformed one is not, because carrying it would report a model the
+    /// transcript never named.
+    #[test]
+    fn only_a_recorded_model_is_carried_onto_a_later_record() {
+        let mut state = AdapterState::default();
+        assert_eq!(state.carried_model(), SourceValue::Absent);
+
+        state.name_model(SourceValue::Recorded("gpt-5.6-terra".to_string()));
+        assert_eq!(
+            state.carried_model(),
+            SourceValue::Recorded("gpt-5.6-terra".to_string())
+        );
+
+        state.name_model(SourceValue::Malformed);
+        assert_eq!(
+            state.carried_model(),
+            SourceValue::Recorded("gpt-5.6-terra".to_string())
+        );
     }
 
     #[test]

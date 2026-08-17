@@ -110,12 +110,47 @@ Deferred:
   back-reference: the filename match is exact and verified, so this is only
   worth adding if a rollout is ever renamed.
 
-## 8. Journey 4: Review token usage
+## 8. Journey 4: Review token usage — complete (2026-08-14-A-review-token-usage)
 
 - Show session and collection totals split by orchestrator and subagent.
 - Represent cached/reused versus fresh usage only when recorded by the source.
 - Attribute usage to each subagent spawn and plot usage over session time.
 - Link token spikes directly to the relevant calls or subagent activity.
+
+Shipped: a fourth Tokens lens (orchestrator/subagent/session totals, a
+fresh/output/cache-read/cache-write composition, a per-spawn table separating
+Child spend from Final context, and a Spend over session time chart with
+ranked Top spend moments that hand off to Conversation or Subagents at the
+causing activity); a Summary Tokens card; index-side pricing with
+`estimated_tokens`/`estimated_price_micros` frozen at first write against an
+embedded LiteLLM catalog subset, a 30-day age gate, and a runtime-refreshed
+catalog; `estimated_as_of` dating every estimate; model labels on session
+totals; and a simplified Est/Recorded total eyebrow. Two adapter corrections
+(Codex `token_count`/`last_token_usage`, Pi's real usage key names) and
+`Event.response_id` (Claude response dedup) rode in front of it.
+
+## Deferred from Journey 4 (2026-08-14-A-review-token-usage)
+
+- Summary Tokens card content-category breakdown (system prompt / user
+  messages / thinking / tool calls / responses): no harness records a
+  per-content-block token count, so only Codex/Pi's reasoning tokens are
+  honestly available as a subset of output; the rest would need a
+  characters-not-tokens axis. Decide the token-vs-character axis with the user
+  before building.
+- Refreshing a frozen estimate: an estimate is priced once at index time and
+  kept forever; there is no user-initiated recompute if the rate catalog is
+  ever refreshed in place.
+- Codex `model_context_window` and the "% of context window" reading only
+  Codex could support (Claude/Pi have no recorded denominator).
+- A signal of what a delegation *returned*, beyond its recorded outcome, so
+  cost can be judged against value.
+- Ranking spawns and responses in separate lists rather than one, if
+  comparing a cumulative subtree against a single response delta proves
+  misleading in use.
+- A dual-axis chart showing per-response and cumulative spend at once,
+  instead of the control that switches between them.
+- The `iterations[]` array, the `cache_creation` TTL split, and
+  `reasoning_output_tokens` sub-breakdowns.
 
 ## 9. Journey 3: Investigate a collection of sessions
 

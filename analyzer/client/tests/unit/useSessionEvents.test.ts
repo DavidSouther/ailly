@@ -18,6 +18,8 @@ const EVENT: AillyEvent = {
   kind: EventKind.UserTurn,
   source: { harness: "claude_code", path: "/home/a.jsonl", line: 1, ordinal: 1 },
   native_id: "Absent",
+  response_id: "Absent",
+  model: "Absent",
   timestamp: "Absent",
   turn: "Absent",
   tool_call: "Absent",

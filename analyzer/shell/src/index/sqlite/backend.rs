@@ -4,6 +4,7 @@ use crate::index::domain::{
     batch_from_parsed, event_kind_name, harness_name, parse_event_kind, parse_harness,
     relationship_kind_name, resolve_child_session_id, token_total_from_events, FileIdentity,
 };
+use crate::index::pricing::{session_figures, today_utc_days, FrozenEstimate, SessionTokenFigures};
 use crate::index::reconcile::ReconcileBackend;
 use crate::index::source_value::{decode, decode_required, encode, IndexCodecError, SourceKind};
 use crate::index::{
@@ -12,7 +13,7 @@ use crate::index::{
 };
 use crate::model::{Event, Harness, ParsedSession, Provenance, Relationship, Session, SourceValue};
 use rusqlite::{params, Connection, OptionalExtension, Transaction};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 pub struct SqliteBackend {
     conn: Connection,
@@ -30,7 +31,12 @@ impl SqliteBackend {
         let mut sql = String::from(
             "SELECT s.id, s.harness, s.project_kind, s.project_value,
                     COUNT(e.id) AS event_count,
-                    MAX(CASE WHEN e.timestamp_kind = 'recorded' THEN e.timestamp_value END) AS max_ts
+                    MAX(CASE WHEN e.timestamp_kind = 'recorded' THEN e.timestamp_value END) AS max_ts,
+                    s.token_total_kind, s.token_total_value,
+                    s.recorded_price_micros_kind, s.recorded_price_micros_value,
+                    s.estimated_tokens_kind, s.estimated_tokens_value,
+                    s.estimated_price_micros_kind, s.estimated_price_micros_value,
+                    s.estimated_as_of_kind, s.estimated_as_of_value
              FROM sessions s
              LEFT JOIN events e ON e.session_id = s.id
              WHERE 1 = 1",
@@ -93,7 +99,9 @@ impl SqliteBackend {
                 files_json,
                 detail_kind, detail_value,
                 tool_result_json,
-                subagent_json
+                subagent_json,
+                response_id_kind, response_id_value,
+                model_kind, model_value
              FROM events
              WHERE session_id = ?1
              ORDER BY prov_ordinal ASC
@@ -147,7 +155,9 @@ impl SqliteBackend {
                 files_json,
                 detail_kind, detail_value,
                 tool_result_json,
-                subagent_json
+                subagent_json,
+                response_id_kind, response_id_value,
+                model_kind, model_value
              FROM events WHERE session_id = ?1",
         )?;
         let mut events = stmt
@@ -242,12 +252,17 @@ impl ReconcileBackend for SqliteBackend {
         parsed: ParsedSession,
     ) -> Result<(), IndexError> {
         let tx = self.conn.unchecked_transaction()?;
+        // Read before deleting: the estimate a previous run froze lives on the
+        // session rows this reconcile is about to replace.
+        let frozen = frozen_estimates(&tx, &identity.path)?;
         delete_file_rows(&tx, &identity.path)?;
         write_batch(
             &tx,
             harness,
             &identity.path,
             batch_from_parsed(harness, &identity.path, parsed),
+            &frozen,
+            today_utc_days(),
         )?;
         tx.execute(
             "INSERT OR REPLACE INTO source_files (path, mtime_secs, mtime_nanos, size)
@@ -277,9 +292,31 @@ fn map_session_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<SessionListItem>
         harness,
         project: decode(project_kind, project_value.as_deref()),
         event_count: row.get::<_, i64>(4)? as usize,
-        token_total: SourceValue::Absent,
+        token_total: read_figure(row, 6)?,
+        recorded_price_micros: read_figure(row, 8)?,
+        estimated_tokens: read_figure(row, 10)?,
+        estimated_price_micros: read_figure(row, 12)?,
+        estimated_as_of: read_figure(row, 14)?,
         last_activity,
     })
+}
+
+/// One stored session figure from its adjacent kind/value column pair.
+fn read_figure<T: for<'de> serde::Deserialize<'de>>(
+    row: &rusqlite::Row<'_>,
+    kind_index: usize,
+) -> rusqlite::Result<SourceValue<T>> {
+    let kind = SourceKind::parse(&row.get::<_, String>(kind_index)?).ok_or(
+        rusqlite::Error::InvalidColumnType(
+            kind_index,
+            "session figure kind".to_string(),
+            rusqlite::types::Type::Text,
+        ),
+    )?;
+    Ok(decode(
+        kind,
+        row.get::<_, Option<String>>(kind_index + 1)?.as_deref(),
+    ))
 }
 
 fn delete_file_rows(tx: &Transaction<'_>, source_path: &str) -> Result<(), IndexError> {
@@ -306,14 +343,61 @@ fn delete_file_rows(tx: &Transaction<'_>, source_path: &str) -> Result<(), Index
     Ok(())
 }
 
+/// The estimates a previous index run wrote for the sessions in one source
+/// file, keyed by session id.
+///
+/// A re-index refreshes what the harness recorded but must leave a frozen
+/// estimate alone: the catalog is newer than the estimate, and silently
+/// restating an old session's dollars at today's rates is the fabrication the
+/// age gate exists to prevent.
+fn frozen_estimates(
+    tx: &Transaction<'_>,
+    source_path: &str,
+) -> Result<HashMap<String, FrozenEstimate>, IndexError> {
+    let mut stmt = tx.prepare(
+        "SELECT id,
+                estimated_tokens_kind, estimated_tokens_value,
+                estimated_price_micros_kind, estimated_price_micros_value,
+                estimated_as_of_kind, estimated_as_of_value
+         FROM sessions WHERE source_path = ?1",
+    )?;
+    let rows = stmt.query_map(params![source_path], |row| {
+        Ok((
+            row.get::<_, String>(0)?,
+            FrozenEstimate {
+                estimated_tokens: read_figure(row, 1)?,
+                estimated_price_micros: read_figure(row, 3)?,
+                estimated_as_of: read_figure(row, 5)?,
+            },
+        ))
+    })?;
+    let mut frozen = HashMap::new();
+    for row in rows {
+        let (id, estimate) = row?;
+        if estimate.is_written() {
+            frozen.insert(id, estimate);
+        }
+    }
+    Ok(frozen)
+}
+
 fn write_batch(
     tx: &Transaction<'_>,
     harness: Harness,
     source_path: &str,
     batch: crate::index::domain::ParsedBatch,
+    frozen: &HashMap<String, FrozenEstimate>,
+    today_days: i64,
 ) -> Result<(), IndexError> {
     for session in batch.sessions.values() {
-        insert_session(tx, source_path, session)?;
+        let own_events: Vec<Event> = batch
+            .events
+            .iter()
+            .filter(|event| event.session_id == session.id)
+            .cloned()
+            .collect();
+        let figures = session_figures(&own_events, today_days, frozen.get(&session.id));
+        insert_session(tx, source_path, session, &figures)?;
     }
 
     let event_ids: HashSet<String> = batch.events.iter().map(|event| event.id.clone()).collect();
@@ -340,18 +424,30 @@ fn insert_session(
     tx: &Transaction<'_>,
     source_path: &str,
     session: &Session,
+    figures: &SessionTokenFigures,
 ) -> Result<(), IndexError> {
     let (native_kind, native_value) = encode(&session.native_id);
     let (project_kind, project_value) = encode(&session.project);
     let (parent_kind, parent_value) = encode(&session.parent_session);
+    let (token_total_kind, token_total_value) = encode(&figures.token_total);
+    let (recorded_price_kind, recorded_price_value) = encode(&figures.recorded_price_micros);
+    let (estimated_tokens_kind, estimated_tokens_value) = encode(&figures.estimated_tokens);
+    let (estimated_price_kind, estimated_price_value) = encode(&figures.estimated_price_micros);
+    let (estimated_as_of_kind, estimated_as_of_value) = encode(&figures.estimated_as_of);
     tx.execute(
         "INSERT OR REPLACE INTO sessions (
             id, harness, source_path,
             prov_harness, prov_path, prov_line, prov_ordinal,
             native_id_kind, native_id_value,
             project_kind, project_value,
-            parent_session_kind, parent_session_value
-        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
+            parent_session_kind, parent_session_value,
+            token_total_kind, token_total_value,
+            recorded_price_micros_kind, recorded_price_micros_value,
+            estimated_tokens_kind, estimated_tokens_value,
+            estimated_price_micros_kind, estimated_price_micros_value,
+            estimated_as_of_kind, estimated_as_of_value
+        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13,
+                  ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23)",
         params![
             session.id,
             harness_name(session.harness),
@@ -366,6 +462,16 @@ fn insert_session(
             project_value,
             parent_kind.as_str(),
             parent_value,
+            token_total_kind.as_str(),
+            token_total_value,
+            recorded_price_kind.as_str(),
+            recorded_price_value,
+            estimated_tokens_kind.as_str(),
+            estimated_tokens_value,
+            estimated_price_kind.as_str(),
+            estimated_price_value,
+            estimated_as_of_kind.as_str(),
+            estimated_as_of_value,
         ],
     )?;
     Ok(())
@@ -373,6 +479,8 @@ fn insert_session(
 
 fn insert_event(tx: &Transaction<'_>, source_path: &str, event: &Event) -> Result<(), IndexError> {
     let (native_kind, native_value) = encode(&event.native_id);
+    let (response_kind, response_value) = encode(&event.response_id);
+    let (model_kind, model_value) = encode(&event.model);
     let (timestamp_kind, timestamp_value) = encode(&event.timestamp);
     let turn_json = match &event.turn {
         SourceValue::Recorded(turn) => Some(serde_json::to_string(turn)?),
@@ -402,6 +510,8 @@ fn insert_event(tx: &Transaction<'_>, source_path: &str, event: &Event) -> Resul
             id, session_id, source_path, kind,
             prov_harness, prov_path, prov_line, prov_ordinal,
             native_id_kind, native_id_value,
+            response_id_kind, response_id_value,
+            model_kind, model_value,
             timestamp_kind, timestamp_value,
             turn_json, tool_call_json,
             token_usage_kind, token_usage_json,
@@ -409,7 +519,7 @@ fn insert_event(tx: &Transaction<'_>, source_path: &str, event: &Event) -> Resul
             detail_kind, detail_value,
             tool_result_json,
             subagent_json
-        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21)",
+        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25)",
         params![
             event.id,
             event.session_id,
@@ -421,6 +531,10 @@ fn insert_event(tx: &Transaction<'_>, source_path: &str, event: &Event) -> Resul
             event.source.ordinal as i64,
             native_kind.as_str(),
             native_value,
+            response_kind.as_str(),
+            response_value,
+            model_kind.as_str(),
+            model_value,
             timestamp_kind.as_str(),
             timestamp_value,
             turn_json,
@@ -529,6 +643,10 @@ fn read_event(row: &rusqlite::Row<'_>) -> Result<Event, IndexError> {
         .ok_or(IndexCodecError::InvalidRecordedPayload)?;
     let detail_kind = SourceKind::parse(&row.get::<_, String>(17)?)
         .ok_or(IndexCodecError::InvalidRecordedPayload)?;
+    let response_kind = SourceKind::parse(&row.get::<_, String>(21)?)
+        .ok_or(IndexCodecError::InvalidRecordedPayload)?;
+    let model_kind = SourceKind::parse(&row.get::<_, String>(23)?)
+        .ok_or(IndexCodecError::InvalidRecordedPayload)?;
 
     Ok(Event {
         id: row.get(0)?,
@@ -541,6 +659,8 @@ fn read_event(row: &rusqlite::Row<'_>) -> Result<Event, IndexError> {
             ordinal: row.get::<_, i64>(7)? as usize,
         },
         native_id: decode_required(native_kind, row.get::<_, Option<String>>(9)?.as_deref())?,
+        response_id: decode_required(response_kind, row.get::<_, Option<String>>(22)?.as_deref())?,
+        model: decode_required(model_kind, row.get::<_, Option<String>>(24)?.as_deref())?,
         timestamp: decode_required(timestamp_kind, row.get::<_, Option<String>>(11)?.as_deref())?,
         turn: decode_optional_json(row.get::<_, Option<String>>(12)?)?,
         tool_call: decode_optional_json(row.get::<_, Option<String>>(13)?)?,
@@ -570,6 +690,7 @@ fn map_index_error(err: IndexError) -> rusqlite::Error {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::index::pricing::iso_date_from_days;
     use crate::model::{EventKind, Subagent, TokenUsage};
 
     fn temp_backend(label: &str) -> SqliteBackend {
@@ -602,6 +723,8 @@ mod tests {
             kind: EventKind::SubagentSpawn,
             source: provenance(source_path),
             native_id: SourceValue::Absent,
+            response_id: SourceValue::Absent,
+            model: SourceValue::Absent,
             timestamp: SourceValue::Absent,
             turn: SourceValue::Absent,
             tool_call: SourceValue::Absent,
@@ -627,6 +750,7 @@ mod tests {
                 cache_read: SourceValue::Recorded(112000),
                 cache_write: SourceValue::Recorded(2910),
                 total: SourceValue::Recorded(128450),
+                cost_total_micros: SourceValue::Absent,
                 scope: "subagent".to_string(),
             }),
             child_session_id: SourceValue::Absent,
@@ -708,6 +832,126 @@ mod tests {
         assert_eq!(subagent.outcome, SourceValue::Absent);
         assert_eq!(subagent.duration_ms, SourceValue::Recorded(467407));
         assert_eq!(stored.tool_call, SourceValue::Absent);
+    }
+
+    /// Two records of one API response, each repeating that response's usage,
+    /// which is how Claude actually writes a multi-block reply.
+    fn repeated_response_events(source_path: &str, response_id: &str) -> Vec<Event> {
+        (1..=2)
+            .map(|line| Event {
+                id: format!("evt-{line}"),
+                response_id: SourceValue::Recorded(response_id.to_string()),
+                token_usage: SourceValue::Recorded(TokenUsage {
+                    input: SourceValue::Recorded(2),
+                    output: SourceValue::Recorded(109),
+                    cache_read: SourceValue::Recorded(29447),
+                    cache_write: SourceValue::Recorded(22624),
+                    total: SourceValue::Absent,
+                    cost_total_micros: SourceValue::Absent,
+                    scope: "message".to_string(),
+                }),
+                source: Provenance {
+                    line,
+                    ordinal: line,
+                    ..provenance(source_path)
+                },
+                kind: EventKind::AssistantTurn,
+                ..spawn_event(source_path, SourceValue::Absent)
+            })
+            .collect()
+    }
+
+    /// The dedup key has to survive the index, or the fold that collapses
+    /// Claude's repeated records has nothing to group by.
+    #[test]
+    fn two_records_of_one_response_read_back_with_the_same_response_identity() {
+        let source_path = "/tmp/repeated-response.jsonl";
+        let mut backend = temp_backend("response-identity");
+        index_file(
+            &mut backend,
+            source_path,
+            ParsedSession {
+                session: Some(indexed_session("session-1", source_path)),
+                events: repeated_response_events(source_path, "msg_011Cdp1FRD2gPCQXuN1bKoF8"),
+                ..ParsedSession::default()
+            },
+        );
+
+        let page = backend
+            .get_event_page(
+                "session-1",
+                PageQuery {
+                    limit: 10,
+                    offset: 0,
+                },
+            )
+            .expect("read the event page");
+
+        assert_eq!(page.events.len(), 2);
+        for event in &page.events {
+            assert_eq!(
+                event.response_id,
+                SourceValue::Recorded("msg_011Cdp1FRD2gPCQXuN1bKoF8".to_string())
+            );
+        }
+    }
+
+    #[test]
+    fn an_event_whose_harness_wrote_no_response_identity_reads_back_absent() {
+        let event = spawn_event("/tmp/no-response-id.jsonl", SourceValue::Absent);
+
+        let stored = round_trip("response-identity-absent", event);
+
+        assert_eq!(stored.response_id, SourceValue::Absent);
+    }
+
+    /// Both facts a price rests on have to survive the index: the model that
+    /// spent the tokens, and the dollar figure the harness itself charged. The
+    /// cost rides inside the usage payload rather than in a column of its own,
+    /// so this is the only thing that proves it is not silently dropped there.
+    #[test]
+    fn a_recorded_model_and_price_round_trip_through_the_index() {
+        let event = Event {
+            model: SourceValue::Recorded("claude-sonnet-5".to_string()),
+            token_usage: SourceValue::Recorded(TokenUsage {
+                input: SourceValue::Recorded(6596),
+                output: SourceValue::Recorded(296),
+                cache_read: SourceValue::Recorded(5632),
+                cache_write: SourceValue::Recorded(0),
+                total: SourceValue::Recorded(12524),
+                cost_total_micros: SourceValue::Recorded(17870),
+                scope: "message".to_string(),
+            }),
+            kind: EventKind::AssistantTurn,
+            ..spawn_event("/tmp/priced.jsonl", SourceValue::Absent)
+        };
+
+        let stored = round_trip("model-and-price", event);
+
+        assert_eq!(
+            stored.model,
+            SourceValue::Recorded("claude-sonnet-5".to_string())
+        );
+        let SourceValue::Recorded(usage) = &stored.token_usage else {
+            panic!("expected recorded usage, got {:?}", stored.token_usage);
+        };
+        assert_eq!(usage.cost_total_micros, SourceValue::Recorded(17870));
+    }
+
+    /// A harness that named no model, and one whose value names nothing
+    /// priceable, are different facts and both have to survive as themselves.
+    #[test]
+    fn an_unrecorded_and_an_unpriceable_model_read_back_as_the_states_they_were() {
+        for expected in [SourceValue::Absent, SourceValue::Unsupported] {
+            let event = Event {
+                model: expected.clone(),
+                ..spawn_event("/tmp/model-states.jsonl", SourceValue::Absent)
+            };
+
+            let stored = round_trip("model-states", event);
+
+            assert_eq!(stored.model, expected);
+        }
     }
 
     fn indexed_session(id: &str, path: &str) -> Session {
@@ -804,6 +1048,183 @@ mod tests {
         let subagent = read_spawn(&backend);
 
         assert_eq!(subagent.child_session_id, SourceValue::Absent);
+    }
+
+    fn list_one(backend: &SqliteBackend) -> SessionListItem {
+        backend
+            .list_sessions(ListSessionsQuery {
+                limit: 10,
+                offset: 0,
+                harness: None,
+                project: None,
+            })
+            .expect("list sessions")
+            .items
+            .into_iter()
+            .next()
+            .expect("one listed session")
+    }
+
+    /// A priced Claude response, timestamped now so the age gate lets it
+    /// through however long after this test was written it runs.
+    fn priced_event_indexed_today(source_path: &str) -> Event {
+        Event {
+            model: SourceValue::Recorded("claude-sonnet-4-5-20250929".to_string()),
+            timestamp: SourceValue::Recorded(iso_today()),
+            token_usage: SourceValue::Recorded(TokenUsage {
+                input: SourceValue::Absent,
+                output: SourceValue::Recorded(1_000),
+                cache_read: SourceValue::Absent,
+                cache_write: SourceValue::Absent,
+                total: SourceValue::Absent,
+                cost_total_micros: SourceValue::Absent,
+                scope: "message".to_string(),
+            }),
+            kind: EventKind::AssistantTurn,
+            ..spawn_event(source_path, SourceValue::Absent)
+        }
+    }
+
+    /// Today as an ISO timestamp, derived from the same day count the estimate
+    /// gate reads, so this test does not expire a month after it was written.
+    fn iso_today() -> String {
+        format!(
+            "{}T12:00:00Z",
+            iso_date_from_days(crate::index::pricing::today_utc_days())
+        )
+    }
+
+    /// The whole point of the columns: a list row carries the session's tokens
+    /// and price without anything reopening its transcript.
+    #[test]
+    fn a_session_indexed_today_lists_an_estimated_price_from_the_embedded_catalog() {
+        let source_path = "/tmp/estimate-today.jsonl";
+        let mut backend = temp_backend("estimate-today");
+        index_file(
+            &mut backend,
+            source_path,
+            ParsedSession {
+                session: Some(indexed_session("session-1", source_path)),
+                events: vec![priced_event_indexed_today(source_path)],
+                ..ParsedSession::default()
+            },
+        );
+
+        let listed = list_one(&backend);
+
+        assert_eq!(listed.estimated_tokens, SourceValue::Recorded(1_000));
+        // 1,000 output tokens at Sonnet 4.5's $15/M.
+        assert_eq!(listed.estimated_price_micros, SourceValue::Recorded(15_000));
+        assert_eq!(
+            listed.token_total,
+            SourceValue::Absent,
+            "Claude writes no total of its own, and Absent must not become 0"
+        );
+        assert_eq!(listed.recorded_price_micros, SourceValue::Absent);
+        assert_eq!(
+            listed.estimated_as_of,
+            SourceValue::Recorded(crate::index::pricing_as_of()),
+            "the row says which day's rates priced it, since the catalog can refresh later"
+        );
+    }
+
+    /// Today's rate table is not evidence about what a year-old session paid,
+    /// so it gets no dollar figure rather than a plausible looking wrong one.
+    #[test]
+    fn a_session_older_than_a_month_lists_no_estimate_at_all() {
+        let source_path = "/tmp/estimate-old.jsonl";
+        let mut backend = temp_backend("estimate-old");
+        index_file(
+            &mut backend,
+            source_path,
+            ParsedSession {
+                session: Some(indexed_session("session-1", source_path)),
+                events: vec![Event {
+                    timestamp: SourceValue::Recorded("2020-01-01T10:00:00Z".to_string()),
+                    ..priced_event_indexed_today(source_path)
+                }],
+                ..ParsedSession::default()
+            },
+        );
+
+        let listed = list_one(&backend);
+
+        assert_eq!(listed.estimated_tokens, SourceValue::Absent);
+        assert_eq!(listed.estimated_price_micros, SourceValue::Absent);
+    }
+
+    /// Pi charges its own price, and that receipt is what the row carries. No
+    /// estimate is written beside it, so nothing can later present arithmetic
+    /// as the figure the harness billed.
+    #[test]
+    fn a_harness_recorded_price_lists_as_recorded_with_no_estimate_beside_it() {
+        let source_path = "/tmp/recorded-price.jsonl";
+        let mut backend = temp_backend("recorded-price");
+        let event = Event {
+            token_usage: SourceValue::Recorded(TokenUsage {
+                input: SourceValue::Recorded(10),
+                output: SourceValue::Recorded(2),
+                cache_read: SourceValue::Absent,
+                cache_write: SourceValue::Absent,
+                total: SourceValue::Recorded(12),
+                cost_total_micros: SourceValue::Recorded(17_870),
+                scope: "message".to_string(),
+            }),
+            ..priced_event_indexed_today(source_path)
+        };
+        index_file(
+            &mut backend,
+            source_path,
+            ParsedSession {
+                session: Some(indexed_session("session-1", source_path)),
+                events: vec![event],
+                ..ParsedSession::default()
+            },
+        );
+
+        let listed = list_one(&backend);
+
+        assert_eq!(listed.recorded_price_micros, SourceValue::Recorded(17_870));
+        assert_eq!(listed.token_total, SourceValue::Recorded(12));
+        assert_eq!(listed.estimated_price_micros, SourceValue::Absent);
+    }
+
+    /// Re-reading a changed transcript refreshes what the harness recorded, but
+    /// the estimate stays the one the first index wrote: restating it against a
+    /// newer catalog would silently reprice a session at rates it never ran at.
+    #[test]
+    fn reindexing_a_source_file_keeps_the_estimate_the_first_index_froze() {
+        let source_path = "/tmp/frozen-estimate.jsonl";
+        let mut backend = temp_backend("frozen-estimate");
+        let parsed = || ParsedSession {
+            session: Some(indexed_session("session-1", source_path)),
+            events: vec![priced_event_indexed_today(source_path)],
+            ..ParsedSession::default()
+        };
+        index_file(&mut backend, source_path, parsed());
+
+        // Stand in for a catalog that has since moved: the first estimate is
+        // whatever was on the row when the second reconcile started.
+        backend
+            .conn
+            .execute(
+                "UPDATE sessions SET estimated_price_micros_value = '4242',
+                                     estimated_tokens_value = '999',
+                                     estimated_as_of_value = '\"2026-01-02\"'",
+                [],
+            )
+            .expect("age the stored estimate");
+        index_file(&mut backend, source_path, parsed());
+
+        let listed = list_one(&backend);
+        assert_eq!(listed.estimated_price_micros, SourceValue::Recorded(4_242));
+        assert_eq!(listed.estimated_tokens, SourceValue::Recorded(999));
+        assert_eq!(
+            listed.estimated_as_of,
+            SourceValue::Recorded("2026-01-02".to_string()),
+            "the date freezes with the price it dates, or the row would claim \
+             an old figure was checked against today's rates"
+        );
     }
 
     /// The Summary tile folds the same events the Subagents tab lists, so both

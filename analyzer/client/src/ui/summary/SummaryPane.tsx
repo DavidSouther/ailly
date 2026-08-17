@@ -10,6 +10,7 @@ import {
 } from "../../tauri";
 import { Badge } from "../badges/badge";
 import { loadDescendantEvents, namedChildSessionIds } from "../subagents/descendants";
+import { TokensSummaryCard } from "../tokens/TokensSummaryCard";
 import { type LoadState, LoadStatus } from "../useSessionEvents";
 import { type SessionSummaryStats, summarizeSession } from "./rollup";
 import {
@@ -75,16 +76,19 @@ function SummaryContent({
 
   return (
     <div className="flex flex-col gap-4 px-6 py-4">
-      <div className="grid grid-cols-2 divide-x divide-y divide-border rounded-md border sm:grid-cols-4">
-        <StatTile label="Tool calls" value={String(stats.toolCallCount)} />
-        <StatTile label="Files touched" value={String(stats.filesTouchedCount)} />
-        <StatTile label="Duration" value={recordedLabel(stats.duration, (value) => value)} />
-        <SubagentSpawnsTile
-          value={subagentSpawnsLabel(stats.subagentSpawnCount)}
-          showToggle={canIncludeSubagentTools}
-          includeSubagentTools={includeSubagentTools}
-          onIncludeSubagentToolsChange={setIncludeSubagentTools}
-        />
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-stretch">
+        <div className="grid grid-cols-2 divide-x divide-y divide-border rounded-md border sm:flex-1">
+          <StatTile label="Tool calls" value={String(stats.toolCallCount)} />
+          <StatTile label="Files touched" value={String(stats.filesTouchedCount)} />
+          <StatTile label="Duration" value={recordedLabel(stats.duration, (value) => value)} />
+          <SubagentSpawnsTile
+            value={subagentSpawnsLabel(stats.subagentSpawnCount)}
+            showToggle={canIncludeSubagentTools}
+            includeSubagentTools={includeSubagentTools}
+            onIncludeSubagentToolsChange={setIncludeSubagentTools}
+          />
+        </div>
+        <TokensSummaryCard events={events} className="sm:w-64 sm:shrink-0" />
       </div>
 
       <fieldset

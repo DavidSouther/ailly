@@ -13,6 +13,8 @@ function baseEvent(id: string, ordinal: number, kind: EventKind): AillyEvent {
     kind,
     source: { harness: "claude_code", path: "/home/a.jsonl", line: ordinal, ordinal },
     native_id: "Absent",
+    response_id: "Absent",
+    model: "Absent",
     timestamp: "Absent",
     turn: "Absent",
     tool_call: "Absent",

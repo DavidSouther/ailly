@@ -138,6 +138,16 @@ pub struct TokenUsage {
     pub cache_read: SourceValue<u64>,
     pub cache_write: SourceValue<u64>,
     pub total: SourceValue<u64>,
+    /// What the harness itself charged for this record, in millionths of one US
+    /// dollar. Only Pi writes a dollar figure at all, so Claude and Codex leave
+    /// this Absent rather than a fabricated zero; an estimate from a pricing
+    /// catalog is the client's derivation, never an adapter's.
+    ///
+    /// Integer millionths rather than `f64` for two reasons: `TokenUsage` keeps
+    /// `Eq`, so two reads of one transcript compare equal; and Pi's own figures
+    /// run to seven decimal places (`0.0011264`), which cents would round away
+    /// entirely. Currency is USD, which no harness labels.
+    pub cost_total_micros: SourceValue<u64>,
     /// The record that reported these measurements; never an inferred aggregate.
     pub scope: String,
 }
@@ -166,6 +176,21 @@ pub struct Event {
     pub kind: EventKind,
     pub source: Provenance,
     pub native_id: SourceValue<String>,
+    /// The API response this event's usage record belongs to, when the harness
+    /// wrote one. Claude repeats one response's `usage` object across several
+    /// records, so this is the key that collapses them back to a single
+    /// response. Codex and Pi record no response identity, leaving this Absent,
+    /// which downstream reads as "count every record once".
+    pub response_id: SourceValue<String>,
+    /// The model that produced this event, when a record of the same transcript
+    /// named one. Claude and Pi write it beside the usage it priced; Codex
+    /// names it on a `turn_context` record instead, so its usage events carry
+    /// the last model named before them in file order.
+    ///
+    /// Per-event rather than per-session because a model really does change
+    /// mid-session — measured on all three harnesses — and a session-level
+    /// field would have to discard one of the values a transcript recorded.
+    pub model: SourceValue<String>,
     pub timestamp: SourceValue<String>,
     pub turn: SourceValue<Turn>,
     pub tool_call: SourceValue<ToolCall>,

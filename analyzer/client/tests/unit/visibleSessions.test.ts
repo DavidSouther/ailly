@@ -14,6 +14,10 @@ const SESSIONS: SessionListItem[] = [
     project: { Recorded: "ailly-analyzer" },
     event_count: 42,
     token_total: "Absent",
+    recorded_price_micros: "Absent",
+    estimated_tokens: "Absent",
+    estimated_price_micros: "Absent",
+    estimated_as_of: "Absent",
     last_activity: { Recorded: "2026-08-12T15:00:00Z" },
   },
   {
@@ -22,6 +26,10 @@ const SESSIONS: SessionListItem[] = [
     project: { Recorded: "billing-service" },
     event_count: 7,
     token_total: "Absent",
+    recorded_price_micros: "Absent",
+    estimated_tokens: "Absent",
+    estimated_price_micros: "Absent",
+    estimated_as_of: "Absent",
     last_activity: "Absent",
   },
   {
@@ -30,6 +38,10 @@ const SESSIONS: SessionListItem[] = [
     project: "Absent",
     event_count: 1,
     token_total: "Absent",
+    recorded_price_micros: "Absent",
+    estimated_tokens: "Absent",
+    estimated_price_micros: "Absent",
+    estimated_as_of: "Absent",
     last_activity: { Recorded: "2026-08-11T09:30:00Z" },
   },
 ];

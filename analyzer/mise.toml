@@ -29,3 +29,9 @@ run = "mise -C client run storybook"
 [tasks.build]
 description = "Build the frontend and Tauri application"
 run = "mise -C client run tauri-build"
+
+# No install step: the script has no dependencies, and Node runs its
+# TypeScript directly.
+[tasks.pull-litellm-snapshot]
+description = "Fetch and trim LiteLLM pricing into the embedded snapshot"
+run = "npm --prefix scripts run pull-litellm-snapshot -- --subset embedded"

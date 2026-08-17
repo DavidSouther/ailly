@@ -3,13 +3,14 @@ import { PanelTabs, PanelTabsContent, PanelTabsList, PanelTabsTrigger } from "./
 import { Conversation } from "./conversation/Conversation";
 import { SubagentsPane } from "./subagents/SubagentsPane";
 import { SummaryPane } from "./summary/SummaryPane";
+import { TokensPane } from "./tokens/TokensPane";
 import type { LoadState } from "./useSessionEvents";
 
 const PANE_CLASS = "flex min-h-0 min-w-0 flex-1 flex-col";
 
 /**
- * The three lenses over one session's events — Summary, Conversation, and
- * Subagents. Used for the top-level selection and for a nested child opened
+ * The four lenses over one session's events — Summary, Conversation, Subagents,
+ * and Tokens. Used for the top-level selection and for a nested child opened
  * from a spawn, so both surfaces share one interface rather than a summary
  * lookalike.
  */
@@ -20,7 +21,7 @@ export function SessionLenses({
 }: {
   state: LoadState;
   project: SourceValue<string>;
-  defaultTab?: "summary" | "conversation" | "subagents";
+  defaultTab?: "summary" | "conversation" | "subagents" | "tokens";
 }) {
   return (
     <PanelTabs defaultValue={defaultTab} className={PANE_CLASS}>
@@ -28,6 +29,7 @@ export function SessionLenses({
         <PanelTabsTrigger value="summary" label="Summary" />
         <PanelTabsTrigger value="conversation" label="Conversation" />
         <PanelTabsTrigger value="subagents" label="Subagents" />
+        <PanelTabsTrigger value="tokens" label="Tokens" />
       </PanelTabsList>
       <PanelTabsContent value="summary" className={PANE_CLASS}>
         <SummaryPane state={state} project={project} />
@@ -37,6 +39,9 @@ export function SessionLenses({
       </PanelTabsContent>
       <PanelTabsContent value="subagents" className={PANE_CLASS}>
         <SubagentsPane state={state} project={project} />
+      </PanelTabsContent>
+      <PanelTabsContent value="tokens" className={PANE_CLASS}>
+        <TokensPane state={state} />
       </PanelTabsContent>
     </PanelTabs>
   );

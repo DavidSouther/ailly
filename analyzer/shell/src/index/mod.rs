@@ -5,12 +5,14 @@ mod aggregate;
 pub(crate) mod conformance;
 mod domain;
 mod memory;
+mod pricing;
 mod reconcile;
 mod source_value;
 mod sqlite;
 
 pub use aggregate::SessionIndex;
 pub use memory::InMemorySessionIndex;
+pub use pricing::{pricing_as_of, start_catalog_refresh, ESTIMATE_MAX_AGE_DAYS};
 pub use reconcile::{IndexRefresh, ReconcileProgress};
 pub use sqlite::SqliteSessionIndex;
 
@@ -57,7 +59,26 @@ pub struct SessionListItem {
     pub harness: Harness,
     pub project: SourceValue<String>,
     pub event_count: usize,
+    /// Tokens the harness itself totalled, summed over the session's records.
+    /// Claude writes no total anywhere, so this is Absent for every Claude
+    /// session and `estimated_tokens` is the figure to fall back to.
     pub token_total: SourceValue<u64>,
+    /// Millionths of a dollar the harness itself charged, summed over the
+    /// session's deduped responses. Only Pi writes any.
+    pub recorded_price_micros: SourceValue<u64>,
+    /// The deduped four-bucket token sum the estimate below priced, written
+    /// only when this session was estimated at all.
+    pub estimated_tokens: SourceValue<u64>,
+    /// Millionths of a dollar derived from the pinned catalog at the time this
+    /// session was first indexed, and frozen from then on. Absent whenever the
+    /// harness charged its own price, the session was already older than
+    /// [`ESTIMATE_MAX_AGE_DAYS`] when first seen, or no model it named has a
+    /// published rate.
+    pub estimated_price_micros: SourceValue<u64>,
+    /// The date of the rate table that produced the estimate above. The catalog
+    /// refreshes; the estimate does not, so this is how a surface can say how
+    /// old the rates behind a price are.
+    pub estimated_as_of: SourceValue<String>,
     /// Latest recorded event timestamp for the session, else `Absent`.
     pub last_activity: SourceValue<String>,
 }

@@ -9,7 +9,9 @@ import {
   isRecorded,
 } from "../../tauri";
 import { SessionLenses } from "../SessionLenses";
+import { eventAnchorId } from "../conversation/format";
 import { recordedLabel } from "../summary/stats";
+import { useLandingTarget } from "../useLandingTarget";
 import { type LoadState, LoadStatus } from "../useSessionEvents";
 import { type SubagentSpawnRow, promptPreview, subagentSpawnRows } from "./rollup";
 
@@ -75,14 +77,33 @@ function SubagentsContent({
 
 function SubagentRow({ row, project }: { row: SubagentSpawnRow; project: SourceValue<string> }) {
   const [open, setOpen] = useState(false);
+  const { ref, landed } = useLandingTarget<HTMLLIElement>(row.eventId);
   const childSessionId = isRecorded(row.childSessionId) ? row.childSessionId.Recorded : null;
+  // A user handed here from another lens came for the child's own activity, not
+  // for the parent's one-line mention of it, so the row opens itself — and can
+  // still be closed again, which is why this sets the same state a click does.
+  useEffect(() => {
+    if (landed) {
+      setOpen(true);
+    }
+  }, [landed]);
   const child = useChildSessionEvents(open ? childSessionId : null);
   const fullPrompt = recordedLabel(row.prompt, (prompt) => prompt);
   const visiblePrompt =
     open || !isRecorded(row.prompt) ? fullPrompt : promptPreview(row.prompt.Recorded);
 
   return (
-    <li className="flex flex-col rounded-md border">
+    <li
+      ref={ref}
+      id={eventAnchorId(row.eventId)}
+      tabIndex={landed ? -1 : undefined}
+      aria-current={landed ? "location" : undefined}
+      className={
+        landed
+          ? "focus-ring flex flex-col rounded-md border ring-2 ring-foreground"
+          : "flex flex-col rounded-md border"
+      }
+    >
       <button
         type="button"
         aria-expanded={open}
@@ -111,7 +132,10 @@ function SubagentRow({ row, project }: { row: SubagentSpawnRow; project: SourceV
         <Field label="Agent type" value={recordedLabel(row.agentType, (type) => type)} />
         <Field label="Duration" value={recordedLabel(row.durationLabel, (label) => label)} />
         <Field label="Outcome" value={recordedLabel(row.outcome, (outcome) => outcome)} />
-        <Field label="Tokens" value={recordedLabel(row.tokensLabel, (label) => label)} />
+        <Field
+          label="Final context"
+          value={recordedLabel(row.finalContextLabel, (label) => label)}
+        />
       </div>
 
       {open ? (
@@ -142,6 +166,29 @@ function ChildSession({ state, project }: { state: LoadState; project: SourceVal
   }
   if (state.status !== LoadStatus.Ready) {
     return <p className="px-3 py-2 text-foreground-muted">Loading the child transcript…</p>;
+  }
+  return <NestedSession state={state} project={project} />;
+}
+
+/**
+ * The child session, mounted a frame after the row that holds it.
+ *
+ * A spawn row can contain an entire session, whose own spawn rows can contain
+ * another, so expanding one row can commit an arbitrarily deep tree. Painting
+ * the row first keeps the expansion responsive, and keeps a programmatic
+ * hand-off from another lens from landing a user on a row that is still
+ * building underneath them.
+ */
+function NestedSession({ state, project }: { state: LoadState; project: SourceValue<string> }) {
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    const frame = requestAnimationFrame(() => setMounted(true));
+    return () => cancelAnimationFrame(frame);
+  }, []);
+
+  if (!mounted) {
+    return <p className="px-3 py-2 text-foreground-muted">Opening the child session…</p>;
   }
   return (
     <section aria-label="Subagent session" className="min-h-[24rem]">

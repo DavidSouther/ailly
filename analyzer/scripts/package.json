@@ -1,0 +1,13 @@
+{
+  "name": "ailly-analyzer-scripts",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Maintenance scripts run by hand, outside the app build",
+  "engines": {
+    "node": ">=22.18"
+  },
+  "scripts": {
+    "pull-litellm-snapshot": "node pull-litellm-snapshot.ts"
+  }
+}

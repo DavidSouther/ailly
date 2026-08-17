@@ -2,6 +2,11 @@
 
 use super::*;
 
+/// The placeholder Claude writes as `message.model` around compaction. Every
+/// record carrying it has all-zero usage and the content "No response
+/// requested.", so it names no model that could ever be priced.
+const SYNTHETIC_MODEL: &str = "<synthetic>";
+
 /// Claude delegates through an ordinary `tool_use` block; only its name says so.
 fn is_agent_call(block: &Value) -> bool {
     matches!(
@@ -59,6 +64,7 @@ fn subagent_usage(result: &Value) -> SourceValue<TokenUsage> {
                 cache_read: SourceValue::Absent,
                 cache_write: SourceValue::Absent,
                 total: SourceValue::Recorded(total),
+                cost_total_micros: SourceValue::Absent,
                 scope: "subagent".to_string(),
             }),
             _ => SourceValue::Absent,
@@ -111,7 +117,13 @@ fn link_agent_result(
     );
 }
 
-pub(crate) fn record(value: &Value, parsed: &mut ParsedSession, path: &str, source: Provenance) {
+pub(crate) fn record(
+    value: &Value,
+    parsed: &mut ParsedSession,
+    _state: &mut AdapterState,
+    path: &str,
+    source: Provenance,
+) {
     let record_type = recorded_string(value, &["type"]);
     let native = string(value, &["uuid"]);
     let session = session_id(
@@ -157,6 +169,26 @@ pub(crate) fn record(value: &Value, parsed: &mut ParsedSession, path: &str, sour
         })
         .unwrap_or(SourceValue::Absent);
     base.token_usage = usage(message.get("usage"), "message");
+    // Claude splits one API response across several records that each repeat that
+    // response's usage verbatim, so the response's own identity is what lets a
+    // spend fold count those tokens once. `message.id` names the response;
+    // `requestId` names the same grouping and is all a record carrying no message
+    // id has. Only an assistant record is a response.
+    if role.as_deref() == Some("assistant") {
+        base.response_id = match string(message, &["id"]) {
+            SourceValue::Recorded(id) => SourceValue::Recorded(id),
+            _ => string(value, &["requestId"]),
+        };
+        // Claude names the model in the same object as the usage it priced, so
+        // attributing a price needs no fallback and no session default. The
+        // `<synthetic>` placeholder is the one value that is not a model:
+        // something was recorded, it just names nothing to price, which is
+        // Unsupported rather than Absent.
+        base.model = match string(message, &["model"]) {
+            SourceValue::Recorded(model) if model == SYNTHETIC_MODEL => SourceValue::Unsupported,
+            named => named,
+        };
+    }
     let base_id = base.id.clone();
 
     if matches!(record_type.as_deref(), Some("user") | Some("assistant")) {
@@ -284,6 +316,7 @@ mod tests {
                     "cwd": "/tmp/proj",
                     "message": {
                         "role": "assistant",
+                        "model": "claude-sonnet-5",
                         "content": [
                             {"type": "text", "text": "reading a file"},
                             {"type": "tool_use", "id": "call-1", "name": "Read", "input": {"file_path": "README.md"}},
@@ -346,8 +379,13 @@ mod tests {
                 cache_read: SourceValue::Absent,
                 cache_write: SourceValue::Absent,
                 total: SourceValue::Absent,
+                // Claude writes no dollar figure anywhere in a transcript, so
+                // this must stay Absent: a price for a Claude session is only
+                // ever the client's catalog estimate, labelled as one.
+                cost_total_micros: SourceValue::Absent,
                 scope: "message".to_string(),
             }),
+            assistant_model: Some("claude-sonnet-5"),
             // Claude is the one harness that records every dimension, and it
             // names the child, so this fixture is the positive edge case.
             subagent_spawn: Some(ConformanceSpawn {
@@ -364,6 +402,141 @@ mod tests {
     conformance_tests!(conformance);
 
     // --- Claude-specific quirks ---
+
+    /// Claude writes one API response as several records, each repeating that
+    /// response's identical `usage`. Without the response's own identity a spend
+    /// fold counts the same tokens once per record; the sampled session
+    /// overcounted by 56% that way.
+    #[test]
+    fn every_record_of_one_response_carries_the_same_response_identity() {
+        let usage = json!({"input_tokens": 2, "output_tokens": 109});
+        let values = [
+            json!({
+                "type": "assistant", "uuid": "a", "sessionId": "s",
+                "requestId": "req_011Cdp1FQDkdmiW2ukhxHYDi",
+                "message": {"role": "assistant", "id": "msg_011Cdp1FRD2gPCQXuN1bKoF8", "content": [{"type": "text", "text": "first block"}], "usage": usage}
+            }),
+            json!({
+                "type": "assistant", "uuid": "b", "sessionId": "s",
+                "requestId": "req_011Cdp1FQDkdmiW2ukhxHYDi",
+                "message": {"role": "assistant", "id": "msg_011Cdp1FRD2gPCQXuN1bKoF8", "content": [{"type": "text", "text": "second block"}], "usage": usage}
+            }),
+        ];
+        let parsed = parse_records(record, Harness::ClaudeCode, &values);
+
+        let identities: Vec<&SourceValue<String>> = parsed
+            .events
+            .iter()
+            .filter(|event| event.kind == EventKind::AssistantTurn)
+            .map(|event| &event.response_id)
+            .collect();
+        assert_eq!(identities.len(), 2);
+        assert_eq!(
+            *identities[0],
+            SourceValue::Recorded("msg_011Cdp1FRD2gPCQXuN1bKoF8".to_string())
+        );
+        assert_eq!(identities[0], identities[1]);
+    }
+
+    /// `requestId` names the same grouping, and is the only identity on a record
+    /// whose message carries no id of its own.
+    #[test]
+    fn a_record_with_no_message_id_falls_back_to_its_request_id() {
+        let value = json!({
+            "type": "assistant", "uuid": "a", "sessionId": "s",
+            "requestId": "req_011Cdp1FQDkdmiW2ukhxHYDi",
+            "message": {"role": "assistant", "content": "talking", "usage": {"input_tokens": 2}}
+        });
+        let parsed = parse_records(record, Harness::ClaudeCode, &[value]);
+
+        assert_eq!(
+            parsed.events[0].response_id,
+            SourceValue::Recorded("req_011Cdp1FQDkdmiW2ukhxHYDi".to_string())
+        );
+    }
+
+    /// A user turn is not an API response, so it claims no response identity.
+    #[test]
+    fn a_user_record_records_no_response_identity() {
+        let value = json!({
+            "type": "user", "uuid": "a", "sessionId": "s",
+            "message": {"role": "user", "content": "hello"}
+        });
+        let parsed = parse_records(record, Harness::ClaudeCode, &[value]);
+
+        assert_eq!(parsed.events[0].response_id, SourceValue::Absent);
+    }
+
+    /// Claude's four figures are disjoint, which is why the client reads its
+    /// input and cache read straight rather than subtracting one from the other.
+    #[test]
+    fn claudes_four_usage_figures_are_disjoint_and_sum_to_its_recorded_total() {
+        let value = json!({
+            "type": "assistant", "uuid": "a", "sessionId": "s",
+            "message": {"role": "assistant", "content": "talking", "usage": {
+                "input_tokens": 2, "cache_creation_input_tokens": 4041,
+                "cache_read_input_tokens": 34965, "output_tokens": 848
+            }}
+        });
+        let parsed = parse_records(record, Harness::ClaudeCode, &[value]);
+
+        let SourceValue::Recorded(usage) = &parsed.events[0].token_usage else {
+            panic!("expected recorded usage");
+        };
+        assert_eq!(usage.input, SourceValue::Recorded(2));
+        assert_eq!(usage.cache_write, SourceValue::Recorded(4041));
+        assert_eq!(usage.cache_read, SourceValue::Recorded(34965));
+        assert_eq!(usage.output, SourceValue::Recorded(848));
+        // Claude writes no rolled-up total on a message; the lens derives one
+        // from the parts rather than reporting nothing.
+        assert_eq!(usage.total, SourceValue::Absent);
+    }
+
+    /// A model change mid-session is rare but real — one of 308 local sessions
+    /// swaps models — and because the model rides the same record as the usage,
+    /// each response keeps the model that actually produced it.
+    #[test]
+    fn each_response_keeps_the_model_that_produced_it_across_a_mid_session_change() {
+        let values = ["claude-opus-5", "claude-sonnet-5"].map(|model| {
+            json!({
+                "type": "assistant", "uuid": model, "sessionId": "s",
+                "message": {"role": "assistant", "model": model, "content": "talking", "usage": {"input_tokens": 2}}
+            })
+        });
+        let parsed = parse_records(record, Harness::ClaudeCode, &values);
+
+        let models: Vec<&SourceValue<String>> = parsed
+            .events
+            .iter()
+            .filter(|event| event.kind == EventKind::AssistantTurn)
+            .map(|event| &event.model)
+            .collect();
+        assert_eq!(
+            models,
+            vec![
+                &SourceValue::Recorded("claude-opus-5".to_string()),
+                &SourceValue::Recorded("claude-sonnet-5".to_string()),
+            ]
+        );
+    }
+
+    /// The compaction placeholder is not a model. Recording it as one would
+    /// send a pricing lookup after a catalog entry that cannot exist, and
+    /// leaving it Absent would claim the record named nothing at all.
+    #[test]
+    fn the_synthetic_placeholder_names_no_model_to_price() {
+        let value = json!({
+            "type": "assistant", "uuid": "a", "sessionId": "s",
+            "message": {
+                "role": "assistant", "model": "<synthetic>",
+                "content": "No response requested.",
+                "usage": {"input_tokens": 0, "output_tokens": 0}
+            }
+        });
+        let parsed = parse_records(record, Harness::ClaudeCode, &[value]);
+
+        assert_eq!(parsed.events[0].model, SourceValue::Unsupported);
+    }
 
     #[test]
     fn assistant_record_with_no_tool_use_blocks_produces_no_tool_call_events() {

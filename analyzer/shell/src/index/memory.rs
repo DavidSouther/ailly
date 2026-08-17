@@ -4,6 +4,7 @@ use crate::index::aggregate::SessionIndex;
 use crate::index::domain::{
     batch_from_parsed, token_total_from_events, FileIdentity, ParsedBatch, SearchRow,
 };
+use crate::index::pricing::{session_figures, today_utc_days, FrozenEstimate, SessionTokenFigures};
 use crate::index::reconcile::{run_reconcile, IndexRefresh, ReconcileBackend, ReconcileProgress};
 use crate::index::{
     EventPage, IndexError, IndexStatus, ListSessionsQuery, PageQuery, Paged, SearchHit,
@@ -27,6 +28,10 @@ struct Store {
 struct StoredSession {
     session: Session,
     source_path: String,
+    /// The same figures the SQLite backend keeps in columns, folded once when
+    /// the session is indexed. Held here so both backends answer
+    /// `list_sessions` from a stored figure rather than from a fresh walk.
+    figures: SessionTokenFigures,
 }
 
 pub struct InMemorySessionIndex {
@@ -85,12 +90,31 @@ impl ReconcileBackend for Store {
         identity: &FileIdentity,
         parsed: ParsedSession,
     ) -> Result<(), IndexError> {
+        // Captured before the removal that drops these rows, so a re-index
+        // keeps the estimate the first index froze.
+        let frozen: HashMap<String, FrozenEstimate> = self
+            .sessions
+            .iter()
+            .filter(|(_, stored)| stored.source_path == identity.path)
+            .map(|(id, stored)| {
+                (
+                    id.clone(),
+                    FrozenEstimate {
+                        estimated_tokens: stored.figures.estimated_tokens.clone(),
+                        estimated_price_micros: stored.figures.estimated_price_micros.clone(),
+                        estimated_as_of: stored.figures.estimated_as_of.clone(),
+                    },
+                )
+            })
+            .filter(|(_, estimate)| estimate.is_written())
+            .collect();
         self.remove_file(&identity.path)?;
         apply_batch(
             self,
             harness,
             &identity.path,
             batch_from_parsed(harness, &identity.path, parsed),
+            &frozen,
         )?;
         self.source_files
             .insert(identity.path.clone(), identity.clone());
@@ -103,13 +127,23 @@ fn apply_batch(
     _harness: Harness,
     source_path: &str,
     batch: ParsedBatch,
+    frozen: &HashMap<String, FrozenEstimate>,
 ) -> Result<(), IndexError> {
+    let today_days = today_utc_days();
     for (id, session) in batch.sessions {
+        let own_events: Vec<Event> = batch
+            .events
+            .iter()
+            .filter(|event| event.session_id == id)
+            .cloned()
+            .collect();
+        let figures = session_figures(&own_events, today_days, frozen.get(&id));
         store.sessions.insert(
             id,
             StoredSession {
                 session,
                 source_path: source_path.to_string(),
+                figures,
             },
         );
     }
@@ -185,7 +219,11 @@ impl SessionIndex for InMemorySessionIndex {
                     harness: stored.session.harness,
                     project: stored.session.project.clone(),
                     event_count,
-                    token_total: SourceValue::Absent,
+                    token_total: stored.figures.token_total.clone(),
+                    recorded_price_micros: stored.figures.recorded_price_micros.clone(),
+                    estimated_tokens: stored.figures.estimated_tokens.clone(),
+                    estimated_price_micros: stored.figures.estimated_price_micros.clone(),
+                    estimated_as_of: stored.figures.estimated_as_of.clone(),
                     last_activity,
                 }
             })

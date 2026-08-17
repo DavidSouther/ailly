@@ -56,6 +56,7 @@ interface SubagentTokenUsage {
   cache_read: SourceValue<number>;
   cache_write: SourceValue<number>;
   total: SourceValue<number>;
+  cost_total_micros: SourceValue<number>;
   scope: string;
 }
 
@@ -79,6 +80,10 @@ const SESSION: SessionListItem = {
   project: { Recorded: "ailly-analyzer" },
   event_count: 6,
   token_total: "Absent",
+  recorded_price_micros: "Absent",
+  estimated_tokens: "Absent",
+  estimated_price_micros: "Absent",
+  estimated_as_of: "Absent",
   last_activity: { Recorded: "2026-08-12T15:00:00Z" },
 };
 
@@ -97,6 +102,8 @@ function baseEvent(id: string, ordinal: number, kind: EventKind, sessionId: stri
     kind,
     source: { harness: "claude_code", path: "/home/parent.jsonl", line: ordinal, ordinal },
     native_id: "Absent",
+    response_id: "Absent",
+    model: "Absent",
     timestamp: "Absent",
     turn: "Absent",
     tool_call: "Absent",
@@ -155,6 +162,7 @@ const LINKED_SPAWN: Subagent = {
       cache_read: { Recorded: 112000 },
       cache_write: { Recorded: 2910 },
       total: { Recorded: 128450 },
+      cost_total_micros: "Absent",
       scope: "subagent",
     },
   },
@@ -247,13 +255,15 @@ describe("Journey 5: Review a session's subagents", () => {
     expect(rows).toHaveLength(2);
 
     // A fully recorded delegation: what it was, what it was asked, how long it
-    // took, how it ended, and what it cost.
+    // took, how it ended, and how large its final turn's context was. That last
+    // figure is not what the delegation cost — the Tokens lens folds the child's
+    // own transcript for that — so it is labelled for what it is.
     const linked = rows[0] as HTMLElement;
     expect(linked).toHaveTextContent(EXPLORE_PROMPT);
     expect(within(field(linked, "Agent type")).getByText("explore")).toBeInTheDocument();
     expect(within(field(linked, "Duration")).getByText("7m 47s")).toBeInTheDocument();
     expect(within(field(linked, "Outcome")).getByText(/completed/i)).toBeInTheDocument();
-    expect(within(field(linked, "Tokens")).getByText("128,450")).toBeInTheDocument();
+    expect(within(field(linked, "Final context")).getByText("128,450")).toBeInTheDocument();
 
     // A delegation the harness recorded less about. The unrecorded dimensions
     // are named as unrecorded rather than shown as zero.
@@ -261,7 +271,7 @@ describe("Journey 5: Review a session's subagents", () => {
     expect(unlinked).toHaveTextContent(RESEARCH_PROMPT);
     expect(within(field(unlinked, "Agent type")).getByText("research")).toBeInTheDocument();
     expect(within(field(unlinked, "Duration")).getByText(/not recorded/i)).toBeInTheDocument();
-    expect(within(field(unlinked, "Tokens")).getByText(/not recorded/i)).toBeInTheDocument();
+    expect(within(field(unlinked, "Final context")).getByText(/not recorded/i)).toBeInTheDocument();
     expect(within(field(unlinked, "Outcome")).getByText(/error/i)).toBeInTheDocument();
 
     // Opening the suspect spawn answers "what did the agent I could not see

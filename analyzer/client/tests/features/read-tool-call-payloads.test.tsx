@@ -48,6 +48,10 @@ const SESSION: SessionListItem = {
   project: { Recorded: "/Users/dev/repo" },
   event_count: 5,
   token_total: "Absent",
+  recorded_price_micros: "Absent",
+  estimated_tokens: "Absent",
+  estimated_price_micros: "Absent",
+  estimated_as_of: "Absent",
   last_activity: { Recorded: "2026-08-13T15:00:00Z" },
 };
 
@@ -64,6 +68,8 @@ function baseEvent(id: string, ordinal: number, kind: EventKind): AillyEvent {
     kind,
     source: { harness: "claude_code", path: "/home/a.jsonl", line: ordinal, ordinal },
     native_id: "Absent",
+    response_id: "Absent",
+    model: "Absent",
     timestamp: "Absent",
     turn: "Absent",
     tool_call: "Absent",
