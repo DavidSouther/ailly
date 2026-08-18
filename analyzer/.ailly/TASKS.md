@@ -285,6 +285,20 @@ Deferred:
 
 Deferred: none beyond Journey 1's existing "Virtualize the session list…" item.
 
+## Respect system light/dark settings — complete (2026-08-17-A-system-light-dark)
+
+- Add `client/src/theme/systemTheme.ts` exporting `syncThemeWithSystem()`: reads
+  `matchMedia('(prefers-color-scheme: dark)')`, sets `data-theme` on
+  `document.documentElement` immediately, and keeps it live via the query's
+  `change` event.
+- Call it from `client/src/main.tsx` before the first render and from
+  `client/.storybook/preview.ts` so Storybook stories match the OS theme too.
+- No CSS changes needed; the `.dark`/`[data-theme="dark"]` scopes already
+  existed.
+
+Deferred: none — no manual toggle UI or persisted preference was ever in scope
+for this change.
+
 ## Working rule
 
 Do not add live streaming, session mutation, session resumption, cloud synchronization, or artifact review to this task list without revisiting the product boundary in `BRIEF.md`. A recorded call parameter shown under that call is not artifact review; reconstructing a file on disk is.

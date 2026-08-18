@@ -1,6 +1,9 @@
 import type { Preview } from "@storybook/react-vite";
 
 import "../src/styles/theme.css";
+import { syncThemeWithSystem } from "../src/theme/systemTheme";
+
+syncThemeWithSystem();
 
 const preview: Preview = {
   parameters: {
