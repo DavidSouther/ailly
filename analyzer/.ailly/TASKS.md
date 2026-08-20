@@ -2,132 +2,47 @@
 
 Build the product vertically in this order. Each task should leave a usable, tested seam for the next one. Keep the app local-first and read-only throughout.
 
-## 1. Tauri shell — complete (2026-08-10)
+Completed work (Tauri shell, harness loader, SQLite index, Journeys 1–2 and 4–6, captured tool output, tool-call edits, tool-call icons, rescan/harness chips, session timestamps, system light/dark) is omitted; only remaining work is listed.
 
-- Add the Tauri 2 desktop shell and Rust workspace.
-- Wire the React/Vite frontend into development and production builds.
-- Establish typed command invocation between React and Rust.
-- Add the application window, native file-system permissions, and a minimal empty-state screen.
-- Verify the shell launches on the target development platform and the existing frontend checks still pass.
-- Mise task runner to one-command start full Tauri app, just Storybook component tool, and run checks & tests.
-- CI hooks for checks, build, and deploy. Deploy using YYYY.0M.00INC+SHA calendar versioning.
+## Cross-lens jump to transcript
 
-Deployment publication remains deferred because this project has no configured deployment target or signing-secret policy. Version is the initial "0.1.0"
+Conversation already exposes `event-*` anchors and Tokens already lands on a response row. Treat **jump from any tool-summary detail to that event in Conversation** as one feature, not a pile of one-off links.
 
-## 2. Harness loader and event model — complete (2026-08-11)
+- From Summary: a tool-frequency row, an individual call, a Sources/file-touch row, and a file in File access.
+- From Tokens: a spend moment, spawn, or chart point.
+- From Subagents: a spawn or a call inside a spawn.
+- Landing reuses `useLandingTarget` / `event-*`: switch to Conversation, focus and highlight the row, do not replay on a later tab click.
+- File-first: opening a path shows the calls that touched it, and each of those calls jumps to the same transcript point.
 
-- Define the normalized session, turn, tool-call, subagent, token, file, and provenance types.
-- Implement adapter interfaces that isolate harness-specific formats.
-- Add Claude Code, Codex, and Pi discovery and parsing for their documented local session locations, including configured Pi session roots.
-- Preserve source coordinates and unknown fields without inventing missing facts.
-- Add fixture-based parser tests for Claude Code, Codex, and Pi, including malformed and partial records and Pi's header, message/tool, tree, and unknown-entry cases.
+Replaces the deferred "Wire summary / drill-down views into the `event-*` anchors" and "File-first route from Summary File access" bullets.
 
-## 3. SQLite index — complete (2026-08-12)
+## Shell I/O: reads and writes inside Bash
 
-- Add the rebuildable SQLite schema and FTS5 search indexes.
-- Index sessions incrementally using source-file identity and modification metadata.
-- Store normalized events, relationships, files, token measurements, and provenance references.
-- Expose bounded queries for session lists, event pages, summaries, and search.
-- Test interruption, repeat indexing, source changes, and unsupported metadata.
+File access today only counts a path when the tool recorded `path` / `file_path`. Most interaction is shell (`cat`, `sed`, `awk`, stdin pipes, redirects). Parse recorded Bash/command text with an **off-the-shelf bash parsing library** (do not hand-roll a shell grammar).
 
-## 4. Journey 1: Find a session — complete (2026-08-12)
+- Identify **reads** (e.g. `cat`, `sed`, `awk`, stdin pipes, input redirects) and **writes** (output redirects, `tee`, in-place flags that the parse can attribute) inside Bash / exec blocks.
+- Keep inferred paths as recorded-from-command, not as facts about the disk; skip or mark ambiguous fragments rather than guessing.
+- A quick review of just the files the shell read from and wrote to (distinct from Read/Write/Edit tool paths, or merged with them and labelled by source).
+- From that review, jump to the transcript point of the originating call — via the unified jump above, not a second navigation scheme.
+- Codex `custom_tool_call` snippets still need a command recovered before those calls can be parsed (see Deferred from the tool-call command/cwd bugfix).
 
-- Discover available harnesses and local session roots.
-- Build the session list with recency, project, label, size, duration, and token summary.
-- Add search and filters for project, date range, harness, and rough size.
-- Add a useful default selection and a clear empty state.
-- Keep large collections responsive with pagination or virtualization.
+## Full-app search (own design)
 
-Shipped: auto-discover default roots; streaming non-blocking index refresh with progress;
-session list (harness, project, event count, last activity); harness filter; client-side
-text filter; empty/error/zero states; Zustand session store. Also fixed Task 3 reopen bug
-(`meta.schema_version` TEXT read as i64).
+Session-list free text and `harness:` chips are not product search. Searching is **full app** and needs its own design pass before build (scope, what is indexed, result shape, how a hit opens a session and lands on an event).
 
-## 5. Journey 6: Read the complete conversation — complete (2026-08-12)
+In scope to decide during that design, not to pre-solve here:
 
-- Render user turns, assistant text, tool calls, and subagent spawns in source order.
-- Keep tool calls collapsed by default and expand their parameters/results on demand.
-- Represent subagents inline with expandable nested activity.
-- Deliberately omit artifact contents from this traditional conversation view.
-- Add anchors that can later connect this view to summary and drill-down views.
+- FTS over event text, captured tool output, and tool-call payloads (the deferred FTS bullets from Journeys 1, captured output, and tool-call edits belong here).
+- Hits that use the same transcript jump as summary details.
+- Collection / project scope vs one session; filters beyond `harness:`.
 
-Shipped: `getEventPage` + `AillyEvent` bindings; conversation pane beside the session
-list; ordered render by `EventKind`; collapsed tool calls / expandable subagent
-detail; stable `event-*` anchors; independent pane scrolling with document
-overscroll locked. Backend `get_event_page` was already sufficient (frontend-only).
+## Journey 3: Investigate a collection of sessions
 
-## 6. Journey 2: Investigate one session's tool calls — complete (2026-08-12)
-
-- Add the session summary and tool-category/tool-frequency breakdowns.
-- Add sources grouping for shell, file, and web inputs.
-- Show pertinent calls, touched files, and the tools responsible for each touch.
-- Make uncertainty and unsupported provenance explicit.
-
-Shipped: Summary tab beside Conversation; category split and calls-by-tool;
-Sources (shell / file access / web) with expandable calls; files touched live
-inside File access with start-truncated paths; command and per-call cwd parsing
-for Claude/Codex/Pi (`SCHEMA_VERSION` 2, then 3); captured tool output on
-shell rows and Conversation `tool_result` rows; cwd shown only when ambiguous
-(relative path or different from the session).
-
-## 7. Journey 5: Review subagents — complete (2026-08-12-D-review-subagents)
-
-- Show every subagent spawn with type, prompt, duration, outcome, and token usage.
-- Provide a nested subagent investigation view with its calls and files.
-- Link parent spawn records to child events wherever the source format supports it.
-- Add a clearly labeled fallback for inferred or unavailable parent-decision linkage.
-
-Shipped: `Subagent` grown to every dimension a harness may record and hung off
-`Event` (`subagent_json`, `SCHEMA_VERSION` 4, drop and rebuild); Claude `Agent`
-/ `Task`, Codex `spawn_agent`, and Pi `ailly_subagent` calls now emit
-`EventKind::SubagentSpawn` with the outcome, duration, and tokens their own
-transcripts wrote, folded back from the later result record by recorded id
-rather than adjacency; `resolve_child_session_id` closes the parent→child link
-at read time from the child transcript's path. A Subagents tab lists every
-spawn (prompt preview of three lines, full text on expand) and opens a linked
-child into the same Summary / Conversation / Subagents lenses as the parent.
-Summary's "Include subagent tools" toggle folds descendants into Calls by tool
-and the category split together; call details that used to live under Sources
-expand from each tool row. Zero spawns read as `0`. Schema open now rebuilds
-atomically, so a half-written index heals on the next launch. Subagent tokens
-live on the payload only, never on the event's `token_usage`, so Journey 4's
-split stays open. The conformance suite asserts a spawn edge exists if and
-only if the source named a child.
-
-Deferred:
-
-- `loader::tool_result` still reads only `is_error`, so Pi's camelCase `isError`
-  is dropped from `ToolResult`. Pi's *spawn* outcome reads the flag directly in
-  `pi.rs`; the general fix belongs with a tool-result pass.
-- Claude's `agent-<agentId>.meta.json` sidecar, which carries the spawning
-  `toolUseId` and `spawnDepth` — a second, child-side linkage vector this does
-  not need.
-- Sidechain child sessions still appear unlabelled in the session list
-  (244 locally); that is Journey 1 presentation.
-- Per-spawn token splits, cache-versus-fresh accounting, and spend over time
-  (Journey 4).
-- Codex `session_meta.source.subagent.thread_spawn` as a child-side
-  back-reference: the filename match is exact and verified, so this is only
-  worth adding if a rollout is ever renamed.
-
-## 8. Journey 4: Review token usage — complete (2026-08-14-A-review-token-usage)
-
-- Show session and collection totals split by orchestrator and subagent.
-- Represent cached/reused versus fresh usage only when recorded by the source.
-- Attribute usage to each subagent spawn and plot usage over session time.
-- Link token spikes directly to the relevant calls or subagent activity.
-
-Shipped: a fourth Tokens lens (orchestrator/subagent/session totals, a
-fresh/output/cache-read/cache-write composition, a per-spawn table separating
-Child spend from Final context, and a Spend over session time chart with
-ranked Top spend moments that hand off to Conversation or Subagents at the
-causing activity); a Summary Tokens card; index-side pricing with
-`estimated_tokens`/`estimated_price_micros` frozen at first write against an
-embedded LiteLLM catalog subset, a 30-day age gate, and a runtime-refreshed
-catalog; `estimated_as_of` dating every estimate; model labels on session
-totals; and a simplified Est/Recorded total eyebrow. Two adapter corrections
-(Codex `token_count`/`last_token_usage`, Pi's real usage key names) and
-`Event.response_id` (Claude response dedup) rode in front of it.
+- Add ad hoc multi-selection by project, date range, and manual selection.
+- Show aggregate and per-session tool, file, duration, agent, and token rollups.
+- Add side-by-side comparison for the dimensions relevant to wrong-turn investigation.
+- Surface recurring files, subagent types, and pertinent call patterns.
+- Preserve drill-down links from collection patterns to individual sessions.
 
 ## Deferred from Journey 4 (2026-08-14-A-review-token-usage)
 
@@ -152,38 +67,34 @@ totals; and a simplified Est/Recorded total eyebrow. Two adapter corrections
 - The `iterations[]` array, the `cache_creation` TTL split, and
   `reasoning_output_tokens` sub-breakdowns.
 
-## 9. Journey 3: Investigate a collection of sessions
+## Deferred from Journey 5 (2026-08-12-D-review-subagents)
 
-- Add ad hoc multi-selection by project, date range, and manual selection.
-- Show aggregate and per-session tool, file, duration, agent, and token rollups.
-- Add side-by-side comparison for the dimensions relevant to wrong-turn investigation.
-- Surface recurring files, subagent types, and pertinent call patterns.
-- Preserve drill-down links from collection patterns to individual sessions.
+- `loader::tool_result` still reads only `is_error`, so Pi's camelCase `isError`
+  is dropped from `ToolResult`. Pi's *spawn* outcome reads the flag directly in
+  `pi.rs`; the general fix belongs with a tool-result pass.
+- Claude's `agent-<agentId>.meta.json` sidecar, which carries the spawning
+  `toolUseId` and `spawnDepth` — a second, child-side linkage vector this does
+  not need.
+- Sidechain child sessions still appear unlabelled in the session list
+  (244 locally); that is Journey 1 presentation.
+- Codex `session_meta.source.subagent.thread_spawn` as a child-side
+  back-reference: the filename match is exact and verified, so this is only
+  worth adding if a rollout is ever renamed.
 
 ## Deferred from Task 3
 
 - Index-time `session_rollups` (add only after a measured list/summary query is slow).
 - Forward `schema_version` migrations beyond delete-and-rebuild.
-- User-chosen index directory; content-hash incremental keys; widen FTS coverage.
+- User-chosen index directory; content-hash incremental keys; widen FTS coverage (see Full-app search).
 - Extra index unit coverage: interrupt mid-batch; source edit then re-index; source delete then prune; `Unsupported`/`Malformed` field round-trip.
 
-## Captured tool output — complete (2026-08-12-C-captured-tool-output)
-
-- Model `ToolResult` (call id, output, error flag) and capture it in all three
-  adapters; Claude's results are `tool_result` blocks on user records, which the
-  adapter previously dropped entirely.
-- Persist `tool_result_json` on `events` (`SCHEMA_VERSION` 3, drop and rebuild).
-- Pair results to calls by recorded id only, and expand a call in the Summary
-  pane or a `tool_result` row in the Conversation pane to read what it captured,
-  clamped to 50 lines.
-
-Deferred:
+## Deferred from captured tool output (2026-08-12-C-captured-tool-output)
 
 - Claude's `toolUseResult` detail: separate stderr, `interrupted`, and
   structured patches, which have no Codex or Pi counterpart.
 - Exit codes; no harness records one as a field, and reading
   "Process exited with code N" out of Codex's output prose would be inference.
-- Captured output in the FTS index, which belongs with the search journey.
+- Captured output in the FTS index: see Full-app search.
 - Image and `tool_reference` results (7 of 111 in one sampled Claude session)
   resolve `Unsupported` and read as "recorded in a form this view cannot show".
 
@@ -194,7 +105,7 @@ Deferred:
   (the harness dropdown is gone; chips/`harness:` tokens are the harness filter).
 - Session labels when a harness records them.
 - Virtualize the session list once real collections are large enough to measure.
-- FTS content search over event text (belongs with read/investigate journeys).
+- FTS content search over event text: see Full-app search.
 
 ## Deferred from the tool-call command/cwd bugfix (2026-08-12-B)
 
@@ -217,87 +128,30 @@ Deferred:
 - Richer subagent nested activity in the Conversation lens. The row now reads
   the delegation's recorded prompt (Journey 5); the calls and files the child
   made live in the Subagents tab rather than inline here.
-- Wire summary / drill-down views into the `event-*` anchors.
+- Wire summary / drill-down views into the `event-*` anchors: see Cross-lens jump to transcript.
 
-## Tool-call write/edit payloads — complete (2026-08-13-A-tool-call-edits)
-
-- Decode and show recorded call parameters beyond Command/Path/URL/cwd when a
-  tool call expands, in both Summary and Conversation.
-- Claude `Edit`/`Write` and Pi `edit`/`write` show readable source lines;
-  Codex `apply_patch` string payloads are unescaped and clamped.
-- Subtractive rule: values already shown as structured rows are dropped so
-  Bash gains no duplicate; Read surfaces `offset`/`limit`.
-- Shared `ClampedText` (50 lines); `BRIEF.md` clarifies parameter vs artifact.
-
-Deferred:
+## Deferred from tool-call write/edit payloads (2026-08-13-A-tool-call-edits)
 
 - Structured interpretation of edit fields (diff `old_string`/`new_string`,
   type `edits[]`) and any diff dependency.
 - Pair payload with applied-vs-failed result state in Conversation; Pi's
   camelCase `isError` still dropped by `loader::tool_result`.
-- File-first route from Summary File access into the calls that touched a path.
+- File-first route from Summary File access: see Cross-lens jump to transcript.
 - `NotebookEdit` path promotion (`notebook_path`) and category-table entry.
-- FTS coverage of payloads (with search journey).
+- FTS coverage of payloads: see Full-app search.
 
-## Tool call type icons — complete (2026-08-13-B-tool-call-icons)
-
-- Shared `toolIcon(name)` lookup: name table, then `categoryForTool`, then a
-  neutral wrench for unclassified / other.
-- Summary "Calls by tool" rows and Conversation tool-call rows show the glyph
-  with `aria-hidden` so accessible names stay unchanged.
-- Subagents lens inherits both via `SessionLenses`.
-
-Deferred:
+## Deferred from tool call type icons (2026-08-13-B-tool-call-icons)
 
 - Icons on Conversation tool *result* rows (needs call/result pairing in that
   lens first).
 - Icons inside `Badge`-rendered surfaces (`CategorySplit`, `FileAccessList`) —
   `Badge` must forward `aria-hidden` first.
 
-## Rescan + harness chips — complete (2026-08-13-C-rescan-and-harness-chips)
-
-- Move Rescan from the app header into the sessions panel chrome (not a list
-  `<li>`), keeping busy/`aria-busy`, progress, and error behavior.
-- Remove the harness `<select>` and Zustand `harness` / `SetHarness`; search is
-  the sole filter source of truth.
-- Parse `harness:` tokens (optional space after `:`, case-insensitive, id/label
-  match with `_`/`-`/space equivalence) into removable chips; residual free text
-  still matches via `matchesQuery`.
-- Multiple `harness:` tokens union (OR); no token means all harnesses;
-  unrecognized token values match nothing.
-
-Deferred:
+## Deferred from rescan + harness chips (2026-08-13-C-rescan-and-harness-chips)
 
 - URL/query persistence of search chip state.
 - Additional `key:` filter chips beyond `harness:` (unknown keys stay free-text;
   date/size remain under Journey 1 deferred).
-
-## Session timestamps + list ceiling — complete (2026-08-13-D-session-timestamps)
-
-- Thread top-level harness `timestamp` ISO strings through `loader::event()` for
-  Claude, Codex, and Pi (sibling events inherit the record stamp; missing stays
-  Absent, non-string Malformed; no mtime inference).
-- Decode sqlite `list_sessions` `max_ts` so `last_activity` is an unquoted ISO
-  string (`SCHEMA_VERSION` 5, drop and rebuild).
-- Raise `listSessions` ceiling from 500 to 100_000 (pagination still deferred).
-- Compact relative list labels: Today / Yesterday / weekday (2–5 days ago), else
-  day/month (year when needed), always hour:minute.
-
-Deferred: none beyond Journey 1's existing "Virtualize the session list…" item.
-
-## Respect system light/dark settings — complete (2026-08-17-A-system-light-dark)
-
-- Add `client/src/theme/systemTheme.ts` exporting `syncThemeWithSystem()`: reads
-  `matchMedia('(prefers-color-scheme: dark)')`, sets `data-theme` on
-  `document.documentElement` immediately, and keeps it live via the query's
-  `change` event.
-- Call it from `client/src/main.tsx` before the first render and from
-  `client/.storybook/preview.ts` so Storybook stories match the OS theme too.
-- No CSS changes needed; the `.dark`/`[data-theme="dark"]` scopes already
-  existed.
-
-Deferred: none — no manual toggle UI or persisted preference was ever in scope
-for this change.
 
 ## Working rule
 

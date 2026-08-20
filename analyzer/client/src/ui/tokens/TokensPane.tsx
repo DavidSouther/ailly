@@ -328,10 +328,9 @@ function SpendTrend({ stats }: { stats: SessionTokenStats }) {
   const [reading, setReading] = useState<SpendReading>("per-response");
   const series = useMemo(() => spendSeries(stats.spendUnits, reading), [stats.spendUnits, reading]);
   const ranked = useMemo(() => rankMoments(stats.moments, LIST_CAP), [stats.moments]);
-  const excluded = exclusionNote(stats.excludedFromChartCount);
 
   return (
-    <Section label="Spend over session time">
+    <Section label="Spend by message">
       <div className="flex flex-wrap items-center gap-3">
         <fieldset aria-label="Chart reading" className="flex gap-1.5">
           {READINGS.map((option) => (
@@ -360,8 +359,6 @@ function SpendTrend({ stats }: { stats: SessionTokenStats }) {
 
       <SpendChart series={series} reading={reading} />
 
-      {excluded === null ? null : <p className="text-foreground-muted text-xs">{excluded}</p>}
-
       <h3 className="eyebrow-sm text-foreground-muted">Top spend moments</h3>
       <ul aria-label="Top spend moments" className="flex flex-col gap-1 rounded-md border">
         {ranked.map((moment) => (
@@ -377,19 +374,6 @@ const READINGS: Array<{ value: SpendReading; label: string }> = [
   { value: "per-response", label: "Per response" },
   { value: "cumulative", label: "Cumulative" },
 ];
-
-/**
- * How much spend the time axis could not place. The totals above still include
- * it, so this note is what reconciles the chart's visible sum with them.
- */
-function exclusionNote(count: number): string | null {
-  if (count === 0) {
-    return null;
-  }
-  return count === 1
-    ? "1 event without a recorded timestamp is excluded from the chart"
-    : `${count} events without a recorded timestamp are excluded from the chart`;
-}
 
 const MOMENT_KIND_LABEL: Record<SpendMomentKind, string> = {
   response: "Assistant response",

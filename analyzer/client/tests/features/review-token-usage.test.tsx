@@ -244,8 +244,8 @@ const UNLINKED_SPAWN: Subagent = {
  * The orchestrator's own spend. `msg-a` is written as two records carrying one
  * identical usage object, the way Claude actually writes a multi-block
  * response, so counting records rather than responses reports 64,109 where the
- * orchestrator spent 54,907. `msg-c` recorded no timestamp, which is what the
- * chart's exclusion note has to account for.
+ * orchestrator spent 54,907. `msg-c` recorded no timestamp, which is why its
+ * point on the message axis carries no clock time.
  */
 const PARENT_EVENTS: UsageEvent[] = [
   {
@@ -420,13 +420,10 @@ describe("Journey 4: Review a session's token usage", () => {
     expect(within(field(research, "Child spend")).getByText(/not linkable/i)).toBeInTheDocument();
     expect(within(field(research, "Final context")).getByText("12,480")).toBeInTheDocument();
 
-    // One response recorded no timestamp, so it cannot be placed on the time
-    // axis; the chart says how many it left out rather than quietly dropping
-    // them, since the totals above still include that spend.
-    const trend = field(pane, "Spend over session time");
-    expect(
-      within(trend).getByText(/1 event without a recorded timestamp is excluded/i),
-    ).toBeInTheDocument();
+    // Every unit of spend has a place on the message axis now, timestamp or
+    // not, so there is nothing to reconcile and no exclusion note.
+    const trend = field(pane, "Spend by message");
+    expect(within(trend).queryByText(/excluded from the chart/i)).toBeNull();
 
     // The ranked moments are the accessible route to the top marks, and the only
     // assertable one: Recharts renders no SVG under jsdom. One entry per

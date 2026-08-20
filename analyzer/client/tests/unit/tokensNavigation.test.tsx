@@ -226,34 +226,15 @@ describe("Top spend moments", () => {
   });
 });
 
-describe("the chart's exclusion note", () => {
-  /** Exactly one excluded unit reads in the singular. */
-  it("names a single untimestamped unit in the singular", async () => {
-    renderLenses([responseEvent("evt-1", 1, 500, SPIKE_TEXT, null)]);
-
-    const trend = await screen.findByRole("group", { name: /^spend over session time$/i });
-    expect(
-      within(trend).getByText(/1 event without a recorded timestamp is excluded/i),
-    ).toBeInTheDocument();
-  });
-
-  it("names several untimestamped units in the plural", async () => {
+describe("the chart's message axis", () => {
+  /** Every unit has a place now, timestamped or not, so there is no note to render. */
+  it("says nothing about exclusion whether or not a unit recorded a timestamp", async () => {
     renderLenses([
       responseEvent("evt-1", 1, 500, SPIKE_TEXT, null),
       responseEvent("evt-2", 2, 300, "Also untimed.", null),
     ]);
 
-    const trend = await screen.findByRole("group", { name: /^spend over session time$/i });
-    expect(
-      within(trend).getByText(/2 events without a recorded timestamp are excluded/i),
-    ).toBeInTheDocument();
-  });
-
-  /** Nothing to reconcile means no note at all, rather than a note saying zero. */
-  it("says nothing when every unit could be placed on the axis", async () => {
-    renderLenses([responseEvent("evt-1", 1, 500, SPIKE_TEXT)]);
-
-    const trend = await screen.findByRole("group", { name: /^spend over session time$/i });
+    const trend = await screen.findByRole("group", { name: /^spend by message$/i });
     expect(within(trend).queryByText(/excluded/i)).toBeNull();
   });
 });

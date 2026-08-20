@@ -466,17 +466,6 @@ describe("summarizeTokenUsage", () => {
   });
 
   /**
-   * The totals include an untimestamped response's spend, so the chart that
-   * cannot place it has to say how many it left out; that count is what
-   * reconciles the chart's visible sum with the Session total.
-   */
-  it("counts the spend-bearing units no time axis can place", () => {
-    const stats = journeyStats();
-
-    expect(stats.excludedFromChartCount).toBe(1);
-  });
-
-  /**
    * A delegation ranks as one amount but is spent over the minutes the child
    * really ran, so the time axis places the child's own responses at their own
    * timestamps rather than piling the subtree onto the instant of the spawn.
@@ -551,14 +540,15 @@ describe("spendSeries", () => {
     { party: "orchestrator", amount: 999, timestamp: "Absent" },
   ];
 
-  /** Per-response spend, orchestrator and subagent as separate stacked series. */
-  it("places each timestamped moment on the time axis under its own series", () => {
+  /** Per-response spend, orchestrator and subagent as separate stacked series, densely indexed. */
+  it("places each unit on a dense message index under its own series", () => {
     const points = spendSeries(timed, "per-response");
 
     expect(points).toEqual([
-      { time: Date.parse("2026-08-14T10:00:00Z"), orchestrator: 100, subagent: 0 },
-      { time: Date.parse("2026-08-14T10:01:00Z"), orchestrator: 0, subagent: 400 },
-      { time: Date.parse("2026-08-14T10:02:00Z"), orchestrator: 50, subagent: 0 },
+      { message: 1, time: Date.parse("2026-08-14T10:00:00Z"), orchestrator: 100, subagent: 0 },
+      { message: 2, time: Date.parse("2026-08-14T10:01:00Z"), orchestrator: 0, subagent: 400 },
+      { message: 3, time: Date.parse("2026-08-14T10:02:00Z"), orchestrator: 50, subagent: 0 },
+      { message: 4, time: null, orchestrator: 999, subagent: 0 },
     ]);
   });
 
@@ -566,12 +556,12 @@ describe("spendSeries", () => {
   it("accumulates each series when asked for the cumulative reading", () => {
     const points = spendSeries(timed, "cumulative");
 
-    expect(points.map((point) => point.orchestrator)).toEqual([100, 100, 150]);
-    expect(points.map((point) => point.subagent)).toEqual([0, 400, 400]);
+    expect(points.map((point) => point.orchestrator)).toEqual([100, 100, 150, 1149]);
+    expect(points.map((point) => point.subagent)).toEqual([0, 400, 400, 400]);
   });
 
-  /** Source order is not time order once a child's own timestamps are folded in. */
-  it("orders points by time rather than by the order the fold produced them", () => {
+  /** Conversation order is preserved, not reordered by timestamp. */
+  it("keeps the fold's own order rather than sorting by time", () => {
     const points = spendSeries(
       [
         { party: "orchestrator", amount: 1, timestamp: { Recorded: "2026-08-14T10:05:00Z" } },
@@ -580,6 +570,50 @@ describe("spendSeries", () => {
       "per-response",
     );
 
-    expect(points.map((point) => point.orchestrator)).toEqual([2, 1]);
+    expect(points.map((point) => point.orchestrator)).toEqual([1, 2]);
+  });
+
+  /**
+   * The chart reads as the conversation ran, one step per thing that spent, so
+   * the axis is the message and not the clock. Run through the real fold,
+   * because the order the units arrive in is half the fact under test: the
+   * delegation's two child responses belong at the spawn's own position, and the
+   * one of them the harness never timestamped still keeps its slot between two
+   * that it did. Nothing is dropped for a missing timestamp, which is why the
+   * series' visible sum is the whole session's reachable spend and there is no
+   * excluded remainder left to reconcile.
+   */
+  it("places every spend unit on a dense message axis in conversation order", () => {
+    const child = [
+      response("child-1", { Recorded: "cmsg-a" }, ONE_TOKEN, {
+        Recorded: "2026-08-14T10:01:30Z",
+      }),
+      response("child-2", { Recorded: "cmsg-b" }, ONE_TOKEN),
+    ];
+    const stats = summarizeTokenUsage(journeyEvents(), [
+      {
+        eventId: "evt-4",
+        subagent: LINKED,
+        childSpend: { status: "resolved", buckets: foldOwnUsage(child).buckets, events: child },
+      },
+      { eventId: "evt-6", subagent: UNLINKED, childSpend: { status: "unlinkable" } },
+    ]);
+
+    const points = spendSeries(stats.spendUnits, "per-response");
+
+    expect(points).toEqual([
+      {
+        message: 1,
+        time: Date.parse("2026-08-14T10:00:30Z"),
+        orchestrator: 9202,
+        subagent: 0,
+      },
+      { message: 2, time: Date.parse("2026-08-14T10:01:30Z"), orchestrator: 0, subagent: 1 },
+      { message: 3, time: null, orchestrator: 0, subagent: 1 },
+      { message: 4, time: Date.parse("2026-08-14T10:05:00Z"), orchestrator: 42604, subagent: 0 },
+      { message: 5, time: null, orchestrator: 3101, subagent: 0 },
+    ]);
+    const charted = points.reduce((sum, point) => sum + point.orchestrator + point.subagent, 0);
+    expect(charted).toBe(stats.orchestratorSpend + stats.subagentSpend);
   });
 });

@@ -166,7 +166,6 @@ export interface SessionTokenStats {
   spawnRows: SpawnSpendRow[];
   moments: SpendMoment[];
   spendUnits: SpendUnit[];
-  excludedFromChartCount: number;
 }
 
 /** One recorded spawn, with whatever child-spend result has settled so far. */
@@ -261,11 +260,16 @@ export function summarizeTokenUsage(
     timestamp: counted.event.timestamp,
     models: distinctModels([counted.event]),
   }));
-  const spendUnits: SpendUnit[] = own.kept.map((counted) => ({
-    party: "orchestrator",
-    amount: bucketTotal(counted.buckets),
-    timestamp: counted.event.timestamp,
-  }));
+  const ownUnitsByEventId = new Map<string, SpendUnit>(
+    own.kept.map((counted) => [
+      counted.event.id,
+      {
+        party: "orchestrator",
+        amount: bucketTotal(counted.buckets),
+        timestamp: counted.event.timestamp,
+      },
+    ]),
+  );
 
   let subagentSpend = 0;
   const descendantSessionIds = new Set<string>();
@@ -273,6 +277,7 @@ export function summarizeTokenUsage(
   let pendingSpawnCount = 0;
   let subagentModels: string[] = [];
   const spawnRows: SpawnSpendRow[] = [];
+  const spawnUnitsByEventId = new Map<string, SpendUnit[]>();
   for (const spawn of spawns) {
     const childModels =
       spawn.childSpend.status === "resolved" ? distinctModels(spawn.childSpend.events) : [];
@@ -310,12 +315,30 @@ export function summarizeTokenUsage(
     for (const event of spawn.childSpend.events) {
       descendantSessionIds.add(event.session_id);
     }
-    for (const counted of countedResponses(spawn.childSpend.events).kept) {
-      spendUnits.push({
+    spawnUnitsByEventId.set(
+      spawn.eventId,
+      countedResponses(spawn.childSpend.events).kept.map((counted) => ({
         party: "subagent",
         amount: bucketTotal(counted.buckets),
         timestamp: counted.event.timestamp,
-      });
+      })),
+    );
+  }
+
+  // Conversation order, not fold order: each resolved spawn's child units sit
+  // at the spawn's own position in the parent's event order, not bunched
+  // after every orchestrator unit.
+  const spendUnits: SpendUnit[] = [];
+  for (const parentEvent of parentEvents) {
+    const ownUnit = ownUnitsByEventId.get(parentEvent.id);
+    if (ownUnit) {
+      spendUnits.push(ownUnit);
+    }
+    if (parentEvent.kind === EventKind.SubagentSpawn) {
+      const childUnits = spawnUnitsByEventId.get(parentEvent.id);
+      if (childUnits) {
+        spendUnits.push(...childUnits);
+      }
     }
   }
 
@@ -340,7 +363,6 @@ export function summarizeTokenUsage(
     spawnRows,
     moments,
     spendUnits,
-    excludedFromChartCount: spendUnits.filter((unit) => !isRecorded(unit.timestamp)).length,
   };
 }
 
@@ -374,9 +396,13 @@ export function rankMoments(moments: SpendMoment[], cap: number): SpendMoment[] 
 /** Which of the two readings the chart is showing. */
 export type SpendReading = "per-response" | "cumulative";
 
-/** One point on the time axis, with the two stacked series kept apart. */
+/**
+ * One point on the message axis. `time` is a secondary fact, present only
+ * when the unit's own timestamp parsed.
+ */
 export interface SpendSeriesPoint {
-  time: number;
+  message: number;
+  time: number | null;
   orchestrator: number;
   subagent: number;
 }
@@ -385,27 +411,20 @@ export interface SpendSeriesPoint {
  * The chart's data, prepared here rather than in the chart so it is testable:
  * Recharts renders nothing under jsdom.
  *
- * Only timestamped units can be placed. The count of those left out lives on
- * `SessionTokenStats.excludedFromChartCount`, and the note that renders it is
- * what reconciles this series' visible sum with the Session total.
+ * Every unit gets a dense, 1-based slot in conversation order — nothing is
+ * dropped for a missing or unparseable timestamp, which is what lets the
+ * series' visible sum always equal the totals above it.
  */
 export function spendSeries(units: SpendUnit[], reading: SpendReading): SpendSeriesPoint[] {
-  const points = units
-    .flatMap((unit) =>
-      isRecorded(unit.timestamp)
-        ? [
-            {
-              time: Date.parse(unit.timestamp.Recorded),
-              orchestrator: unit.party === "orchestrator" ? unit.amount : 0,
-              subagent: unit.party === "subagent" ? unit.amount : 0,
-            },
-          ]
-        : [],
-    )
-    .filter((point) => !Number.isNaN(point.time))
-    // A child's own response timestamps interleave with the parent's, so the
-    // order the fold produced is not time order.
-    .sort((left, right) => left.time - right.time);
+  const points = units.map((unit, index) => {
+    const parsed = isRecorded(unit.timestamp) ? Date.parse(unit.timestamp.Recorded) : Number.NaN;
+    return {
+      message: index + 1,
+      time: Number.isNaN(parsed) ? null : parsed,
+      orchestrator: unit.party === "orchestrator" ? unit.amount : 0,
+      subagent: unit.party === "subagent" ? unit.amount : 0,
+    };
+  });
 
   if (reading === "per-response") {
     return points;
@@ -415,6 +434,6 @@ export function spendSeries(units: SpendUnit[], reading: SpendReading): SpendSer
   return points.map((point) => {
     orchestrator += point.orchestrator;
     subagent += point.subagent;
-    return { time: point.time, orchestrator, subagent };
+    return { message: point.message, time: point.time, orchestrator, subagent };
   });
 }
