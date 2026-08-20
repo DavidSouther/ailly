@@ -1,27 +1,40 @@
+[tasks.deps]
+description = "Install client npm dependencies"
+run = "npm install"
+sources = ["package.json", "package-lock.json"]
+outputs = ["node_modules/.package-lock.json"]
+
 [tasks.format]
 description = "Format TypeScript and CSS"
+depends = ["deps"]
 run = "npx biome format --write src tests .storybook"
 
 [tasks.check]
 description = "Type-check and Biome-check TypeScript"
+depends = ["deps"]
 run = "npm run check"
 
 [tasks.test]
 description = "Run TypeScript tests"
+depends = ["deps"]
 run = "npm test"
 
 [tasks.lint]
 description = "Lint TypeScript"
+depends = ["deps"]
 run = "npm run lint"
 
 [tasks.storybook]
 description = "Start Storybook"
+depends = ["deps"]
 run = "npm run storybook"
 
 [tasks.tauri-dev]
 description = "Start the Tauri desktop app"
+depends = ["deps"]
 run = "npm run tauri:dev"
 
 [tasks.tauri-build]
 description = "Build the Tauri desktop app"
+depends = ["deps"]
 run = "npm run tauri:build"

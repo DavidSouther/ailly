@@ -50,7 +50,7 @@ The original files remain the evidence. The index records where each event came 
 ## Development
 
 ```sh
-npm install --prefix client
+mise install
 mise run dev
 mise run check
 mise run test

@@ -37,13 +37,16 @@ The product investigates completed sessions on disk. Live or streaming views, ar
 
 ## Local development
 
-Install the client dependencies, then run the desktop app from the repository root with:
+Run the desktop app from the repository root with:
 
 ```sh
 mise install
-npm install --prefix client
 mise run dev
 ```
+
+`mise install` provisions Node and Rust. Every task that needs the client's
+`node_modules` (including the Tauri CLI) depends on `mise run deps`, so a fresh
+checkout does not need a separate `npm install` step.
 
 The standard checks are:
 

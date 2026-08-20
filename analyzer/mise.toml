@@ -2,6 +2,10 @@
 node = "22"
 rust = "stable"
 
+[tasks.deps]
+description = "Install client dependencies"
+run = "mise -C client run deps"
+
 [tasks.format]
 description = "Format client and shell"
 run = ["mise -C client run format", "mise -C shell run format"]
