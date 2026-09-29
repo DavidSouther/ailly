@@ -1,0 +1,18 @@
+name: e2e/patterns-eval
+
+on:
+  push:
+    branches: [main_two]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  patterns-eval:
+    runs-on: ubuntu-latest
+    env:
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - uses: Swatinem/rust-cache@v2
+      - run: bash e2e/patterns-eval/ci.sh

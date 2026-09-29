@@ -1,0 +1,28 @@
+name: Bump nightly toolchain
+
+on:
+  schedule:
+    - cron: '0 3 * * 1'  # 03:00 UTC every Monday
+  workflow_dispatch:
+
+jobs:
+  bump:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: jdx/mise-action@v2
+
+      - name: Fetch latest nightly date
+        run: mise run bump-nightly
+
+      - name: Open pull request
+        uses: peter-evans/create-pull-request@v6
+        with:
+          commit-message: "chore: bump nightly to ${{ env.LATEST }}"
+          title: "chore: bump nightly to ${{ env.LATEST }}"
+          branch: bump-nightly
+          delete-branch: true
+          body: |
+            Weekly automated toolchain version bump.
+
+            Includes any clippy auto-fixes and formatting changes produced by the new toolchain.

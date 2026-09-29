@@ -1,0 +1,11 @@
+{
+  "name": "lookup_claim_history",
+  "description": "Return prior claims for a claimant within the last 12 months.",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "claimant_id": { "type": "string" }
+    },
+    "required": ["claimant_id"]
+  }
+}

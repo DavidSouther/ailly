@@ -1,0 +1,78 @@
+---
+model: claude-sonnet-4-6
+assembly: judge
+binding:
+  variant: '1'
+---
+role: system
+content: |-
+  You are an evaluator. Read the rubric and the candidate response.
+  Reason step-by-step about whether the candidate response satisfies
+  the rubric, then end your reply with one line:
+    GRADE: P    (rubric satisfied)
+    GRADE: F    (rubric violated)
+    GRADE: I    (cannot decide)
+  The last GRADE line is binding. Do not print GRADE inside your reasoning.
+---
+role: user
+content: |-
+  RUBRIC:
+  The answer selects patterns:emitting-logs because the success
+  occurs inside an already-bootstrapped handler. It does not
+  recommend re-running patterns:configuring-logging.
+
+
+  USER QUESTION:
+  How do I record a successful `issue_refund` inside the existing request
+  handler? The subscriber registry is already running. Which `patterns:*`
+  skill applies?
+
+
+  CANDIDATE RESPONSE:
+  The skill you want is **`patterns:emitting-logs`**.
+
+  ## Why this one
+
+  The situation matches the skill's trigger exactly:
+
+  > *Use when writing log call sites in domain or application code — choosing a severity, attaching structured fields with semantic-convention keys, scoping spans to units of work, recording errors with their full chain at a single boundary, and naming business events.*
+
+  You are at a **call site** inside an existing request handler, the infrastructure (subscriber registry) is already running, and you need to record a discrete business event (`issue_refund` succeeded). That is pure emission work — no pipeline wiring required.
+
+  ## Why not the others
+
+  | Skill | Why it doesn't apply here |
+  |---|---|
+  | `patterns:configuring-logging` | That skill applies *once at process start* to build the pipeline. The subscriber is already running, so there is nothing to configure. |
+  | `patterns:newtype` / `patterns:aggregate` / etc. | Structural domain-modelling concerns, orthogonal to recording an event. |
+
+  ## What `patterns:emitting-logs` will guide you to do
+
+  1. **Choose the right severity** — a successful refund is informational, not a warning or error.
+  2. **Name the business event** — use a dedicated `event.name` field (e.g. `"issue_refund.succeeded"`) rather than embedding it in the message string.
+  3. **Attach semantic-convention fields** — correlation ids, order/refund ids, and amounts go as structured key-value pairs under their OTEL convention keys, not interpolated into the message.
+  4. **Scope a span** — if the handler isn't already inside a span, open one that covers the refund operation so traces link to the log record automatically.
+  5. **Record errors at one boundary only** — not applicable for the success path, but the skill covers the failure branch in the same handler if you need it.
+---
+role: assistant
+content: |-
+  The candidate response clearly selects `patterns:emitting-logs` as the applicable skill and explicitly states that `patterns:configuring-logging` does not apply because the subscriber is already running. This directly satisfies both conditions of the rubric:
+
+  1. ✅ Selects `patterns:emitting-logs` because the success occurs inside an already-bootstrapped handler.
+  2. ✅ Does not recommend re-running `patterns:configuring-logging` — in fact, it actively explains why that skill is not applicable.
+
+  GRADE: P
+trace:
+  span_id: 019f38ee-9673-7221-995e-2991423ea76c
+  model: claude-sonnet-4-6
+  tokens:
+    input: 629
+    output: 124
+  latency_ms: 3230
+  events:
+  - name: gen_ai.completion
+    attributes:
+      gen_ai.request.model: claude-sonnet-4-6
+      gen_ai.system: anthropic
+      gen_ai.usage.input_tokens: 629
+      gen_ai.usage.output_tokens: 124

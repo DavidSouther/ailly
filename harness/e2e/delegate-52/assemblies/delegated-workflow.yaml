@@ -1,0 +1,30 @@
+name: delegated-workflow
+model: claude-opus-4-7
+
+matrix:
+  provider:
+    - { name: anthropic, model: claude-opus-4-7 }
+    - { name: openai,    model: gpt-5-turbo }
+    - { name: google,    model: gemini-3-pro }
+  domain:           [prose-bio, code-sql, data-citation, notation-music]
+  distractor_count: [3]
+
+prefix:
+  - { kind: file,    path: ./AGENTS.md,                    cache: true }
+  - { kind: system,  path: context/system/*.md,            cache: true }
+  - { kind: file,    path: "context/seeds/{{ domain }}.md", cache: true }
+  - { kind: context, source: context/distractors, glob: "*.md" }
+
+conversation:
+  - { role: user, path: prompts/turns/01-tighten.md }
+  - { role: assistant }
+  - { role: user, path: prompts/turns/02-add-context.md }
+  - { role: assistant }
+  - { role: user, path: prompts/turns/03-reorder.md }
+  - { role: assistant }
+  - { role: user, path: prompts/turns/04-soften.md }
+  - { role: assistant }
+  - { role: user, path: prompts/turns/05-summarise.md }
+  - { role: assistant }
+  - { role: user, path: prompts/turns/06-finalise.md }
+  - { role: assistant }

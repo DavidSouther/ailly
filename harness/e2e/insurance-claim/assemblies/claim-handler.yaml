@@ -1,0 +1,16 @@
+name: claim-handler
+model: claude-sonnet-4-6
+
+matrix:
+  case: [default, missing-fields, ambiguous, over-limit]
+
+prefix:
+  - { kind: file,     path: ./AGENTS.md,                                                  cache: true }
+  - { kind: system,   path: context/system/*.md,                                          cache: true }
+  - { kind: tools,    path: context/tools/*.json,                                         cache: true }
+  - { kind: examples, path: context/examples/classification/*.md }
+  - { kind: context,  source: "context/knowledge/docs/{{ case }}", glob: "*.md", count: 5 }
+
+conversation:
+  - { role: user, path: "prompts/{{ case }}.md" }
+  - { role: assistant }

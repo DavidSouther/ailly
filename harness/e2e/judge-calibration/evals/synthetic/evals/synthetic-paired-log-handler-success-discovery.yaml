@@ -1,0 +1,31 @@
+name: synthetic-paired-log-handler-success-discovery
+cases:
+  - name: "1"
+    assertions:
+      - { type: text_contains, value: "patterns:emitting-logs" }
+      - { type: text_not_contains, value: "patterns:configuring-logging" }
+      - type: judge
+        prompt: |
+          The answer selects patterns:emitting-logs because the success
+          occurs inside an already-bootstrapped handler. It does not
+          recommend re-running patterns:configuring-logging.
+
+  - name: "2"
+    assertions:
+      - { type: text_contains, value: "patterns:emitting-logs" }
+      - { type: text_not_contains, value: "patterns:configuring-logging" }
+      - type: judge
+        prompt: |
+          The answer selects patterns:emitting-logs because the success
+          occurs inside an already-bootstrapped handler. It does not
+          recommend re-running patterns:configuring-logging.
+
+  - name: "3"
+    assertions:
+      - { type: text_contains, value: "patterns:emitting-logs" }
+      - { type: text_not_contains, value: "patterns:configuring-logging" }
+      - type: judge
+        prompt: |
+          The answer selects patterns:emitting-logs because the success
+          occurs inside an already-bootstrapped handler. It does not
+          recommend re-running patterns:configuring-logging.

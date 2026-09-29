@@ -1,0 +1,11 @@
+edition = "2024"
+max_width = 100
+
+# nightly-only options (requires rust-toolchain.toml pinning nightly)
+unstable_features = true  # All sorts of goodies, especially formatting macro bodies.
+imports_granularity = "Item" # each `use` imports exactly one item. Prevents merge conflicts caused by import reordering.
+group_imports = "StdExternalCrate" # groups imports into std, external crates, and local crates.
+wrap_comments = true # wraps comments at `max_width`.
+format_code_in_doc_comments = true # formats code blocks inside `///` comments.
+format_macro_bodies = true # best effort formatting for macro definitions.
+format_macro_matchers = true # best effort formatting for macro patterns.
