@@ -1,0 +1,24 @@
+{
+  "name": "characters",
+  "version": "2026.6.8",
+  "description": "Character voices that color the response style of other plugins.",
+  "author": {
+    "name": "David Souther",
+    "email": "davidsouther@gmail.com",
+    "url": "https://github.com/davidsouther"
+  },
+  "homepage": "https://github.com/davidsouther/ailly",
+  "repository": "https://github.com/davidsouther/ailly",
+  "license": "MIT",
+  "keywords": ["characters", "voice", "personality", "tone", "output-style"],
+  "interface": {
+    "displayName": "Ailly Characters",
+    "shortDescription": "Optional response voices for Ailly plugins.",
+    "longDescription": "Output-style voices that give human-facing responses a stable persona and tone.",
+    "developerName": "David Souther",
+    "category": "Productivity",
+    "capabilities": ["Interactive"],
+    "websiteURL": "https://github.com/davidsouther/ailly",
+    "defaultPrompt": ["Show the available Ailly character voices."]
+  }
+}
