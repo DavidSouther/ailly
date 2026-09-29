@@ -9,7 +9,7 @@
     {
       "name": "developer",
       "description": "Skills for a software developer agent to follow a strict Domain- and Test-Driven Development lifecycle.",
-      "version": "2026.09.1",
+      "version": "2026.09.2",
       "source": "./developer",
       "owner": {
         "name": "David Souther",
@@ -19,7 +19,7 @@
     {
       "name": "domain",
       "description": "Domain driven design skills library: Bounded Contexts, domain modelling, ubiquitous language, hexagonal architecture, event-sourced architecture.",
-      "version": "2026.08.1",
+      "version": "2026.09.2",
       "source": "./domain",
       "author": {
         "name": "David Souther",
@@ -29,7 +29,7 @@
     {
       "name": "general",
       "description": "General skills library: subagents, skill development, and git worktrees. From obra/superpowers.",
-      "version": "2026.09.0",
+      "version": "2026.09.2",
       "source": "./general",
       "author": {
         "name": "David Souther",
@@ -39,7 +39,7 @@
     {
       "name": "patterns",
       "description": "Design patterns to ensure high-quality, idiomatic domain driven design.",
-      "version": "2026.08.2",
+      "version": "2026.09.2",
       "source": "./patterns",
       "author": {
         "name": "David Souther",
@@ -49,7 +49,7 @@
     {
       "name": "research",
       "description": "Research skills library: public internet, internal documents, domain model, local codebase, and project dependencies.",
-      "version": "2026.08.1",
+      "version": "2026.09.2",
       "source": "./research",
       "author": {
         "name": "David Souther",
@@ -59,7 +59,7 @@
     {
       "name": "characters",
       "description": "Character voices that color human-facing output for other plugins. Each character corresponds to one or more plugins and adds a stable persona, tone, and small whimsy to responses.",
-      "version": "2026.06.8",
+      "version": "2026.09.2",
       "source": "./characters",
       "author": {
         "name": "David Souther",

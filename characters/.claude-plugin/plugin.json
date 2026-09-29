@@ -1,7 +1,7 @@
 {
   "name": "characters",
   "description": "Character voices that color the response style of other plugins. Output-style only (no skills): each voice is a selectable Claude Code output-style applied outside the model's selection loop, not an always-on skill. See README.md for the cast and how to activate a voice.",
-  "version": "2026.06.8",
+  "version": "2026.09.2",
   "owner": {
     "name": "David Souther",
     "email": "davidsouther@gmail.com"

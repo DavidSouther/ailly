@@ -1,7 +1,7 @@
 {
   "name": "patterns",
   "description": "Design patterns to ensure high-quality, idiomatic domain driven design.",
-  "version": "2026.08.2",
+  "version": "2026.09.2",
   "owner": {
     "name": "David Souther",
     "email": "davidsouther@gmail.com"

@@ -1,7 +1,7 @@
 {
   "name": "research",
   "description": "Research skills library: public internet, internal documents, domain model, local codebase, and project dependencies.",
-  "version": "2026.08.1",
+  "version": "2026.09.2",
   "owner": {
     "name": "David Souther",
     "email": "davidsouther@gmail.com"

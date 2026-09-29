@@ -1,6 +1,6 @@
 {
   "name": "domain",
-  "version": "2026.08.1",
+  "version": "2026.09.2",
   "description": "Domain driven design skills library: Bounded Contexts, domain modelling, ubiquitous language, hexagonal architecture, event-sourced architecture.",
   "author": {
     "name": "David Souther",
