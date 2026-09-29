@@ -1,0 +1,66 @@
+# Commands that carry another command, and lists whose stages are independent.
+cwd: /work/app
+---
+env-assignment-wrapper:
+  command: "env RUST_LOG=debug cat config/base.yml"
+  tags: [read, wrapper]
+  expect:
+    reads: ["config/base.yml"]
+
+bare-assignment-prefix:
+  command: "RUST_LOG=debug cat config/base.yml"
+  tags: [read, wrapper]
+  expect:
+    reads: ["config/base.yml"]
+
+sudo-wrapper:
+  command: "sudo cat config/base.yml"
+  tags: [read, wrapper]
+  expect:
+    reads: ["config/base.yml"]
+
+sudo-user-flag-wrapper:
+  command: "sudo -u builder rm -f build/stale.env"
+  tags: [delete, wrapper, value-flag]
+  expect:
+    deletes: ["build/stale.env"]
+
+bash-lc-wrapper:
+  command: "bash -lc 'cat config/base.yml >> build/out.env'"
+  tags: [read, write, wrapper, redirect]
+  expect:
+    reads: ["config/base.yml"]
+    writes: ["build/out.env"]
+
+timeout-wrapper:
+  command: "timeout 30 rg needle src/lib.rs"
+  tags: [read, wrapper, value-flag]
+  expect:
+    reads: ["src/lib.rs"]
+
+pipeline-stages-are-independent:
+  command: "cat config/base.yml | sed -n '1,10p' | tee build/head.env"
+  tags: [read, write, pipeline, tee, script-first]
+  expect:
+    reads: ["config/base.yml"]
+    writes: ["build/head.env"]
+
+pipeline-reader-takes-stdin:
+  command: "cat config/base.yml | wc -l"
+  tags: [read, pipeline, stdin]
+  expect:
+    reads: ["config/base.yml"]
+
+compound-and-list-keeps-both-commands:
+  command: "cat config/base.yml && rm -f build/stale.env"
+  tags: [read, delete, compound]
+  expect:
+    reads: ["config/base.yml"]
+    deletes: ["build/stale.env"]
+
+compound-semicolon-list-keeps-order:
+  command: "rm -f build/stale.env; cat config/base.yml"
+  tags: [read, delete, compound]
+  expect:
+    deletes: ["build/stale.env"]
+    reads: ["config/base.yml"]

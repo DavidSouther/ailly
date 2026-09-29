@@ -1,0 +1,35 @@
+# Commands the operand table does not cover, and text the grammar cannot parse.
+# Both are reported as themselves; neither invents a file row.
+cwd: /work/app
+---
+# git names a path here and still gets no row: the operand table is additive, so
+# a utility it does not cover is reported as unattributed rather than guessed at.
+git-naming-a-path-has-no-file-row:
+  command: "git diff --stat config/base.yml"
+  tags: [unattributed]
+
+gh-list-has-no-file-row:
+  command: "gh pr list --limit 5"
+  tags: [unattributed]
+
+change-directory-is-not-an-access:
+  command: "cd src && ls -la"
+  tags: [unattributed, compound]
+
+echo-is-unattributed-but-its-redirect-is-not:
+  command: "echo ready > build/out.env"
+  tags: [write, redirect, unattributed]
+  expect:
+    writes: ["build/out.env"]
+
+unterminated-quote-does-not-parse:
+  command: "cat 'config/base.yml"
+  tags: [parse-error]
+  expect:
+    error: parse
+
+zsh-parameter-flag-is-not-posix:
+  command: "print -r -- ${(P)dest}"
+  tags: [parse-error]
+  expect:
+    error: parse

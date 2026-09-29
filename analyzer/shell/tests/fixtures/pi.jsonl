@@ -1,0 +1,7 @@
+{"type":"session","version":3,"id":"pi-1","cwd":"/work","parentSession":"pi-parent"}
+{"type":"message","id":"u1","timestamp":"2026-01-01T00:00:00Z","message":{"role":"user","content":"hello"}}
+{"type":"message","id":"a1","parentId":"u1","message":{"role":"assistant","content":[{"type":"text","text":"working"},{"type":"toolCall","id":"tool-1","name":"bash","arguments":"{\"command\":\"ls\"}"}],"usage":{"inputTokens":10,"outputTokens":2,"totalTokens":12}}}
+{"type":"message","id":"r1","parentId":"a1","message":{"role":"toolResult","toolCallId":"tool-1","content":"ok"}}
+{"type":"model_change","id":"model-1","parentId":"r1"}
+{"type":"future_entry","id":"unknown-1"}
+not-json

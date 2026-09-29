@@ -1,0 +1,54 @@
+# Utilities whose operands are destinations rather than sources.
+cwd: /work/app
+---
+tee-destination:
+  command: "tee build/out.env"
+  tags: [write, tee]
+  expect:
+    writes: ["build/out.env"]
+
+tee-append-in-pipeline:
+  command: "cat config/base.yml | tee -a build/out.env"
+  tags: [read, write, tee, pipeline]
+  expect:
+    reads: ["config/base.yml"]
+    writes: ["build/out.env"]
+
+copy-reads-source-writes-destination:
+  command: "cp config/base.yml build/base.yml"
+  tags: [read, write, copy]
+  expect:
+    reads: ["config/base.yml"]
+    writes: ["build/base.yml"]
+
+copy-several-sources-into-a-destination:
+  command: "cp -r config/base.yml config/next.yml build/config"
+  tags: [read, write, copy]
+  expect:
+    reads: ["config/base.yml", "config/next.yml"]
+    writes: ["build/config"]
+
+move-reads-source-writes-destination:
+  command: "mv build/out.env build/final.env"
+  tags: [read, write, copy]
+  expect:
+    reads: ["build/out.env"]
+    writes: ["build/final.env"]
+
+sed-in-place:
+  command: "sed -i 's/alpha/beta/' src/main.rs"
+  tags: [write, in-place, script-first]
+  expect:
+    writes: ["src/main.rs"]
+
+sed-in-place-with-suffix:
+  command: "sed -i.bak -e 's/alpha/beta/' src/main.rs"
+  tags: [write, in-place, script-first]
+  expect:
+    writes: ["src/main.rs"]
+
+touch-creates-a-file:
+  command: "touch build/stamp.txt"
+  tags: [write]
+  expect:
+    writes: ["build/stamp.txt"]

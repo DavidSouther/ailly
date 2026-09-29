@@ -1,0 +1,54 @@
+# Reader utilities: which operands name a file, and which are something else.
+cwd: /work/app
+---
+reader-single-operand:
+  command: "cat config/base.yml"
+  tags: [read]
+  expect:
+    reads: ["config/base.yml"]
+
+reader-several-operands:
+  command: "head -n 40 src/main.rs src/lib.rs"
+  tags: [read, value-flag]
+  expect:
+    reads: ["src/main.rs", "src/lib.rs"]
+
+reader-absolute-operand:
+  command: "cat /work/app/config/base.yml"
+  tags: [read]
+  expect:
+    reads: ["/work/app/config/base.yml"]
+
+reader-stdin-only:
+  command: "cat"
+  tags: [read, stdin]
+
+sed-script-first:
+  command: "sed -n '1,220p' src/lib.rs"
+  tags: [read, script-first]
+  expect:
+    reads: ["src/lib.rs"]
+
+awk-script-first:
+  command: "awk '{ print $2 }' build/report.txt"
+  tags: [read, script-first]
+  expect:
+    reads: ["build/report.txt"]
+
+rg-pattern-first:
+  command: "rg needle src/lib.rs"
+  tags: [read, script-first]
+  expect:
+    reads: ["src/lib.rs"]
+
+grep-pattern-first-with-count-flag:
+  command: "grep -c todo src/main.rs"
+  tags: [read, script-first]
+  expect:
+    reads: ["src/main.rs"]
+
+diff-reads-both-operands:
+  command: "diff config/base.yml config/next.yml"
+  tags: [read]
+  expect:
+    reads: ["config/base.yml", "config/next.yml"]

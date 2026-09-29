@@ -1,0 +1,71 @@
+# Operands the shell would have expanded before any utility saw them. These stay
+# visible with their reason rather than being dropped or resolved into a path.
+cwd: /work/app
+---
+glob-operand:
+  command: "cat logs/*.txt"
+  tags: [read, glob, ambiguous]
+  expect:
+    ambiguous:
+      - path: "logs/*.txt"
+        op: read
+        reason: glob
+
+glob-redirect-destination:
+  command: "cat config/base.yml > build/out-?.env"
+  tags: [read, write, glob, ambiguous, redirect]
+  expect:
+    reads: ["config/base.yml"]
+    ambiguous:
+      - path: "build/out-?.env"
+        op: write
+        reason: glob
+
+parameter-expansion-operand:
+  command: "cat \"$CONFIG_DIR/base.yml\""
+  tags: [read, expansion, ambiguous]
+  expect:
+    ambiguous:
+      - path: "$CONFIG_DIR/base.yml"
+        op: read
+        reason: expansion
+
+parameter-expansion-braced-operand:
+  command: "cat ${CONFIG_DIR}/base.yml"
+  tags: [read, expansion, ambiguous]
+  expect:
+    ambiguous:
+      - path: "${CONFIG_DIR}/base.yml"
+        op: read
+        reason: expansion
+
+command-substitution-operand:
+  command: "wc -l $(git ls-files)"
+  tags: [read, command-substitution, ambiguous]
+  expect:
+    ambiguous:
+      - path: "$(git ls-files)"
+        op: read
+        reason: command_substitution
+
+unquoted-heredoc-body-is-expanded:
+  command: |
+    cat <<EOF > build/out.env
+    generated for $TARGET
+    EOF
+  tags: [read, write, heredoc, ambiguous, redirect]
+  expect:
+    writes: ["build/out.env"]
+    ambiguous:
+      - path: "<<EOF"
+        op: read
+        reason: expanded_heredoc
+
+quoted-heredoc-body-is-literal:
+  command: |
+    cat <<'LIMIT' > build/out.env
+    generated for $TARGET
+    LIMIT
+  tags: [write, heredoc, redirect]
+  expect:
+    writes: ["build/out.env"]
