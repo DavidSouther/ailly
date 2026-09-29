@@ -1,0 +1,62 @@
+# Redirections: the destinations and sources that are paths, and the words that
+# only look like one.
+cwd: /work/app
+---
+reader-redirect-append:
+  command: "cat config/base.yml >> build/out.env"
+  tags: [read, write, redirect]
+  expect:
+    reads: ["config/base.yml"]
+    writes: ["build/out.env"]
+
+reader-redirect-truncate:
+  command: "cat config/base.yml > build/out.env"
+  tags: [read, write, redirect]
+  expect:
+    reads: ["config/base.yml"]
+    writes: ["build/out.env"]
+
+input-redirect:
+  command: "wc -l < config/base.yml"
+  tags: [read, redirect]
+  expect:
+    reads: ["config/base.yml"]
+
+fd-merge:
+  command: "rg needle src/lib.rs 2>&1"
+  tags: [read, redirect, fd-merge]
+  expect:
+    reads: ["src/lib.rs"]
+
+fd-merge-both-streams:
+  command: "cat config/base.yml >build/out.env 2>&1"
+  tags: [read, write, redirect, fd-merge]
+  expect:
+    reads: ["config/base.yml"]
+    writes: ["build/out.env"]
+
+stderr-redirect-to-file:
+  command: "cargo build 2> build/build.err"
+  tags: [write, redirect, unattributed]
+  expect:
+    writes: ["build/build.err"]
+
+redirect-to-devnull:
+  command: "cat config/base.yml > /dev/null"
+  tags: [read, write, redirect]
+  expect:
+    reads: ["config/base.yml"]
+    writes: ["/dev/null"]
+
+issue-233-word-after-destination:
+  command: "printf > build/out.env 'done'"
+  tags: [write, redirect, issue-233]
+  expect:
+    writes: ["build/out.env"]
+
+reader-in-another-directory:
+  command: "cat notes/todo.md"
+  tags: [read, cwd-override]
+  cwd: /work/other
+  expect:
+    reads: ["notes/todo.md"]

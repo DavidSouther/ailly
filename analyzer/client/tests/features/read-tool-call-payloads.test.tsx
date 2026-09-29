@@ -170,7 +170,7 @@ describe("Reading what a write or edit call actually did", () => {
 
     // Summary: the lens Journey 2 starts a wrong-turn investigation from.
     const summary = await screen.findByRole("region", { name: /session summary/i });
-    const byTool = within(summary).getByRole("list", { name: /calls by tool/i });
+    const byTool = within(summary).getByRole("list", { name: /^tools$/i });
 
     await expand(byTool, /^Edit/);
     const editCalls = within(byTool).getByRole("list", { name: /^Edit calls$/i });

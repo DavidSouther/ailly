@@ -4,6 +4,7 @@ mod aggregate;
 #[cfg(test)]
 pub(crate) mod conformance;
 mod domain;
+mod files;
 mod memory;
 mod pricing;
 mod reconcile;
@@ -59,25 +60,17 @@ pub struct SessionListItem {
     pub harness: Harness,
     pub project: SourceValue<String>,
     pub event_count: usize,
-    /// Tokens the harness itself totalled, summed over the session's records.
-    /// Claude writes no total anywhere, so this is Absent for every Claude
-    /// session and `estimated_tokens` is the figure to fall back to.
+    /// Harness-reported token total for this session's own events.
     pub token_total: SourceValue<u64>,
-    /// Millionths of a dollar the harness itself charged, summed over the
-    /// session's deduped responses. Only Pi writes any.
+    /// Harness-reported price in millionths of a US dollar.
     pub recorded_price_micros: SourceValue<u64>,
-    /// The deduped four-bucket token sum the estimate below priced, written
-    /// only when this session was estimated at all.
+    /// Deduped token sum priced by the estimate below, when an estimate exists.
     pub estimated_tokens: SourceValue<u64>,
-    /// Millionths of a dollar derived from the pinned catalog at the time this
-    /// session was first indexed, and frozen from then on. Absent whenever the
-    /// harness charged its own price, the session was already older than
-    /// [`ESTIMATE_MAX_AGE_DAYS`] when first seen, or no model it named has a
-    /// published rate.
+    /// Estimated price in millionths of a US dollar. Frozen when first indexed;
+    /// `Absent` if a harness price exists, the session is outside the estimate
+    /// window, or no rate is available.
     pub estimated_price_micros: SourceValue<u64>,
-    /// The date of the rate table that produced the estimate above. The catalog
-    /// refreshes; the estimate does not, so this is how a surface can say how
-    /// old the rates behind a price are.
+    /// Date of the rate table used for the frozen estimate.
     pub estimated_as_of: SourceValue<String>,
     /// Latest recorded event timestamp for the session, else `Absent`.
     pub last_activity: SourceValue<String>,

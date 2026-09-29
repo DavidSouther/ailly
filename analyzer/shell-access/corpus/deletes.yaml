@@ -1,0 +1,31 @@
+# Removal is reported as its own operation, never folded into write.
+cwd: /work/app
+---
+remove-file-force:
+  command: "rm -f build/stale.env"
+  tags: [delete]
+  expect:
+    deletes: ["build/stale.env"]
+
+remove-several-files:
+  command: "rm build/alpha.env build/beta.env"
+  tags: [delete]
+  expect:
+    deletes: ["build/alpha.env", "build/beta.env"]
+
+remove-empty-directory:
+  command: "rmdir build/empty"
+  tags: [delete]
+  expect:
+    directories:
+      - path: "build/empty"
+        op: delete
+
+remove-recursive-glob:
+  command: "rm -rf build/tmp-*"
+  tags: [delete, glob, ambiguous]
+  expect:
+    ambiguous:
+      - path: "build/tmp-*"
+        op: delete
+        reason: glob

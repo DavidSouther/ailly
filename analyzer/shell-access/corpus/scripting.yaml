@@ -1,0 +1,36 @@
+# Inline interpreters. The script is not attributed; the shell redirects around
+# it still are, and every access the invocation produces says it was scripted.
+cwd: /work/app
+---
+python-inline-with-output-redirect:
+  command: "python3 -c 'print(1)' > build/out.env"
+  tags: [write, scripting, redirect]
+  expect:
+    writes: ["build/out.env"]
+    scripting: true
+
+perl-inline-with-input-redirect:
+  command: "perl -e 'while (<STDIN>) { print }' < config/base.yml"
+  tags: [read, scripting, redirect]
+  expect:
+    reads: ["config/base.yml"]
+    scripting: true
+
+node-inline-with-no-redirect:
+  command: "node -e 'console.log(1)'"
+  tags: [scripting]
+
+ruby-inline-appending:
+  command: "ruby -e 'puts 1' >> build/out.env"
+  tags: [write, scripting, redirect]
+  expect:
+    writes: ["build/out.env"]
+    scripting: true
+
+python-script-file-is-not-attributed:
+  command: "python3 scripts/report.py"
+  tags: [scripting]
+
+python-inline-naming-a-path-in-its-script:
+  command: "python3 -c 'open(\"build/out.env\", \"w\")'"
+  tags: [scripting]

@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   type AillyEvent,
   EventKind,
+  type FileReference,
   type IndexProgress,
   type IndexStatus,
   type SessionListItem,
@@ -78,7 +79,12 @@ function baseEvent(id: string, ordinal: number, kind: EventKind): AillyEvent {
   };
 }
 
-function toolEvent(id: string, ordinal: number, tool: Partial<ToolCall> & { name: string }) {
+function toolEvent(
+  id: string,
+  ordinal: number,
+  tool: Partial<ToolCall> & { name: string },
+  files: FileReference[] = [],
+): AillyEvent {
   return {
     ...baseEvent(id, ordinal, EventKind.ToolCall),
     tool_call: {
@@ -92,7 +98,22 @@ function toolEvent(id: string, ordinal: number, tool: Partial<ToolCall> & { name
         ...tool,
       } satisfies ToolCall,
     },
+    files: files.length === 0 ? "Absent" : { Recorded: files },
   };
+}
+
+/** What the index attributes to a tool that names a path in its own field. */
+function touched(path: string, operation: string): FileReference[] {
+  return [
+    {
+      path,
+      target: { Recorded: "file" },
+      operation: { Recorded: operation },
+      provenance: { Recorded: "tool" },
+      ambiguity: "Absent",
+      cwd: "Absent",
+    },
+  ];
 }
 
 /**
@@ -105,7 +126,12 @@ const EVENTS: AillyEvent[] = [
     ...baseEvent("evt-1", 1, EventKind.UserTurn),
     turn: { Recorded: { role: "user", text: { Recorded: "Migrate the legacy auth service" } } },
   },
-  toolEvent("evt-2", 2, { name: "Read", path: { Recorded: SUSPECT_FILE } }),
+  toolEvent(
+    "evt-2",
+    2,
+    { name: "Read", path: { Recorded: SUSPECT_FILE } },
+    touched(SUSPECT_FILE, "read"),
+  ),
   toolEvent("evt-3", 3, {
     name: "Bash",
     command: { Recorded: "rg -l LegacySession" },
@@ -126,8 +152,18 @@ const EVENTS: AillyEvent[] = [
     name: "WebFetch",
     input: { Recorded: '{"url":"https://api.example.com/openapi.json"}' },
   }),
-  toolEvent("evt-5", 5, { name: "Edit", path: { Recorded: SUSPECT_FILE } }),
-  toolEvent("evt-6", 6, { name: "Read", path: { Recorded: "docs/auth/runbook.md" } }),
+  toolEvent(
+    "evt-5",
+    5,
+    { name: "Edit", path: { Recorded: SUSPECT_FILE } },
+    touched(SUSPECT_FILE, "write"),
+  ),
+  toolEvent(
+    "evt-6",
+    6,
+    { name: "Read", path: { Recorded: "docs/auth/runbook.md" } },
+    touched("docs/auth/runbook.md", "read"),
+  ),
   toolEvent("evt-7", 7, { name: "mcp__acme__lookup" }),
   {
     ...baseEvent("evt-8", 8, EventKind.AssistantTurn),
@@ -200,9 +236,9 @@ describe("Journey 2: Investigate a single session's tool calls", () => {
     expect(within(categories).getByText(/edit.*17%/i)).toBeInTheDocument();
     expect(within(categories).getByText(/unclassified.*17%/i)).toBeInTheDocument();
 
-    // Calls by tool, ranked, with raw harness names preserved. Expanding a row
-    // reveals the individual calls that used to live under Sources.
-    const byTool = within(summary()).getByRole("list", { name: /calls by tool/i });
+    // Tools, ranked, with raw harness names preserved. Expanding a row reveals
+    // the individual calls it made.
+    const byTool = within(summary()).getByRole("list", { name: /^tools$/i });
     const toolRows = within(byTool).getAllByRole("listitem");
     expect(toolRows[0]).toHaveTextContent(/Read/);
     expect(toolRows[0]).toHaveTextContent(/2 calls/);

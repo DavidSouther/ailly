@@ -1,0 +1,20 @@
+[tasks.format]
+description = "Format Rust"
+run = "cargo fmt"
+
+[tasks.check]
+description = "Verify the command corpus, then run Clippy with warnings denied"
+run = [
+  "uv run --script corpus/verify_corpus.py",
+  "cargo clippy --all-targets -- -D warnings",
+]
+
+[tasks.test]
+description = "Run the classifier tests"
+run = "cargo test"
+
+# --all-targets so the corpus tests are linted too: they are where this crate's
+# claims are actually written down.
+[tasks.lint]
+description = "Lint Rust with Clippy"
+run = "cargo clippy --all-targets -- -D warnings"

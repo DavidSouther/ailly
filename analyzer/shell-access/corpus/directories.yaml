@@ -1,0 +1,67 @@
+# Commands whose operands name directories rather than files. A directory is a
+# different claim than a file — nothing here says a file inside it was opened —
+# so these cases pin the target as closely as they pin the path.
+cwd: /work/app
+---
+ls-reads-the-directory-it-lists:
+  command: "ls -la src"
+  tags: [directory, read]
+  expect:
+    directories:
+      - path: "src"
+        op: read
+
+ls-dot-reads-a-directory-not-a-file:
+  command: "ls -la ."
+  tags: [directory, read]
+  expect:
+    directories:
+      - path: "."
+        op: read
+
+find-reads-the-roots-it-walks:
+  command: "find src -name '*.rs'"
+  tags: [directory, read]
+  expect:
+    directories:
+      - path: "src"
+        op: read
+
+# Everything from `-type` on is find's expression: `f` is an argument to a test,
+# and the roots stop at the first word the table does not declare.
+find-stops-at-its-expression:
+  command: "find src tests -type f -print"
+  tags: [directory, read]
+  expect:
+    directories:
+      - path: "src"
+        op: read
+      - path: "tests"
+        op: read
+
+# A root the shell would have expanded is still a fragment, and `ambiguous` is
+# where every fragment is named regardless of what it targets.
+ls-of-an-expansion-is-a-fragment-not-a-directory:
+  command: 'ls -la "$BUILD_DIR"'
+  tags: [directory, read, ambiguous, expansion]
+  expect:
+    ambiguous:
+      - path: "$BUILD_DIR"
+        op: read
+        reason: expansion
+
+du-reads-the-directory-it-measures:
+  command: "du -sh build"
+  tags: [directory, read]
+  expect:
+    directories:
+      - path: "build"
+        op: read
+
+mkdir-creates-a-directory-not-a-file:
+  command: "mkdir -p build/logs"
+  tags: [directory, write]
+  expect:
+    directories:
+      - path: "build/logs"
+        op: write

@@ -151,10 +151,10 @@ describe("Scanning a session by tool call type", () => {
   it("gives each tool call a glyph for its kind, and an unknown tool a neutral one", async () => {
     await renderApp();
 
-    // Summary: the ranked "Calls by tool" list, where the tool name is the row's
+    // Summary: the ranked "Tools" list, where the tool name is the row's
     // identity and the glyph is what makes the list scannable.
     const summary = await screen.findByRole("region", { name: /session summary/i });
-    const byTool = within(summary).getByRole("list", { name: /calls by tool/i });
+    const byTool = within(summary).getByRole("list", { name: /^tools$/i });
     const summaryRow = (name: RegExp) => within(byTool).getByRole("button", { name });
 
     expect(glyphs(summaryRow(/^Bash/))).toEqual(["lucide-square-terminal"]);

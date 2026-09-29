@@ -20,9 +20,9 @@ pub struct Provenance {
     pub ordinal: usize,
 }
 
-/// Tracks whether a value was found in the source document. Consumers must preserve these
-/// distinctions rather than treating missing, unsupported, or malformed data as
-/// an observed value.
+/// Whether a value was found in the source document. Consumers must preserve
+/// `Absent`, `Unsupported`, and `Malformed` rather than treating them as an
+/// observed value.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub enum SourceValue<T> {
     Recorded(T),
@@ -125,10 +125,17 @@ impl Subagent {
     }
 }
 
+/// An attempted filesystem access. `provenance` identifies recorded versus
+/// derived evidence; `ambiguity` marks unresolved command fragments; `cwd` is
+/// recorded context and is never joined to `path`.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct FileReference {
     pub path: String,
+    pub target: SourceValue<String>,
     pub operation: SourceValue<String>,
+    pub provenance: SourceValue<String>,
+    pub ambiguity: SourceValue<String>,
+    pub cwd: SourceValue<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -138,15 +145,9 @@ pub struct TokenUsage {
     pub cache_read: SourceValue<u64>,
     pub cache_write: SourceValue<u64>,
     pub total: SourceValue<u64>,
-    /// What the harness itself charged for this record, in millionths of one US
-    /// dollar. Only Pi writes a dollar figure at all, so Claude and Codex leave
-    /// this Absent rather than a fabricated zero; an estimate from a pricing
-    /// catalog is the client's derivation, never an adapter's.
-    ///
-    /// Integer millionths rather than `f64` for two reasons: `TokenUsage` keeps
-    /// `Eq`, so two reads of one transcript compare equal; and Pi's own figures
-    /// run to seven decimal places (`0.0011264`), which cents would round away
-    /// entirely. Currency is USD, which no harness labels.
+    /// Harness-reported cost in millionths of a US dollar. Integer storage
+    /// preserves equality and sub-cent precision; `Absent` means the harness
+    /// reported no cost.
     pub cost_total_micros: SourceValue<u64>,
     /// The record that reported these measurements; never an inferred aggregate.
     pub scope: String,

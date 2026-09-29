@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import { type AillyEvent, EventKind, type ToolCall, type ToolResult } from "../../src/tauri";
+import {
+  type AillyEvent,
+  EventKind,
+  type FileReference,
+  type ToolCall,
+  type ToolResult,
+} from "../../src/tauri";
 import { categoryForTool, isWebCall, summarizeSession } from "../../src/ui/summary/rollup";
 
 const SESSION_ID = "claude_code:/home/a.jsonl:one";
@@ -30,6 +36,7 @@ function toolEvent(
   id: string,
   ordinal: number,
   tool: Partial<ToolCall> & { name: string },
+  files: FileReference[] = [],
 ): AillyEvent {
   return {
     ...baseEvent(id, ordinal, EventKind.ToolCall),
@@ -44,6 +51,24 @@ function toolEvent(
         ...tool,
       } satisfies ToolCall,
     },
+    files: files.length === 0 ? "Absent" : { Recorded: files },
+  };
+}
+
+function access(
+  path: string,
+  operation: string,
+  provenance: string,
+  ambiguity: string | null = null,
+  cwd: string | null = null,
+): FileReference {
+  return {
+    path,
+    target: { Recorded: "file" },
+    operation: { Recorded: operation },
+    provenance: { Recorded: provenance },
+    ambiguity: ambiguity === null ? "Absent" : { Recorded: ambiguity },
+    cwd: cwd === null ? "Absent" : { Recorded: cwd },
   };
 }
 
@@ -61,14 +86,19 @@ function resultEvent(id: string, ordinal: number, result: Partial<ToolResult>): 
   };
 }
 
-/** Six tool calls, mirroring the feature test's session. */
 const EVENTS: AillyEvent[] = [
   baseEvent("evt-1", 1, EventKind.UserTurn),
-  toolEvent("evt-2", 2, { name: "Read", path: { Recorded: SUSPECT_FILE } }),
+  toolEvent("evt-2", 2, { name: "Read", path: { Recorded: SUSPECT_FILE } }, [
+    access(SUSPECT_FILE, "read", "tool"),
+  ]),
   toolEvent("evt-3", 3, { name: "Bash", command: { Recorded: "rg -l LegacySession" } }),
   toolEvent("evt-4", 4, { name: "WebFetch" }),
-  toolEvent("evt-5", 5, { name: "Edit", path: { Recorded: SUSPECT_FILE } }),
-  toolEvent("evt-6", 6, { name: "Read", path: { Recorded: "docs/auth/runbook.md" } }),
+  toolEvent("evt-5", 5, { name: "Edit", path: { Recorded: SUSPECT_FILE } }, [
+    access(SUSPECT_FILE, "write", "tool"),
+  ]),
+  toolEvent("evt-6", 6, { name: "Read", path: { Recorded: "docs/auth/runbook.md" } }, [
+    access("docs/auth/runbook.md", "read", "tool"),
+  ]),
   toolEvent("evt-7", 7, { name: "mcp__acme__lookup" }),
 ];
 
@@ -184,9 +214,76 @@ describe("summarizeSession", () => {
     expect(shell?.calls[0]?.detail).toBe("rg -l LegacySession");
     expect(web?.calls[0]?.detailRecorded).toBe(false);
     expect(web?.calls[0]?.detail).toMatch(/not recorded/i);
-    expect(file?.label).toBe("File access");
-    expect(file?.files.map((entry) => entry.path)).toEqual([SUSPECT_FILE, "docs/auth/runbook.md"]);
-    expect(file?.count).toBe(2);
+    // Which files were reached is `fileAccesses`, not this group: these are the
+    // calls that named one.
+    expect(file?.label).toBe("File tools");
+    expect(file?.count).toBe(3);
+  });
+
+  it("groups a file's accesses under one row, keeping every label it collected", () => {
+    const stats = summarizeSession(EVENTS);
+
+    expect(stats.fileAccesses[0]).toEqual({
+      id: `file\0${SUSPECT_FILE}\0\0`,
+      path: SUSPECT_FILE,
+      target: "file",
+      cwd: null,
+      touches: 2,
+      operations: ["read", "write"],
+      provenances: ["tool"],
+      ambiguity: null,
+    });
+  });
+
+  it("counts an ambiguous fragment as an access but not as a file touched", () => {
+    const stats = summarizeSession([
+      toolEvent("evt-1", 1, { name: "Bash", command: { Recorded: "cat logs/*.txt" } }, [
+        access("logs/*.txt", "read", "shell", "glob not expanded"),
+      ]),
+      toolEvent("evt-2", 2, { name: "Read", path: { Recorded: SUSPECT_FILE } }, [
+        access(SUSPECT_FILE, "read", "tool"),
+      ]),
+    ]);
+
+    expect(stats.fileAccesses).toHaveLength(2);
+    expect(stats.filesTouchedCount).toBe(1);
+    expect(stats.fileAccesses.find((file) => file.path === "logs/*.txt")?.ambiguity).toBe(
+      "glob not expanded",
+    );
+  });
+
+  // The two accesses are paired here to isolate the identity rule; the reason
+  // string is the classifier's own so this cannot drift from its vocabulary.
+  it("keeps resolved and unresolved claims for the same path as separate identities", () => {
+    const stats = summarizeSession([
+      toolEvent("evt-1", 1, { name: "Bash", command: { Recorded: 'cat "$LOG"' } }, [
+        access("$LOG", "read", "shell", "expansion not resolved"),
+      ]),
+      toolEvent("evt-2", 2, { name: "Read", path: { Recorded: "$LOG" } }, [
+        access("$LOG", "read", "tool"),
+      ]),
+    ]);
+
+    expect(stats.fileAccesses).toHaveLength(2);
+    expect(stats.fileAccesses.find((file) => file.ambiguity !== null)?.ambiguity).toBe(
+      "expansion not resolved",
+    );
+    expect(stats.filesTouchedCount).toBe(1);
+  });
+
+  it("keeps the same relative path under different cwds as separate rows", () => {
+    const stats = summarizeSession([
+      toolEvent("evt-1", 1, { name: "Bash", command: { Recorded: "cat config.toml" } }, [
+        access("config.toml", "read", "shell", null, "/work/app"),
+      ]),
+      toolEvent("evt-2", 2, { name: "Bash", command: { Recorded: "cat config.toml" } }, [
+        access("config.toml", "read", "shell", null, "/work/other"),
+      ]),
+    ]);
+
+    expect(stats.fileAccesses).toHaveLength(2);
+    expect(stats.filesTouchedCount).toBe(2);
+    expect(stats.fileAccesses.map((file) => file.cwd).sort()).toEqual(["/work/app", "/work/other"]);
   });
 
   it("carries a call's working directory only when the source recorded one", () => {
@@ -312,29 +409,40 @@ describe("summarizeSession", () => {
     expect(shell?.calls[1]).toMatchObject({ detail: "", detailRecorded: true });
   });
 
-  it("ranks files by touch count and lists each file's distinct tools", () => {
+  it("ranks accesses by how often the file was touched", () => {
     const stats = summarizeSession(EVENTS);
 
-    expect(stats.filesTouched[0]).toEqual({
-      path: SUSPECT_FILE,
-      touches: 2,
-      tools: ["Read", "Edit"],
-    });
+    expect(stats.fileAccesses.map((file) => file.path)).toEqual([
+      SUSPECT_FILE,
+      "docs/auth/runbook.md",
+    ]);
   });
 
-  it("counts a call with no recorded path toward totals but not toward files", () => {
-    const stats = summarizeSession([toolEvent("evt-1", 1, { name: "Read" })]);
-
-    expect(stats.toolCallCount).toBe(1);
-    expect(stats.filesTouched).toEqual([]);
-  });
-
-  it("lists a repeated tool once per file", () => {
+  /**
+   * A path in a tool's arguments is not itself an access: only what the index
+   * attributed counts, so a session it said nothing about stays empty rather
+   * than being re-scanned here.
+   */
+  it("counts a call the index attributed no files to toward totals but not toward files", () => {
     const stats = summarizeSession([
       toolEvent("evt-1", 1, { name: "Read", path: { Recorded: SUSPECT_FILE } }),
-      toolEvent("evt-2", 2, { name: "Read", path: { Recorded: SUSPECT_FILE } }),
     ]);
 
-    expect(stats.filesTouched[0]?.tools).toEqual(["Read"]);
+    expect(stats.toolCallCount).toBe(1);
+    expect(stats.fileAccesses).toEqual([]);
+    expect(stats.filesTouchedCount).toBe(0);
+  });
+
+  it("lists a repeated operation once per file", () => {
+    const stats = summarizeSession([
+      toolEvent("evt-1", 1, { name: "Read", path: { Recorded: SUSPECT_FILE } }, [
+        access(SUSPECT_FILE, "read", "tool"),
+      ]),
+      toolEvent("evt-2", 2, { name: "Read", path: { Recorded: SUSPECT_FILE } }, [
+        access(SUSPECT_FILE, "read", "tool"),
+      ]),
+    ]);
+
+    expect(stats.fileAccesses[0]).toMatchObject({ touches: 2, operations: ["read"] });
   });
 });

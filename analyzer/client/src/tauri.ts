@@ -1,3 +1,4 @@
+/** These types mirror Tauri's serialized Rust API. */
 import { invoke } from "@tauri-apps/api/core";
 import { type UnlistenFn, listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
@@ -19,13 +20,12 @@ export async function chooseSessionsDirectory(): Promise<string | null> {
   return typeof selected === "string" ? selected : null;
 }
 
-/** Mirrors the Rust `Harness` enum (`#[serde(rename_all = "snake_case")]`). */
 export type Harness = "claude_code" | "codex" | "pi";
 
 /**
- * Mirrors the Rust `SourceValue<T>`: a value is either `Recorded` with data or
- * one of three explicit "not observed" states. The UI must preserve these
- * distinctions rather than fabricating a value.
+ * A value is either `Recorded` with data or one of three explicit "not
+ * observed" states. The UI must preserve these distinctions rather than
+ * fabricating a value.
  */
 export type SourceValue<T> = { Recorded: T } | "Absent" | "Unsupported" | "Malformed";
 
@@ -34,16 +34,8 @@ export function isRecorded<T>(value: SourceValue<T>): value is { Recorded: T } {
 }
 
 /**
- * One session's token and dollar figures, folded by the indexer when the
- * session was first read and stored on its row.
- *
- * The client does not compute these. A session's headline spend is read from
- * here rather than folded out of an event page, so a list row can show it
- * without opening a transcript, and so the rate table that turns tokens into
- * dollars lives in exactly one place — the Rust index.
- *
- * Scoped to the session's *own* events. A spawned child is its own indexed
- * session with its own figures; summing a subtree means summing the rows.
+ * Indexed token and price figures for this session's own events. Estimated
+ * values are frozen when first indexed; child sessions have separate figures.
  */
 export interface SessionTokenFigures {
   /**
@@ -72,7 +64,6 @@ export interface SessionTokenFigures {
   estimated_as_of: SourceValue<string>;
 }
 
-/** Mirrors the Rust `SessionListItem`. */
 export interface SessionListItem extends SessionTokenFigures {
   id: string;
   harness: Harness;
@@ -97,7 +88,6 @@ interface ListSessionsQuery {
   project: string | null;
 }
 
-/** Mirrors the Rust `EventKind` (`#[serde(rename_all = "snake_case")]`). */
 export enum EventKind {
   UserTurn = "user_turn",
   AssistantTurn = "assistant_turn",
@@ -111,7 +101,6 @@ export enum EventKind {
   Unknown = "unknown",
 }
 
-/** Mirrors the Rust `Provenance`: where a normalized event came from. */
 export interface Provenance {
   harness: Harness;
   path: string;
@@ -119,13 +108,11 @@ export interface Provenance {
   ordinal: number;
 }
 
-/** Mirrors the Rust `Turn`. */
 export interface Turn {
   role: string;
   text: SourceValue<string>;
 }
 
-/** Mirrors the Rust `ToolCall`. */
 export interface ToolCall {
   name: string;
   call_id: SourceValue<string>;
@@ -136,7 +123,6 @@ export interface ToolCall {
   cwd: SourceValue<string>;
 }
 
-/** Mirrors the Rust `ToolResult`. */
 export interface ToolResult {
   call_id: SourceValue<string>;
   output: SourceValue<string>;
@@ -144,10 +130,9 @@ export interface ToolResult {
 }
 
 /**
- * Mirrors the Rust `TokenUsage`. Every dimension is independently
- * recorded-or-not, and the values are the harness's own: `input` is whatever
- * the source wrote, which for Codex already contains its cached portion. The
- * per-harness normalization into disjoint buckets lives in `tokens/rollup.ts`.
+ * Every dimension is independently recorded-or-not. Values are the harness's
+ * own: `input` is whatever the source wrote, which for Codex already contains
+ * its cached portion.
  */
 export interface TokenUsage {
   input: SourceValue<number>;
@@ -171,9 +156,9 @@ export interface TokenUsage {
 export type SubagentTokenUsage = TokenUsage;
 
 /**
- * Mirrors the Rust `Subagent`: the delegation facts one harness recorded, each
- * independently recorded-or-not. A harness that wrote no duration leaves
- * `duration_ms` unrecorded rather than zero.
+ * Delegation facts one harness recorded, each independently recorded-or-not. A
+ * harness that wrote no duration leaves `duration_ms` unrecorded rather than
+ * zero.
  */
 export interface Subagent {
   native_id: SourceValue<string>;
@@ -187,16 +172,30 @@ export interface Subagent {
   child_session_id: SourceValue<string>;
 }
 
-/** Mirrors the Rust `FileReference`. */
+/**
+ * One attempted filesystem access. `path` is a literal name, or — when
+ * `ambiguity` is recorded — the unresolved fragment the command wrote.
+ */
 export interface FileReference {
   path: string;
+  /** The object this access is known to target: `file` or `directory`. */
+  target: SourceValue<string>;
   operation: SourceValue<string>;
+  /**
+   * Where the claim came from: `tool` for a harness's own dedicated file field,
+   * `shell` for evidence read out of recorded command text.
+   */
+  provenance: SourceValue<string>;
+  /** Why `path` stayed a fragment. Unrecorded for a literal path. */
+  ambiguity: SourceValue<string>;
+  /**
+   * Working directory recorded for this access, as identity/context only.
+   * Never joined onto `path`.
+   */
+  cwd: SourceValue<string>;
 }
 
-/**
- * Mirrors the Rust `Event`. Named `AillyEvent` to avoid clashing with the DOM
- * `Event`.
- */
+/** Named `AillyEvent` to avoid clashing with the DOM `Event`. */
 export interface AillyEvent {
   id: string;
   session_id: string;
@@ -241,7 +240,6 @@ export interface IndexProgress {
   total: number;
 }
 
-/** Mirrors the Rust `IndexStatus`. */
 export type IndexStatus = "idle" | "running" | { error: { message: string } };
 
 /**

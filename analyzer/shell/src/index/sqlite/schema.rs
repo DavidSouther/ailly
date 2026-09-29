@@ -3,7 +3,9 @@
 use rusqlite::types::Value;
 use rusqlite::{Connection, OptionalExtension, TransactionBehavior};
 
-pub const SCHEMA_VERSION: i64 = 9;
+/// Bump for schema changes and changes to derived indexed values. Version
+/// mismatches rebuild the index instead of migrating it.
+pub const SCHEMA_VERSION: i64 = 14;
 
 pub fn open_connection(path: &std::path::Path) -> rusqlite::Result<Connection> {
     let mut conn = Connection::open(path)?;
@@ -15,10 +17,8 @@ pub fn open_connection(path: &std::path::Path) -> rusqlite::Result<Connection> {
 }
 
 fn ensure_schema(conn: &mut Connection) -> rusqlite::Result<()> {
-    // The rebuild runs in one immediate transaction so a rebuild that fails or
-    // races another connection cannot leave the file half-built. A half-built
-    // file has tables but no version row, and every later launch then failed on
-    // `CREATE TABLE meta` with no way to repair itself.
+    // Rebuild in one immediate transaction so a failed or racing rebuild cannot
+    // leave the file half-built.
     let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
     if stored_version(&tx)? != Some(SCHEMA_VERSION) {
         drop_tables(&tx)?;
@@ -104,10 +104,9 @@ fn create_schema(conn: &Connection) -> rusqlite::Result<()> {
             project_value TEXT,
             parent_session_kind TEXT NOT NULL,
             parent_session_value TEXT,
-            -- The session's own token and dollar figures, folded once when the
-            -- session is indexed so a list row never has to open a transcript
-            -- to show them. Each is an independently recorded-or-not
-            -- SourceValue, encoded the way every other column here is.
+            -- Precomputed session token and price figures so list queries do
+            -- not reread transcripts. Each column is an independently
+            -- recorded-or-not SourceValue.
             token_total_kind TEXT NOT NULL,
             token_total_value TEXT,
             recorded_price_micros_kind TEXT NOT NULL,
@@ -116,9 +115,8 @@ fn create_schema(conn: &Connection) -> rusqlite::Result<()> {
             estimated_tokens_value TEXT,
             estimated_price_micros_kind TEXT NOT NULL,
             estimated_price_micros_value TEXT,
-            -- The date of the rate table the estimate was priced against. The
-            -- catalog can refresh while the estimate stays frozen, so the row
-            -- has to carry the date rather than let a surface assume today's.
+            -- Date of the rate table used for the frozen estimate. Must travel
+            -- with the estimate because the catalog can refresh later.
             estimated_as_of_kind TEXT NOT NULL,
             estimated_as_of_value TEXT
         );
@@ -239,9 +237,8 @@ mod tests {
         .expect("record a source file");
     }
 
-    /// The reported failure: a rebuild that did not finish left the file with
-    /// every table but no version row, and each later launch reported "table
-    /// meta already exists" because it skipped the drop.
+    /// A missing version row makes the schema unusable, even when tables exist.
+    /// Reopening must rebuild it.
     #[test]
     fn rebuilds_an_index_whose_version_row_is_missing() {
         let path = temp_path("missing-version");

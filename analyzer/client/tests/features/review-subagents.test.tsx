@@ -12,6 +12,7 @@ import {
   type SessionListItem,
   type SourceValue,
   type ToolCall,
+  isRecorded,
 } from "../../src/tauri";
 import { resetSessionsStore } from "../../src/ui/sessions/store";
 
@@ -115,12 +116,18 @@ function baseEvent(id: string, ordinal: number, kind: EventKind, sessionId: stri
   };
 }
 
+/**
+ * A tool call, carrying the file access the index attributes to a tool that
+ * named a path in its own dedicated field. Every reader here is a `Read`, so
+ * the attributed operation is always a read.
+ */
 function toolEvent(
   id: string,
   ordinal: number,
   sessionId: string,
   tool: Partial<ToolCall> & { name: string },
 ): SubagentEvent {
+  const path = tool.path;
   return {
     ...baseEvent(id, ordinal, EventKind.ToolCall, sessionId),
     tool_call: {
@@ -134,6 +141,21 @@ function toolEvent(
         ...tool,
       } satisfies ToolCall,
     },
+    files:
+      path === undefined || !isRecorded(path)
+        ? "Absent"
+        : {
+            Recorded: [
+              {
+                path: path.Recorded,
+                target: { Recorded: "file" },
+                operation: { Recorded: "read" },
+                provenance: { Recorded: "tool" },
+                ambiguity: "Absent",
+                cwd: "Absent",
+              },
+            ],
+          },
   };
 }
 
@@ -287,7 +309,7 @@ describe("Journey 5: Review a session's subagents", () => {
     expect(within(field(childSummary, "Tool calls")).getByText("3")).toBeInTheDocument();
     expect(within(field(childSummary, "Files touched")).getByText("2")).toBeInTheDocument();
 
-    const byTool = within(childSummary).getByRole("list", { name: /calls by tool/i });
+    const byTool = within(childSummary).getByRole("list", { name: /^tools$/i });
     const topTool = within(byTool).getAllByRole("listitem")[0] as HTMLElement;
     expect(topTool).toHaveTextContent(/Read/);
     expect(topTool).toHaveTextContent(/2 calls/);
@@ -310,7 +332,7 @@ describe("Journey 5: Review a session's subagents", () => {
     expect(within(unlinked).queryByRole("region", { name: /subagent session/i })).toBeNull();
   });
 
-  it("folds descendant tool calls into Calls by Tool when Include subagent tools is on", async () => {
+  it("folds descendant tool calls into the Tools list when Include subagent tools is on", async () => {
     await renderApp();
 
     const summary = await screen.findByRole("region", { name: /session summary/i });
@@ -318,7 +340,7 @@ describe("Journey 5: Review a session's subagents", () => {
     expect(within(spawns).getByText("2")).toBeInTheDocument();
 
     // Parent-only breakdown before the toggle: one Read on the parent.
-    const before = within(summary).getByRole("list", { name: /calls by tool/i });
+    const before = within(summary).getByRole("list", { name: /^tools$/i });
     expect(within(before).getAllByRole("listitem")).toHaveLength(1);
     expect(within(before).getByText("Read", { selector: ".text-foreground-title" })).toBeTruthy();
     expect(within(before).queryByText("Bash", { selector: ".text-foreground-title" })).toBeNull();
@@ -327,7 +349,7 @@ describe("Journey 5: Review a session's subagents", () => {
       within(spawns).getByRole("checkbox", { name: /include subagent tools/i }),
     );
 
-    const after = await within(summary).findByRole("list", { name: /calls by tool/i });
+    const after = await within(summary).findByRole("list", { name: /^tools$/i });
     const toolRows = within(after).getAllByRole("listitem");
     // Parent Read + child Reads (2) + child Bash → Read 3, Bash 1.
     expect(toolRows[0]).toHaveTextContent(/Read/);

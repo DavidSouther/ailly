@@ -21,6 +21,15 @@ const COLOR_CLASS: Record<BadgeColor, string> = {
   [BadgeColor.METAL_DARK]: "bg-gray-300 text-gray-900",
 };
 
+/**
+ * The exact colour classes a badge wears, so a control that is not a `Badge`
+ * can wear them too rather than duplicating the map and drifting into a
+ * near-match of it.
+ */
+export function badgeColorClass(color: BadgeColor): string {
+  return COLOR_CLASS[color];
+}
+
 interface BadgeProps {
   children?: ReactNode;
   color?: BadgeColor | undefined;

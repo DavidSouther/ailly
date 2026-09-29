@@ -51,7 +51,10 @@ pub fn batch_from_parsed(
             });
     }
 
-    for event in parsed.events {
+    for mut event in parsed.events {
+        // Before the search row, so a path only a command mentioned is findable
+        // by the same FTS projection a dedicated `path` field already gets.
+        event.files = crate::index::files::attributed_files(&event);
         if let Some(text) = search_text_for_event(&event) {
             batch.search.push(SearchRow {
                 event_id: event.id.clone(),

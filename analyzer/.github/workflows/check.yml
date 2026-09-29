@@ -15,6 +15,7 @@ jobs:
           cache: npm
           cache-dependency-path: client/package-lock.json
       - uses: dtolnay/rust-toolchain@stable
+      - uses: jdx/mise-action@v2
       - run: npm ci --prefix client
       - run: mise run check
       - run: mise run test

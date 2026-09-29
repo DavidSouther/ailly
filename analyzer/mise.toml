@@ -1,26 +1,41 @@
 [tools]
 node = "22"
 rust = "stable"
+# The corpus verifier declares its own dependencies inline; uv resolves them and
+# the Python it needs, so neither is a machine-level prerequisite.
+uv = "latest"
 
 [tasks.deps]
 description = "Install client dependencies"
 run = "mise -C client run deps"
 
 [tasks.format]
-description = "Format client and shell"
-run = ["mise -C client run format", "mise -C shell run format"]
+description = "Format every crate and the client"
+run = [
+  "mise -C client run format",
+  "mise -C shell run format",
+  "mise -C shell-access run format",
+]
 
 [tasks.check]
-description = "Run client and shell static analysis"
-run = ["mise -C client run check", "mise -C shell run check"]
+description = "Run static analysis over every crate and the client"
+run = [
+  "mise -C client run check",
+  "mise -C shell run check",
+  "mise -C shell-access run check",
+]
 
 [tasks.test]
-description = "Run client and shell tests"
-run = ["mise -C client run test", "mise -C shell run test"]
+description = "Run every crate's and the client's tests"
+run = ["mise -C client run test", "mise -C shell run test", "mise -C shell-access run test"]
 
 [tasks.lint]
-description = "Lint client and shell"
-run = ["mise -C client run lint", "mise -C shell run lint"]
+description = "Lint every crate and the client"
+run = [
+  "mise -C client run lint",
+  "mise -C shell run lint",
+  "mise -C shell-access run lint",
+]
 
 [tasks.dev]
 description = "Start the Tauri desktop app"

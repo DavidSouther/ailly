@@ -834,6 +834,49 @@ mod tests {
         assert_eq!(stored.tool_call, SourceValue::Absent);
     }
 
+    /// The accesses a recorded command implies are derived on the way in, so a
+    /// stored event carries them without any reader parsing shell again — and an
+    /// operand the shell would have expanded survives as a fragment with its
+    /// reason, rather than being flattened into a path.
+    #[test]
+    fn shell_derived_accesses_and_their_ambiguity_round_trip_through_the_index() {
+        let event = Event {
+            kind: EventKind::ToolCall,
+            tool_call: SourceValue::Recorded(crate::model::ToolCall {
+                name: "Bash".to_string(),
+                call_id: SourceValue::Absent,
+                input: SourceValue::Absent,
+                command: SourceValue::Recorded("cat logs/*.txt > build/out.env".to_string()),
+                path: SourceValue::Absent,
+                url: SourceValue::Absent,
+                cwd: SourceValue::Recorded("/work/app".to_string()),
+            }),
+            ..spawn_event("/tmp/shell-access.jsonl", SourceValue::Absent)
+        };
+
+        let stored = round_trip("shell-access", event);
+
+        let SourceValue::Recorded(files) = &stored.files else {
+            panic!("expected recorded files, got {:?}", stored.files);
+        };
+        assert_eq!(files.len(), 2);
+        assert_eq!(files[0].path, "logs/*.txt");
+        assert_eq!(
+            files[0].provenance,
+            SourceValue::Recorded("shell".to_string())
+        );
+        assert_eq!(
+            files[0].ambiguity,
+            SourceValue::Recorded("glob not expanded".to_string())
+        );
+        assert_eq!(files[1].path, "build/out.env");
+        assert_eq!(
+            files[1].operation,
+            SourceValue::Recorded("write".to_string())
+        );
+        assert_eq!(files[1].ambiguity, SourceValue::Absent);
+    }
+
     /// Two records of one API response, each repeating that response's usage,
     /// which is how Claude actually writes a multi-block reply.
     fn repeated_response_events(source_path: &str, response_id: &str) -> Vec<Event> {

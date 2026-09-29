@@ -17,16 +17,15 @@ import {
   CATEGORY_COLOR,
   CATEGORY_LABEL,
   CallsByTool,
+  FilesystemList,
   SectionHeading,
   StatTile,
   recordedLabel,
 } from "./stats";
 
 /**
- * The investigation lens: one session's tool calls folded into totals, a
- * category split, and per-tool rankings whose rows expand into the individual
- * calls (command, path, URL, captured output). Dimensions the source never
- * recorded are labelled as such rather than rendered as zero.
+ * Renders summary statistics and tool activity for one session. Missing source
+ * values remain explicitly unrecorded.
  */
 export function SummaryPane({
   state,
@@ -68,7 +67,7 @@ function SummaryContent({
   const [includeSubagentTools, setIncludeSubagentTools] = useState(false);
   const descendants = useDescendantEvents(events, includeSubagentTools && canIncludeSubagentTools);
   // Every breakdown below the tiles reads from this fold, so the category split
-  // and Calls by tool always describe the same set of calls.
+  // and the Tools list always describe the same set of calls.
   const breakdown = useMemo(
     () => statsIncludingDescendants(stats, events, descendants),
     [stats, events, descendants],
@@ -106,6 +105,11 @@ function SummaryContent({
       ) : (
         <>
           <CategorySplit stats={breakdown} />
+          {breakdown.fileAccesses.length === 0 ? null : (
+            // Keyed by session: the filter and chips are a view of one
+            // session's paths, so they must not narrow the next one's.
+            <FilesystemList key={events[0]?.session_id} files={breakdown.fileAccesses} />
+          )}
           {descendants.status === LoadStatus.Loading ? (
             <p className="text-foreground-muted">Loading subagent tool calls…</p>
           ) : null}
@@ -128,7 +132,7 @@ function subagentSpawnsLabel(value: SourceValue<number>): string {
 
 /**
  * The Subagent Spawns tile, with an optional toggle that pulls every descendant
- * session's tools into Calls by Tool. The tile's count stays parent-only —
+ * session's tools into the Tools list. The tile's count stays parent-only —
  * including children changes the breakdown, not how many times this session
  * itself delegated.
  */
