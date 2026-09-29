@@ -1,5 +1,5 @@
 {
-  "name": "domain-driven-design",
+  "name": "ailly",
   "private": true,
   "description": "DDD & design-pattern skills for agentic development, packaged as a pi package alongside the Claude Code and Codex adapters.",
   "keywords": [
@@ -9,8 +9,8 @@
     "tdd",
     "domain-driven-design"
   ],
-  "homepage": "https://github.com/davidsouther/domain-driven-design",
-  "repository": "https://github.com/davidsouther/domain-driven-design",
+  "homepage": "https://github.com/davidsouther/ailly",
+  "repository": "https://github.com/davidsouther/ailly",
   "license": "MIT",
   "pi": {
     "extensions": [
