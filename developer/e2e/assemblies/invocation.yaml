@@ -2,8 +2,8 @@ name: invocation
 model: claude-sonnet-4-6
 
 # Post-consolidation (progressive-disclosure, developer-plugin consolidation): the only
-# standalone developer skills left are `ailly` (the bootstrap + coordinator) and
-# `clean-comments-review`. The five lifecycle phases live as references under the
+# standalone developer skills left are `ailly` (the bootstrap + coordinator),
+# `clean-comments-review`, and `code-review` (user-invoked and offered, not a review specialist). The five lifecycle phases live as references under the
 # coordinator (../skills/ailly/references/phases/<phase>.md, exercised by
 # invocation-phases.yaml), and the four progressive abilities (thinking, refactor,
 # initialize, program-management) live as references too (../skills/ailly/references/...,

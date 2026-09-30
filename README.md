@@ -105,7 +105,8 @@ A strict three-loop development lifecycle: design → feature test → TDD imple
 | Skill | When to use |
 |-------|-------------|
 | `developer:ailly` | Bootstrap and session coordinator for all developer work. The main driver and the entry point for every lifecycle phase: `/ailly research`, `/ailly design`, `/ailly plan`, `/ailly build`, `/ailly cleanup`. Each phase loads one `references/phases/<phase>.md` and runs with the isolation mechanism supported by the active harness. It also routes the coordinator's progressive abilities — thinking (stuck on a build error), refactor (clean up green code), initialize (new project/language setup), and program-management (tracker task I/O and wiring). Running `/ailly` will get it going on the next thing. |
-| `developer:clean-comments-review` | Reviewing comment and DocBlock audience and longevity (a review specialist consumed by `general:review`) |
+| `developer:clean-comments-review` | Reviewing comment and DocBlock audience and longevity (a review specialist consumed by `general:review`). |
+| `developer:code-review` | Optional user review, offered after `general:review` and before the change is public. Launches [diffx](https://github.com/wong2/diffx) to collects the user's comments on the current diff. |
 
 The developer lifecycle uses draft gates: each artifact (design doc, feature test, plan) must be human-reviewed and cleared before the next loop begins.
 

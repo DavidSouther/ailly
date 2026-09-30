@@ -13,7 +13,7 @@ No single review format works for every document type. This skill orchestrates a
 4. **Fix.** A separate subagent or inline pass addresses the ranked findings. Evaluation never emits edits; fixing is always a separate pass.
 5. **Re-evaluate** and flag any remaining issues to the user. Repeated LLM editing risks attractor states, so handing the residue to the user mitigates that.
 
-After initial convergence, dispatch a separate cold challenger and fresh final verifier under `general:c3-review`'s High-severity challenge protocol. C3 and any specialists run only to prepare a final artifact for handoff; Intent review is the continuous, every-phase-or-stage mechanism for an evolving Ailly artifact instead.
+After initial convergence, dispatch a separate cold challenger and fresh final verifier under `general:c3-review`'s High-severity challenge protocol. C3 and any specialists run only to prepare a final artifact for handoff; Intent review is the continuous, every-phase-or-stage mechanism for an evolving Ailly artifact instead. When the artifact is a code change headed for publication, offer `developer:code-review` once this review settles, so the user can review the diff before it is public. The offer is optional: it runs only when the user accepts, and never unprompted.
 
 When the environment has no tools or file system (a self-contained review prompt), perform this inline. Compose from the reviewer instructions supplied in the prompt or session context, always include `general:c3-review`, evaluate each lens in a separate pass, then verify, deduplicate, and severity-rank the combined findings. State which reviewer sources were unavailable, and stop short of editing.
 

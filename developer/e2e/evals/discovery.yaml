@@ -1,7 +1,7 @@
 name: discovery
 # Post-consolidation (progressive-disclosure, developer-plugin consolidation): the only
-# standalone developer skills left are `ailly` (the bootstrap + coordinator) and
-# `clean-comments-review`. The five lifecycle phases AND the four progressive abilities
+# standalone developer skills left are `ailly` (the bootstrap + coordinator),
+# `clean-comments-review`, and `code-review` (user-invoked and offered, not a review specialist). The five lifecycle phases AND the four progressive abilities
 # (thinking, refactor, initialize, program-management) collapsed out of the always-on
 # Level-1 view. They are no longer standalone `developer:<name>` skills; they are reached
 # through the coordinator -- phases by argument (`developer:ailly <phase>`), abilities by
