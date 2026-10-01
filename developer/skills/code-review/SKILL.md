@@ -21,6 +21,7 @@ Background: <https://davidsouther.com/blog/llm_review_is_not_human_review/>.
 - `general:review` has completed for the pending change, and its residue was reported to the user. If it has not run, tell the user that `general:review` has not run, and proceed only if the user still wants human review first.
 - Work is visible to the chosen diff: committed when the diff is `<base>..HEAD`, or present in the working tree when the diff is a working-tree diff. Nothing is pushed yet.
 - `diffx` is installed (`npm install -g diffx-cli`). If the command fails, follow `developer/skills/ailly/references/checks/tool-failure.md` rather than substituting another tool.
+- **Temporary:** a series of fixes and improvements to diffx is waiting to upstream on the [`scoped-comments` branch](https://github.com/DavidSouther/diffx/tree/scoped-comments). Until those land, a local install of that branch is required in place of the published `diffx-cli` package. Remove this note once the changes are released upstream.
 
 ## Process
 
