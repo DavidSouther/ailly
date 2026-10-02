@@ -9,7 +9,7 @@
     {
       "name": "developer",
       "description": "Skills for a software developer agent to follow a strict Domain- and Test-Driven Development lifecycle.",
-      "version": "2026.09.2",
+      "version": "2026.10.0",
       "source": "./developer",
       "owner": {
         "name": "David Souther",
@@ -29,7 +29,7 @@
     {
       "name": "general",
       "description": "General skills library: subagents, skill development, and git worktrees. From obra/superpowers.",
-      "version": "2026.09.2",
+      "version": "2026.10.0",
       "source": "./general",
       "author": {
         "name": "David Souther",
