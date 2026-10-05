@@ -1,6 +1,6 @@
 ---
 name: ailly
-description: "Use when starting, resuming, or routing any software development task. The single bootstrap and session coordinator for the developer skill package: it directs which developer ability applies and drives the five-phase development loop — research, design, plan, red-green-refactor (build), cleanup — entered by phase argument (`/ailly design ...`). Routes the coordinator's progressive abilities: thinking (stuck on a compiler/test/lint error during build), refactor (clean up green code before finishing), initialize (set up a new project or language environment), and program-management (read the next task or wire the team's issue tracker and document system). Also drives quick-loop, long-loop, bugfix, and project-shape variants."
+description: "Use when starting, resuming, or routing any software development task. The single bootstrap and session coordinator for the developer skill package: it directs which developer ability applies and drives the five-phase development loop — research, design, plan, red-green-refactor (build), cleanup — entered by phase argument (`/ailly design ...`). Routes the coordinator's progressive abilities: thinking (stuck on a compiler/test/lint error during build), refactor (clean up green code before finishing), initialize (set up a new project or language environment), and program-management (read the next task or wire the team's issue tracker and document system). Also drives quick-loop, long-loop, bugfix, and project-shape variants, and babysitting an open PR stack to landing and cleanup."
 ---
 
 # developer:ailly
@@ -23,13 +23,14 @@ The coordinator's other abilities are progressive references it consults when th
 
 | Situation | Route to |
 |---|---|
-| Starting a session for a new or in-progress feature (or resuming one) | this coordinator (`developer:ailly`, no argument resumes) |
+| Starting a session for a new or in-progress feature (or resuming one) | this coordinator, `developer:ailly` |
 | Gathering and refining context for a vague new topic, with nothing written yet | `/ailly research` → `references/phases/research.md` |
 | Exploring a new idea and producing a formal design doc plus its one feature test | `/ailly design` → `references/phases/design.md` |
 | Breaking a failing feature test into implementation steps | `/ailly plan` → `references/phases/plan.md` |
 | Writing a small standalone script or automation, condensed but allowing ambiguity | `references/shapes/code-mode.md` |
 | Implementing a plan step with TDD | `/ailly red-green-refactor` → `references/phases/red-green-refactor.md` |
 | Finishing the topic: final review, extract deferred tasks, prepare the squash-merge | `/ailly cleanup` → `references/phases/cleanup.md` |
+| Shepherding an open PR stack to landing, with cleanup | `references/shapes/babysit.md` |
 | Surfacing intent-alignment questions against the original prompt before substantive artifact changes | `references/abilities/intent-review.md` |
 | Stuck on a red compiler/test/lint error during build, especially a recurring one after a fix | `references/abilities/thinking.md` (run through the harness isolation path when available) |
 | Code is green and you want to clean up before finishing | `references/abilities/refactor.md` |
@@ -221,7 +222,7 @@ Generally, be persistent in enforcing the draft structure. However, when first s
 - The loop **churns straight to a green feature test**, then pauses before Cleanup so the user can review the intermediate session artifacts, including `research.md`, `design.md`, `plan.md`, `maps/`, and `thinking/`.
 - **Verify intent at each artifact transition.** After research, design, and plan each save their draft, and after the build phase produces its diff, run `references/abilities/intent-review.md` before moving on. Auto-clearing the draft gate skips the human's read; it does not let Intent review clear a gate. Reserve general:review for a final artifact handoff.
 - During that review pause, do **not** run Cleanup, remove the session folder, or tidy away intermediate artifacts.
-- If the user says **"no review"** when starting the quick loop, skip that post-green review pause and run Cleanup immediately. "No review" waives the human's pre-cleanup read, not the continuous per-artifact Intent reviews above — those still run.
+- If the user says **"no review"** when starting the quick loop, skip that post-green user review pause and run Cleanup or Babysit as appropriate. Continuous per-artifact reviews still run.
 - After the review pause, proceed to Cleanup only when the user asks to proceed, continue, finish, or run cleanup.
 - Use the active harness's phase-isolation path for each phase of the loop, each reading only its one `references/phases/<phase>.md`.
 
@@ -231,7 +232,7 @@ Generally, be persistent in enforcing the draft structure. However, when first s
 
 **Review pause wording:** after the feature test is green, unless the quick loop started with "no review", tell the user:
 
-> "Quick loop is green. Review the intermediate artifacts in `.ailly/developer/YYYY-MM-DD-A-<topic>/`, especially `thinking/` if it exists. Ask me to proceed when you're ready and I'll run cleanup."
+> "Quick loop is green. Review the intermediate artifacts in `.ailly/developer/YYYY-MM-DD-A-<topic>/`, especially `thinking/` if it exists. Ask me to proceed when you're ready and I'll run cleanup, or say "babysit" to shepherd the PR stack instead."
 
 **Pi Workflow:** under pi, run the whole quick loop with the `ailly_quick_loop` tool (`.pi/extensions/ailly-quick-loop/`) instead of assembling this sequence by hand each time. It dispatches every phase, runs continuous Intent review after every artifact transition — including the build diff — and halts with a diagnosable report at the first missing artifact or aborted build step rather than plowing through. C3 and specialists remain final-handoff-only. See `developer/skills/ailly/references/agents/pi.md`.
 
@@ -261,6 +262,10 @@ and plan into one combined planning doc with a single human-cleared draft gate, 
 the feature test in favor of writing the script and letting the user run it once to inspect the
 output, and — unlike quick-loop — still permits genuine ambiguity by reusing
 `intent-review.md` unchanged.
+
+## Babysit Mode
+
+When the developer says "babysit" at the quick-loop review pause or after a project's Closing Bell, consult `developer/skills/ailly/references/shapes/babysit.md` in place of Cleanup. It watches an open GitHub PR stack, fixes CI failures and in-bounds feedback through `references/shapes/babysit-fix.md`, lands the stack in its current shape and form, and escalates anything that would change that shape.
 
 ## Next Task
 
