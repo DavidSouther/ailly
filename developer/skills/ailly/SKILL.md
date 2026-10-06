@@ -265,7 +265,7 @@ output, and — unlike quick-loop — still permits genuine ambiguity by reusing
 
 ## Babysit Mode
 
-When the developer says "babysit" at the quick-loop review pause or after a project's Closing Bell, consult `developer/skills/ailly/references/shapes/babysit.md` in place of Cleanup. It watches an open GitHub PR stack, fixes CI failures and in-bounds feedback through `references/shapes/babysit-fix.md`, lands the stack in its current shape and form, and escalates anything that would change that shape.
+When the developer asks for babysiting, consult `developer/skills/ailly/references/shapes/babysit.md` in place of Cleanup. It watches an open GitHub PR stack, fixing CI failures and self-contained feedback through `references/shapes/babysit-fix.md` until landing the stack in its current shape and form. It escalates anything that would change that shape or design. Babysit is complete only when every change in the baseline stack is merged; any other end state is reported as `incomplete: <reason>`.
 
 ## Next Task
 
