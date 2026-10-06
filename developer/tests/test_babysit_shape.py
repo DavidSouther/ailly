@@ -41,6 +41,18 @@ def main() -> int:
         return fail("R1 shape reference must exist at references/shapes/babysit.md")
     ref = BABYSIT.read_text(encoding="utf-8").lower()
 
+    pacing = section(BABYSIT.read_text(encoding="utf-8"), "Pacing and Re-entry").lower()
+    if "merged" not in pacing or "every" not in pacing or "baseline" not in pacing:
+        return fail("R18 babysit.md Pacing and Re-entry must require every baseline PR verified MERGED before completion")
+    if "background" not in pacing or "poll" not in pacing or "re-arm" not in pacing:
+        return fail("R19 babysit.md Pacing and Re-entry must arm and re-arm a background-task poll")
+    if "incomplete" not in pacing or "closed" not in pacing or "escalation" not in pacing or "stall" not in pacing:
+        return fail("R20 babysit.md Pacing and Re-entry must report escalation, stall, and CLOSED-unmerged PRs as incomplete, not done")
+    mode = section(SKILL.read_text(encoding="utf-8"), "Babysit Mode").lower()
+    if "merged" not in mode or "complete" not in mode:
+        return fail("R21 SKILL.md `## Babysit Mode` must state Babysit is complete only when every PR is merged")
+
+
     if "shape and form" not in ref:
         return fail("R2 babysit.md must state the shape-and-form governing principle")
     if "closing bell" not in ref or "quick-loop" not in ref or "cleanup" not in ref:
@@ -61,7 +73,7 @@ def main() -> int:
         return fail("R10 babysit.md must persist loop state in babysit-state.md")
     if "references/shapes/babysit-fix.md" not in ref:
         return fail("R11 babysit.md must route fixes to references/shapes/babysit-fix.md")
-    sync = section(BABYSIT.read_text(encoding="utf-8"), "Sync to Production Head").lower()
+    sync = section(BABYSIT.read_text(encoding="utf-8"), "Sync to Head").lower()
     if "production head" not in sync or "before" not in sync or "baseline" not in sync:
         return fail("R11a babysit.md must sync the stack onto the production head before snapshotting the baseline")
 
