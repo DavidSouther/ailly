@@ -1,7 +1,7 @@
 {
   "name": "developer",
   "description": "Skills for a software developer agent to follow a strict Domain- and Test-Driven Development lifecycle.",
-  "version": "2026.10.1",
+  "version": "2026.10.2",
   "owner": {
     "name": "David Souther",
     "email": "davidsouther@gmail.com"

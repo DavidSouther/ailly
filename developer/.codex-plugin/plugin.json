@@ -1,6 +1,6 @@
 {
   "name": "developer",
-  "version": "2026.10.1",
+  "version": "2026.10.2",
   "description": "Skills for a software developer agent to follow a strict Domain- and Test-Driven Development lifecycle.",
   "author": {
     "name": "David Souther",
