@@ -1,0 +1,7 @@
+name: babysit-scheduling
+model: none
+
+cases:
+  - name: observational-timer-and-denied-outcome
+    assertions:
+      - { type: script, runtime: python, script: { path: evals/scripts/check_babysit_scheduling.py } }
