@@ -18,9 +18,13 @@ After the sync, Babysit snapshots the baseline into `babysit-state.md` in the se
 
 Babysit is complete when every commit is merged. A queued `merge-async` is not merged. After pushing changes to a stack, wait for CI status to go green before merging. 
 
-Wait with a Bash `run_in_background` that polls the forge CLI or API for each PR's merge state; or wait with `Monitor` and timeout below the 30-minute default. Re-arm the poll when it exits or times out. Reinvoke the session when complete or timed out. `ScheduleWakeup` or `/loop` are appropriate fallbacks where background tasks are unavailable. No total ceiling applies beyond the stall deadlines in `babysit-state.md`. A green stack waiting on drafts, reviews, or approvals keeps being polled until its recorded stall deadline.
+Choose an appropriate harness-supported waiting or polling mechanism, such as a background task, and re-arm it while the baseline remains pending. No total ceiling applies beyond the stall deadlines in `babysit-state.md`. A green stack waiting on drafts, reviews, or approvals keeps being polled until its recorded stall deadline.
 
-A restarted session re-enters Babysit by reading `babysit-state.md` and resuming from its recorded baseline and SHAs; approval remains granted.
+Waiting and polling are read-only: observe status and wake the session without carrying fixes or landing actions. This boundary must not restrict the normal Watch Loop; fixes, re-arming, and cancellation continue under existing approval and permissions. Confirm the waiting mechanism started and record a useful handle in `babysit-state.md` before claiming a poll is armed.
+
+An explicit denial blocks the denied outcome. Record the denied outcome and reason in `babysit-state.md`, continue independent authorized work, and do not change permissions or disguise the denied outcome to bypass the rejection. Unavailable support may use a supported alternative; an unresolved denial requires human or harness resolution. If a needed poll is not running at handoff, report `incomplete: <reason>; no timer running`.
+
+A restarted session re-enters Babysit by reading `babysit-state.md` and resuming from its recorded baseline and SHAs; baseline approval remains granted, but unresolved denials still block their outcomes.
 
 Never end a turn without an armed next poll or a final report. The report states `complete` only when every baseline PR is verified `MERGED`; otherwise state `incomplete: <reason>`. These end the loop as incomplete:
 
