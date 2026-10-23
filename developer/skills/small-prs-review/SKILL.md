@@ -7,7 +7,7 @@ description: Use when reviewing any complete diff immediately before opening a p
 
 ## Overview
 
-Review a diff for whether it is one self-contained change that a reviewer can understand, approve, and revert as a unit. The artifact is a critique document that proposes seams. It does not split branches, move commits, or edit code.
+Review a diff to identify self-contained changes that a reviewer can understand, approve, and revert as a unit. The artifact is a critique document that proposes seams. It does not split branches, move commits, or edit code.
 
 The basis is Google's engineering practice on [small CLs](https://google.github.io/eng-practices/review/developer/small-cls.html): small changes are reviewed faster and more thoroughly, introduce fewer bugs, merge with less conflict, and roll back cleanly.
 
@@ -15,16 +15,17 @@ Line count is a proxy. The governing test is reviewability: one change addresses
 
 ## When It Runs
 
-Run against every complete diff between a branch and its base immediately before a PR is opened. `general:review` composes this reviewer whenever the artifact is such a diff, alongside `general:c3-review`. It is not conditional on a title, line count, or a suspected split. The reviewer reads the supplied diff, commit list, and stated PR intent (session `design.md` or the draft PR description when present).
+Run against every complete diff between a branch and its base immediately before a PR is opened. `general:review` composes this reviewer whenever the artifact is such a diff. It is not conditional on a title, line count, or a suspected split. The reviewer reads the supplied diff, commit list, and stated PR intent (session `design.md` or the draft PR description when present).
 
 This is an artifact-only review. It can cite changed hunks, file boundaries, imports and callers visible in the diff, included tests, commit ordering, and the stated intent. It cannot establish that a proposed split compiles, passes tests, preserves behavior, or safely merges alone: the split does not exist yet, and the reviewer cannot see the unmodified repository, dependency resolution, runtime behavior, CI configuration, or merge result. Every proposed split is therefore a **feasibility hypothesis**, not a verified PR.
 
 ## What Makes a Change Whole
 
-- **One purpose.** The diff has one coherent statement of intent. Concrete hunks with distinct, independently useful purposes—not a title or wording pattern—may establish a candidate seam.
+- **One purpose.** The diff has one coherent statement of intent. Concrete hunks with distinct, independently useful purposes may establish a candidate seam.
 - **Self-contained.** The evidence in the diff can support a feasibility hypothesis that the change could compile, pass its tests, and leave the system working when merged alone. A proposed split is not evidence that it already does.
-- **Code with its proof.** Tests, and a new API together with its first caller, stay in the same change. An API split from every caller ships as dead code that no reviewer can judge.
+- **Code with its proof.** Implementations must include unit tests in the same change. Feature tests may be their own change, preceding implementation in a stack, or part of the implementation change when together they form a self-contained unit of work. A new API stays with its first caller.
 - **Reviewable in one sitting.** A reviewer can hold the change in mind. Breadth counts as well as line count: a hundred lines across ten subsystems can be harder than a thousand lines in one file.
+- **Reverts cleanly.** If reverting the change after it deploys would likely cause issues, it should be split apart. An implementation with a flag guard should _never_ be in the same commit as the change that activates the flag. Implementations that read config values must have defaults, so that the config changes can be added independently after the implementation releases.
 
 ## Seam Taxonomy
 
@@ -37,7 +38,7 @@ Look for these boundaries, in the order a split would merge them:
 5. **Unrelated fixes.** Drive-by bug fixes and cleanups that do not depend on the feature. Each merges and rolls back alone.
 6. **Bookkeeping.** Docs, config, changelog, and release metadata, when they do not describe code in the same change.
 
-Not seams: tests apart from the behavior they cover, an API apart from its only caller, and a split that the diff shows would strand a dependency. Do not call a hypothetical split broken or green unless it has been materialized and validated.
+Not seams: an API apart from its only caller or a split that the diff shows would strand a dependency. Do not call a hypothetical split broken or green unless it has been materialized and validated.
 
 ## Procedure
 
@@ -76,7 +77,6 @@ The document names seams and the way to cut them, for example by commit, by path
 ## Common Mistakes
 
 - Splitting by layer (schema, then service, then UI) so that no PR delivers or proves behavior.
-- Separating tests from the code they cover.
 - Representing a proposed split as verified to build, pass, or merge alone before a human or CI materializes and validates it.
 - Treating a line count as the verdict.
 - Treating a title, an "and," or a conventional PR phrase as evidence that a change should split.
