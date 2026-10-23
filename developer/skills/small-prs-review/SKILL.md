@@ -23,8 +23,9 @@ This is an artifact-only review. It can cite changed hunks, file boundaries, imp
 
 - **One purpose.** The diff has one coherent statement of intent. Concrete hunks with distinct, independently useful purposes may establish a candidate seam.
 - **Self-contained.** The evidence in the diff can support a feasibility hypothesis that the change could compile, pass its tests, and leave the system working when merged alone. A proposed split is not evidence that it already does.
-- **Code with its proof.** Implementations must include unit tests in the same change. Feature tests may be their own change, preceding implementation in a stack, or part of the implementation change when together they form a self-contained unit of work. A new API stays with its first caller.
 - **Reviewable in one sitting.** A reviewer can hold the change in mind. Breadth counts as well as line count: a hundred lines across ten subsystems can be harder than a thousand lines in one file.
+- **Code with verification.** Implementations must include unit tests in the same change. Feature tests may be their own change, preceding implementation in a stack, or part of the implementation change when together they form a self-contained unit of work.
+- **API Safety** A new API may be introduced with it first caller, to see holistically how it will work. API modifications, which come with API safety concerns, must be independent PRs so they can be reviewed and verified without affecting new code.
 - **Reverts cleanly.** If reverting the change after it deploys would likely cause issues, it should be split apart. An implementation with a flag guard should _never_ be in the same commit as the change that activates the flag. Implementations that read config values must have defaults, so that the config changes can be added independently after the implementation releases.
 
 ## Seam Taxonomy
