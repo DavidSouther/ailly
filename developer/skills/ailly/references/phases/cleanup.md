@@ -13,6 +13,8 @@ Extract deferred decisions from design.md via the program-management using refer
 
 For a **Project**-shape topic with a doc-system target configured, publish the accepted notes as long-lived docs via the program-management using reference (`references/abilities/program-management/using.md`) and mark them `completed:` before removing the local folder. A feature or bug leaves only its task record behind.
 
+Before opening a PR, run `general:review` on the complete branch diff, composing `developer:small-prs-review` alongside `general:c3-review`. Keep session intent available until review finishes. Proposed splits are advice; do not split the branch without approval.
+
 After `general:review` settles and before publication, offer `developer:code-review`; run it only when the user accepts. Its record is written before the session folder is removed; entries still awaiting the user are carried in the final response.
 
 Remove the `.ailly/developer/YYYY-MM-DD-A-<topic>` folder.
