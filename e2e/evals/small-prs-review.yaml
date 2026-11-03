@@ -1,0 +1,9 @@
+name: small-prs-review
+model: none
+
+# Deterministic contract coverage for the diff-only PR-scope specialist and
+# its final-handoff wiring. The root static-e2e runner invokes this checker.
+cases:
+  - name: diff-only-feasibility-and-handoff
+    assertions:
+      - { type: script, runtime: python, script: { path: evals/scripts/check_small_prs_review.py } }
