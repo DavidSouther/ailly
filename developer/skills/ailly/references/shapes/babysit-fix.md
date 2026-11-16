@@ -1,6 +1,6 @@
 # Babysit Fix Loop
 
-> Loaded by `references/shapes/babysit.md` for each CI failure or in-bounds comment. One pass runs in the stack's worktree on the owning PR's branch.
+> Loaded by `references/shapes/babysit.md` for each CI failure or in-bounds comment. One pass runs on the owning PR's branch in its recorded actual checkout from `babysit-state.md`. Verify that mapping before editing; when sharing a checkout sequentially, switch safely to the owning branch and update the mapping. Concurrent writers use separate checkouts.
 
 ## Passes
 

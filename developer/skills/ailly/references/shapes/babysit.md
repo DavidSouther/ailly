@@ -10,9 +10,9 @@ For the current stack, the "babysit" invocation is the push permission, the perm
 
 ## Sync to Head
 
-Babysit starts by bringing the under-development branch as close to the production head as possible, before it snapshots the baseline. It fetches the project's production branch (the default branch unless `DEVELOPMENT.md` names another), rebases the bottom of the stack onto the production head, restacks each PR above it, runs the local checks, and pushes with an explicit `--force-with-lease=<ref>:<sha>`. A conflict that resolves without changing any PR's purpose or split is fixed through `references/shapes/babysit-fix.md`; any other conflict escalates before the baseline is taken. The same sync runs again whenever the production head moves ahead of the stack's base during the watch loop.
+Babysit starts by bringing the under-development branch as close to the production head as possible, before it snapshots the baseline. It fetches the project's production branch (the default branch unless `DEVELOPMENT.md` names another), rebases the bottom of the stack onto the production head, restacks each PR above it, runs the local checks, and pushes with an explicit `--force-with-lease=<ref>:<sha>`. A conflict that resolves without changing any PR's purpose or split is fixed through `references/shapes/babysit-fix.md`; any other conflict escalates before the baseline is taken. The same sync runs again whenever the production head moves ahead of the stack's base during the watch loop. Use the recorded actual checkout for each branch; update base/head and checkout associations after restacking or switching branches.
 
-After the sync, Babysit snapshots the baseline into `babysit-state.md` in the session folder: the ordered PR set, each PR's stated purpose, the session's design artifacts, and the approval. The file also holds the pinned head SHAs, per-job re-run counts, stall deadlines, and escalations.
+After the sync, Babysit snapshots the baseline into `babysit-state.md` in the session folder: the ordered PR set, each PR's stated purpose, the session's design artifacts, and the approval. The file also holds each PR's base and head branches, their actual checkout mappings, checkout creators and active consumers, the pinned head SHAs, per-job re-run counts, stall deadlines, and escalations. One checkout may serve branches sequentially, or separate checkouts may serve concurrent writers, following the coordinator's shared checkout rules. Refresh mappings as branches change; never infer a checkout path from a branch name or relocate an existing checkout automatically.
 
 ## Pacing and Re-entry
 
@@ -47,7 +47,9 @@ Each tick reads CI status, review threads, new commits by others, and trunk drif
 
 When every PR is green and mergeable, land the stack. If the forge supports native stacks and the PRs already form one, use the forge's single native stack merge (for example `merge-async`). Otherwise merge one at a time from the bottom, retargeting each child after its parent merges. Every merge call pins the head SHA last verified. A queued `merge-async` is not merged; Cleanup's duties run only after every PR is verified `MERGED` (see Pacing and Re-entry).
 
-After landing, Babysit performs Cleanup's duties: the final review, a report of deferred tasks for `TASKS.md` and the tracker transition (handed to the developer, since those writes fall outside the stack), and removal of the session folder.
+A partial merge does not retire shared checkouts or the session. Keep checkout associations for the remaining PRs, including after retargeting or restacking.
+
+After landing, Babysit performs Cleanup's duties: the final review, a report of deferred tasks for `TASKS.md` and the tracker transition (handed to the developer, since those writes fall outside the stack), and per-checkout retirement checks. Retire only eligible session-created checkouts after the relevant merges and the last active consumer, including project integration/Closing Bell work; preserve reused checkouts and durable project records. Session-folder removal follows Cleanup's safety checks.
 
 ## Escalation
 

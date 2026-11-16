@@ -106,7 +106,11 @@ This preserves per-phase isolation while removing the five phase descriptions fr
 
 ## Session Folder
 
-If it does not exist, create `.ailly/developer/YYYY-MM-DD-A-<topic>` where `A` is `A`, `B`, `C`, etc to manage multiple features started in the same day. If not already on a branch of the same name, suggest moving to that branch, and let the user make the switch. When the branch needs upstream changes, prefer a rebase and push with `--force-with-lease` rather than a plain force push.
+Before entering the task checkout, resolve the primary repository root from Git's worktree metadata, including when starting from another linked checkout. Use the existing dated slug `YYYY-MM-DD-A-<topic>`, where `A` is `A`, `B`, `C`, etc for features started on the same day. Resolve the canonical absolute session path as `<primary-repository-root>/.ailly/developer/<slug>` and create it if absent. Keep this path when changing directories or resuming; session artifacts belong in this parent folder.
+
+Reuse an existing linked worktree in place; it need not belong to the current task, move, or change branch names. Every newly created worktree goes at `<absolute-session-path>/worktrees/<branch>/` without switching the primary checkout's branch. Keep literal `/` characters in Git branch names as directory components. Inspect branches, registered worktrees, and the destination first. Use an existing branch if appropriate; for a new branch, for example, run `git -C <primary-repository-root> worktree add -b <branch> <absolute-session-path>/worktrees/<branch> <start-point>`. Inspect occupied or conflicting locations instead of overwriting them, and preserve unrelated files and worktrees. When the branch needs upstream changes, prefer a rebase and push with `--force-with-lease` rather than a plain force push.
+
+A session may reference several checkouts. In existing session notes, record each checkout's actual absolute path, current branch, creating session (or reused status), and active feature/PR/project consumers (including integration and Closing Bell work). Keep artifacts outside the checkouts. Select the checkout for each operation and use its actual branch/path mapping on resume or branch switches; update the mapping rather than automatically moving an existing checkout to match its new branch name. Sequential work may reuse a checkout; concurrent writers need separate checkouts. Update creator and consumer notes when sharing or releasing a checkout. Completion of one session or PR does not retire a checkout another active consumer still needs; Cleanup applies the retirement checks per checkout.
 
 If the folder already exists for the current topic, determine resume point:
 
@@ -181,7 +185,7 @@ After any research, design, or plan phase produces a draft, stop the session and
 
 ## Phase Invocations
 
-Pass the session folder path to each phase runner. The session folder is the single source of truth for all session artifacts. For each phase, use the active harness's isolation path and read only the matching phase reference:
+Run each phase runner from the selected recorded actual absolute checkout path and pass the canonical absolute parent session path, including on resume. The session folder is the single source of truth for all session artifacts. For each phase, use the active harness's isolation path and read only the matching phase reference:
 
 - Research phase: `references/phases/research.md`
 - Design phase: `references/phases/design.md`

@@ -13,7 +13,7 @@ When a topic needs several features that deliver value only as a unified whole, 
 | Step count | 3 to 7 increments | A bounded set of features (split if it grows past a handful) |
 | Release flag | None | A release gate for the whole project |
 | Timeframe | Hours to days | Days to Weeks |
-| Cleanup | Pull salient details out & delete the session folder | Mark documents completed & keep them for posterity |
+| Cleanup | Pull salient details out & remove the session folder when eligible | Mark documents completed & keep them for posterity |
 
 Do not inflate a single feature into a project. If the work is one user-visible capability reachable in one design-plan-build pass, run the feature loop. Only promote to a project when the deliverable is several features that must ship together.
 
@@ -64,6 +64,8 @@ See `developer/skills/ailly/references/shapes/project/release-flags.md` for how 
 
 In the feature loop each plan step is a red-green-refactor increment. In the project loop each plan step is itself a feature. Each step has its own design-to-cleanup cycle: its own session folder, its own `design.md`, its own feature test, its own plan of several steps, and its own build & cleanup. The project plan enumerates these feature-steps, names and scopes each, and ties each to the part of the Closing Bell it advances.
 
+The parent project notes link each child feature's canonical session path; child notes link back to the project. Each child creates new checkouts under its own `<absolute-session-path>/worktrees/<branch>/`, following the coordinator's shared checkout rules. Record checkout creators and active feature/PR consumers and the parent project's integration/Closing Bell needs in the linked notes. Sequential features may reuse a checkout in place; concurrent writers use separate checkouts. A child's completion releases only its own consumer association, not a checkout another feature, PR, or the parent project still needs.
+
 A project plan may list more entries than a feature plan's 3 to 7, but keep it bounded: if the features grow past a handful, ask whether this is really two projects.
 
 ## Sequential and Parallel Steps
@@ -88,7 +90,7 @@ Before parallel work begins, settle the shared interfaces and contracts the para
 
 ## Cleanup for a Project
 
-Project cleanup does not delete documents. Where a feature cleanup removes the session folder, a project cleanup updates document status to `completed: YYYY-MM-DD` and keeps the record.
+Project cleanup updates document status to `completed: YYYY-MM-DD` and keeps the durable records, including supporting feature/design/decision records referenced by the project. Checkout retirement is separate from project and child-session completion: apply Cleanup's per-checkout checks only after the relevant merges and the last active consumer, while preserving reused checkouts and project records.
 
 - Flip the main design doc's phase to Completed and stamp the date.
 - Evaluate each supporting sub-page for long-term usefulness. Keep the durable records: the design, the Closing Bell and its results, and the decisions. Archive or clean up the ephemeral scaffolding, such as scratch maps and superseded plan drafts, according to whether the decisions seem like they'll be useful to review in the future.
