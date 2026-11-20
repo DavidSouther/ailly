@@ -19,7 +19,7 @@ const ReviewRunParams = Type.Object({
 	specialists: Type.Optional(
 		Type.Array(Type.String(), {
 			description:
-				'Specialist skills to compose in alongside the always-present base reviewer, named the way pi knows them (frontmatter `name`, e.g. "clean-comments-review", "using-domain"). Resolved by searching the current project\'s own .pi/skills or .agents/skills first, then this package\'s skills, then user-global skills — the same precedence pi itself uses — so a newly installed or project-authored specialist works with no change here. A legacy "<plugin>:<skill>" form is also accepted; only the part after the colon is used. Choosing which specialists apply is your call; dispatch and convergence are handled by this tool.',
+				'Specialist skills to compose in alongside the always-present C3 reviewer, named the way pi knows them (frontmatter `name`, e.g. "clean-comments-review", "using-domain"). Resolved by searching the current project\'s own .pi/skills or .agents/skills first, then this package\'s skills, then user-global skills — the same precedence pi itself uses — so a newly installed or project-authored specialist works with no change here. A legacy "<plugin>:<skill>" form is also accepted; only the part after the colon is used. Choosing which specialists apply is your call; dispatch and convergence are handled by this tool.',
 		}),
 	),
 	model: Type.Optional(Type.String({ description: "Model id/pattern every reviewer and the convergence step run with." })),
@@ -31,7 +31,7 @@ export default function (pi: ExtensionAPI) {
 		label: "Review Run",
 		description: [
 			"Run general:review's Dispatch and Converge steps as a single tool call:",
-			"the base four-criterion reviewer plus any named specialists run in",
+			"the general:c3-review reviewer plus any named specialists run in",
 			"parallel, isolated subprocesses, then a dedicated convergence",
 			"subprocess verifies, deduplicates, and severity-ranks their findings.",
 			"Returns the converged, ranked list — never a flat unverified dump.",
