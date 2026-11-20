@@ -1,19 +1,5 @@
 #!/usr/bin/env python3
-"""Feature test: C3 review orchestration and continuous intent review.
-
-User story:
-Given a final artifact is prepared for handoff, when general:review runs,
-then it performs one named C3 review and any applicable specialists, and its
-skill contract names a cold evidence-located challenge to an independent
-verifier that reports a failed or unresolved challenge instead of silently
-selecting a verdict.
-Given an Ailly artifact is being developed, intent review checks request
-alignment at each phase or stage without invoking final-handoff C3 review.
-
-This is a deterministic root-e2e contract test scoped to the review skills,
-their Pi dispatch wiring, and developer:ailly. It stays red until the
-dedicated C3 skill is both described and invoked by the base review lane.
-"""
+"""Static checks that the review skills, the Ailly coordinator, and Pi review_run agree on the phase review schedule, reviewer composition, and C3's independent challenge."""
 
 import sys
 from pathlib import Path
@@ -66,21 +52,34 @@ def main() -> int:
         return result
     result = require_pattern(
         GENERAL_REVIEW,
-        r"general:c3-review.*?always.*?(set|present|dispatch).*?specialist.*?description.*?matches.*?final artifact",
+        r"general:c3-review.*?every run.*?specialist.*?description.*?matches.*?artifact",
         "general:review must dispatch general:c3-review and retain applicable-specialist composition",
     )
     if result is not None:
         return result
-    result = require_pattern(
-        GENERAL_REVIEW,
-        r"final artifact.*?handoff.*?Intent review.*?(continuous|every.phase|every.stage)",
-        "the handoff-only C3 boundary and continuous Intent-review boundary must be explicit",
-    )
-    if result is not None:
-        return result
+    for heading in ("Quick Review", "Full Review"):
+        result = require(GENERAL_REVIEW, f"## {heading}", f"general:review must define {heading}")
+        if result is not None:
+            return result
+
+    coordinator = read(AILLY_DIR / "SKILL.md")
+    schedule = coordinator.split("## Phase Reviews", 1)[-1].split("\n## ", 1)[0]
+    if "general:review" not in schedule or "Intent review" not in schedule:
+        return fail("C3 feature: the coordinator must compose general:review with Intent review")
+    for phase in ("Research", "Design", "Plan", "Build", "Cleanup"):
+        if not re.search(rf"^\| {phase} \|.*?quick", schedule, re.IGNORECASE | re.MULTILINE):
+            return fail(f"C3 feature: {phase} must end with a quick general:review")
+    if not re.search(r"^\| Build \|.*?quick.*?full", schedule, re.IGNORECASE | re.MULTILINE):
+        return fail("C3 feature: Build must run full general:review after its quick pass")
+    quick_loop = coordinator.split("## Quick-loop Mode", 1)[-1].split("\n## ", 1)[0]
+    if not re.search(r"full review.*?before.*?paus", quick_loop, re.IGNORECASE | re.DOTALL):
+        return fail("C3 feature: the quick-loop pause must wait for full Build review")
+    if not re.search(r'"no review".*?human.*?automated reviews.*?run', quick_loop, re.IGNORECASE | re.DOTALL):
+        return fail("C3 feature: quick-loop no review must skip only the human pause")
+
     result = require_pattern(
         C3_REVIEW,
-        r"cold challenge.*?evidence.*?(falsification|refut)",
+        r"challenger reads only.*?evidence.*?(falsification|refut)",
         "the challenger must be cold, evidence-located, and falsifiable",
     )
     if result is not None:
@@ -97,8 +96,8 @@ def main() -> int:
 
     result = require_pattern(
         AILLY_DIR / "SKILL.md",
-        r"Intent review.*?(every phase|every stage|continuous)",
-        "Ailly must wire a continuous Intent-review trigger into its coordinator",
+        r"quick `general:review` after every completed phase.*?Intent review",
+        "Ailly must run quick general:review with Intent review after every completed phase",
     )
     if result is not None:
         return result

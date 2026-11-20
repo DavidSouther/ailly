@@ -11,7 +11,7 @@ Middle-loop planning skill. Given a cleared design and its failing feature test,
 
 **Announce at start:** "Using the developer:ailly plan phase to create the implementation plan for [summary of feature]. Per `general/skills/dispatching-agents/model-selection.md`, matched to the active provider with its effort qualifier verbatim: set the model directly when the harness's dispatch call allows it; announce the model chosen either way. I'll continue on the current model either way."
 
-**Trigger:** The design draft marker has been cleared by a human. The design records the project feature test, which is currently failing.
+**Trigger:** The active mode's designated owner has cleared the Design draft gate. The design records the failing feature test.
 
 **Hard gate:** Do not implement any step. Do not write unit tests or implementation code. Step 0 defines API signatures as stubs; later steps describe what to build and may sketch critical interfaces, but all code in steps 1+ is orientation for the builder and must be re-derived during build. Decline any request to implement in this session.
 
@@ -26,7 +26,7 @@ Middle-loop planning skill. Given a cleared design and its failing feature test,
   - If it seems a plan would require more than 7 steps, insist that the user go back to the design.
 3a. If the path from the failing test to a passing test isn't obvious, apply the forward-backward method. Work backward from the passing test state (what must be true just before the failing assertion passes?) and forward from the current code (what can be derived or added without breaking anything?) until the two sides connect into a complete sequence of steps. Write each candidate step to a map file as it is generated — do not hold steps only in context. See `developer/skills/ailly/references/abilities/forward-backward.md`.
 4. For each step: name it, describe what it builds, and identify which assertion in the feature test it enables. Steps may include type/API sketches and notes on critical areas as orientation for the builder, but no implementation code — each step is a description of what to build, not how to build it.
-5. Save the plan as a draft. Validate against intent per `references/abilities/intent-review.md` before the plan feeds Build; resolve its feedback so the plan reads as a cohesive whole with no leftover lists of open or reviewed questions and no conversation transcript. Reserve general:review for final artifact handoff. Then stop.
+5. Save the plan as a draft for the coordinator's quick `general:review`, which includes Intent review before the plan feeds Build.
 
 ## Step 0: API Surface Area
 
@@ -119,8 +119,4 @@ Save `plan.md` to the session folder (`.ailly/developer/YYYY-MM-DD-A-<topic>/pla
 
 ## Stop Condition
 
-After saving, tell the user:
-
-> "Plan saved to `.ailly/developer/YYYY-MM-DD-A-<topic>/plan.md`. Review it and make any adjustments. When you're satisfied, remove the `*Draft YYYY-MM-DD*` marker. Start a new session and run `developer:ailly` (it resumes at the Build phase) to begin implementation."
-
-Do not implement any step. Do not run the feature test. Do not enter the Build (red-green-refactor) phase.
+Return the draft plan path to the coordinator for quick `general:review`. The coordinator handles the draft gate.

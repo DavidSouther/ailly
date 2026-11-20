@@ -48,7 +48,7 @@ combined planning doc.
 Add the design and plan into a single short document in the session
 folder, in place of the standard loop's three separate artifacts.
 
-One human-cleared draft gate covers the combined planning doc. Validate against intent per `references/abilities/intent-review.md` whenever the combined stage creates or materially revises the planning artifact. Reserve general:review for a final artifact handoff.
+One human-cleared draft gate covers the combined planning doc. Run the coordinator's quick `general:review`, including Intent review, on the combined doc before the draft gate and after any material revision.
 The developer resolves each question at the single draft gate below.
 Once the
 developer clears it, the build runs. The standard human merge gate still applies
@@ -59,7 +59,11 @@ work that quick-loop must refuse.
 Write the script, run it once, and inspect the output. There is no feature test
 and no red-green-refactor TDD loop: Code Mode scripts stay trivial enough by
 construction — minimal logic, simple file-system loops, no branching or design
-patterns — that a human can review them at a glance instead. Code Mode scripts
+patterns — that a human can review them at a glance instead. The single
+inspected run stands in for the feature test. The coordinator's quick and full
+Build reviews check that run, and Build is ready for handoff when its output is
+accepted, the required checks pass, and no blockers remain. Run both Build
+reviews before handing the script back. Code Mode scripts
 typically land in a `scripts/` folder, or wherever else the project's
 conventions put standalone automation.
 

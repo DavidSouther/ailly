@@ -7,9 +7,9 @@ description: Use when a change has finished `general:review` and is about to bec
 
 ## Overview
 
-Code review is the human beat between LLM review and publication. `general:review` is internal and adversarial: composed reviewers critique, converge, and fix. That loop is one-way, and it pulls work toward the average. A human reviewing the diff does something different: the reviewer learns what the author intended, and the author learns what is and is not convincing. That exchange builds shared understanding, and no additional LLM pass produces it.
+Human code review builds shared understanding by giving the user the current diff and a chance to ask questions or request changes.
 
-This skill is optional. Ailly offers it after `general:review` has settled and before the change is public, and runs it only when the user accepts. It is never started automatically, and declining it does not block cleanup or the merge gate. The user is the reviewer. `general:review` discovers reviewer skills and agents from the project; this skill is distinct from every one of them, because its reviewer is the human developer guiding the session. The skill has the same overall shape as `general:review`, with the human's comments as the findings: collect the comments with [wong2/diffx](https://github.com/wong2/diffx), hand them to a subagent that applies the edits, run `general:review` on the resulting diff, and return to the user.
+This skill is recommended, not required. It runs after `general:review` has settled and before the change is public. Ailly recommends it at Build Handoff and runs it only when the user accepts. Declining it does not block Cleanup or the merge gate. The user is the reviewer. Collect their comments with [wong2/diffx](https://github.com/wong2/diffx), apply requested edits through a subagent, run `general:review` on the resulting diff, and return to the user.
 
 Background: <https://davidsouther.com/blog/llm_review_is_not_human_review/>.
 
@@ -17,7 +17,7 @@ Background: <https://davidsouther.com/blog/llm_review_is_not_human_review/>.
 
 ## Preconditions
 
-- The user asked for this review or accepted an offer of it.
+- The user asked for this review or accepted the recommendation.
 - `general:review` has completed for the pending change, and its residue was reported to the user. If it has not run, tell the user that `general:review` has not run, and proceed only if the user still wants human review first.
 - Work is visible to the chosen diff: committed when the diff is `<base>..HEAD`, or present in the working tree when the diff is a working-tree diff. Nothing is pushed yet.
 - `diffx` is installed (`npm install -g diffx-cli`). If the command fails, follow `developer/skills/ailly/references/checks/tool-failure.md` rather than substituting another tool.
@@ -27,27 +27,41 @@ Background: <https://davidsouther.com/blog/llm_review_is_not_human_review/>.
 
 ### 1. Launch diffx
 
-Choose the diff the user should review. For a branch review, derive the base from the repository's default branch or the branch's upstream (for example `git merge-base HEAD origin/HEAD`) rather than assuming `main`, and review `<base>..HEAD`. Anything after `--` goes to `git diff`.
+Choose the diff the user should review. Derive the base from the repository's default branch or the branch's upstream (for example `git merge-base HEAD origin/HEAD`) rather than assuming `main`. Use `<base>..HEAD` for a committed-only diff. For a working-tree diff, launch diffx with a temporary Git index so new untracked task files appear in the diff while the real staging area stays unchanged. Anything after `--` goes to `git diff`.
+
+Shell variables do not survive between tool calls, so write the temporary index path to the session's `reviews/code-review-index` file (or another recorded location) and read it back in later steps. Every `git add -N` for this review runs with `GIT_INDEX_FILE` set to that path; without it, `git add -N` writes the user's real index.
 
 ```bash
-diffx --no-open --persist -- <base>..HEAD   # run in the background
+review_index="$(mktemp)"; echo "$review_index" > <session>/reviews/code-review-index
+cp "$(git rev-parse --git-path index)" "$review_index"
+GIT_INDEX_FILE="$review_index" git add -N -- <in-scope untracked paths>
+GIT_INDEX_FILE="$review_index" diffx --no-open --persist -- <base>   # run in the background
 ```
 
-Run it in the background so the server stays alive. Read the actual URL from the server's `diffx server running at ...` output and use it as `$URL` in the commands below. Tell the user the URL and stop the turn:
+To refresh the index in a later step:
 
-> diffx is running at `<URL>`. Leave inline comments on the diff. When finished, return here and say so.
+```bash
+review_index="$(cat <session>/reviews/code-review-index)"
+GIT_INDEX_FILE="$review_index" git add -N -- <in-scope untracked paths>
+```
+
+Delete the index file and its recorded path when the review ends.
+
+Run it in the background so the server stays alive. Read the actual URL from `diffx server running at ...` and use it as `$URL` below. Tell the user the URL and stop the turn:
+
+> The diff is ready at `<URL>`. Tell me when you’re done. A pass with no comments is fine.
 
 Do not proceed until the user returns. Do not review the diff on the user's behalf in the meantime.
 
 ### 2. Collect comments
 
 ```bash
-curl -s $URL/api/comments
+curl -fsS "$URL/api/comments"
 ```
 
 Each comment has `id`, `filePath`, `scope` (`line`, `file`, or `diff`; optional, and absent means `line`), `side` (`additions` or `deletions`), `lineNumber`, `startLineNumber`, `lineContent`, `body`, `status`, `createdAt`, `editedAt`, and `replies`. A multi-line comment sets `startLineNumber` and `lineNumber` is its last line; `startLineNumber` is absent for a single line. A `file` or `diff` scope comment has `lineNumber` 0 and empty `lineContent`; a `diff` scope comment also has an empty `filePath`.
 
-Take the comments with `"status": "open"`, except those whose last reply starts with `[agent]`: those were answered and await the user, so skip them unless the user has replied since. `CommentReply` has no author field (only `id`, `body`, `createdAt`), so the `[agent]` prefix is the marker that separates agent replies from the user's. With none to act on, report that nothing remains and stop.
+Take the comments with `"status": "open"`, except those whose last reply starts with `[agent]`: those were answered and await the user, so skip them unless the user has replied since. `CommentReply` has no author field (only `id`, `body`, `createdAt`), so the `[agent]` prefix is the marker that separates agent replies from the user's. If the request fails or the response is not a comments array, report the error to the user rather than treating it as an empty review. With none to act on, report that nothing remains, list any comments still awaiting the user, and return to the caller.
 
 ### 3. Apply through a subagent
 
@@ -66,7 +80,7 @@ Without subagent support, perform this step as a clearly separated inline pass.
 
 ### 4. Review the resulting diff
 
-Run `general:review` on `git diff <base>`, which covers commits and the working tree, so the step 3 edits are included. Line numbers from the launch-time diff shift once edits land, so anchor later work to content, not to the original line numbers. Its findings and fixes follow that skill's own process. Report any residue to the user rather than looping.
+Run `general:review` against the same base and complete current task scope, including commits, staged and unstaged changes, and untracked task files added or edited since launch. For a working-tree diff, refresh the temporary Git index (step 1) before collecting the diff so it includes the current untracked task files. Anchor findings to content because edits can move line numbers. Report any remaining findings to the user.
 
 ### 5. Run the tests
 
@@ -90,7 +104,7 @@ Resolve only comments whose edit was applied and whose tests pass. Questions, di
 
 Write each comment's outcome as a dated entry in the session's `reviews/` folder (`.ailly/developer/<session>/reviews/code-review.md`), using the dated-block format in `developer/skills/ailly/references/shapes/long-loop.md`, as `general:review`'s Recording section directs. The fields are adapted to comment, kind, action taken, and status. Entries stay open while comments await the user, and close once the user accepts the reply or the edit. List the pending entries in the final response. Without a session folder, include the whole record in the final response.
 
-Tell the user which comments were applied, answered, or left open, and what the follow-up `general:review` found. Nothing is committed until the user chooses the next step: another review round, or opening the pull request. A later round uses `<base>..HEAD` after the edits are committed, or a working-tree diff (`git diff <base>`) before that. Reuse the running diffx server: persisted review identity is tied to the resolved revisions, so it does not restore after HEAD moves on a commit, and reuse keeps the comments and replies. Control returns to the coordinator for the merge gate in `developer:ailly` cleanup once the user is finished.
+Tell the user which comments were applied, answered, or left open, and what the follow-up `general:review` found. Nothing is committed until the user chooses the next step: another review round, or finishing the review. Show another round against the working tree so it includes the edits. Reuse the running diffx server when it already shows the working-tree diff, refreshing its temporary Git index for new task files; reuse keeps the comments and replies. If the server shows a committed range, open a working-tree view and carry forward the recorded feedback. When the user finishes, return to the caller. In Ailly, that is the coordinator at Build Handoff, which continues to Cleanup.
 
 ## Common Mistakes
 
