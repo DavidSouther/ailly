@@ -45,9 +45,9 @@ Each tick reads CI status, review threads, new commits by others, and trunk drif
 
 ## Landing
 
-When every PR is green and mergeable, land the stack. If the forge supports native stacks and the PRs already form one, use the forge's single native stack merge (for example `merge-async`). Otherwise merge one at a time from the bottom, retargeting each child after its parent merges. Every merge call pins the head SHA last verified. A queued `merge-async` is not merged; Cleanup's duties run only after every PR is verified `MERGED` (see Pacing and Re-entry).
+Before merging any PR, including a good prefix during escalation, confirm that the exact changes have completed full review. If the stack changed materially after Build review, refresh the review before merging. When every PR is green and mergeable, land the stack. If the forge supports native stacks and the PRs already form one, use the forge's single native stack merge (for example `merge-async`). Otherwise merge one at a time from the bottom, retargeting each child after its parent merges. Every merge call pins the head SHA last verified. A queued `merge-async` is not merged; Cleanup's duties run only after every PR is verified `MERGED` (see Pacing and Re-entry).
 
-After landing, Babysit performs Cleanup's duties: the final review, a report of deferred tasks for `TASKS.md` and the tracker transition (handed to the developer, since those writes fall outside the stack), and removal of the session folder.
+After landing, prepare the Cleanup report with deferred tasks for `TASKS.md` and the tracker transition. Run the coordinator's quick Cleanup review on the report, then hand it to the developer and remove the session folder.
 
 ## Escalation
 

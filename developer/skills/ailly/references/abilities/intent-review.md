@@ -46,7 +46,7 @@ Perform intent review at **every phase or stage**, whenever Ailly substantially 
 Substantial modifications are those that would substantively change the future trajectory of the project.
 Editing or refining prose, correcting an implementation to work with a new test, or adding a triangulation test case align with intent.
 Adding a new step to a plan, changing a database column, or introducing new areas of testing are substantive changes, and must be confirmed to align with intent.
-It is a continuous request-alignment check, not a final-handoff C3 review. It surfaces questions that require user feedback before incorporating.
+It is a request-alignment check that runs beside C3 in each phase review. It surfaces questions that require user feedback before incorporating.
 
 Intent review **never clears** a draft gate, merge gate, or Closing Bell. It is not an autonomous
 gate-clearer, unlike long-loop's research-and-decide reviewer, which does auto-clear. It

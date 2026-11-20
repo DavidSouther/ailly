@@ -95,8 +95,8 @@ Utilities for skill authoring, parallel agent dispatch, and git worktree isolati
 | `general:using-git-worktrees` | Starting feature work that needs isolation from the current workspace |
 | `general:dispatching-agents` | Multiple independent tasks with no shared state or sequential dependencies |
 | `general:writing-skills` | Creating, editing, or verifying skills before deployment |
-| `general:c3-review` | An isolated final-handoff subagent collecting Correctness, Conciseness, and Clarity feedback for `general:review` |
-| `general:review` | Composing C3 and applicable specialists for a final handoff review |
+| `general:c3-review` | An isolated subagent collecting Correctness, Conciseness, and Clarity feedback for quick and full `general:review` |
+| `general:review` | Composing C3 and applicable specialists for quick phase reviews and full handoff reviews |
 
 ### Developer (`developer:*`)
 
@@ -107,7 +107,7 @@ A strict three-loop development lifecycle: design → feature test → TDD imple
 | `developer:ailly` | Bootstrap and session coordinator for all developer work. The main driver and the entry point for every lifecycle phase: `/ailly research`, `/ailly design`, `/ailly plan`, `/ailly build`, `/ailly cleanup`. Each phase loads one `references/phases/<phase>.md` and runs with the isolation mechanism supported by the active harness. It also routes the coordinator's progressive abilities — thinking (stuck on a build error), refactor (clean up green code), initialize (new project/language setup), and program-management (tracker task I/O and wiring). Running `/ailly` will get it going on the next thing. |
 | `developer:clean-comments-review` | Reviewing comment and DocBlock audience and longevity (a review specialist consumed by `general:review`). |
 | `developer:small-prs-review` | Reviewing every complete pre-PR diff for one focused, reviewable change, with proposed splits only when the diff supports them (a specialist consumed by `general:review`). |
-| `developer:code-review` | Optional user review, offered after `general:review` and before the change is public. Launches [diffx](https://github.com/wong2/diffx) to collects the user's comments on the current diff. |
+| `developer:code-review` | Recommended human review: opens the reviewed diff in [Diffx](https://github.com/wong2/diffx) for the user's comments before publication. Runs when the user accepts. |
 
 The developer lifecycle uses draft gates: each artifact (design doc, feature test, plan) must be human-reviewed and cleared before the next loop begins.
 

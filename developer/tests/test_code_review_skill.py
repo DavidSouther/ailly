@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Feature test: `developer:code-review` is a standalone skill for human review.
 
-The skill sits after `general:review` (LLM review) and before a change is made
-public. It uses diffx to collect the user's inline comments, then acts on them.
+The skill collects the user's diffx comments after full `general:review`.
+Ailly recommends the pass at Build Handoff and runs it when the user accepts.
 This is a source-level contract matching the `developer/tests/*.py` convention:
 `main()` returns 0 when the contract holds, or 1 with one reason line.
 """
@@ -14,10 +14,8 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[2]
 SKILL = REPO / "developer" / "skills" / "code-review" / "SKILL.md"
 README = REPO / "README.md"
-OFFER_FILES = (
-    "developer/skills/ailly/references/phases/cleanup.md",
-    "general/skills/review/SKILL.md",
-)
+AILLY = REPO / "developer" / "skills" / "ailly"
+GENERAL_REVIEW = REPO / "general" / "skills" / "review" / "SKILL.md"
 FORBIDDEN = ("mandatory", "must run", "always run")
 
 
@@ -81,40 +79,47 @@ def main() -> int:
     review_body = text[idx["review"]:idx["reply"]]
     if "general:review" not in review_body:
         return fail("R7 the review step must run general:review")
+    if "untracked task files" not in review_body or "temporary Git index" not in review_body:
+        return fail("R7 follow-up review must refresh the complete diff scope")
 
     for kind in ("change request", "question", "discussion", "ambiguous"):
         if kind not in low:
             return fail(f"R8 must classify comments; missing {kind!r}")
-    if not re.search(r"distinct from every one of them", text) or "project" not in low:
-        return fail("R9 must state it is distinct from the project's reviewers")
+    if "the user is the reviewer" not in low:
+        return fail("R9 must assign the review to the user")
     if ".ailly/developer/<session>/reviews/code-review.md" not in text:
         return fail("R10 must record in .ailly/developer/<session>/reviews/code-review.md")
     if not re.search(r"(?i)human.{0,40}(reviewer|review)", text) or "shared understanding" not in low:
         return fail("R11 must state that human review builds shared understanding, not a second LLM pass")
 
-    if not re.search(r"(?i)never started automatically|optional", text) or "accepts" not in low:
-        return fail("R12 must be optional: offered, run only when the user accepts")
+    if not re.search(r"(?i)recommended, not required", text) or "accepts" not in low:
+        return fail("R12 must be recommended: run only when the user accepts")
+    coordinator = (AILLY / "SKILL.md").read_text(encoding="utf-8")
+    handoff = re.search(r"^## Build Handoff\n(.*?)(?=^## |\Z)", coordinator, re.M | re.S)
+    if not handoff or not re.search(
+        r"After full Build review.*?recommend `developer:code-review`.*?before.*?Cleanup.*?accepts.*?declines.*?Cleanup",
+        handoff[1],
+        re.I | re.S,
+    ):
+        return fail("R13 Build Handoff must recommend code-review after full review and proceed to Cleanup when declined")
+
     readme = README.read_text(encoding="utf-8")
     row = readme_row(readme)
     if not row:
-        return fail("R13 README developer skills table must have a developer:code-review row")
-    offers = []
-    for rel in OFFER_FILES:
-        body = (REPO / rel).read_text(encoding="utf-8")
-        lines = [ln for ln in body.splitlines() if "developer:code-review" in ln]
-        offers.append((rel, "\n".join(lines)))
-    offers.append(("README row", row))
+        return fail("R14 README developer skills table must have a developer:code-review row")
+    general_review = GENERAL_REVIEW.read_text(encoding="utf-8")
+    offers = [
+        ("Build Handoff", handoff[1]),
+        ("general:review", "\n".join(ln for ln in general_review.splitlines() if "developer:code-review" in ln)),
+        ("README row", row),
+    ]
     for name, body in offers:
         blow = body.lower()
-        needs_accept = name != "README row"
-        if "offer" not in blow or (needs_accept and "accept" not in blow):
-            return fail(f"R14 {name} must say the review is offered" + (" and run on accept" if needs_accept else ""))
+        if "recommend" not in blow or "accept" not in blow:
+            return fail(f"R14 {name} must recommend the review and run it on accept")
         for bad in FORBIDDEN:
             if bad in blow:
                 return fail(f"R14 {name} must not make the review mandatory ({bad!r})")
-    for rel, body in offers[:2]:
-        if "`developer:code-review`" not in body:
-            return fail(f"R14 {rel} must name developer:code-review")
     return 0
 
 
