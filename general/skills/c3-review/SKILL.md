@@ -56,7 +56,7 @@ note: <one sentence — what's wrong and, for correctness, what the evidence act
 
 ## Independent Review
 
-The isolated C3 collection lane above does not run this protocol itself — it only produces the findings another agent later acts on. After initial review, `general:review` or its caller invokes the protocol only if convergence selected a High-severity finding. Select exactly one deterministically: severity first, then stable-id order. If no finding is High severity, do not challenge.
+The isolated C3 collection lane above does not run this protocol itself — it only produces the findings another agent later acts on. During full `general:review`, `general:review` or its caller invokes the protocol only if convergence selected a High-severity finding. Select exactly one deterministically: severity first, then stable-id order. If no finding is High severity, do not challenge.
 
 The challenger reads only the finding's `findingId`, claim, and evidence, plus the artifact — it does not see other findings or the convergence discussion, so it can't anchor on them. It returns one counterclaim naming the `findingId`, evidence locations, and a falsification condition that could refute the counterclaim. It does not edit, score, or debate in rounds.
 
@@ -71,5 +71,5 @@ Accepted findings are removed from the actionable list. Rejected findings are re
 
 ## When Not to Use
 
-- Do not use C3 for an evolving Ailly artifact's request alignment; use continuous Intent review instead — C3 is a handoff-time floor, not a running check against intent.
+- Do not use C3 alone for an Ailly phase review; pair it with Intent review for alignment with the original request.
 - Do not use it as a replacement for `general:review`, which composes C3 with applicable specialists and converges the collected feedback; running C3 alone skips specialist coverage and the verify/dedupe/rank pass that turns raw findings into an actionable list.

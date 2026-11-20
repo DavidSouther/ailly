@@ -1,11 +1,7 @@
 name: review-c3-orchestrator
 model: none
 
-# A deterministic feature suite over the Review skill and the Ailly timing
-# contract, scoped to skill definitions only (no runtime code). The checker
-# is deliberately registered here so the root static-e2e runner exercises it
-# in CI.
 cases:
-  - name: final-handoff-c3-and-continuous-intent
+  - name: quick-phase-reviews-and-full-build-review
     assertions:
       - { type: script, runtime: python, script: { path: evals/scripts/check_review_c3_orchestrator.py } }

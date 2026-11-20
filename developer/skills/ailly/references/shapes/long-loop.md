@@ -2,11 +2,11 @@
 
 *Ailly with Dynamic Workflows*
 
-When a topic is run autonomously at project scale, the five-phase lifecycle still runs unchanged. Validate against intent per `references/abilities/intent-review.md` at every artifact or gate transition and never clears a gate. Only the crossing of each draft gate differs. Where the normal loop stops and waits for a human to clear the `*Draft*` marker, the long loop dispatches a distinct research-and-decide reviewer through the active harness's isolation path. That reviewer resolves the gate's open questions and clears the marker, so the run proceeds without user intervention. It is the autonomous counterpart reached for instead of quick-loop when the work has ambiguities to resolve, which quick-loop is not built for. `developer:ailly` consults this reference when acting autonomously over project durations.
+Follow the coordinator's Phase Reviews schedule. Run each quick draft review before dispatching the research-and-decide reviewer. That reviewer resolves open questions and clears the `*Draft*` marker through the active harness's isolation path. After full Build review, follow Build Handoff before Cleanup.
 
 ## 1. When the long loop applies
 
-The long loop is opt-in at session start, declared once and applied for the run, recognized via phrasings like "run a long loop", "dynamic workflow", or "run \<project\> to completion". It is the inverse trade from quick-loop. Quick-loop skips the deliberation for small, low-stakes work with a narrow surface. The long loop **keeps** the deliberation and the full-fidelity artifacts and only removes the human intervention. Both run every phase through the active harness's isolation path. The long loop therefore does not inherit quick-loop's forbidden list (ambiguous, high-blast-radius, or security-sensitive work); that work is exactly what it is for.
+The long loop is opt-in at session start, declared once and applied for the run, recognized via phrasings like "run a long loop", "dynamic workflow", or "run \<project\> to completion". The long loop keeps the deliberation and full-fidelity artifacts and delegates draft-gate decisions to the research-and-decide reviewer. Both loops run every phase through the active harness's isolation path. The long loop can handle ambiguous, high-blast-radius, or security-sensitive work.
 
 ## 2. The research-and-decide reviewer contract
 
@@ -72,18 +72,20 @@ At project altitude, reuse the same `Resolved by the long-loop reviewer (YYYY-MM
 
 ## 6. The never-auto-clear invariants
 
-Two gates are never auto-cleared by any reviewer, in any mode.
+The user controls these handoffs in every mode.
 
-- **The human merge gate.** The coordinator "pauses for human approval before the squash-merge or PR" (`developer/skills/ailly/SKILL.md` Session-Folder note and the loop diagram's `gate_merge`; `project-cycle.md` at project altitude). This gate is owned by the **coordinator**, not the cleanup body. In long-loop mode the cleanup phase still runs through the harness isolation path and produces the merge-ready state, but it hands back to the coordinator at this gate; the cleanup runner never approves or performs the merge on its own. The long-loop autonomy stops at the draft gates; the merge gate stays human regardless of mode.
+- **Build Handoff.** The coordinator recommends the user's code-review pass and waits for the user to accept or decline it. A detached run returns the handoff to the interactive coordinator. Resume after the user responds.
+
+- **The human merge gate.** Cleanup runs through the harness isolation path and returns its result to the coordinator. After phase review, the coordinator pauses for human approval before a squash merge or PR. At project altitude, follow the approval gate in `project-cycle.md`.
 - **The Closing Bell.** A human usability study; "the agent does not pass it on the user's behalf" (`developer/skills/ailly/references/shapes/project/closing-bell.md`). The reviewer never runs or passes it. When the project gets to the closing bell, the long loop is completed.
 
 ## 7. The end-of-run report
 
-When the run reaches the human merge gate or otherwise finishes, the coordinator emits a report:
+When the run pauses for the user or otherwise finishes, the coordinator emits a report:
 
 - **What was decided.** Per gate, the recorded-decision entries (or a pointer to each artifact's block).
 - **What was done.** Per phase, the artifact produced and its location.
-- **Where it stopped.** The merge gate (awaiting human approval).
+- **Where it stopped.** Name the pending handoff and what the user can review or approve.
 
 The destination follows the loop's retention rule. For a feature loop the report is inline only, because the feature cleanup removes the session folder and a persisted file would earn nothing. For a project loop the coordinator also writes a `report.md` that becomes a supporting sub-page in the long-lived documents (`project-cycle.md`, "Long-Lived Documentation"), persisted alongside the design and the Closing Bell.
 

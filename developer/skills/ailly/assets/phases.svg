@@ -1,0 +1,51 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1340 700" font-family="Inter,Helvetica,Arial,sans-serif" text-anchor="middle">
+<title>Ailly phases</title>
+<defs>
+<marker id="a" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="5" markerHeight="5" orient="auto"><path d="M1,1 L8,5 L1,9" fill="none" stroke="#777" stroke-width="2"/></marker>
+<marker id="p" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="5" markerHeight="5" orient="auto"><path d="M1,1 L8,5 L1,9" fill="none" stroke="#e64fb0" stroke-width="2"/></marker>
+</defs>
+<rect width="1340" height="700" fill="#fff"/>
+<g fill="none" stroke="#777" stroke-width="3" marker-end="url(#a)">
+<path d="M118,258 V190 Q118,173 135,173 H250"/><path d="M395,173 H527"/><path d="M698,173 H926"/>
+<path d="M222,547 H135 Q118,547 118,530 V437"/><path d="M463,547 H368"/><path d="M760,547 H644"/>
+</g>
+<g fill="none" stroke="#e64fb0" stroke-width="3" stroke-dasharray="10 7" marker-end="url(#p)">
+<path d="M325,100 C305,45 215,40 212,90 C210,120 230,133 250,137"/>
+<path d="M613,100 C593,40 497,35 487,85 C483,115 505,130 527,134"/>
+<path d="M1012,100 C992,40 896,35 886,85 C882,115 904,130 926,134"/>
+<path d="M322,475 C318,390 400,358 520,362 C640,366 700,380 750,384"/>
+</g>
+<g font-size="12" fill="#222"><text x="190" y="52">Review</text><text x="465" y="47">Review</text><text x="864" y="47">Review</text><text x="467" y="351">Comments</text></g>
+<circle cx="118" cy="346" r="84" fill="#6dd5c9" stroke="#3a9e93" stroke-width="3"/>
+<circle cx="118" cy="346" r="66" fill="none" stroke="#3a9e93" stroke-width="3"/>
+<text x="118" y="340" font-size="18" fill="#1a1a1a">Next</text><text x="118" y="366" font-size="18" fill="#1a1a1a">Feature!</text>
+<g stroke-width="3" stroke-linejoin="round">
+<path d="M285,214 L285,240 L318,218 Z" fill="#8b4cf7" stroke="#5b2bb5"/>
+<rect x="257" y="106" width="133" height="115" rx="26" fill="#8b4cf7" stroke="#5b2bb5"/>
+<path d="M603,188 H723 V338 C690,325 665,365 603,340 Z" fill="#e8512e" stroke="none"/>
+<path d="M565,205 L565,240 L602,212 Z" fill="#4dabf7" stroke="#1c7ed6"/>
+<rect x="533" y="106" width="160" height="108" rx="26" fill="#4dabf7" stroke="#1c7ed6"/>
+<path d="M965,210 L965,240 L1002,215 Z" fill="#c5e3fb" stroke="#4dabf7"/>
+<rect x="932" y="106" width="160" height="112" rx="26" fill="#c5e3fb" stroke="#4dabf7"/>
+</g>
+<g font-size="18"><text x="323" y="170" fill="#fff">Research</text><text x="613" y="169" fill="#fff">Design</text><text x="1012" y="169" fill="#1a1a1a">Plan</text></g>
+<g font-size="18" fill="#fff"><text x="662" y="245">Failing</text><text x="662" y="272">Feature</text><text x="662" y="299">Test</text></g>
+<rect x="760" y="264" width="552" height="384" rx="8" fill="#fdf8ec" stroke="#f3e3b5" stroke-width="2"/>
+<rect x="763" y="267" width="58" height="26" rx="5" fill="#fbe3a6"/><text x="792" y="286" font-size="17" font-weight="bold">Build</text>
+<g fill="none" stroke="#777" stroke-width="3" marker-end="url(#a)">
+<path d="M1012,224 V284"/><path d="M1097,333 H1165"/><path d="M1220,370 V497"/><path d="M1135,547 H931"/><path d="M845,488 V350 Q845,333 862,333 H926"/>
+</g>
+<rect x="941" y="360" width="142" height="50" rx="2" fill="#e8512e"/><rect x="932" y="290" width="160" height="86" rx="2" fill="#e8512e"/>
+<text x="1012" y="340" font-size="18" fill="#fff">Failing Unit Test</text><text x="1012" y="386" font-size="12" fill="#fff">Failing Type Check</text>
+<path d="M1185,360 L1185,376 L1202,362 Z" fill="#c9f7f2"/><rect x="1169" y="316" width="104" height="50" rx="14" fill="#c9f7f2"/>
+<text x="1221" y="348" font-size="18" fill="#1a1a1a">Think</text>
+<rect x="1149" y="580" width="142" height="54" rx="2" fill="#74d37a"/><rect x="1141" y="504" width="158" height="86" rx="2" fill="#74d37a"/>
+<text x="1220" y="541" font-size="18" fill="#1a1a1a">Passing Unit</text><text x="1220" y="568" font-size="18" fill="#1a1a1a">Test</text><text x="1220" y="611" font-size="12" fill="#1a1a1a">Passing Type Check</text>
+<path d="M793,578 L793,600 L822,582 Z" fill="#d9d9d9"/><rect x="766" y="492" width="158" height="92" rx="26" fill="#d9d9d9"/>
+<text x="845" y="545" font-size="18" fill="#1a1a1a">Refactor</text>
+<rect x="469" y="485" width="168" height="123" rx="2" fill="#74d37a" stroke="#5cb562" stroke-width="2"/>
+<text x="553" y="540" font-size="18" fill="#1a1a1a">Feature</text><text x="553" y="567" font-size="18" fill="#1a1a1a">Complete</text>
+<g stroke-width="3" stroke-linejoin="round"><path d="M255,590 L255,613 L290,595 Z" fill="#f9c74f" stroke="#e0a020"/>
+<rect x="227" y="481" width="133" height="115" rx="26" fill="#f9c74f" stroke="#e0a020"/></g>
+<text x="293" y="532" font-size="18" fill="#1a1a1a">Code</text><text x="293" y="559" font-size="18" fill="#1a1a1a">Review</text>
+</svg>

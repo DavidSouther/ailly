@@ -1,19 +1,25 @@
 ---
 name: review
-description: Use when preparing a final work product for handoff, before claiming a task is complete.
+description: Use when a development phase finishes, when preparing work for handoff, or before claiming a task is complete.
 ---
 
-No single review format works for every document type. This skill orchestrates a number of reviewers as appropriate for the current deliverable or artifact. It composes independent reviewers for the final artifact. The skill always includes `general:c3-review`, and specialists compose in when the artifact matches them. The skill dispatches reviewers in parallel, converges, deduplicates, and verifies their findings, dispatches an agent to apply fixes, and then re-evaluates the edited artifacts.
+Compose independent reviewers for the artifact under review. Use **full review** by default. Use **quick review** when the caller requests a phase review.
 
-## Process
+## Shared Process
 
-1. **Compose.** Read the final artifact and the available review skills. Dispatch one isolated subagent that invokes `general:c3-review`; it is always in the set. Add a specialist when its `description` matches the final artifact — for example `developer:clean-comments-review` when reviewing code with DocBlocks or inline comments, or `domain:using-domain` when a domain model, its objects, or its ubiquitous language changed. Selection is model-decided from the available skills, not a maintained table, so a newly installed specialist is composed in with no edit here.
-2. **Dispatch.** Run each composed reviewer in parallel, each in its own subagent with isolated context so the lenses do not cross-contaminate (see `general:dispatching-agents`). When the environment cannot spawn agents, apply each reviewer's instructions in a clearly separated pass instead. C3's subagent collects feedback per `general:c3-review`; a specialist produces its own critique document. Those documents are their findings — do not prompt a specialist to write a rubric first. Below six reviewers, dispatch with static parallel `Agent` calls when available. At six or more, use a dynamic workflow that pipelines the assembled list when the harness supports one.
-3. **Converge (mandatory).** One isolated subagent, or a separate inline pass when agents are unavailable, collects every reviewer's findings and performs three steps in order: **verify** each candidate against the actual artifact (read the code, trace the claim) and drop what does not hold; **deduplicate** findings that more than one reviewer raised; **severity-rank** the survivors. The fix pass receives a verified, deduplicated, ranked list, never a flat dump.
-4. **Fix.** A separate subagent or inline pass addresses the ranked findings. Evaluation never emits edits; fixing is always a separate pass.
-5. **Re-evaluate** and flag any remaining issues to the user. Repeated LLM editing risks attractor states, so handing the residue to the user mitigates that.
+1. **Compose.** Include `general:c3-review` in every run. For Ailly, include Intent review using `developer/skills/ailly/references/abilities/intent-review.md` and its original-request anchor. Add a specialist when its description matches the artifact, such as `developer:clean-comments-review` for changed code comments. Give each reviewer the artifact and the evidence it needs to apply its own lens.
+2. **Dispatch.** Run each reviewer in an isolated subagent, in parallel (see `general:dispatching-agents`). Apply the review instructions in separate passes when the environment cannot spawn agents. Ask specialists for findings using their own review instructions. Below six reviewers, use static parallel calls when available. At six or more, use a dynamic workflow if the harness supports one.
+3. **Converge.** In a separate pass, verify each finding against the artifact, deduplicate, and severity-rank the findings that hold. Include reviewer failures in the result. Name each finding by its location and a short description of the defect, not by an invented code such as `M1` or `F3`, in every report the user or another agent reads.
 
-After initial convergence, dispatch a separate cold challenger and fresh final verifier under `general:c3-review`'s High-severity challenge protocol. C3 and any specialists run only to prepare a final artifact for handoff; Intent review is the continuous, every-phase-or-stage mechanism for an evolving Ailly artifact instead. When the artifact is a code change headed for publication, offer `developer:code-review` once this review settles, so the user can review the diff before it is public. The offer is optional: it runs only when the user accepts, and never unprompted.
+## Quick Review
+
+Scope the review to the completed phase's output. Run one collection and convergence pass, focusing each reviewer on findings that matter to the next phase or handoff. Return the verified findings to the coordinator, who resolves blockers or carries forward open findings as appropriate.
+
+## Full Review
+
+Scope the review to the entire current deliverable. After convergence, apply `general:c3-review`'s High-severity challenge protocol using a cold challenger and a fresh verifier when there is a qualifying finding. Apply verified fixes in a separate pass. Re-evaluate the resulting artifacts and run the required checks on the final reviewed state. Report the review as complete once those checks pass and all blockers are resolved.
+
+When the artifact is a code change headed for publication, recommend `developer:code-review` so the user can review the diff before it is public. Run it only when the user accepts. In Ailly, the coordinator makes this recommendation at Build Handoff.
 
 When the environment has no tools or file system (a self-contained review prompt), perform this inline. Compose from the reviewer instructions supplied in the prompt or session context, always include `general:c3-review`, evaluate each lens in a separate pass, then verify, deduplicate, and severity-rank the combined findings. State which reviewer sources were unavailable, and stop short of editing.
 
@@ -40,8 +46,9 @@ Reuse long-loop's dispatch shape and dated-block entry format (`developer/skills
 - Skipping convergence: handing the fix pass a flat, unverified, unranked list. Verify against the artifact, deduplicate, and severity-rank first.
 - Prompting a specialist to write a rubric instead of consuming its critique. The specialist's critique document is already its findings.
 - Treating the review as a single rubric instead of a composed set, so orthogonal concerns get a thinner pass than a dedicated reviewer would give them.
-- Dropping `general:c3-review` from the set, so the final artifact ships without the C3 floor.
+- Dropping `general:c3-review` from the set, so the artifact receives no C3 review.
 - Running a dynamic workflow below the six-reviewer threshold where static `Agent` calls would do.
 - Combining evaluation and editing into one pass. These happen in separate agents, to reduce context bloat.
 - Claiming the task is complete before the review cycle finishes.
+- Labeling findings with invented codes (`M1`, `U3`, `N2`) that the reader must look up. Refer to each finding by where it is and what is wrong.
 - Treating a punctuation mark as the defect. Swapping a flagged em-dash for a colon or semicolon papers over the same weak structure. Restructure the sentence instead.

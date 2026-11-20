@@ -13,6 +13,7 @@ from _checker_utils import REPO, fail, read  # noqa: E402
 SMALL_PRS_REVIEW = REPO / "developer" / "skills" / "small-prs-review" / "SKILL.md"
 DISCLOSURE = REPO / "developer" / "e2e" / "context" / "skills" / "disclosure.md"
 PROMPT = REPO / "prompts" / "review.md"
+COORDINATOR = REPO / "developer" / "skills" / "ailly" / "SKILL.md"
 CLEANUP = REPO / "developer" / "skills" / "ailly" / "references" / "phases" / "cleanup.md"
 README = REPO / "README.md"
 
@@ -36,7 +37,8 @@ def main() -> int:
         (README, r"developer:small-prs-review", "README must disclose developer:small-prs-review"),
         (DISCLOSURE, r"developer:small-prs-review", "skill disclosure must list developer:small-prs-review"),
         (PROMPT, r"developer:small-prs-review", "review prompt must name developer:small-prs-review"),
-        (CLEANUP, r"complete branch diff.*?developer:small-prs-review.*?Keep session intent available.*?Remove.*?folder", "cleanup must review the complete branch diff before removing session intent"),
+        (COORDINATOR, r"full `general:review`.*?complete current change.*?developer:small-prs-review", "the full Build review must include the small PRs specialist when preparing a PR"),
+        (CLEANUP, r"Keep the session folder.*?Finalize After Review.*?developer:small-prs-review.*?remove the session folder", "keep session intent available through the pre-PR review"),
     ]:
         result = require_text(path, pattern, reason)
         if result is not None:
