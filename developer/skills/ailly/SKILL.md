@@ -80,7 +80,7 @@ This preserves per-phase isolation while removing the five phase descriptions fr
 
 ## Session Folder
 
-If it does not exist, create `.ailly/developer/YYYY-MM-DD-A-<topic>` where `A` is `A`, `B`, `C`, etc to manage multiple features started in the same day. If not already on a branch of the same name, suggest moving to that branch, and let the user make the switch. When the branch needs upstream changes, prefer a rebase and push with `--force-with-lease` rather than a plain force push.
+Track Ailly project work in a folder `.ailly/developer/YYYY-MM-DD-A-<topic>` where `A` is `A`, `B`, `C`, etc to manage multiple features started in the same day. Create it if it does not already exist. Follow the project's Git and worktree conventions. When creating a worktree, place the checkout outside the session folder so removing session notes leaves the checkout intact. If no location is specified, use the repository's `.worktrees/` directory. When the branch needs upstream changes, prefer a rebase and push with `--force-with-lease` rather than a plain force push.
 
 If the folder already exists for the current topic, determine resume point:
 

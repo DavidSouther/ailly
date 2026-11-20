@@ -22,3 +22,5 @@ The coordinator runs the quick Cleanup review defined in Phase Reviews, using th
 If Cleanup materially changed the diff the user reviewed, offer `developer:code-review` on the updated change before publication. Carry any entries still awaiting the user into the handoff.
 
 After approval, open a PR or prepare the squash merge according to the project's configuration. For a Project-shaped topic with a configured doc-system target, publish the accepted notes and mark them `completed:` per `references/abilities/program-management/using.md`. For a feature or bug, retain the task record and remove the session folder when closeout is complete and it contains only disposable bookkeeping. Preserve task deliverables.
+
+Afer merging, remove the `.ailly/developer/YYYY-MM-DD-A-<topic>` folder. If an older session placed a worktree checkout inside it, leave that checkout in place.
