@@ -9,18 +9,7 @@ import { loadPrompt } from "./prompts.ts";
 import { findSkillByName, specialistSkillName } from "./skills.ts";
 import { createProgressMultiplexer, isFailed, runPiSubprocess, type SubprocessRunResult } from "./subprocess.ts";
 
-const REVIEW_SKILL_PATH = "general/skills/review/SKILL.md";
-
-/** Body of the `## <heading>` section (exact match, stops at the next `##`); "" on miss. */
-export function extractSection(markdown: string, heading: string): string {
-	const lines = markdown.split("\n");
-	const startIndex = lines.findIndex((line) => line.trim() === `## ${heading}`);
-	if (startIndex === -1) return "";
-	const rest = lines.slice(startIndex + 1);
-	const endOffset = rest.findIndex((line) => /^##\s+/.test(line));
-	const body = endOffset === -1 ? rest : rest.slice(0, endOffset);
-	return body.join("\n").trim();
-}
+const C3_SKILL_PATH = "general/skills/c3-review/SKILL.md";
 
 export interface ReviewerOutcome {
 	id: string;
@@ -50,7 +39,7 @@ export interface RunReviewResult {
 
 /**
  * Run general:review's Dispatch and mandatory Converge for one artifact: the
- * base reviewer plus any named specialists, in parallel, isolated
+ * general:c3-review reviewer plus any named specialists, in parallel, isolated
  * subprocesses, followed by one dedicated convergence subprocess.
  *
  * Returns `{ error }` only when an input file cannot be read; reviewer or
@@ -68,23 +57,10 @@ export async function runReview(opts: RunReviewOptions): Promise<RunReviewResult
 		return { error: `Could not read artifact ${artifactPath}: ${(err as Error).message}` };
 	}
 
-	let reviewSkillText: string;
-	try {
-		reviewSkillText = await fs.promises.readFile(path.join(repoRoot, REVIEW_SKILL_PATH), "utf-8");
-	} catch (err) {
-		return { error: `Could not read ${REVIEW_SKILL_PATH}: ${(err as Error).message}` };
-	}
-	const baseRubric = extractSection(reviewSkillText, "Base Reviewer");
-	if (!baseRubric) return { error: `No "## Base Reviewer" section found in ${REVIEW_SKILL_PATH}` };
-
 	type ReviewerJob = { id: string; skillPath: string | null; systemPrompt: string | null; error?: string };
 
 	const jobs: ReviewerJob[] = [
-		{
-			id: "base",
-			skillPath: path.join(repoRoot, REVIEW_SKILL_PATH),
-			systemPrompt: loadPrompt("review-base", { baseRubric, artifactPath, artifactContent }),
-		},
+		{ id: "c3-review", skillPath: path.join(repoRoot, C3_SKILL_PATH), systemPrompt: null },
 		...(specialists ?? []).map((specialist): ReviewerJob => {
 			const name = specialistSkillName(specialist);
 			const absPath = findSkillByName(name, repoRoot, cwd);
@@ -106,7 +82,7 @@ export async function runReview(opts: RunReviewOptions): Promise<RunReviewResult
 			const skillBody = await fs.promises.readFile(job.skillPath!, "utf-8");
 			job.systemPrompt = loadPrompt("review-specialist", { id: job.id, skillBody, artifactPath, artifactContent });
 		} catch (err) {
-			job.error = `Could not read specialist skill ${job.skillPath}: ${(err as Error).message}`;
+			job.error = `Could not read reviewer skill ${job.skillPath}: ${(err as Error).message}`;
 		}
 	}
 
