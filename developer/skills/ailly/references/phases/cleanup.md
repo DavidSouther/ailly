@@ -17,6 +17,6 @@ Before opening a PR, run `general:review` on the complete branch diff, composing
 
 After `general:review` settles and before publication, offer `developer:code-review`; run it only when the user accepts. Its record is written before the session folder is removed; entries still awaiting the user are carried in the final response.
 
-Remove the `.ailly/developer/YYYY-MM-DD-A-<topic>` folder.
+Remove the `.ailly/developer/YYYY-MM-DD-A-<topic>` folder. If an older session placed a worktree checkout inside it, leave that checkout in place.
 
 Either open a PR, or prepare a squash merge, depending on the project configurations.
