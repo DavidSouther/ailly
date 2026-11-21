@@ -1,7 +1,7 @@
 {
   "name": "general",
   "description": "General skills library: subagents, skill development, and git worktrees. From obra/superpowers.",
-  "version": "2026.10.0",
+  "version": "2026.11.1",
   "owner": {
     "name": "David Souther",
     "email": "davidsouther@gmail.com"
